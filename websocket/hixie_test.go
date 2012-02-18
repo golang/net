@@ -48,11 +48,11 @@ Sec-WebSocket-Protocol: sample
 
 	var err error
 	config := new(Config)
-	config.Location, err = url.ParseRequest("ws://example.com/demo")
+	config.Location, err = url.ParseRequestURI("ws://example.com/demo")
 	if err != nil {
 		t.Fatal("location url", err)
 	}
-	config.Origin, err = url.ParseRequest("http://example.com")
+	config.Origin, err = url.ParseRequestURI("http://example.com")
 	if err != nil {
 		t.Fatal("origin url", err)
 	}

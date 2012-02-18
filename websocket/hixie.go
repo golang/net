@@ -533,7 +533,7 @@ func (c *hixie76ServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Req
 	}
 
 	// TODO(ukai): check Host
-	c.Origin, err = url.ParseRequest(req.Header.Get("Origin"))
+	c.Origin, err = url.ParseRequestURI(req.Header.Get("Origin"))
 	if err != nil {
 		return http.StatusBadRequest, err
 	}
@@ -557,7 +557,7 @@ func (c *hixie76ServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Req
 	} else {
 		scheme = "ws"
 	}
-	c.Location, err = url.ParseRequest(scheme + "://" + req.Host + req.URL.RequestURI())
+	c.Location, err = url.ParseRequestURI(scheme + "://" + req.Host + req.URL.RequestURI())
 	if err != nil {
 		return http.StatusBadRequest, err
 	}
@@ -642,7 +642,7 @@ func (c *hixie75ServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Req
 	if req.Header.Get("Connection") != "Upgrade" {
 		return http.StatusBadRequest, ErrNotWebSocket
 	}
-	c.Origin, err = url.ParseRequest(strings.TrimSpace(req.Header.Get("Origin")))
+	c.Origin, err = url.ParseRequestURI(strings.TrimSpace(req.Header.Get("Origin")))
 	if err != nil {
 		return http.StatusBadRequest, err
 	}
@@ -653,7 +653,7 @@ func (c *hixie75ServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Req
 	} else {
 		scheme = "ws"
 	}
-	c.Location, err = url.ParseRequest(scheme + "://" + req.Host + req.URL.RequestURI())
+	c.Location, err = url.ParseRequestURI(scheme + "://" + req.Host + req.URL.RequestURI())
 	if err != nil {
 		return http.StatusBadRequest, err
 	}

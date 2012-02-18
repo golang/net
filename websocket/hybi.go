@@ -495,7 +495,7 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 	default:
 		return http.StatusBadRequest, ErrBadWebSocketVersion
 	}
-	c.Origin, err = url.ParseRequest(origin)
+	c.Origin, err = url.ParseRequestURI(origin)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
@@ -505,7 +505,7 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 	} else {
 		scheme = "ws"
 	}
-	c.Location, err = url.ParseRequest(scheme + "://" + req.Host + req.URL.RequestURI())
+	c.Location, err = url.ParseRequestURI(scheme + "://" + req.Host + req.URL.RequestURI())
 	if err != nil {
 		return http.StatusBadRequest, err
 	}

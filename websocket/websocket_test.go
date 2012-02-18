@@ -164,7 +164,7 @@ func TestWithQuery(t *testing.T) {
 	}
 
 	config := newConfig(t, "/echo")
-	config.Location, err = url.ParseRequest(fmt.Sprintf("ws://%s/echo?q=v", serverAddr))
+	config.Location, err = url.ParseRequestURI(fmt.Sprintf("ws://%s/echo?q=v", serverAddr))
 	if err != nil {
 		t.Fatal("location url", err)
 	}

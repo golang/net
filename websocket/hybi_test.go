@@ -42,11 +42,11 @@ Sec-WebSocket-Protocol: chat
 `))
 	var err error
 	config := new(Config)
-	config.Location, err = url.ParseRequest("ws://server.example.com/chat")
+	config.Location, err = url.ParseRequestURI("ws://server.example.com/chat")
 	if err != nil {
 		t.Fatal("location url", err)
 	}
-	config.Origin, err = url.ParseRequest("http://example.com")
+	config.Origin, err = url.ParseRequestURI("http://example.com")
 	if err != nil {
 		t.Fatal("origin url", err)
 	}
@@ -104,11 +104,11 @@ Sec-WebSocket-Protocol: chat
 `))
 	var err error
 	config := new(Config)
-	config.Location, err = url.ParseRequest("ws://server.example.com/chat")
+	config.Location, err = url.ParseRequestURI("ws://server.example.com/chat")
 	if err != nil {
 		t.Fatal("location url", err)
 	}
-	config.Origin, err = url.ParseRequest("http://example.com")
+	config.Origin, err = url.ParseRequestURI("http://example.com")
 	if err != nil {
 		t.Fatal("origin url", err)
 	}

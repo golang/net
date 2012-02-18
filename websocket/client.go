@@ -26,11 +26,11 @@ func (e *DialError) Error() string {
 func NewConfig(server, origin string) (config *Config, err error) {
 	config = new(Config)
 	config.Version = ProtocolVersionHybi13
-	config.Location, err = url.ParseRequest(server)
+	config.Location, err = url.ParseRequestURI(server)
 	if err != nil {
 		return
 	}
-	config.Origin, err = url.ParseRequest(origin)
+	config.Origin, err = url.ParseRequestURI(origin)
 	if err != nil {
 		return
 	}
