@@ -285,9 +285,6 @@ type Codec struct {
 
 // Send sends v marshaled by cd.Marshal as single frame to ws.
 func (cd Codec) Send(ws *Conn, v interface{}) (err error) {
-	if err != nil {
-		return err
-	}
 	data, payloadType, err := cd.Marshal(v)
 	if err != nil {
 		return err
@@ -295,6 +292,9 @@ func (cd Codec) Send(ws *Conn, v interface{}) (err error) {
 	ws.wio.Lock()
 	defer ws.wio.Unlock()
 	w, err := ws.frameWriterFactory.NewFrameWriter(payloadType)
+	if err != nil {
+		return err
+	}
 	_, err = w.Write(data)
 	w.Close()
 	return err
