@@ -38,7 +38,7 @@ const (
 	UnknownFrame      = 255
 )
 
-// WebSocket protocol errors.
+// ProtocolError represents WebSocket protocol errors.
 type ProtocolError struct {
 	ErrorString string
 }
@@ -393,7 +393,7 @@ func jsonUnmarshal(msg []byte, payloadType byte, v interface{}) (err error) {
 /*
 JSON is a codec to send/receive JSON data in a frame from a WebSocket connection.
 
-Trival usage:
+Trivial usage:
 
 	import "websocket"
 

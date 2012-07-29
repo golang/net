@@ -22,7 +22,7 @@ import (
 	"strings"
 )
 
-// An aray of characters to be randomly inserted to construct Sec-WebSocket-Key
+// An array of characters to be randomly inserted to construct Sec-WebSocket-Key
 // value. It holds characters from ranges U+0021 to U+002F and U+003A to U+007E.
 // See Step 21 in Section 4.1 Opening handshake.
 // http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-00#page-22
@@ -332,7 +332,7 @@ func generateKey3() (key []byte) {
 	return
 }
 
-// Cilent handhake described in (soon obsolete)
+// Cilent handshake described in (soon obsolete)
 // draft-ietf-hybi-thewebsocket-protocol-00
 // (draft-hixie-thewebsocket-protocol-76) 
 func hixie76ClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (err error) {

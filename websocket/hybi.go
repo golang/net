@@ -104,7 +104,7 @@ type hybiFrameReaderFactory struct {
 }
 
 // NewFrameReader reads a frame header from the connection, and creates new reader for the frame.
-// See Section 5.2 Base Frameing protocol for detail.
+// See Section 5.2 Base Framing protocol for detail.
 // http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-17#section-5.2
 func (buf hybiFrameReaderFactory) NewFrameReader() (frame frameReader, err error) {
 	hybiFrame := new(hybiFrameReader)
@@ -348,7 +348,7 @@ func generateMaskingKey() (maskingKey []byte, err error) {
 	return
 }
 
-// genetateNonce geneates a nonce consisting of a randomly selected 16-byte
+// generateNonce generates a nonce consisting of a randomly selected 16-byte
 // value that has been base64-encoded.
 func generateNonce() (nonce []byte) {
 	key := make([]byte, 16)
@@ -384,7 +384,7 @@ func isHybiVersion(version int) bool {
 	return false
 }
 
-// Client handhake described in draft-ietf-hybi-thewebsocket-protocol-17
+// Client handshake described in draft-ietf-hybi-thewebsocket-protocol-17
 func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (err error) {
 	if !isHybiVersion(config.Version) {
 		panic("wrong protocol version.")

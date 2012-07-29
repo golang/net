@@ -96,7 +96,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if conn == nil {
-		panic("unepxected nil conn")
+		panic("unexpected nil conn")
 	}
 	h(conn)
 }

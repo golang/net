@@ -200,7 +200,7 @@ func TestHTTP(t *testing.T) {
 	once.Do(startServer)
 
 	// If the client did not send a handshake that matches the protocol
-	// specification, the server MUST return an HTTP respose with an
+	// specification, the server MUST return an HTTP response with an
 	// appropriate error code (such as 400 Bad Request)
 	resp, err := http.Get(fmt.Sprintf("http://%s/echo", serverAddr))
 	if err != nil {
