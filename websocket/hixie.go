@@ -332,9 +332,9 @@ func generateKey3() (key []byte) {
 	return
 }
 
-// Cilent handshake described in (soon obsolete)
+// Client handshake described in (soon obsolete)
 // draft-ietf-hybi-thewebsocket-protocol-00
-// (draft-hixie-thewebsocket-protocol-76) 
+// (draft-hixie-thewebsocket-protocol-76)
 func hixie76ClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (err error) {
 	switch config.Version {
 	case ProtocolVersionHixie76, ProtocolVersionHybi00:
