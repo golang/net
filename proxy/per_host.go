@@ -30,7 +30,7 @@ func NewPerHost(defaultDialer, bypass Dialer) *PerHost {
 	}
 }
 
-// Dial connects to the address addr on the network net through either
+// Dial connects to the address addr on the given network through either
 // defaultDialer or bypass.
 func (p *PerHost) Dial(network, addr string) (c net.Conn, err error) {
 	host, _, err := net.SplitHostPort(addr)
@@ -112,9 +112,9 @@ func (p *PerHost) AddIP(ip net.IP) {
 	p.bypassIPs = append(p.bypassIPs, ip)
 }
 
-// AddIP specifies an IP range that will use the bypass proxy. Note that this
-// will only take effect if a literal IP address is dialed. A connection to a
-// named host will never match.
+// AddNetwork specifies an IP range that will use the bypass proxy. Note that
+// this will only take effect if a literal IP address is dialed. A connection
+// to a named host will never match.
 func (p *PerHost) AddNetwork(net *net.IPNet) {
 	p.bypassNetworks = append(p.bypassNetworks, net)
 }
