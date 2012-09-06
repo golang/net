@@ -52,32 +52,7 @@ func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Requ
 	return
 }
 
-/*
-Handler is an interface to a WebSocket.
-
-A trivial example server:
-
-	package main
-
-	import (
-		"io"
-		"net/http"
-		"websocket"
-	)
-
-	// Echo the data received on the WebSocket.
-	func EchoServer(ws *websocket.Conn) {
-		io.Copy(ws, ws);
-	}
-
-	func main() {
-		http.Handle("/echo", websocket.Handler(EchoServer));
-		err := http.ListenAndServe(":12345", nil);
-		if err != nil {
-			panic("ListenAndServe: " + err.Error())
-		}
-	}
-*/
+// Handler is an interface to a WebSocket.
 type Handler func(*Conn)
 
 // ServeHTTP implements the http.Handler interface for a Web Socket

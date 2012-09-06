@@ -64,37 +64,7 @@ func NewClient(config *Config, rwc io.ReadWriteCloser) (ws *Conn, err error) {
 	return
 }
 
-/*
-Dial opens a new client connection to a WebSocket.
-
-A trivial example client:
-
-	package main
-
-	import (
-		"log"
-		"net/http"
-		"strings"
-		"websocket"
-	)
-
-	func main() {
-		origin := "http://localhost/"
-		url := "ws://localhost/ws" 
-		ws, err := websocket.Dial(url, "", origin)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if _, err := ws.Write([]byte("hello, world!\n")); err != nil {
-			log.Fatal(err)
-		}
-		var msg = make([]byte, 512);
-		if n, err := ws.Read(msg); err != nil {
-			log.Fatal(err)
-		}
-		// use msg[0:n]
-	}
-*/
+// Dial opens a new client connection to a WebSocket.
 func Dial(url_, protocol, origin string) (ws *Conn, err error) {
 	config, err := NewConfig(url_, origin)
 	if err != nil {
