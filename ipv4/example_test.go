@@ -222,7 +222,7 @@ func ExampleIPOSPFListener() {
 	}
 }
 
-func ExampleWriteIPOSPFHello(c *ipv4.RawConn, ifs []*net.Interface) {
+func _ExampleWriteIPOSPFHello(c *ipv4.RawConn, ifs []*net.Interface) {
 	hello := make([]byte, OSPFHelloHeaderLen)
 
 	ospf := make([]byte, OSPFHeaderLen)
