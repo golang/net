@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package spdy implements SPDY protocol which is descirbed in
+// Package spdy implements SPDY protocol which is described in
 // draft-mbelshe-httpbis-spdy-00.
 //
 // http://tools.ietf.org/html/draft-mbelshe-httpbis-spdy-00
