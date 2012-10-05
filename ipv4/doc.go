@@ -7,10 +7,10 @@
 //
 // The package provides IP-level socket options that allow
 // manipulation of IPv4 facilities.  The IPv4 and basic host
-// requirements for IPv4 are defined in RFC 791, 1112 and 1122.  A
-// series of RFCs 2474, 2475, 2597, 2598 and 3168 describe how to use
-// the type-of-service field in a DiffServ, differentiated services
-// environment.
+// requirements for IPv4 are defined in RFC 791, RFC 1112 and RFC
+// 1122.  A series of RFC 2474, RFC 2475, RFC 2597, RFC 2598 and RFC
+// 3168 describe how to use the type-of-service field in a DiffServ,
+// differentiated services environment.
 //
 //
 // Unicasting
