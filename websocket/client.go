@@ -70,6 +70,9 @@ func Dial(url_, protocol, origin string) (ws *Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if protocol != "" {
+		config.Protocol = []string{protocol}
+	}
 	return DialConfig(config)
 }
 
