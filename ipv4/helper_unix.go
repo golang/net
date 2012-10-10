@@ -39,8 +39,8 @@ func sysfd(c net.Conn) (int, error) {
 	cv := reflect.ValueOf(c)
 	switch ce := cv.Elem(); ce.Kind() {
 	case reflect.Struct:
-		nfd := ce.FieldByName("conn").FieldByName("fd")
-		switch fe := nfd.Elem(); fe.Kind() {
+		netfd := ce.FieldByName("conn").FieldByName("fd")
+		switch fe := netfd.Elem(); fe.Kind() {
 		case reflect.Struct:
 			fd := fe.FieldByName("sysfd")
 			return int(fd.Int()), nil

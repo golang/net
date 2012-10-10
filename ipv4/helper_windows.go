@@ -38,11 +38,11 @@ func sysfd(c net.Conn) (syscall.Handle, error) {
 	cv := reflect.ValueOf(c)
 	switch ce := cv.Elem(); ce.Kind() {
 	case reflect.Struct:
-		fd := ce.FieldByName("conn").FieldByName("fd")
-		switch fe := fd.Elem(); fe.Kind() {
+		netfd := ce.FieldByName("conn").FieldByName("fd")
+		switch fe := netfd.Elem(); fe.Kind() {
 		case reflect.Struct:
-			sysfd := fe.FieldByName("sysfd")
-			return syscall.Handle(sysfd.Uint()), nil
+			fd := fe.FieldByName("sysfd")
+			return syscall.Handle(fd.Uint()), nil
 		}
 	}
 	return syscall.InvalidHandle, errInvalidConnType
