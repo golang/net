@@ -6,6 +6,8 @@ package spdy
 
 import (
 	"bytes"
+	"compress/zlib"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"reflect"
@@ -493,5 +495,30 @@ func TestMultipleSPDYFrames(t *testing.T) {
 	}
 	if !reflect.DeepEqual(synStreamFrame, *parsedSynStreamFrame) {
 		t.Fatal("got: ", *parsedSynStreamFrame, "\nwant: ", synStreamFrame)
+	}
+}
+
+func TestReadMalformedZlibHeader(t *testing.T) {
+	// These were constructed by corrupting the first byte of the zlib
+	// header after writing.
+	malformedStructs := map[string]string{
+		"SynStreamFrame": "gAIAAQAAABgAAAACAAAAAAAAF/nfolGyYmAAAAAA//8=",
+		"SynReplyFrame":  "gAIAAgAAABQAAAACAAAX+d+iUbJiYAAAAAD//w==",
+		"HeadersFrame":   "gAIACAAAABQAAAACAAAX+d+iUbJiYAAAAAD//w==",
+	}
+	for name, bad := range malformedStructs {
+		b, err := base64.StdEncoding.DecodeString(bad)
+		if err != nil {
+			t.Errorf("Unable to decode base64 encoded frame %s: %v", name, err)
+		}
+		buf := bytes.NewBuffer(b)
+		reader, err := NewFramer(buf, buf)
+		if err != nil {
+			t.Fatalf("NewFramer: %v", err)
+		}
+		_, err = reader.ReadFrame()
+		if err != zlib.ErrHeader {
+			t.Errorf("Frame %s, expected: %#v, actual: %#v", name, zlib.ErrHeader, err)
+		}
 	}
 }

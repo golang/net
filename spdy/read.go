@@ -200,7 +200,10 @@ func (f *Framer) readSynStreamFrame(h ControlFrameHeader, frame *SynStreamFrame)
 
 	reader := f.r
 	if !f.headerCompressionDisabled {
-		f.uncorkHeaderDecompressor(int64(h.length - 10))
+		err := f.uncorkHeaderDecompressor(int64(h.length - 10))
+		if err != nil {
+			return err
+		}
 		reader = f.headerDecompressor
 	}
 
@@ -234,7 +237,10 @@ func (f *Framer) readSynReplyFrame(h ControlFrameHeader, frame *SynReplyFrame) e
 	}
 	reader := f.r
 	if !f.headerCompressionDisabled {
-		f.uncorkHeaderDecompressor(int64(h.length - 6))
+		err := f.uncorkHeaderDecompressor(int64(h.length - 6))
+		if err != nil {
+			return err
+		}
 		reader = f.headerDecompressor
 	}
 	frame.Headers, err = parseHeaderValueBlock(reader, frame.StreamId)
@@ -267,7 +273,10 @@ func (f *Framer) readHeadersFrame(h ControlFrameHeader, frame *HeadersFrame) err
 	}
 	reader := f.r
 	if !f.headerCompressionDisabled {
-		f.uncorkHeaderDecompressor(int64(h.length - 6))
+		err := f.uncorkHeaderDecompressor(int64(h.length - 6))
+		if err != nil {
+			return err
+		}
 		reader = f.headerDecompressor
 	}
 	frame.Headers, err = parseHeaderValueBlock(reader, frame.StreamId)
