@@ -315,6 +315,7 @@ const (
 	InvalidControlFrame        ErrorCode = "invalid control frame"
 	InvalidDataFrame           ErrorCode = "invalid data frame"
 	InvalidHeaderPresent       ErrorCode = "frame contained invalid header"
+	ZeroStreamId               ErrorCode = "stream id zero is disallowed"
 )
 
 // Error contains both the type of error and additional values. StreamId is 0

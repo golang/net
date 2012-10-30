@@ -20,6 +20,9 @@ func (frame *SynReplyFrame) write(f *Framer) error {
 }
 
 func (frame *RstStreamFrame) write(f *Framer) (err error) {
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	frame.CFHeader.version = Version
 	frame.CFHeader.frameType = TypeRstStream
 	frame.CFHeader.length = 8
@@ -70,6 +73,9 @@ func (frame *NoopFrame) write(f *Framer) error {
 }
 
 func (frame *PingFrame) write(f *Framer) (err error) {
+	if frame.Id == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	frame.CFHeader.version = Version
 	frame.CFHeader.frameType = TypePing
 	frame.CFHeader.length = 4
@@ -100,10 +106,16 @@ func (frame *GoAwayFrame) write(f *Framer) (err error) {
 }
 
 func (frame *HeadersFrame) write(f *Framer) error {
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	return f.writeHeadersFrame(frame)
 }
 
 func (frame *DataFrame) write(f *Framer) error {
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	return f.writeDataFrame(frame)
 }
 
@@ -156,6 +168,9 @@ func writeHeaderValueBlock(w io.Writer, h http.Header) (n int, err error) {
 }
 
 func (f *Framer) writeSynStreamFrame(frame *SynStreamFrame) (err error) {
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	// Marshal the headers.
 	var writer io.Writer = f.headerBuf
 	if !f.headerCompressionDisabled {
@@ -194,6 +209,9 @@ func (f *Framer) writeSynStreamFrame(frame *SynStreamFrame) (err error) {
 }
 
 func (f *Framer) writeSynReplyFrame(frame *SynReplyFrame) (err error) {
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	// Marshal the headers.
 	var writer io.Writer = f.headerBuf
 	if !f.headerCompressionDisabled {

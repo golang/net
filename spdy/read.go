@@ -28,6 +28,9 @@ func (frame *RstStreamFrame) read(h ControlFrameHeader, f *Framer) error {
 	if err := binary.Read(f.r, binary.BigEndian, &frame.Status); err != nil {
 		return err
 	}
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	return nil
 }
 
@@ -60,6 +63,9 @@ func (frame *PingFrame) read(h ControlFrameHeader, f *Framer) error {
 	frame.CFHeader = h
 	if err := binary.Read(f.r, binary.BigEndian, &frame.Id); err != nil {
 		return err
+	}
+	if frame.Id == 0 {
+		return &Error{ZeroStreamId, 0}
 	}
 	return nil
 }
@@ -222,6 +228,9 @@ func (f *Framer) readSynStreamFrame(h ControlFrameHeader, frame *SynStreamFrame)
 			}
 		}
 	}
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	return nil
 }
 
@@ -257,6 +266,9 @@ func (f *Framer) readSynReplyFrame(h ControlFrameHeader, frame *SynReplyFrame) e
 				return &Error{InvalidHeaderPresent, frame.StreamId}
 			}
 		}
+	}
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
 	}
 	return nil
 }
@@ -301,6 +313,9 @@ func (f *Framer) readHeadersFrame(h ControlFrameHeader, frame *HeadersFrame) err
 			}
 		}
 	}
+	if frame.StreamId == 0 {
+		return &Error{ZeroStreamId, 0}
+	}
 	return nil
 }
 
@@ -316,6 +331,9 @@ func (f *Framer) parseDataFrame(streamId uint32) (*DataFrame, error) {
 	frame.Data = make([]byte, length)
 	if _, err := io.ReadFull(f.r, frame.Data); err != nil {
 		return nil, err
+	}
+	if frame.StreamId == 0 {
+		return nil, &Error{ZeroStreamId, 0}
 	}
 	return &frame, nil
 }

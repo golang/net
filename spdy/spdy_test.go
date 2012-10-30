@@ -9,6 +9,7 @@ import (
 	"compress/zlib"
 	"encoding/base64"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"testing"
@@ -47,6 +48,7 @@ func TestCreateParseSynStreamFrame(t *testing.T) {
 			version:   Version,
 			frameType: TypeSynStream,
 		},
+		StreamId: 2,
 		Headers: http.Header{
 			"Url":     []string{"http://www.google.com/"},
 			"Method":  []string{"get"},
@@ -103,6 +105,7 @@ func TestCreateParseSynReplyFrame(t *testing.T) {
 			version:   Version,
 			frameType: TypeSynReply,
 		},
+		StreamId: 2,
 		Headers: http.Header{
 			"Url":     []string{"http://www.google.com/"},
 			"Method":  []string{"get"},
@@ -307,6 +310,7 @@ func TestCreateParseHeadersFrame(t *testing.T) {
 			version:   Version,
 			frameType: TypeHeaders,
 		},
+		StreamId: 2,
 	}
 	headersFrame.Headers = http.Header{
 		"Url":     []string{"http://www.google.com/"},
@@ -384,6 +388,7 @@ func TestCompressionContextAcrossFrames(t *testing.T) {
 			version:   Version,
 			frameType: TypeHeaders,
 		},
+		StreamId: 2,
 		Headers: http.Header{
 			"Url":     []string{"http://www.google.com/"},
 			"Method":  []string{"get"},
@@ -393,7 +398,7 @@ func TestCompressionContextAcrossFrames(t *testing.T) {
 	if err := framer.WriteFrame(&headersFrame); err != nil {
 		t.Fatal("WriteFrame (HEADERS):", err)
 	}
-	synStreamFrame := SynStreamFrame{ControlFrameHeader{Version, TypeSynStream, 0, 0}, 0, 0, 0, nil}
+	synStreamFrame := SynStreamFrame{ControlFrameHeader{Version, TypeSynStream, 0, 0}, 2, 0, 0, nil}
 	synStreamFrame.Headers = http.Header{
 		"Url":     []string{"http://www.google.com/"},
 		"Method":  []string{"get"},
@@ -445,6 +450,7 @@ func TestMultipleSPDYFrames(t *testing.T) {
 			version:   Version,
 			frameType: TypeHeaders,
 		},
+		StreamId: 2,
 		Headers: http.Header{
 			"Url":     []string{"http://www.google.com/"},
 			"Method":  []string{"get"},
@@ -456,6 +462,7 @@ func TestMultipleSPDYFrames(t *testing.T) {
 			version:   Version,
 			frameType: TypeSynStream,
 		},
+		StreamId: 2,
 		Headers: http.Header{
 			"Url":     []string{"http://www.google.com/"},
 			"Method":  []string{"get"},
@@ -520,5 +527,67 @@ func TestReadMalformedZlibHeader(t *testing.T) {
 		if err != zlib.ErrHeader {
 			t.Errorf("Frame %s, expected: %#v, actual: %#v", name, zlib.ErrHeader, err)
 		}
+	}
+}
+
+type zeroStream struct {
+	frame   Frame
+	encoded string
+}
+
+var streamIdZeroFrames = map[string]zeroStream{
+	"SynStreamFrame": {
+		&SynStreamFrame{StreamId: 0},
+		"gAIAAQAAABgAAAAAAAAAAAAAePnfolGyYmAAAAAA//8=",
+	},
+	"SynReplyFrame": {
+		&SynReplyFrame{StreamId: 0},
+		"gAIAAgAAABQAAAAAAAB4+d+iUbJiYAAAAAD//w==",
+	},
+	"RstStreamFrame": {
+		&RstStreamFrame{StreamId: 0},
+		"gAIAAwAAAAgAAAAAAAAAAA==",
+	},
+	"HeadersFrame": {
+		&HeadersFrame{StreamId: 0},
+		"gAIACAAAABQAAAAAAAB4+d+iUbJiYAAAAAD//w==",
+	},
+	"DataFrame": {
+		&DataFrame{StreamId: 0},
+		"AAAAAAAAAAA=",
+	},
+	"PingFrame": {
+		&PingFrame{Id: 0},
+		"gAIABgAAAAQAAAAA",
+	},
+}
+
+func TestNoZeroStreamId(t *testing.T) {
+	for name, f := range streamIdZeroFrames {
+		b, err := base64.StdEncoding.DecodeString(f.encoded)
+		if err != nil {
+			t.Errorf("Unable to decode base64 encoded frame %s: %v", f, err)
+			continue
+		}
+		framer, err := NewFramer(ioutil.Discard, bytes.NewReader(b))
+		if err != nil {
+			t.Fatalf("NewFramer: %v", err)
+		}
+		err = framer.WriteFrame(f.frame)
+		checkZeroStreamId(t, name, "WriteFrame", err)
+
+		_, err = framer.ReadFrame()
+		checkZeroStreamId(t, name, "ReadFrame", err)
+	}
+}
+
+func checkZeroStreamId(t *testing.T, frame string, method string, err error) {
+	if err == nil {
+		t.Errorf("%s ZeroStreamId, no error on %s", method, frame)
+		return
+	}
+	eerr, ok := err.(*Error)
+	if !ok || eerr.Err != ZeroStreamId {
+		t.Errorf("%s ZeroStreamId, incorrect error %#v, frame %s", method, eerr, frame)
 	}
 }
