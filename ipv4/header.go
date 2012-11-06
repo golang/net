@@ -120,7 +120,7 @@ func (h *Header) String() string {
 
 // Please refer to the online manual; IP(4) on Darwin, FreeBSD and
 // OpenBSD.  IP(7) on Linux.
-var supportsNewIPInput = runtime.GOOS == "linux" || runtime.GOOS == "openbsd"
+const supportsNewIPInput = runtime.GOOS == "linux" || runtime.GOOS == "openbsd"
 
 // Marshal returns the binary encoding of the IPv4 header h.
 func (h *Header) Marshal() ([]byte, error) {
