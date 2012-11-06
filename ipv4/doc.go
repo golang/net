@@ -22,7 +22,7 @@
 // important, ipv4.Conn is used to set the type-of-service field on
 // the IPv4 header for each packet.
 //
-//	ln, err := net.Listen("tcp4", "0.0.0.0:1024") 
+//	ln, err := net.Listen("tcp4", "0.0.0.0:1024")
 //	if err != nil {
 //		// error handling
 //	}

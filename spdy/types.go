@@ -355,8 +355,8 @@ type Framer struct {
 }
 
 // NewFramer allocates a new Framer for a given SPDY connection, repesented by
-// a io.Writer and io.Reader. Note that Framer will read and write individual fields 
-// from/to the Reader and Writer, so the caller should pass in an appropriately 
+// a io.Writer and io.Reader. Note that Framer will read and write individual fields
+// from/to the Reader and Writer, so the caller should pass in an appropriately
 // buffered implementation to optimize performance.
 func NewFramer(w io.Writer, r io.Reader) (*Framer, error) {
 	compressBuf := new(bytes.Buffer)

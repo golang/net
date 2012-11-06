@@ -535,8 +535,8 @@ func TestHybiClientReadWithMasking(t *testing.T) {
 }
 
 // Test the hybiServerHandshaker supports firefox implementation and
-// checks Connection request header include (but it's not necessary 
-// equal to) "upgrade"   
+// checks Connection request header include (but it's not necessary
+// equal to) "upgrade"
 func TestHybiServerFirefoxHandshake(t *testing.T) {
 	config := new(Config)
 	handshaker := &hybiServerHandshaker{Config: config}
