@@ -142,7 +142,7 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	buf = append(buf, socks5Version, socks5Connect, 0 /* reserved */)
 
 	if ip := net.ParseIP(host); ip != nil {
-		if len(ip) == 4 {
+		if ip.To4() != nil {
 			buf = append(buf, socks5IP4)
 		} else {
 			buf = append(buf, socks5IP6)
