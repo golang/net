@@ -222,14 +222,45 @@ func ExampleIPOSPFListener() {
 	}
 }
 
-func _ExampleWriteIPOSPFHello(c *ipv4.RawConn, ifs []*net.Interface) {
-	hello := make([]byte, OSPFHelloHeaderLen)
+func ExampleWriteIPOSPFHello() {
+	var ifs []*net.Interface
+	en0, err := net.InterfaceByName("en0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	ifs = append(ifs, en0)
+	en1, err := net.InterfaceByIndex(911)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ifs = append(ifs, en1)
 
+	c, err := net.ListenPacket("ip4:89", "0.0.0.0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer c.Close()
+
+	r, err := ipv4.NewRawConn(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, ifi := range ifs {
+		err := r.JoinGroup(ifi, &net.IPAddr{IP: AllSPFRouters})
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = r.JoinGroup(ifi, &net.IPAddr{IP: AllDRouters})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	hello := make([]byte, OSPFHelloHeaderLen)
 	ospf := make([]byte, OSPFHeaderLen)
 	ospf[0] = OSPF_VERSION
 	ospf[1] = OSPF_TYPE_HELLO
 	ospf = append(ospf, hello...)
-
 	iph := &ipv4.Header{}
 	iph.Version = ipv4.Version
 	iph.Len = ipv4.HeaderLen
@@ -240,11 +271,11 @@ func _ExampleWriteIPOSPFHello(c *ipv4.RawConn, ifs []*net.Interface) {
 	iph.Dst = AllSPFRouters
 
 	for _, ifi := range ifs {
-		err := c.SetMulticastInterface(ifi)
+		err := r.SetMulticastInterface(ifi)
 		if err != nil {
 			return
 		}
-		err = c.Write(iph, ospf, nil)
+		err = r.Write(iph, ospf, nil)
 		if err != nil {
 			return
 		}
