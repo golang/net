@@ -69,7 +69,7 @@ func ExampleMulticastUDPListener() {
 
 	b := make([]byte, 1500)
 	for {
-		n, cm, src, err := p.Read(b)
+		n, cm, src, err := p.ReadFrom(b)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -83,7 +83,7 @@ func ExampleMulticastUDPListener() {
 		}
 		p.SetTOS(ipv4.DSCP_CS7)
 		p.SetTTL(16)
-		_, err = p.Write(b[:n], nil, src)
+		_, err = p.WriteTo(b[:n], nil, src)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func ExampleMulticastUDPListener() {
 				log.Fatal(err)
 			}
 			p.SetMulticastTTL(2)
-			_, err = p.Write(b[:n], nil, dst)
+			_, err = p.WriteTo(b[:n], nil, dst)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -193,7 +193,7 @@ func ExampleIPOSPFListener() {
 
 	b := make([]byte, 1500)
 	for {
-		iph, p, _, err := r.Read(b)
+		iph, p, _, err := r.ReadFrom(b)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -275,7 +275,7 @@ func ExampleWriteIPOSPFHello() {
 		if err != nil {
 			return
 		}
-		err = r.Write(iph, ospf, nil)
+		err = r.WriteTo(iph, ospf, nil)
 		if err != nil {
 			return
 		}

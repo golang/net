@@ -37,10 +37,10 @@ func runPayloadTransponder(t *testing.T, c *ipv4.PacketConn, wb []byte, dst net.
 			c.SetTTL(i + 1)
 		}
 		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
-		if _, err := c.Write(wb, nil, dst); err != nil {
+		if _, err := c.WriteTo(wb, nil, dst); err != nil {
 			t.Fatalf("ipv4.PacketConn.Write failed: %v", err)
 		}
-		_, cm, _, err := c.Read(rb)
+		_, cm, _, err := c.ReadFrom(rb)
 		if err != nil {
 			t.Fatalf("ipv4.PacketConn.Read failed: %v", err)
 		}
@@ -72,10 +72,10 @@ func runDatagramTransponder(t *testing.T, c *ipv4.RawConn, wb []byte, src, dst n
 			wh.Dst = dst.(*net.IPAddr).IP
 		}
 		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
-		if err := c.Write(wh, wb, nil); err != nil {
+		if err := c.WriteTo(wh, wb, nil); err != nil {
 			t.Fatalf("ipv4.RawConn.Write failed: %v", err)
 		}
-		rh, _, cm, err := c.Read(rb)
+		rh, _, cm, err := c.ReadFrom(rb)
 		if err != nil {
 			t.Fatalf("ipv4.RawConn.Read failed: %v", err)
 		}

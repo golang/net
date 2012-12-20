@@ -17,10 +17,10 @@ type packetHandler struct {
 
 func (c *packetHandler) ok() bool { return c != nil && c.c != nil }
 
-// Read reads an IPv4 datagram from the endpoint c, copying the
+// ReadFrom reads an IPv4 datagram from the endpoint c, copying the
 // datagram into b.  It returns the received datagram as the IPv4
 // header h, the payload p and the control message cm.
-func (c *packetHandler) Read(b []byte) (h *Header, p []byte, cm *ControlMessage, err error) {
+func (c *packetHandler) ReadFrom(b []byte) (h *Header, p []byte, cm *ControlMessage, err error) {
 	if !c.ok() {
 		return nil, nil, nil, syscall.EINVAL
 	}
@@ -53,7 +53,7 @@ func slicePacket(b []byte) (h, p []byte, err error) {
 	return b[:hdrlen], b[hdrlen:], nil
 }
 
-// Write writes an IPv4 datagram through the endpoint c, copying the
+// WriteTo writes an IPv4 datagram through the endpoint c, copying the
 // datagram from the IPv4 header h and the payload p.  The control
 // message cm allows the datagram path and the outgoing interface to be
 // specified.  Currently only Linux supports this.  The cm may be nil
@@ -73,7 +73,7 @@ func slicePacket(b []byte) (h, p []byte, err error) {
 //	Src           = platform sets an appropriate value if Src is nil
 //	Dst           = <must be specified>
 //	h.Options     = optional
-func (c *packetHandler) Write(h *Header, p []byte, cm *ControlMessage) error {
+func (c *packetHandler) WriteTo(h *Header, p []byte, cm *ControlMessage) error {
 	if !c.ok() {
 		return syscall.EINVAL
 	}

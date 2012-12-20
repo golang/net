@@ -17,11 +17,11 @@ type payloadHandler struct {
 
 func (c *payloadHandler) ok() bool { return c != nil && c.c != nil }
 
-// Read reads a payload of the received IPv4 datagram, from the
+// ReadFrom reads a payload of the received IPv4 datagram, from the
 // endpoint c, copying the payload into b.  It returns the number of
 // bytes copied into b, the control message cm and the source address
 // src of the received datagram.
-func (c *payloadHandler) Read(b []byte) (n int, cm *ControlMessage, src net.Addr, err error) {
+func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.Addr, err error) {
 	if !c.ok() {
 		return 0, nil, nil, syscall.EINVAL
 	}
@@ -52,13 +52,13 @@ func (c *payloadHandler) Read(b []byte) (n int, cm *ControlMessage, src net.Addr
 	return
 }
 
-// Write writes a payload of the IPv4 datagram, to the destination
-// address dst through the endpoint c, copying the payload from b.
-// It returns the number of bytes written.  The control message cm
-// allows the datagram path and the outgoing interface to be
-// specified.  Currently only Linux supports this.  The cm may be nil
-// if control of the outgoing datagram is not required.
-func (c *payloadHandler) Write(b []byte, cm *ControlMessage, dst net.Addr) (n int, err error) {
+// WriteTo writes a payload of the IPv4 datagram, to the destination
+// address dst through the endpoint c, copying the payload from b.  It
+// returns the number of bytes written.  The control message cm allows
+// the datagram path and the outgoing interface to be specified.
+// Currently only Linux supports this.  The cm may be nil if control
+// of the outgoing datagram is not required.
+func (c *payloadHandler) WriteTo(b []byte, cm *ControlMessage, dst net.Addr) (n int, err error) {
 	if !c.ok() {
 		return 0, syscall.EINVAL
 	}
