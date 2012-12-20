@@ -138,6 +138,34 @@ var publicSuffixTestCases = []struct {
 	{"b.ide.kyoto.jp", "ide.kyoto.jp"},
 	{"a.b.ide.kyoto.jp", "ide.kyoto.jp"},
 
+	// The .tw rules are:
+	// tw
+	// edu.tw
+	// gov.tw
+	// mil.tw
+	// com.tw
+	// net.tw
+	// org.tw
+	// idv.tw
+	// game.tw
+	// ebiz.tw
+	// club.tw
+	// 網路.tw (xn--zf0ao64a.tw)
+	// 組織.tw (xn--uc0atv.tw)
+	// 商業.tw (xn--czrw28b.tw)
+	// blogspot.tw
+	{"tw", "tw"},
+	{"aaa.tw", "tw"},
+	{"www.aaa.tw", "tw"},
+	{"xn--czrw28b.aaa.tw", "tw"},
+	{"edu.tw", "edu.tw"},
+	{"www.edu.tw", "edu.tw"},
+	{"xn--czrw28b.edu.tw", "edu.tw"},
+	{"xn--czrw28b.tw", "xn--czrw28b.tw"},
+	{"www.xn--czrw28b.tw", "xn--czrw28b.tw"},
+	{"xn--uc0atv.xn--czrw28b.tw", "xn--czrw28b.tw"},
+	{"xn--kpry57d.tw", "tw"},
+
 	// The .uk rules are:
 	// *.uk
 	// *.sch.uk
@@ -162,6 +190,12 @@ var publicSuffixTestCases = []struct {
 	{"blogspot.co.uk", "blogspot.co.uk"},
 	{"blogspot.nic.uk", "uk"},
 	{"blogspot.sch.uk", "blogspot.sch.uk"},
+
+	// The .рф rules are
+	// рф (xn--p1ai)
+	{"xn--p1ai", "xn--p1ai"},
+	{"aaa.xn--p1ai", "xn--p1ai"},
+	{"www.xxx.yyy.xn--p1ai", "xn--p1ai"},
 
 	// The .zw rules are:
 	// *.zw

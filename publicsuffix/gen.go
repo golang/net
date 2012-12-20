@@ -19,8 +19,6 @@ package main
 // To fetch a particular hg revision, such as 05b11a8d1ace, pass
 // -url "http://hg.mozilla.org/mozilla-central/raw-file/05b11a8d1ace/netwerk/dns/effective_tld_names.dat"
 
-// TODO(nigeltao): decide what to do with non-ASCII entries.
-
 import (
 	"bufio"
 	"bytes"
@@ -32,6 +30,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"code.google.com/p/go.net/idna"
 )
 
 const (
@@ -105,8 +105,12 @@ func main1() error {
 			return err
 		}
 		s = strings.TrimSpace(s)
-		if s == "" || strings.HasPrefix(s, "//") || !isASCII(s) {
+		if s == "" || strings.HasPrefix(s, "//") {
 			continue
+		}
+		s, err = idna.ToASCII(s)
+		if err != nil {
+			return err
 		}
 
 		if *subset {
@@ -118,7 +122,10 @@ func main1() error {
 			case s == "kobe.jp" || strings.HasSuffix(s, ".kobe.jp"):
 			case s == "kyoto.jp" || strings.HasSuffix(s, ".kyoto.jp"):
 			case s == "uk" || strings.HasSuffix(s, ".uk"):
+			case s == "tw" || strings.HasSuffix(s, ".tw"):
 			case s == "zw" || strings.HasSuffix(s, ".zw"):
+			case s == "xn--p1ai" || strings.HasSuffix(s, ".xn--p1ai"):
+				// xn--p1ai is Russian-Cyrillic "рф".
 			default:
 				continue
 			}
@@ -167,15 +174,6 @@ func main1() error {
 	}
 	_, err = os.Stdout.Write(b)
 	return err
-}
-
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 32 || 127 < s[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func printTest(w io.Writer, n *node) error {
