@@ -110,7 +110,7 @@
 //
 //	b := make([]byte, 1500)
 //	for {
-//		n, cm, src, err := p.Read(b)
+//		n, cm, src, err := p.ReadFrom(b)
 //		if err != nil {
 //			// error handling
 //		}
@@ -127,7 +127,7 @@
 //
 //		p.SetTOS(ipv4.DSCP_CS0)
 //		p.SetTTL(16)
-//		_, err = p.Write(data, nil, src)
+//		_, err = p.WriteTo(data, nil, src)
 //		if err != nil {
 //			// error handling
 //		}
@@ -138,7 +138,7 @@
 //				// error handling
 //			}
 //			p.SetMulticastTTL(2)
-//			_, err = p.Write(data, nil, dst)
+//			_, err = p.WriteTo(data, nil, dst)
 //			if err != nil {
 //				// error handling
 //			}

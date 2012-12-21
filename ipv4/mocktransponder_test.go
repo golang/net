@@ -38,11 +38,11 @@ func runPayloadTransponder(t *testing.T, c *ipv4.PacketConn, wb []byte, dst net.
 		}
 		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
 		if _, err := c.WriteTo(wb, nil, dst); err != nil {
-			t.Fatalf("ipv4.PacketConn.Write failed: %v", err)
+			t.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
 		}
 		_, cm, _, err := c.ReadFrom(rb)
 		if err != nil {
-			t.Fatalf("ipv4.PacketConn.Read failed: %v", err)
+			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
 		}
 		t.Logf("rcvd cmsg: %v", cm)
 	}
@@ -73,11 +73,11 @@ func runDatagramTransponder(t *testing.T, c *ipv4.RawConn, wb []byte, src, dst n
 		}
 		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
 		if err := c.WriteTo(wh, wb, nil); err != nil {
-			t.Fatalf("ipv4.RawConn.Write failed: %v", err)
+			t.Fatalf("ipv4.RawConn.WriteTo failed: %v", err)
 		}
 		rh, _, cm, err := c.ReadFrom(rb)
 		if err != nil {
-			t.Fatalf("ipv4.RawConn.Read failed: %v", err)
+			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
 		}
 		t.Logf("rcvd cmsg: %v", cm.String())
 		t.Logf("rcvd hdr: %v", rh.String())
