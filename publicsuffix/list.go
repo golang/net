@@ -42,20 +42,22 @@ loop:
 			break
 		}
 
-		u := nodes[f][0]
-		lo = u & 0xffff
-		u >>= 16
-		hi = u&0x1fff + lo
-		u >>= 13
-		wildcard = u&0x01 != 0
-		u >>= 1
-		switch u {
+		u := nodes[f] >> (nodesBitsTextOffset + nodesBitsTextLength)
+		switch u & (1<<nodesBitsNodeType - 1) {
 		case nodeTypeNormal:
 			suffix = 1 + dot
 		case nodeTypeException:
 			suffix = 1 + len(s)
 			break loop
 		}
+		u >>= nodesBitsNodeType
+
+		u = children[u&(1<<nodesBitsChildren-1)]
+		lo = u & (1<<childrenBitsLo - 1)
+		u >>= childrenBitsLo
+		hi = u & (1<<childrenBitsHi - 1)
+		u >>= childrenBitsHi
+		wildcard = u&(1<<childrenBitsWildcard-1) != 0
 
 		if dot == -1 {
 			break
@@ -91,7 +93,9 @@ func find(label string, lo, hi uint32) uint32 {
 
 // nodeLabel returns the label for the i'th node.
 func nodeLabel(i uint32) string {
-	x := nodes[i][1]
-	offset, length := x>>8, x&0xff
+	x := nodes[i]
+	length := x & (1<<nodesBitsTextLength - 1)
+	x >>= nodesBitsTextLength
+	offset := x & (1<<nodesBitsTextOffset - 1)
 	return text[offset : offset+length]
 }

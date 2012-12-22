@@ -211,6 +211,14 @@ var publicSuffixTestCases = []struct {
 	{"bar.foo.nosuchtld", "nosuchtld"},
 }
 
+func BenchmarkPublicSuffix(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		for _, tc := range publicSuffixTestCases {
+			List.PublicSuffix(tc.domain)
+		}
+	}
+}
+
 func TestPublicSuffix(t *testing.T) {
 	for _, tc := range publicSuffixTestCases {
 		got := List.PublicSuffix(tc.domain)
