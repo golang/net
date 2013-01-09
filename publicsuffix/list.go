@@ -7,25 +7,38 @@
 // can directly register names.
 package publicsuffix
 
-// TODO(nigeltao): do we need to distinguish between ICANN domains and private
-// domains?
-
 import (
 	"exp/cookiejar"
 	"strings"
 )
 
-// List implements cookiejar.PublicSuffixList using a copy of the
-// publicsuffix.org database compiled into the library.
+// List implements the cookiejar.PublicSuffixList interface by calling the
+// PublicSuffix function.
 var List cookiejar.PublicSuffixList = list{}
 
 type list struct{}
+
+func (list) PublicSuffix(domain string) string {
+	ps, _ := PublicSuffix(domain)
+	return ps
+}
 
 func (list) String() string {
 	return version
 }
 
-func (list) PublicSuffix(domain string) string {
+// PublicSuffix returns the public suffix of the domain using a copy of the
+// publicsuffix.org database compiled into the library.
+//
+// icann is whether the public suffix is managed by the Internet Corporation
+// for Assigned Names and Numbers. If not, the public suffix is privately
+// managed. For example, foo.org and foo.co.uk are ICANN domains,
+// foo.dyndns.org and foo.blogspot.co.uk are private domains.
+//
+// Use cases for distinguishing ICANN domains like foo.com from private
+// domains like foo.appspot.com can be found at
+// https://wiki.mozilla.org/Public_Suffix_List/Use_Cases
+func PublicSuffix(domain string) (publicSuffix string, icann bool) {
 	lo, hi := uint32(0), uint32(numTLD)
 	s, suffix, wildcard := domain, len(domain), false
 loop:
@@ -43,20 +56,21 @@ loop:
 		}
 
 		u := nodes[f] >> (nodesBitsTextOffset + nodesBitsTextLength)
-		switch u & (1<<nodesBitsNodeType - 1) {
+		icann = u&(1<<nodesBitsICANN-1) != 0
+		u >>= nodesBitsICANN
+		u = children[u&(1<<nodesBitsChildren-1)]
+		lo = u & (1<<childrenBitsLo - 1)
+		u >>= childrenBitsLo
+		hi = u & (1<<childrenBitsHi - 1)
+		u >>= childrenBitsHi
+		switch u & (1<<childrenBitsNodeType - 1) {
 		case nodeTypeNormal:
 			suffix = 1 + dot
 		case nodeTypeException:
 			suffix = 1 + len(s)
 			break loop
 		}
-		u >>= nodesBitsNodeType
-
-		u = children[u&(1<<nodesBitsChildren-1)]
-		lo = u & (1<<childrenBitsLo - 1)
-		u >>= childrenBitsLo
-		hi = u & (1<<childrenBitsHi - 1)
-		u >>= childrenBitsHi
+		u >>= childrenBitsNodeType
 		wildcard = u&(1<<childrenBitsWildcard-1) != 0
 
 		if dot == -1 {
@@ -66,9 +80,9 @@ loop:
 	}
 	if suffix == len(domain) {
 		// If no rules match, the prevailing rule is "*".
-		return domain[1+strings.LastIndex(domain, "."):]
+		return domain[1+strings.LastIndex(domain, "."):], icann
 	}
-	return domain[suffix:]
+	return domain[suffix:], icann
 }
 
 const notFound uint32 = 1<<32 - 1

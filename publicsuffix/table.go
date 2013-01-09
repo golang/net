@@ -6,11 +6,12 @@ const version = "subset of publicsuffix.org's effective_tld_names.dat, hg revisi
 
 const (
 	nodesBitsChildren   = 9
-	nodesBitsNodeType   = 2
+	nodesBitsICANN      = 1
 	nodesBitsTextOffset = 15
 	nodesBitsTextLength = 6
 
 	childrenBitsWildcard = 1
+	childrenBitsNodeType = 2
 	childrenBitsHi       = 14
 	childrenBitsLo       = 14
 )
@@ -22,146 +23,158 @@ const (
 )
 
 // numTLD is the number of top level domains.
-const numTLD = 8
+const numTLD = 9
 
 // Text is the combined text of all labels.
-const text = "clubafukuchiyamashinacionakagyorgamecongresodelalengua3govgvin-a" +
-	"ddretinagaokakyotambainelip6irisakyotanabeducityjetjoyoyamazakit" +
-	"ajpblogspotkizuridebizwkumiyamakyotangobiernoelectronicomilkyoto" +
-	"minamiyamashiromiyazurnantanational-library-scotlandmukobenlschi" +
-	"gashiyamaizurujitawarapromocionetseikameokamodxn--czrw28british-" +
-	"libraryawatarparliamentwazukayabe164xn--p1aidvxn--uc0atvxn--zf0a" +
-	"o64a"
+const text = "clubafukuchiyamashinacionakagyorgamecongresodelalengua3govgvhome" +
+	"ducityin-addretinagaokakyotambainelip6irischigashiyamaizurujitaw" +
+	"arajetjoyoyamazakitajpblogspotkizuridekumiyamakyotangobiernoelec" +
+	"tronicomilkyotominamiyamashiromiyazurnantanational-library-scotl" +
+	"andyndnsakyotanabebizwmukobenlseikameokamodpromocionetxn--czrw28" +
+	"british-libraryawatarparliamentwazukayabe164xn--p1aidvxn--uc0atv" +
+	"xn--zf0ao64a"
 
 // nodes is the list of nodes. Each node is represented as a uint32, which
-// encodes the node's children (as an index into the children array), wildcard
-// bit, node type and text.
+// encodes the node's children, wildcard bit and node type (as an index into
+// the children array), ICANN bit and text.
 //
 // In the //-comment after each node's data, the nodes indexes of the children
 // are formatted as (n0x1234-n0x1256), with * denoting the wildcard bit. The
 // nodeType is printed as + for normal, ! for exception, and o for parent-only
 // nodes that have children but don't match a domain label in their own right.
+// An I denotes an ICANN domain.
 //
 // The layout within the uint32, from MSB to LSB, is:
-//	[ 0 bits] unused
+//	[ 1 bits] unused
 //	[ 9 bits] children index
-//	[ 2 bits] nodeType
+//	[ 1 bits] ICANN bit
 //	[15 bits] text index
 //	[ 6 bits] text length
 var nodes = [...]uint32{
-	0x01001242, // n0x0000 c0x0002 (n0x0008-n0x000e)  + ao
-	0x01c03a02, // n0x0001 c0x0003 (n0x000e-n0x0018)* o ar
-	0x02c052c4, // n0x0002 c0x0005 (n0x0019-n0x001f)  o arpa
-	0x03002042, // n0x0003 c0x0006 (n0x001f-n0x0021)  + jp
-	0x04805582, // n0x0004 c0x0009 (n0x0041-n0x004f)  + tw
-	0x05400182, // n0x0005 c0x000a (n0x004f-n0x005a)* o uk
-	0x00005908, // n0x0006 c0x0000 (---------------)  + xn--p1ai
-	0x00c02542, // n0x0007 c0x0001 (---------------)* o zw
-	0x00000902, // n0x0008 c0x0000 (---------------)  + co
-	0x00001a42, // n0x0009 c0x0000 (---------------)  + ed
-	0x00000e82, // n0x000a c0x0000 (---------------)  + gv
-	0x00001b42, // n0x000b c0x0000 (---------------)  + it
-	0x00002142, // n0x000c c0x0000 (---------------)  + og
-	0x00002082, // n0x000d c0x0000 (---------------)  + pb
-	0x02402d83, // n0x000e c0x0004 (n0x0018-n0x0019)  o com
-	0x00200913, // n0x000f c0x0000 (---------------)  ! congresodelalengua3
-	0x00201a44, // n0x0010 c0x0000 (---------------)  ! educ
-	0x00202953, // n0x0011 c0x0000 (---------------)  ! gobiernoelectronico
-	0x00200885, // n0x0012 c0x0000 (---------------)  ! mecon
-	0x002004c6, // n0x0013 c0x0000 (---------------)  ! nacion
-	0x00202d03, // n0x0014 c0x0000 (---------------)  ! nic
-	0x00204589, // n0x0015 c0x0000 (---------------)  ! promocion
-	0x00201086, // n0x0016 c0x0000 (---------------)  ! retina
-	0x00200083, // n0x0017 c0x0000 (---------------)  ! uba
-	0x000020c8, // n0x0018 c0x0000 (---------------)  + blogspot
-	0x00005804, // n0x0019 c0x0000 (---------------)  + e164
-	0x00000f07, // n0x001a c0x0000 (---------------)  + in-addr
-	0x00001643, // n0x001b c0x0000 (---------------)  + ip6
-	0x00001704, // n0x001c c0x0000 (---------------)  + iris
-	0x00002383, // n0x001d c0x0000 (---------------)  + uri
-	0x00003503, // n0x001e c0x0000 (---------------)  + urn
-	0x03c03d84, // n0x001f c0x0007 (n0x0021-n0x0022)* o kobe
-	0x04002ec5, // n0x0020 c0x0008 (n0x0022-n0x0041)  + kyoto
-	0x00201b04, // n0x0021 c0x0000 (---------------)  ! city
-	0x00005705, // n0x0022 c0x0000 (---------------)  + ayabe
-	0x0000014b, // n0x0023 c0x0000 (---------------)  + fukuchiyama
-	0x00003f8b, // n0x0024 c0x0000 (---------------)  + higashiyama
-	0x00002403, // n0x0025 c0x0000 (---------------)  + ide
-	0x00001543, // n0x0026 c0x0000 (---------------)  + ine
-	0x00001cc4, // n0x0027 c0x0000 (---------------)  + joyo
-	0x00004907, // n0x0028 c0x0000 (---------------)  + kameoka
-	0x00004a44, // n0x0029 c0x0000 (---------------)  + kamo
-	0x00001f44, // n0x002a c0x0000 (---------------)  + kita
-	0x000022c4, // n0x002b c0x0000 (---------------)  + kizu
-	0x000025c8, // n0x002c c0x0000 (---------------)  + kumiyama
-	0x00001348, // n0x002d c0x0000 (---------------)  + kyotamba
-	0x00001849, // n0x002e c0x0000 (---------------)  + kyotanabe
-	0x000027c8, // n0x002f c0x0000 (---------------)  + kyotango
-	0x000041c7, // n0x0030 c0x0000 (---------------)  + maizuru
-	0x00003006, // n0x0031 c0x0000 (---------------)  + minami
-	0x0000300f, // n0x0032 c0x0000 (---------------)  + minamiyamashiro
-	0x000033c6, // n0x0033 c0x0000 (---------------)  + miyazu
-	0x00003d04, // n0x0034 c0x0000 (---------------)  + muko
-	0x0000118a, // n0x0035 c0x0000 (---------------)  + nagaokakyo
-	0x00000607, // n0x0036 c0x0000 (---------------)  + nakagyo
-	0x00003586, // n0x0037 c0x0000 (---------------)  + nantan
-	0x00001d89, // n0x0038 c0x0000 (---------------)  + oyamazaki
-	0x000017c5, // n0x0039 c0x0000 (---------------)  + sakyo
-	0x00004845, // n0x003a c0x0000 (---------------)  + seika
-	0x00001906, // n0x003b c0x0000 (---------------)  + tanabe
-	0x00004343, // n0x003c c0x0000 (---------------)  + uji
-	0x00004349, // n0x003d c0x0000 (---------------)  + ujitawara
-	0x000055c6, // n0x003e c0x0000 (---------------)  + wazuka
-	0x00000309, // n0x003f c0x0000 (---------------)  + yamashina
-	0x00005186, // n0x0040 c0x0000 (---------------)  + yawata
-	0x000020c8, // n0x0041 c0x0000 (---------------)  + blogspot
-	0x00000004, // n0x0042 c0x0000 (---------------)  + club
-	0x00002d83, // n0x0043 c0x0000 (---------------)  + com
-	0x00002484, // n0x0044 c0x0000 (---------------)  + ebiz
-	0x00001a43, // n0x0045 c0x0000 (---------------)  + edu
-	0x00000804, // n0x0046 c0x0000 (---------------)  + game
-	0x00000dc3, // n0x0047 c0x0000 (---------------)  + gov
-	0x00005ac3, // n0x0048 c0x0000 (---------------)  + idv
-	0x00002e03, // n0x0049 c0x0000 (---------------)  + mil
-	0x00004783, // n0x004a c0x0000 (---------------)  + net
-	0x00000783, // n0x004b c0x0000 (---------------)  + org
-	0x00004b8b, // n0x004c c0x0000 (---------------)  + xn--czrw28b
-	0x00005b8a, // n0x004d c0x0000 (---------------)  + xn--uc0atv
-	0x00005e0c, // n0x004e c0x0000 (---------------)  + xn--zf0ao64a
-	0x002020c2, // n0x004f c0x0000 (---------------)  ! bl
-	0x00204e0f, // n0x0050 c0x0000 (---------------)  ! british-library
-	0x05c00902, // n0x0051 c0x000b (n0x005a-n0x005b)  o co
-	0x00201c03, // n0x0052 c0x0000 (---------------)  ! jet
-	0x00204ac3, // n0x0053 c0x0000 (---------------)  ! mod
-	0x002036d9, // n0x0054 c0x0000 (---------------)  ! national-library-scotland
-	0x00201583, // n0x0055 c0x0000 (---------------)  ! nel
-	0x00202d03, // n0x0056 c0x0000 (---------------)  ! nic
-	0x00203e83, // n0x0057 c0x0000 (---------------)  ! nls
-	0x0020534a, // n0x0058 c0x0000 (---------------)  ! parliament
-	0x00c03f03, // n0x0059 c0x0001 (---------------)* o sch
-	0x000020c8, // n0x005a c0x0000 (---------------)  + blogspot
+	0x01a014c2, // n0x0000 c0x0006 (n0x0009-n0x000f)  + I ao
+	0x01e02002, // n0x0001 c0x0007 (n0x000f-n0x0019)* o I ar
+	0x026054c4, // n0x0002 c0x0009 (n0x001a-n0x0020)  o I arpa
+	0x02a02502, // n0x0003 c0x000a (n0x0020-n0x0022)  + I jp
+	0x03600783, // n0x0004 c0x000d (n0x0042-n0x0043)  o I org
+	0x03e05782, // n0x0005 c0x000f (n0x0045-n0x0053)  + I tw
+	0x04200182, // n0x0006 c0x0010 (n0x0053-n0x005e)* o I uk
+	0x00205b08, // n0x0007 c0x0000 (---------------)  + I xn--p1ai
+	0x01604502, // n0x0008 c0x0005 (---------------)* o I zw
+	0x00200902, // n0x0009 c0x0000 (---------------)  + I co
+	0x00200fc2, // n0x000a c0x0000 (---------------)  + I ed
+	0x00200e82, // n0x000b c0x0000 (---------------)  + I gv
+	0x002010c2, // n0x000c c0x0000 (---------------)  + I it
+	0x00202602, // n0x000d c0x0000 (---------------)  + I og
+	0x00202542, // n0x000e c0x0000 (---------------)  + I pb
+	0x02203143, // n0x000f c0x0008 (n0x0019-n0x001a)  o I com
+	0x00600913, // n0x0010 c0x0001 (---------------)  ! I congresodelalengua3
+	0x00600fc4, // n0x0011 c0x0001 (---------------)  ! I educ
+	0x00602d13, // n0x0012 c0x0001 (---------------)  ! I gobiernoelectronico
+	0x00600885, // n0x0013 c0x0001 (---------------)  ! I mecon
+	0x006004c6, // n0x0014 c0x0001 (---------------)  ! I nacion
+	0x006030c3, // n0x0015 c0x0001 (---------------)  ! I nic
+	0x00604ac9, // n0x0016 c0x0001 (---------------)  ! I promocion
+	0x00601306, // n0x0017 c0x0001 (---------------)  ! I retina
+	0x00600083, // n0x0018 c0x0001 (---------------)  ! I uba
+	0x00002588, // n0x0019 c0x0000 (---------------)  +   blogspot
+	0x00205a04, // n0x001a c0x0000 (---------------)  + I e164
+	0x00201187, // n0x001b c0x0000 (---------------)  + I in-addr
+	0x002018c3, // n0x001c c0x0000 (---------------)  + I ip6
+	0x00201984, // n0x001d c0x0000 (---------------)  + I iris
+	0x00202843, // n0x001e c0x0000 (---------------)  + I uri
+	0x002038c3, // n0x001f c0x0000 (---------------)  + I urn
+	0x02e04604, // n0x0020 c0x000b (n0x0022-n0x0023)* o I kobe
+	0x03203285, // n0x0021 c0x000c (n0x0023-n0x0042)  + I kyoto
+	0x00601084, // n0x0022 c0x0001 (---------------)  ! I city
+	0x00205905, // n0x0023 c0x0000 (---------------)  + I ayabe
+	0x0020014b, // n0x0024 c0x0000 (---------------)  + I fukuchiyama
+	0x00201acb, // n0x0025 c0x0000 (---------------)  + I higashiyama
+	0x002028c3, // n0x0026 c0x0000 (---------------)  + I ide
+	0x002017c3, // n0x0027 c0x0000 (---------------)  + I ine
+	0x00202184, // n0x0028 c0x0000 (---------------)  + I joyo
+	0x00204847, // n0x0029 c0x0000 (---------------)  + I kameoka
+	0x00204984, // n0x002a c0x0000 (---------------)  + I kamo
+	0x00202404, // n0x002b c0x0000 (---------------)  + I kita
+	0x00202784, // n0x002c c0x0000 (---------------)  + I kizu
+	0x00202988, // n0x002d c0x0000 (---------------)  + I kumiyama
+	0x002015c8, // n0x002e c0x0000 (---------------)  + I kyotamba
+	0x00204249, // n0x002f c0x0000 (---------------)  + I kyotanabe
+	0x00202b88, // n0x0030 c0x0000 (---------------)  + I kyotango
+	0x00201d07, // n0x0031 c0x0000 (---------------)  + I maizuru
+	0x002033c6, // n0x0032 c0x0000 (---------------)  + I minami
+	0x002033cf, // n0x0033 c0x0000 (---------------)  + I minamiyamashiro
+	0x00203786, // n0x0034 c0x0000 (---------------)  + I miyazu
+	0x00204584, // n0x0035 c0x0000 (---------------)  + I muko
+	0x0020140a, // n0x0036 c0x0000 (---------------)  + I nagaokakyo
+	0x00200607, // n0x0037 c0x0000 (---------------)  + I nakagyo
+	0x00203946, // n0x0038 c0x0000 (---------------)  + I nantan
+	0x00202249, // n0x0039 c0x0000 (---------------)  + I oyamazaki
+	0x002041c5, // n0x003a c0x0000 (---------------)  + I sakyo
+	0x00204785, // n0x003b c0x0000 (---------------)  + I seika
+	0x00204306, // n0x003c c0x0000 (---------------)  + I tanabe
+	0x00201e83, // n0x003d c0x0000 (---------------)  + I uji
+	0x00201e89, // n0x003e c0x0000 (---------------)  + I ujitawara
+	0x002057c6, // n0x003f c0x0000 (---------------)  + I wazuka
+	0x00200309, // n0x0040 c0x0000 (---------------)  + I yamashina
+	0x00205386, // n0x0041 c0x0000 (---------------)  + I yawata
+	0x03804086, // n0x0042 c0x000e (n0x0043-n0x0045)  +   dyndns
+	0x00000dc2, // n0x0043 c0x0000 (---------------)  +   go
+	0x00000f04, // n0x0044 c0x0000 (---------------)  +   home
+	0x00002588, // n0x0045 c0x0000 (---------------)  +   blogspot
+	0x00200004, // n0x0046 c0x0000 (---------------)  + I club
+	0x00203143, // n0x0047 c0x0000 (---------------)  + I com
+	0x00204444, // n0x0048 c0x0000 (---------------)  + I ebiz
+	0x00200fc3, // n0x0049 c0x0000 (---------------)  + I edu
+	0x00200804, // n0x004a c0x0000 (---------------)  + I game
+	0x00200dc3, // n0x004b c0x0000 (---------------)  + I gov
+	0x00205cc3, // n0x004c c0x0000 (---------------)  + I idv
+	0x002031c3, // n0x004d c0x0000 (---------------)  + I mil
+	0x00204cc3, // n0x004e c0x0000 (---------------)  + I net
+	0x00200783, // n0x004f c0x0000 (---------------)  + I org
+	0x00204d8b, // n0x0050 c0x0000 (---------------)  + I xn--czrw28b
+	0x00205d8a, // n0x0051 c0x0000 (---------------)  + I xn--uc0atv
+	0x0020600c, // n0x0052 c0x0000 (---------------)  + I xn--zf0ao64a
+	0x00602582, // n0x0053 c0x0001 (---------------)  ! I bl
+	0x0060500f, // n0x0054 c0x0001 (---------------)  ! I british-library
+	0x04600902, // n0x0055 c0x0011 (n0x005e-n0x005f)  o I co
+	0x006020c3, // n0x0056 c0x0001 (---------------)  ! I jet
+	0x00604a03, // n0x0057 c0x0001 (---------------)  ! I mod
+	0x00603a99, // n0x0058 c0x0001 (---------------)  ! I national-library-scotland
+	0x00601803, // n0x0059 c0x0001 (---------------)  ! I nel
+	0x006030c3, // n0x005a c0x0001 (---------------)  ! I nic
+	0x00604703, // n0x005b c0x0001 (---------------)  ! I nls
+	0x0060554a, // n0x005c c0x0001 (---------------)  ! I parliament
+	0x01601a43, // n0x005d c0x0005 (---------------)* o I sch
+	0x00002588, // n0x005e c0x0000 (---------------)  +   blogspot
 }
 
-// children is the list of nodes' children, and the wildcard bit. If a node
-// has no children then their children index will be 0 or 1, depending on the
-// wildcard bit.
+// children is the list of nodes' children, the parent's wildcard bit and the
+// parent's node type. If a node has no children then their children index
+// will be in the range [0, 6), depending on the wildcard bit and node type.
 //
 // The layout within the uint32, from MSB to LSB, is:
-//	[ 3 bits] unused
+//	[ 1 bits] unused
 //	[ 1 bits] wildcard bit
+//	[ 2 bits] node type
 //	[14 bits] high nodes index (exclusive) of children
 //	[14 bits] low nodes index (inclusive) of children
 var children = [...]uint32{
-	0x00000000, // c0x0000 (---------------)
-	0x10000000, // c0x0001 (---------------)*
-	0x00038008, // c0x0002 (n0x0008-n0x000e)
-	0x1006000e, // c0x0003 (n0x000e-n0x0018)*
-	0x00064018, // c0x0004 (n0x0018-n0x0019)
-	0x0007c019, // c0x0005 (n0x0019-n0x001f)
-	0x0008401f, // c0x0006 (n0x001f-n0x0021)
-	0x10088021, // c0x0007 (n0x0021-n0x0022)*
-	0x00104022, // c0x0008 (n0x0022-n0x0041)
-	0x0013c041, // c0x0009 (n0x0041-n0x004f)
-	0x1016804f, // c0x000a (n0x004f-n0x005a)*
-	0x0016c05a, // c0x000b (n0x005a-n0x005b)
+	0x00000000, // c0x0000 (---------------)  +
+	0x10000000, // c0x0001 (---------------)  !
+	0x20000000, // c0x0002 (---------------)  o
+	0x40000000, // c0x0003 (---------------)* +
+	0x50000000, // c0x0004 (---------------)* !
+	0x60000000, // c0x0005 (---------------)* o
+	0x0003c009, // c0x0006 (n0x0009-n0x000f)  +
+	0x6006400f, // c0x0007 (n0x000f-n0x0019)* o
+	0x20068019, // c0x0008 (n0x0019-n0x001a)  o
+	0x2008001a, // c0x0009 (n0x001a-n0x0020)  o
+	0x00088020, // c0x000a (n0x0020-n0x0022)  +
+	0x6008c022, // c0x000b (n0x0022-n0x0023)* o
+	0x00108023, // c0x000c (n0x0023-n0x0042)  +
+	0x2010c042, // c0x000d (n0x0042-n0x0043)  o
+	0x00114043, // c0x000e (n0x0043-n0x0045)  +
+	0x0014c045, // c0x000f (n0x0045-n0x0053)  +
+	0x60178053, // c0x0010 (n0x0053-n0x005e)* o
+	0x2017c05e, // c0x0011 (n0x005e-n0x005f)  o
 }

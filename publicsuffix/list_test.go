@@ -61,6 +61,23 @@ func TestFind(t *testing.T) {
 	}
 }
 
+func TestICANN(t *testing.T) {
+	testCases := map[string]bool{
+		"foo.org":            true,
+		"foo.co.uk":          true,
+		"foo.dyndns.org":     false,
+		"foo.go.dyndns.org":  false,
+		"foo.blogspot.co.uk": false,
+		"foo.intranet":       false,
+	}
+	for domain, want := range testCases {
+		_, got := PublicSuffix(domain)
+		if got != want {
+			t.Errorf("%q: got %v, want %v", domain, got, want)
+		}
+	}
+}
+
 var publicSuffixTestCases = []struct {
 	domain, want string
 }{

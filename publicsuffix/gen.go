@@ -36,11 +36,12 @@ import (
 
 const (
 	nodesBitsChildren   = 9
-	nodesBitsNodeType   = 2
+	nodesBitsICANN      = 1
 	nodesBitsTextOffset = 15
 	nodesBitsTextLength = 6
 
 	childrenBitsWildcard = 1
+	childrenBitsNodeType = 2
 	childrenBitsHi       = 14
 	childrenBitsLo       = 14
 )
@@ -49,9 +50,10 @@ const (
 	nodeTypeNormal     = 0
 	nodeTypeException  = 1
 	nodeTypeParentOnly = 2
+	numNodeType        = 3
 )
 
-func nodeTypeString(n int) string {
+func nodeTypeStr(n int) string {
 	switch n {
 	case nodeTypeNormal:
 		return "+"
@@ -88,10 +90,10 @@ func main() {
 
 func main1() error {
 	flag.Parse()
-	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsNodeType+nodesBitsChildren > 32 {
+	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsICANN+nodesBitsChildren > 32 {
 		return fmt.Errorf("not enough bits to encode the nodes table")
 	}
-	if childrenBitsLo+childrenBitsHi+childrenBitsWildcard > 32 {
+	if childrenBitsLo+childrenBitsHi+childrenBitsNodeType+childrenBitsWildcard > 32 {
 		return fmt.Errorf("not enough bits to encode the children table")
 	}
 	if *version == "" {
@@ -111,6 +113,7 @@ func main1() error {
 	}
 
 	var root node
+	icann := false
 	buf := new(bytes.Buffer)
 	br := bufio.NewReader(r)
 	for {
@@ -122,6 +125,14 @@ func main1() error {
 			return err
 		}
 		s = strings.TrimSpace(s)
+		if strings.Contains(s, "BEGIN ICANN DOMAINS") {
+			icann = true
+			continue
+		}
+		if strings.Contains(s, "END ICANN DOMAINS") {
+			icann = false
+			continue
+		}
 		if s == "" || strings.HasPrefix(s, "//") {
 			continue
 		}
@@ -135,6 +146,7 @@ func main1() error {
 			case s == "ao" || strings.HasSuffix(s, ".ao"):
 			case s == "ar" || strings.HasSuffix(s, ".ar"):
 			case s == "arpa" || strings.HasSuffix(s, ".arpa"):
+			case s == "dyndns.org" || strings.HasSuffix(s, ".dyndns.org"):
 			case s == "jp":
 			case s == "kobe.jp" || strings.HasSuffix(s, ".kobe.jp"):
 			case s == "kyoto.jp" || strings.HasSuffix(s, ".kyoto.jp"):
@@ -166,6 +178,7 @@ func main1() error {
 				if nt != nodeTypeParentOnly && n.nodeType == nodeTypeParentOnly {
 					n.nodeType = nt
 				}
+				n.icann = n.icann && icann
 				n.wildcard = n.wildcard || wildcard
 			}
 			labelsMap[label] = true
@@ -216,11 +229,12 @@ const version = %q
 
 const (
 	nodesBitsChildren   = %d
-	nodesBitsNodeType   = %d
+	nodesBitsICANN      = %d
 	nodesBitsTextOffset = %d
 	nodesBitsTextLength = %d
 
 	childrenBitsWildcard = %d
+	childrenBitsNodeType = %d
 	childrenBitsHi       = %d
 	childrenBitsLo       = %d
 )
@@ -236,8 +250,8 @@ const numTLD = %d
 
 `
 	fmt.Fprintf(w, header, *version,
-		nodesBitsChildren, nodesBitsNodeType, nodesBitsTextOffset, nodesBitsTextLength,
-		childrenBitsWildcard, childrenBitsHi, childrenBitsLo,
+		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength,
+		childrenBitsWildcard, childrenBitsNodeType, childrenBitsHi, childrenBitsLo,
 		nodeTypeNormal, nodeTypeException, nodeTypeParentOnly, len(n.children))
 
 	text := makeText()
@@ -269,42 +283,44 @@ const numTLD = %d
 	fmt.Fprintf(w, `
 
 // nodes is the list of nodes. Each node is represented as a uint32, which
-// encodes the node's children (as an index into the children array), wildcard
-// bit, node type and text.
+// encodes the node's children, wildcard bit and node type (as an index into
+// the children array), ICANN bit and text.
 //
 // In the //-comment after each node's data, the nodes indexes of the children
 // are formatted as (n0x1234-n0x1256), with * denoting the wildcard bit. The
 // nodeType is printed as + for normal, ! for exception, and o for parent-only
 // nodes that have children but don't match a domain label in their own right.
+// An I denotes an ICANN domain.
 //
 // The layout within the uint32, from MSB to LSB, is:
 //	[%2d bits] unused
 //	[%2d bits] children index
-//	[%2d bits] nodeType
+//	[%2d bits] ICANN bit
 //	[%2d bits] text index
 //	[%2d bits] text length
 var nodes = [...]uint32{
 `,
-		32-nodesBitsChildren-nodesBitsNodeType-nodesBitsTextOffset-nodesBitsTextLength,
-		nodesBitsChildren, nodesBitsNodeType, nodesBitsTextOffset, nodesBitsTextLength)
+		32-nodesBitsChildren-nodesBitsICANN-nodesBitsTextOffset-nodesBitsTextLength,
+		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength)
 	if err := n.walk(w, printNode); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, `}
 
-// children is the list of nodes' children, and the wildcard bit. If a node
-// has no children then their children index will be 0 or 1, depending on the
-// wildcard bit.
+// children is the list of nodes' children, the parent's wildcard bit and the
+// parent's node type. If a node has no children then their children index
+// will be in the range [0, 6), depending on the wildcard bit and node type.
 //
 // The layout within the uint32, from MSB to LSB, is:
 //	[%2d bits] unused
 //	[%2d bits] wildcard bit
+//	[%2d bits] node type
 //	[%2d bits] high nodes index (exclusive) of children
 //	[%2d bits] low nodes index (inclusive) of children
 var children=[...]uint32{
 `,
-		32-childrenBitsWildcard-childrenBitsHi-childrenBitsLo,
-		childrenBitsWildcard, childrenBitsHi, childrenBitsLo)
+		32-childrenBitsWildcard-childrenBitsNodeType-childrenBitsHi-childrenBitsLo,
+		childrenBitsWildcard, childrenBitsNodeType, childrenBitsHi, childrenBitsLo)
 	for i, c := range childrenEncoding {
 		s := "---------------"
 		lo := c & (1<<childrenBitsLo - 1)
@@ -312,8 +328,10 @@ var children=[...]uint32{
 		if lo != hi {
 			s = fmt.Sprintf("n0x%04x-n0x%04x", lo, hi)
 		}
-		fmt.Fprintf(w, "0x%08x, // c0x%04x (%s)%s\n",
-			c, i, s, wildcardStr(c>>(childrenBitsLo+childrenBitsHi) != 0))
+		nodeType := int(c>>(childrenBitsLo+childrenBitsHi)) & (1<<childrenBitsNodeType - 1)
+		wildcard := c>>(childrenBitsLo+childrenBitsHi+childrenBitsNodeType) != 0
+		fmt.Fprintf(w, "0x%08x, // c0x%04x (%s)%s %s\n",
+			c, i, s, wildcardStr(wildcard), nodeTypeStr(nodeType))
 	}
 	fmt.Fprintf(w, "}\n")
 	return nil
@@ -322,6 +340,7 @@ var children=[...]uint32{
 type node struct {
 	label    string
 	nodeType int
+	icann    bool
 	wildcard bool
 	// nodesIndex and childrenIndex are the index of this node in the nodes
 	// and the index of its children offset/length in the children arrays.
@@ -356,6 +375,7 @@ func (n *node) child(label string) *node {
 	c := &node{
 		label:    label,
 		nodeType: nodeTypeParentOnly,
+		icann:    true,
 	}
 	n.children = append(n.children, c)
 	sort.Sort(byLabel(n.children))
@@ -370,9 +390,15 @@ func (b byLabel) Less(i, j int) bool { return b[i].label < b[j].label }
 
 var nextNodesIndex int
 
+// childrenEncoding are the encoded entries in the generated children array.
+// All these pre-defined entries have no children.
 var childrenEncoding = []uint32{
-	0 << (childrenBitsLo + childrenBitsHi), // No children, without wildcard bit.
-	1 << (childrenBitsLo + childrenBitsHi), // No children, with wildcard bit.
+	0 << (childrenBitsLo + childrenBitsHi), // Without wildcard bit, nodeTypeNormal.
+	1 << (childrenBitsLo + childrenBitsHi), // Without wildcard bit, nodeTypeException.
+	2 << (childrenBitsLo + childrenBitsHi), // Without wildcard bit, nodeTypeParentOnly.
+	4 << (childrenBitsLo + childrenBitsHi), // With wildcard bit, nodeTypeNormal.
+	5 << (childrenBitsLo + childrenBitsHi), // With wildcard bit, nodeTypeException.
+	6 << (childrenBitsLo + childrenBitsHi), // With wildcard bit, nodeTypeParentOnly.
 }
 
 var firstCallToAssignIndexes = true
@@ -403,12 +429,16 @@ func assignIndexes(w io.Writer, n *node) error {
 			return fmt.Errorf("children lo/hi is too large: %d/%d", lo, hi)
 		}
 		enc := hi<<childrenBitsLo | lo
+		enc |= uint32(n.nodeType) << (childrenBitsLo + childrenBitsHi)
 		if n.wildcard {
-			enc |= 1 << (childrenBitsLo + childrenBitsHi)
+			enc |= 1 << (childrenBitsLo + childrenBitsHi + childrenBitsNodeType)
 		}
 		childrenEncoding = append(childrenEncoding, enc)
-	} else if n.wildcard {
-		n.childrenIndex = 1
+	} else {
+		n.childrenIndex = n.nodeType
+		if n.wildcard {
+			n.childrenIndex += numNodeType
+		}
 	}
 	return nil
 }
@@ -419,12 +449,14 @@ func printNode(w io.Writer, n *node) error {
 		if len(c.children) != 0 {
 			s = fmt.Sprintf("n0x%04x-n0x%04x", c.firstChild, c.firstChild+len(c.children))
 		}
-		encoding := labelEncoding[c.label] |
-			uint32(c.nodeType)<<(nodesBitsTextLength+nodesBitsTextOffset) |
-			uint32(c.childrenIndex)<<(nodesBitsTextLength+nodesBitsTextOffset+nodesBitsNodeType)
-		fmt.Fprintf(w, "0x%08x, // n0x%04x c0x%04x (%s)%s %s %s\n",
+		encoding := labelEncoding[c.label]
+		if c.icann {
+			encoding |= 1 << (nodesBitsTextLength + nodesBitsTextOffset)
+		}
+		encoding |= uint32(c.childrenIndex) << (nodesBitsTextLength + nodesBitsTextOffset + nodesBitsICANN)
+		fmt.Fprintf(w, "0x%08x, // n0x%04x c0x%04x (%s)%s %s %s %s\n",
 			encoding, c.nodesIndex, c.childrenIndex, s, wildcardStr(c.wildcard),
-			nodeTypeString(c.nodeType), c.label,
+			nodeTypeStr(c.nodeType), icannStr(c.icann), c.label,
 		)
 	}
 	return nil
@@ -435,6 +467,13 @@ func printNodeLabel(w io.Writer, n *node) error {
 		fmt.Fprintf(w, "%q,\n", c.label)
 	}
 	return nil
+}
+
+func icannStr(icann bool) string {
+	if icann {
+		return "I"
+	}
+	return " "
 }
 
 func wildcardStr(wildcard bool) string {

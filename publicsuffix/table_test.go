@@ -91,6 +91,9 @@ var rules = [...]string{
 	"blogspot.co.uk",
 	"blogspot.com.ar",
 	"blogspot.tw",
+	"dyndns.org",
+	"go.dyndns.org",
+	"home.dyndns.org",
 }
 
 var nodeLabels = [...]string{
@@ -98,6 +101,7 @@ var nodeLabels = [...]string{
 	"ar",
 	"arpa",
 	"jp",
+	"org",
 	"tw",
 	"uk",
 	"xn--p1ai",
@@ -159,6 +163,9 @@ var nodeLabels = [...]string{
 	"wazuka",
 	"yamashina",
 	"yawata",
+	"dyndns",
+	"go",
+	"home",
 	"blogspot",
 	"club",
 	"com",
