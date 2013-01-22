@@ -143,14 +143,19 @@ func main1() error {
 
 		if *subset {
 			switch {
+			case s == "ac.jp" || strings.HasSuffix(s, ".ac.jp"):
+			case s == "ak.us" || strings.HasSuffix(s, ".ak.us"):
 			case s == "ao" || strings.HasSuffix(s, ".ao"):
 			case s == "ar" || strings.HasSuffix(s, ".ar"):
 			case s == "arpa" || strings.HasSuffix(s, ".arpa"):
+			case s == "cy" || strings.HasSuffix(s, ".cy"):
 			case s == "dyndns.org" || strings.HasSuffix(s, ".dyndns.org"):
 			case s == "jp":
 			case s == "kobe.jp" || strings.HasSuffix(s, ".kobe.jp"):
 			case s == "kyoto.jp" || strings.HasSuffix(s, ".kyoto.jp"):
+			case s == "om" || strings.HasSuffix(s, ".om"):
 			case s == "uk" || strings.HasSuffix(s, ".uk"):
+			case s == "uk.com" || strings.HasSuffix(s, ".uk.com"):
 			case s == "tw" || strings.HasSuffix(s, ".tw"):
 			case s == "zw" || strings.HasSuffix(s, ".zw"):
 			case s == "xn--p1ai" || strings.HasSuffix(s, ".xn--p1ai"):

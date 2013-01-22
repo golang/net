@@ -7,8 +7,12 @@
 // can directly register names.
 package publicsuffix
 
+// TODO: specify case sensitivity and leading/trailing dot behavior for
+// func PublicSuffix and func EffectiveTLDPlusOne.
+
 import (
 	"exp/cookiejar"
+	"fmt"
 	"strings"
 )
 
@@ -112,4 +116,18 @@ func nodeLabel(i uint32) string {
 	x >>= nodesBitsTextLength
 	offset := x & (1<<nodesBitsTextOffset - 1)
 	return text[offset : offset+length]
+}
+
+// EffectiveTLDPlusOne returns the effective top level domain plus one more
+// label. For example, the eTLD+1 for "foo.bar.golang.org" is "golang.org".
+func EffectiveTLDPlusOne(domain string) (string, error) {
+	suffix, _ := PublicSuffix(domain)
+	if len(domain) <= len(suffix) {
+		return "", fmt.Errorf("publicsuffix: cannot derive eTLD+1 for domain %q", domain)
+	}
+	i := len(domain) - len(suffix) - 1
+	if domain[i] != '.' {
+		return "", fmt.Errorf("publicsuffix: invalid public suffix %q for domain %q", suffix, domain)
+	}
+	return domain[1+strings.LastIndex(domain[:i], "."):], nil
 }
