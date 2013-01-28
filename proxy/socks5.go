@@ -64,7 +64,6 @@ var socks5Errors = []string{
 func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	switch network {
 	case "tcp", "tcp6", "tcp4":
-		break
 	default:
 		return nil, errors.New("proxy: no support for SOCKS5 proxy connections of type " + network)
 	}
@@ -103,11 +102,11 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 		buf = append(buf, 1 /* num auth methods */, socks5AuthNone)
 	}
 
-	if _, err = conn.Write(buf); err != nil {
+	if _, err := conn.Write(buf); err != nil {
 		return nil, errors.New("proxy: failed to write greeting to SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 
-	if _, err = io.ReadFull(conn, buf[:2]); err != nil {
+	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
 		return nil, errors.New("proxy: failed to read greeting from SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 	if buf[0] != 5 {
@@ -125,11 +124,11 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 		buf = append(buf, uint8(len(s.password)))
 		buf = append(buf, s.password...)
 
-		if _, err = conn.Write(buf); err != nil {
+		if _, err := conn.Write(buf); err != nil {
 			return nil, errors.New("proxy: failed to write authentication request to SOCKS5 proxy at " + s.addr + ": " + err.Error())
 		}
 
-		if _, err = io.ReadFull(conn, buf[:2]); err != nil {
+		if _, err := io.ReadFull(conn, buf[:2]); err != nil {
 			return nil, errors.New("proxy: failed to read authentication reply from SOCKS5 proxy at " + s.addr + ": " + err.Error())
 		}
 
@@ -142,12 +141,13 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	buf = append(buf, socks5Version, socks5Connect, 0 /* reserved */)
 
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.To4() != nil {
+		if ip4 := ip.To4(); ip4 != nil {
 			buf = append(buf, socks5IP4)
+			ip = ip4
 		} else {
 			buf = append(buf, socks5IP6)
 		}
-		buf = append(buf, []byte(ip)...)
+		buf = append(buf, ip...)
 	} else {
 		buf = append(buf, socks5Domain)
 		buf = append(buf, byte(len(host)))
@@ -155,11 +155,11 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	}
 	buf = append(buf, byte(port>>8), byte(port))
 
-	if _, err = conn.Write(buf); err != nil {
+	if _, err := conn.Write(buf); err != nil {
 		return nil, errors.New("proxy: failed to write connect request to SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 
-	if _, err = io.ReadFull(conn, buf[:4]); err != nil {
+	if _, err := io.ReadFull(conn, buf[:4]); err != nil {
 		return nil, errors.New("proxy: failed to read connect reply from SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 
@@ -193,12 +193,12 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	} else {
 		buf = buf[:bytesToDiscard]
 	}
-	if _, err = io.ReadFull(conn, buf); err != nil {
+	if _, err := io.ReadFull(conn, buf); err != nil {
 		return nil, errors.New("proxy: failed to read address from SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 
 	// Also need to discard the port number
-	if _, err = io.ReadFull(conn, buf[:2]); err != nil {
+	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
 		return nil, errors.New("proxy: failed to read port from SOCKS5 proxy at " + s.addr + ": " + err.Error())
 	}
 
