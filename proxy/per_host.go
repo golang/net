@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// A PerHost directs connections to a default Dailer unless the hostname
+// A PerHost directs connections to a default Dialer unless the hostname
 // requested matches one of a number of exceptions.
 type PerHost struct {
 	def, bypass Dialer
