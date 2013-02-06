@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package spdy implements SPDY protocol which is described in
-// draft-mbelshe-httpbis-spdy-00.
-//
-// http://tools.ietf.org/html/draft-mbelshe-httpbis-spdy-00
+// Package spdy implements the SPDY protocol (currently SPDY/3), described in
+// http://www.chromium.org/spdy/spdy-protocol/spdy-protocol-draft3.
 package spdy
 
 import (
@@ -15,128 +13,17 @@ import (
 	"net/http"
 )
 
-//  Data Frame Format
-//  +----------------------------------+
-//  |0|       Stream-ID (31bits)       |
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |
-//  +----------------------------------+
-//  |               Data               |
-//  +----------------------------------+
-//
-//  Control Frame Format
-//  +----------------------------------+
-//  |1| Version(15bits) | Type(16bits) |
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |
-//  +----------------------------------+
-//  |               Data               |
-//  +----------------------------------+
-//
-//  Control Frame: SYN_STREAM
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000001|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |  >= 12
-//  +----------------------------------+
-//  |X|       Stream-ID(31bits)        |
-//  +----------------------------------+
-//  |X|Associated-To-Stream-ID (31bits)|
-//  +----------------------------------+
-//  |Pri| unused      | Length (16bits)|
-//  +----------------------------------+
-//
-//  Control Frame: SYN_REPLY
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000010|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |  >= 8
-//  +----------------------------------+
-//  |X|       Stream-ID(31bits)        |
-//  +----------------------------------+
-//  | unused (16 bits)| Length (16bits)|
-//  +----------------------------------+
-//
-//  Control Frame: RST_STREAM
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000011|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |  >= 4
-//  +----------------------------------+
-//  |X|       Stream-ID(31bits)        |
-//  +----------------------------------+
-//  |        Status code (32 bits)     |
-//  +----------------------------------+
-//
-//  Control Frame: SETTINGS
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000100|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   |
-//  +----------------------------------+
-//  |        # of entries (32)         |
-//  +----------------------------------+
-//
-//  Control Frame: NOOP
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000101|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   | = 0
-//  +----------------------------------+
-//
-//  Control Frame: PING
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000110|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   | = 4
-//  +----------------------------------+
-//  |        Unique id (32 bits)       |
-//  +----------------------------------+
-//
-//  Control Frame: GOAWAY
-//  +----------------------------------+
-//  |1|000000000000001|0000000000000111|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   | = 4
-//  +----------------------------------+
-//  |X|  Last-accepted-stream-id       |
-//  +----------------------------------+
-//
-//  Control Frame: HEADERS
-//  +----------------------------------+
-//  |1|000000000000001|0000000000001000|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   | >= 8
-//  +----------------------------------+
-//  |X|      Stream-ID (31 bits)       |
-//  +----------------------------------+
-//  | unused (16 bits)| Length (16bits)|
-//  +----------------------------------+
-//
-//  Control Frame: WINDOW_UPDATE
-//  +----------------------------------+
-//  |1|000000000000001|0000000000001001|
-//  +----------------------------------+
-//  | flags (8)  |  Length (24 bits)   | = 8
-//  +----------------------------------+
-//  |X|      Stream-ID (31 bits)       |
-//  +----------------------------------+
-//  |   Delta-Window-Size (32 bits)    |
-//  +----------------------------------+
-
 // Version is the protocol version number that this package implements.
-const Version = 2
+const Version = 3
 
 // ControlFrameType stores the type field in a control frame header.
 type ControlFrameType uint16
 
-// Control frame type constants
 const (
 	TypeSynStream    ControlFrameType = 0x0001
 	TypeSynReply                      = 0x0002
 	TypeRstStream                     = 0x0003
 	TypeSettings                      = 0x0004
-	TypeNoop                          = 0x0005
 	TypePing                          = 0x0006
 	TypeGoAway                        = 0x0007
 	TypeHeaders                       = 0x0008
@@ -147,19 +34,23 @@ const (
 type ControlFlags uint8
 
 const (
-	ControlFlagFin ControlFlags = 0x01
+	ControlFlagFin                   ControlFlags = 0x01
+	ControlFlagUnidirectional                     = 0x02
+	ControlFlagSettingsClearSettings              = 0x01
 )
 
 // DataFlags are the flags that can be set on a data frame.
 type DataFlags uint8
 
 const (
-	DataFlagFin        DataFlags = 0x01
-	DataFlagCompressed           = 0x02
+	DataFlagFin DataFlags = 0x01
 )
 
 // MaxDataLength is the maximum number of bytes that can be stored in one frame.
 const MaxDataLength = 1<<24 - 1
+
+// headerValueSepator separates multiple header values.
+const headerValueSeparator = "\x00"
 
 // Frame is a single SPDY frame in its unpacked in-memory representation. Use
 // Framer to read and write it.
@@ -171,10 +62,10 @@ type Frame interface {
 // in its unpacked in-memory representation.
 type ControlFrameHeader struct {
 	// Note, high bit is the "Control" bit.
-	version   uint16
+	version   uint16 // spdy version number
 	frameType ControlFrameType
 	Flags     ControlFlags
-	length    uint32
+	length    uint32 // length of data field
 }
 
 type controlFrame interface {
@@ -182,44 +73,50 @@ type controlFrame interface {
 	read(h ControlFrameHeader, f *Framer) error
 }
 
+// StreamId represents a 31-bit value identifying the stream.
+type StreamId uint32
+
 // SynStreamFrame is the unpacked, in-memory representation of a SYN_STREAM
 // frame.
 type SynStreamFrame struct {
 	CFHeader             ControlFrameHeader
-	StreamId             uint32
-	AssociatedToStreamId uint32
-	// Note, only 2 highest bits currently used
-	// Rest of Priority is unused.
-	Priority uint16
-	Headers  http.Header
+	StreamId             StreamId
+	AssociatedToStreamId StreamId // stream id for a stream which this stream is associated to
+	Priority             uint8    // priority of this frame (3-bit)
+	Slot                 uint8    // index in the server's credential vector of the client certificate
+	Headers              http.Header
 }
 
 // SynReplyFrame is the unpacked, in-memory representation of a SYN_REPLY frame.
 type SynReplyFrame struct {
 	CFHeader ControlFrameHeader
-	StreamId uint32
+	StreamId StreamId
 	Headers  http.Header
 }
 
-// StatusCode represents the status that led to a RST_STREAM
-type StatusCode uint32
+// RstStreamStatus represents the status that led to a RST_STREAM.
+type RstStreamStatus uint32
 
 const (
-	ProtocolError      StatusCode = 1
-	InvalidStream                 = 2
-	RefusedStream                 = 3
-	UnsupportedVersion            = 4
-	Cancel                        = 5
-	InternalError                 = 6
-	FlowControlError              = 7
+	ProtocolError RstStreamStatus = iota + 1
+	InvalidStream
+	RefusedStream
+	UnsupportedVersion
+	Cancel
+	InternalError
+	FlowControlError
+	StreamInUse
+	StreamAlreadyClosed
+	InvalidCredentials
+	FrameTooLarge
 )
 
 // RstStreamFrame is the unpacked, in-memory representation of a RST_STREAM
 // frame.
 type RstStreamFrame struct {
 	CFHeader ControlFrameHeader
-	StreamId uint32
-	Status   StatusCode
+	StreamId StreamId
+	Status   RstStreamStatus
 }
 
 // SettingsFlag represents a flag in a SETTINGS frame.
@@ -234,11 +131,14 @@ const (
 type SettingsId uint32
 
 const (
-	SettingsUploadBandwidth      SettingsId = 1
-	SettingsDownloadBandwidth               = 2
-	SettingsRoundTripTime                   = 3
-	SettingsMaxConcurrentStreams            = 4
-	SettingsCurrentCwnd                     = 5
+	SettingsUploadBandwidth SettingsId = iota + 1
+	SettingsDownloadBandwidth
+	SettingsRoundTripTime
+	SettingsMaxConcurrentStreams
+	SettingsCurrentCwnd
+	SettingsDownloadRetransRate
+	SettingsInitialWindowSize
+	SettingsClientCretificateVectorSize
 )
 
 // SettingsFlagIdValue is the unpacked, in-memory representation of the
@@ -256,73 +156,72 @@ type SettingsFrame struct {
 	FlagIdValues []SettingsFlagIdValue
 }
 
-// NoopFrame is the unpacked, in-memory representation of a NOOP frame.
-type NoopFrame struct {
-	CFHeader ControlFrameHeader
-}
-
 // PingFrame is the unpacked, in-memory representation of a PING frame.
 type PingFrame struct {
 	CFHeader ControlFrameHeader
-	Id       uint32
+	Id       uint32 // unique id for this ping, from server is even, from client is odd.
 }
+
+// GoAwayStatus represents the status in a GoAwayFrame.
+type GoAwayStatus uint32
+
+const (
+	GoAwayOK GoAwayStatus = iota
+	GoAwayProtocolError
+	GoAwayInternalError
+)
 
 // GoAwayFrame is the unpacked, in-memory representation of a GOAWAY frame.
 type GoAwayFrame struct {
 	CFHeader         ControlFrameHeader
-	LastGoodStreamId uint32
+	LastGoodStreamId StreamId // last stream id which was accepted by sender
+	Status           GoAwayStatus
 }
 
 // HeadersFrame is the unpacked, in-memory representation of a HEADERS frame.
 type HeadersFrame struct {
 	CFHeader ControlFrameHeader
-	StreamId uint32
+	StreamId StreamId
 	Headers  http.Header
 }
+
+// WindowUpdateFrame is the unpacked, in-memory representation of a
+// WINDOW_UPDATE frame.
+type WindowUpdateFrame struct {
+	CFHeader        ControlFrameHeader
+	StreamId        StreamId
+	DeltaWindowSize uint32 // additional number of bytes to existing window size
+}
+
+// TODO: Implement credential frame and related methods.
 
 // DataFrame is the unpacked, in-memory representation of a DATA frame.
 type DataFrame struct {
 	// Note, high bit is the "Control" bit. Should be 0 for data frames.
-	StreamId uint32
+	StreamId StreamId
 	Flags    DataFlags
-	Data     []byte
+	Data     []byte // payload data of this frame
 }
-
-// HeaderDictionary is the dictionary sent to the zlib compressor/decompressor.
-// Even though the specification states there is no null byte at the end, Chrome sends it.
-const HeaderDictionary = "optionsgetheadpostputdeletetrace" +
-	"acceptaccept-charsetaccept-encodingaccept-languageauthorizationexpectfromhost" +
-	"if-modified-sinceif-matchif-none-matchif-rangeif-unmodifiedsince" +
-	"max-forwardsproxy-authorizationrangerefererteuser-agent" +
-	"100101200201202203204205206300301302303304305306307400401402403404405406407408409410411412413414415416417500501502503504505" +
-	"accept-rangesageetaglocationproxy-authenticatepublicretry-after" +
-	"servervarywarningwww-authenticateallowcontent-basecontent-encodingcache-control" +
-	"connectiondatetrailertransfer-encodingupgradeviawarning" +
-	"content-languagecontent-lengthcontent-locationcontent-md5content-rangecontent-typeetagexpireslast-modifiedset-cookie" +
-	"MondayTuesdayWednesdayThursdayFridaySaturdaySunday" +
-	"JanFebMarAprMayJunJulAugSepOctNovDec" +
-	"chunkedtext/htmlimage/pngimage/jpgimage/gifapplication/xmlapplication/xhtmltext/plainpublicmax-age" +
-	"charset=iso-8859-1utf-8gzipdeflateHTTP/1.1statusversionurl\x00"
 
 // A SPDY specific error.
 type ErrorCode string
 
 const (
 	UnlowercasedHeaderName     ErrorCode = "header was not lowercased"
-	DuplicateHeaders           ErrorCode = "multiple headers with same name"
-	WrongCompressedPayloadSize ErrorCode = "compressed payload size was incorrect"
-	UnknownFrameType           ErrorCode = "unknown frame type"
-	InvalidControlFrame        ErrorCode = "invalid control frame"
-	InvalidDataFrame           ErrorCode = "invalid data frame"
-	InvalidHeaderPresent       ErrorCode = "frame contained invalid header"
-	ZeroStreamId               ErrorCode = "stream id zero is disallowed"
+	DuplicateHeaders                     = "multiple headers with same name"
+	WrongCompressedPayloadSize           = "compressed payload size was incorrect"
+	UnknownFrameType                     = "unknown frame type"
+	InvalidControlFrame                  = "invalid control frame"
+	InvalidDataFrame                     = "invalid data frame"
+	InvalidHeaderPresent                 = "frame contained invalid header"
+	ZeroStreamId                         = "stream id zero is disallowed"
 )
 
 // Error contains both the type of error and additional values. StreamId is 0
 // if Error is not associated with a stream.
 type Error struct {
 	Err      ErrorCode
-	StreamId uint32
+	StreamId StreamId
 }
 
 func (e *Error) Error() string {
@@ -331,6 +230,7 @@ func (e *Error) Error() string {
 
 var invalidReqHeaders = map[string]bool{
 	"Connection":        true,
+	"Host":              true,
 	"Keep-Alive":        true,
 	"Proxy-Connection":  true,
 	"Transfer-Encoding": true,
@@ -339,6 +239,7 @@ var invalidReqHeaders = map[string]bool{
 var invalidRespHeaders = map[string]bool{
 	"Connection":        true,
 	"Keep-Alive":        true,
+	"Proxy-Connection":  true,
 	"Transfer-Encoding": true,
 }
 
@@ -360,7 +261,7 @@ type Framer struct {
 // buffered implementation to optimize performance.
 func NewFramer(w io.Writer, r io.Reader) (*Framer, error) {
 	compressBuf := new(bytes.Buffer)
-	compressor, err := zlib.NewWriterLevelDict(compressBuf, zlib.BestCompression, []byte(HeaderDictionary))
+	compressor, err := zlib.NewWriterLevelDict(compressBuf, zlib.BestCompression, []byte(headerDictionary))
 	if err != nil {
 		return nil, err
 	}
