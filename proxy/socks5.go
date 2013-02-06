@@ -175,9 +175,9 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 	bytesToDiscard := 0
 	switch buf[3] {
 	case socks5IP4:
-		bytesToDiscard = 4
+		bytesToDiscard = net.IPv4len
 	case socks5IP6:
-		bytesToDiscard = 16
+		bytesToDiscard = net.IPv6len
 	case socks5Domain:
 		_, err := io.ReadFull(conn, buf[:1])
 		if err != nil {
