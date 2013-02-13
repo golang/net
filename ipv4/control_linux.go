@@ -95,7 +95,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 	pi := &syscall.Inet4Pktinfo{}
 	pion := false
 	if ip := cm.Src.To4(); ip != nil {
-		copy(pi.Spec_dst[:], ip[0:net.IPv4len])
+		copy(pi.Spec_dst[:], ip[:net.IPv4len])
 		pion = true
 	}
 	if cm.IfIndex != 0 {
@@ -109,7 +109,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 		cmsg.Type = syscall.IP_PKTINFO
 		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
 		data := b[syscall.CmsgLen(0):]
-		copy(data[0:syscall.SizeofInet4Pktinfo], (*[syscall.SizeofInet4Pktinfo]byte)(unsafe.Pointer(pi))[:syscall.SizeofInet4Pktinfo])
+		copy(data[:syscall.SizeofInet4Pktinfo], (*[syscall.SizeofInet4Pktinfo]byte)(unsafe.Pointer(pi))[:syscall.SizeofInet4Pktinfo])
 		oob = append(oob, b...)
 	}
 	return

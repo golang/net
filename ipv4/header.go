@@ -146,10 +146,10 @@ func (h *Header) Marshal() ([]byte, error) {
 	b[posProtocol] = byte(h.Protocol)
 	b[posChecksum], b[posChecksum+1] = byte(h.Checksum>>8), byte(h.Checksum)
 	if ip := h.Src.To4(); ip != nil {
-		copy(b[posSrc:posSrc+net.IPv4len], ip[0:net.IPv4len])
+		copy(b[posSrc:posSrc+net.IPv4len], ip[:net.IPv4len])
 	}
 	if ip := h.Dst.To4(); ip != nil {
-		copy(b[posDst:posDst+net.IPv4len], ip[0:net.IPv4len])
+		copy(b[posDst:posDst+net.IPv4len], ip[:net.IPv4len])
 	} else {
 		return nil, errMissingAddress
 	}
@@ -164,7 +164,7 @@ func ParseHeader(b []byte) (*Header, error) {
 	if len(b) < HeaderLen {
 		return nil, errHeaderTooShort
 	}
-	hdrlen := (int(b[0]) & 0x0f) << 2
+	hdrlen := int(b[0]&0x0f) << 2
 	if hdrlen > len(b) {
 		return nil, errBufferTooShort
 	}
