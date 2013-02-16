@@ -13,77 +13,70 @@ import (
 	"time"
 )
 
-// runPayloadTransponder transmits IPv4 datagram payloads to the
+// writeThenReadPayload transmits IPv4 datagram payloads to the
 // loopback address or interface and captures the loopback'd datagram
 // payloads.
-func runPayloadTransponder(t *testing.T, c *ipv4.PacketConn, wb []byte, dst net.Addr) {
-	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+func writeThenReadPayload(t *testing.T, i int, c *ipv4.PacketConn, wb []byte, dst net.Addr) []byte {
 	rb := make([]byte, 1500)
-	for i, toggle := range []bool{true, false, true} {
-		if err := c.SetControlMessage(cf, toggle); err != nil {
-			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
-		}
-		c.SetTOS(i + 1)
-		var ip net.IP
-		switch v := dst.(type) {
-		case *net.UDPAddr:
-			ip = v.IP
-		case *net.IPAddr:
-			ip = v.IP
-		}
-		if ip.IsMulticast() {
-			c.SetMulticastTTL(i + 1)
-		} else {
-			c.SetTTL(i + 1)
-		}
-		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
-		if _, err := c.WriteTo(wb, nil, dst); err != nil {
-			t.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
-		}
-		_, cm, _, err := c.ReadFrom(rb)
-		if err != nil {
-			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
-		}
-		t.Logf("rcvd cmsg: %v", cm)
+	c.SetTOS(i + 1)
+	var ip net.IP
+	switch v := dst.(type) {
+	case *net.UDPAddr:
+		ip = v.IP
+	case *net.IPAddr:
+		ip = v.IP
 	}
+	if ip.IsMulticast() {
+		c.SetMulticastTTL(i + 1)
+	} else {
+		c.SetTTL(i + 1)
+	}
+	c.SetDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := c.WriteTo(wb, nil, dst); err != nil {
+		t.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
+	}
+	n, cm, _, err := c.ReadFrom(rb)
+	if err != nil {
+		t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
+	}
+	t.Logf("rcvd cmsg: %v", cm)
+	return rb[:n]
 }
 
-// runDatagramTransponder transmits ICMP for IPv4 datagrams to the
+// writeThenReadDatagram transmits ICMP for IPv4 datagrams to the
 // loopback address or interface and captures the response datagrams
 // from the protocol stack within the kernel.
-func runDatagramTransponder(t *testing.T, c *ipv4.RawConn, wb []byte, src, dst net.Addr) {
-	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+func writeThenReadDatagram(t *testing.T, i int, c *ipv4.RawConn, wb []byte, src, dst net.Addr) []byte {
 	rb := make([]byte, ipv4.HeaderLen+len(wb))
-	for i, toggle := range []bool{true, false, true} {
-		if err := c.SetControlMessage(cf, toggle); err != nil {
-			t.Fatalf("ipv4.RawConn.SetControlMessage failed: %v", err)
-		}
-		wh := &ipv4.Header{}
-		wh.Version = ipv4.Version
-		wh.Len = ipv4.HeaderLen
-		wh.TOS = i + 1
-		wh.TotalLen = ipv4.HeaderLen + len(wb)
-		wh.TTL = i + 1
-		wh.Protocol = 1
-		if src != nil {
-			wh.Src = src.(*net.IPAddr).IP
-		}
-		if dst != nil {
-			wh.Dst = dst.(*net.IPAddr).IP
-		}
-		c.SetDeadline(time.Now().Add(100 * time.Millisecond))
-		if err := c.WriteTo(wh, wb, nil); err != nil {
-			t.Fatalf("ipv4.RawConn.WriteTo failed: %v", err)
-		}
-		rh, _, cm, err := c.ReadFrom(rb)
-		if err != nil {
-			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
-		}
-		t.Logf("rcvd cmsg: %v", cm.String())
-		t.Logf("rcvd hdr: %v", rh.String())
+	wh := &ipv4.Header{
+		Version:  ipv4.Version,
+		Len:      ipv4.HeaderLen,
+		TOS:      i + 1,
+		TotalLen: ipv4.HeaderLen + len(wb),
+		TTL:      i + 1,
+		Protocol: 1,
 	}
+	if src != nil {
+		wh.Src = src.(*net.IPAddr).IP
+	}
+	if dst != nil {
+		wh.Dst = dst.(*net.IPAddr).IP
+	}
+	c.SetDeadline(time.Now().Add(100 * time.Millisecond))
+	if err := c.WriteTo(wh, wb, nil); err != nil {
+		t.Fatalf("ipv4.RawConn.WriteTo failed: %v", err)
+	}
+	rh, b, cm, err := c.ReadFrom(rb)
+	if err != nil {
+		t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
+	}
+	t.Logf("rcvd cmsg: %v", cm.String())
+	t.Logf("rcvd hdr: %v", rh.String())
+	return b
 }
 
+// LoopbackInterface returns a logical network interface for loopback
+// tests.
 func loopbackInterface() *net.Interface {
 	ift, err := net.Interfaces()
 	if err != nil {
@@ -97,12 +90,13 @@ func loopbackInterface() *net.Interface {
 	return nil
 }
 
-func isGoodForMulticast(ifi *net.Interface) (net.IP, bool) {
-	if ifi.Flags&net.FlagUp == 0 {
+// isMulticastAvailable returns true if ifi is a multicast access
+// enabled network interface.  It also returns a unicast IPv4 address
+// that can be used for listening on ifi.
+func isMulticastAvailable(ifi *net.Interface) (net.IP, bool) {
+	if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 {
 		return nil, false
 	}
-	// We need a unicast IPv4 address that can be used to specify
-	// the IPv4 multicast interface.
 	ifat, err := ifi.Addrs()
 	if err != nil {
 		return nil, false
@@ -125,9 +119,6 @@ func isGoodForMulticast(ifi *net.Interface) (net.IP, bool) {
 			continue
 		}
 		break
-	}
-	if ip == nil {
-		return nil, false
 	}
 	return ip, true
 }

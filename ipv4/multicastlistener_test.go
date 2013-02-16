@@ -43,7 +43,7 @@ func TestUDPSingleConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isGoodForMulticast(&ifi); !ok {
+			if _, ok := isMulticastAvailable(&ifi); !ok {
 				continue
 			}
 			if err := p.JoinGroup(&ifi, tt.gaddr); err != nil {
@@ -90,7 +90,7 @@ func TestUDPMultipleConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isGoodForMulticast(&ifi); !ok {
+			if _, ok := isMulticastAvailable(&ifi); !ok {
 				continue
 			}
 			for _, p := range ps {
@@ -139,7 +139,7 @@ func TestIPSingleConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		if _, ok := isGoodForMulticast(&ifi); !ok {
+		if _, ok := isMulticastAvailable(&ifi); !ok {
 			continue
 		}
 		if err := r.JoinGroup(&ifi, gaddr); err != nil {
@@ -172,7 +172,7 @@ func TestUDPPerInterfaceSingleConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isGoodForMulticast(&ifi)
+		ip, ok := isMulticastAvailable(&ifi)
 		if !ok {
 			continue
 		}
@@ -217,7 +217,7 @@ func TestIPPerInterfaceSingleConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isGoodForMulticast(&ifi)
+		ip, ok := isMulticastAvailable(&ifi)
 		if !ok {
 			continue
 		}

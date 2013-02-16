@@ -33,11 +33,11 @@ func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.
 			return 0, nil, nil, err
 		}
 	case *net.IPConn:
-		nb := make([]byte, len(b)+maxHeaderLen)
+		nb := make([]byte, maxHeaderLen+len(b))
 		if n, oobn, _, src, err = rd.ReadMsgIP(nb, oob); err != nil {
 			return 0, nil, nil, err
 		}
-		hdrlen := (int(b[0]) & 0x0f) << 2
+		hdrlen := int(nb[0]&0x0f) << 2
 		copy(b, nb[hdrlen:])
 		n -= hdrlen
 	default:
