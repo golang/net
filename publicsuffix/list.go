@@ -11,8 +11,8 @@ package publicsuffix
 // func PublicSuffix and func EffectiveTLDPlusOne.
 
 import (
-	"exp/cookiejar"
 	"fmt"
+	"net/http/cookiejar"
 	"strings"
 )
 
