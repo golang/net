@@ -2,7 +2,7 @@
 
 package publicsuffix
 
-const version = "subset of publicsuffix.org's effective_tld_names.dat, hg revision 05b11a8d1ace (2012-11-09)"
+const version = "publicsuffix.org's effective_tld_names.dat, hg revision 3af9909a49e4 (2013-02-15)"
 
 const (
 	nodesBitsChildren   = 9
@@ -23,17 +23,339 @@ const (
 )
 
 // numTLD is the number of top level domains.
-const numTLD = 13
+const numTLD = 308
 
 // Text is the combined text of all labels.
-const text = "clubacyfukuchiyamashinacionakagyomanpostatecouncilgovgvhomediaph" +
-	"onelin-addretinagaokakyotambainetip6irischigashiyamaizurujitawar" +
-	"akpetroleumiljetjoyomanteljpblogspotk12kizurideduccitykumiyamaky" +
-	"otangobiernoelectronicorgamecongresodelalengua3kyotoyamazakitami" +
-	"namiyamashiromiyazurnantanational-library-scotlandyndnsakyotanab" +
-	"ebizwmukobenlseikameokamodpromocionawrastelecomanmobileusiemenso" +
-	"ngfestxn--czrw28british-libraryawatarparliamentwazukayabe164xn--" +
-	"p1aidvxn--uc0atvxn--zf0ao64a"
+const text = "berlincolnavalowiczest-a-la-maisondre-landyndns-freemasonryonago" +
+	"yabernrtarnobrzegyptianpachigasakidsangouvicenzaporizhzhegurindi" +
+	"anmarketplacebeskidyn-o-saurlandebuildinglassassinational-librar" +
+	"y-scotlandesanjournalistavernavigationavuotnakanojosoyrovigopala" +
+	"nakanotoddenawrastelecomoldebetainaboxfordeatnuernbergliwicebiel" +
+	"awalesundyndns-homeftpaccessannanayorohtawaramotoineppulmessinat" +
+	"sukigatakasakinfoggiabiellaakesvuemieleccebieszczadygeyachiyodav" +
+	"vesiidazaifudaigobodoesntexisteingeekashibatakarazukaminoyamatsu" +
+	"rinsurancebievat-band-campobassobetsuldalvdalaskanittedalaheadju" +
+	"dygarlandyndns-ipaleolsztynsettlersannohemnesantabarbarabifukaga" +
+	"wallonieruchomoscienceandindustrynikkoebenhavnikolaevenessebygla" +
+	"ndyndns-mailuccargodonnagasuketrzyninomiyakonojournalismolenskas" +
+	"hiharabihorologyonaguniversityumenirasakintelligencebilbaogakiev" +
+	"enassisibenikihokumakogengerdalstahaugesundyndns-office-on-the-w" +
+	"ebhopocznorfolkebiblebtimnetzgorzeleccoloradoplateaukraanghkemer" +
+	"ovoldagestangemologicaliforniabillustrationishiawakurabiomutashi" +
+	"nainuyamanouchikuhokuryugasakitashiobarabirdartdecodynaliascoli-" +
+	"picenogiesseniwaizumiotsukuis-a-bulls-fanishiazais-a-candidatebi" +
+	"rkenesoddtangenoamishirasatodabirthplacebjarkoyoriikashiwarabjer" +
+	"kreimperiabjugnishigoshikiminokamoenairguardyndns-picsantacruzhg" +
+	"orodyndns-remoteginankokubunjis-a-catererbmdyndns-serverbaniabol" +
+	"tarumizusawabolzanordlandyndns-webetsuikikugawabomloabathsantafe" +
+	"derationishiharabonnishiizunazukis-a-celticsfanishikatakasugais-" +
+	"a-chefarsundyndns-wikimobetsurutaharabostonakijinsekikogenovarab" +
+	"otanicalgardenishikatsuragis-a-conservativefsnillfjordyndns-work" +
+	"shoppdalucernebotanicgardenishikawazukanagawabotanycateringebunk" +
+	"yonanaoshimabariakesennumalvikashiwazakis-a-cpaderbornishimerake" +
+	"rbozentsujiiebrandywinevalleyukuhashimoichinosekigaharabrasiljan" +
+	"-mayenishinomiyashironosloppadovanylvenicebremangerbresciabrindi" +
+	"siellakasamatsudollsanukis-a-cubicle-slaveroyrviknakaniikawatana" +
+	"gurabristolgamvikasukabeiarndyroyurihonjostrodabritish-libraryaz" +
+	"annakadomari-elblagdenesnaaseralingenkainanaejrietis-a-democrata" +
+	"tarstanishinoomotegotembaixadabritishcolumbialowiezagannefrankfu" +
+	"rtateshinanomachildrensgardenishinoshimabroadcastleasinglogowhal" +
+	"ingloppenzaogashimadachicagobiernoelectronicoalto-adigeelvinckas" +
+	"umigaurawa-mazowszexeterbroke-itateyamabrokerbronnoysundbrumundd" +
+	"alukowildlifedjelenia-gorabrunelveruminamidaitomanmobileirvikasu" +
+	"yanagawabrusselsaotomeldaluroyusuharabruxellesjamalborkangerbrya" +
+	"nskleppgminakamichigangwonishiokoppegardbrynewjerseyusuissemboku" +
+	"mamotoyamatsumaebashikaois-a-designerbvbalestrandabergamoarekepn" +
+	"orddalindesnesakuraiheyakutiautomotivelandlugolekaluganskarlsoye" +
+	"katerinburgdyniaustraliaustevollindasiastronomyokohamamatsudaegu" +
+	"balatinabearalvahkijogaszkola-speziastibigawasnesoddenmarkhangel" +
+	"skjaknoluoktaikicks-assedicasertaishinomakikuchikumagayagawatcha" +
+	"ndclockariyamegurobanazawasmatartcentertainmentamayukibestadisco" +
+	"veryokamikawanehonbetsurugildeskalmykiaskvollimanowarudaosteroyk" +
+	"englandgcagliaridagawassamukawatarikuzentakatairaostalbansnasaba" +
+	"erobaticasadelamonedagroks-theaternopilawakkanaibetsubamericanar" +
+	"tanddesignieznodawaraholtalendoftheinternethnologyeongnamegawaku" +
+	"yabukibichuozudmurtiamusementakkofuelezajskareliaomoriguchiharam" +
+	"lierneuest-mon-blogueurbwindmillusterbzgradcivilaviationrwritest" +
+	"hisblogspotgorycivilisationcivilizationcivilwarmiasakuchinotsuch" +
+	"iurakawaclintonoshonaip6boneat-urlewismillerhcloudaeroportalabam" +
+	"agasakishimabarahkkeravjudaicaarborteaches-yogasawaragusartsarit" +
+	"synarviikamogawagrinetcmwegrowestfalenarvik-uralsk12000cntjeldsu" +
+	"ndcolumbusantiquesarpsborgroks-thisayamanashichikashukujukuriyam" +
+	"aritimodalencomputerhistoryofscience-fictioncongresodelalengua3c" +
+	"onsuladoomdnsaliascolipicenonoichikawamisatobishimagnitkagaminor" +
+	"d-aurdaltoadigeiseiroumuenchenebakkeshibechambagricultureklamber" +
+	"keleyconsultanthropologyconsultingvollcontemporaryartgallerygget" +
+	"myipanamaconventjomelhusdecorativeartsarufutsunomiyawakasaikaita" +
+	"koelncooperaunitelevisioncopenhagentsasayamacorporationcorvettex" +
+	"ashorokanaiecosenzakopanewyorkshireggiocalabriacostumediaphonefo" +
+	"sshncountysfjordcqhabororoskolegnicambridgeorgiacranbrookuwanami" +
+	"zuhobby-sitextileborkdalcremonagatorockartuzycrewroclawwwcrimeac" +
+	"rotoneculturalcentercuneocxn--3e0b707ecymrussiafieldfigueresaseb" +
+	"oknowsitallfilateliafilminamiiserniafineartsaskatchewanfinlandfi" +
+	"nnoyfirenzefirminamiizukamishihoronobeokamikoaniihamatamakawajim" +
+	"ashikedafitjarchitecturennebudejjuedischesapeakebayfjalerdalflek" +
+	"kefjordflesbergenflightownflogisticsassaris-a-greenfloraflorence" +
+	"floridaflorokunohealthachijorpelandfndfolldalfor-better-thanawaf" +
+	"or-ourfor-somedicaltanissettaitogitsulikes-piefor-thedmarkhabaro" +
+	"vskhakassiaforceforgotdnsatxn--45brj9chelyabinskodjeffersongfest" +
+	"-a-la-masionishitosashimizunaminamiawajikis-a-doctorskenishiwaki" +
+	"s-a-financialadvisor-aurdalutskatowiceforli-cesena-forlicesenafo" +
+	"rlikescandynathomebuiltoyakokamiokamikitayamatotakadaforsandasuo" +
+	"lodingenfortmissoulan-udell-ogliastrakhanamigawafortworthachinoh" +
+	"ekinannestadforuminamimakis-a-gurunsakatakatsukis-a-hard-workerf" +
+	"osnesaudafotherfredrikstadaokagakinkobeardudinkakegawalbrzychamp" +
+	"ionshiparachutingrparaglidingruenoharafreiburgsmolajollanbibaida" +
+	"rfreightoyokawafribourgunmarnardalfrognfrolandfrom-akunemurorank" +
+	"oshigayachimatainaikawababia-gorakkestadultoyonakagyokutomaritim" +
+	"ekeepinguovdageaidnuoromskoguchikuzenfrom-alfrom-arqldfrom-azhyt" +
+	"omyrfrom-cahcesuolocalhistorybnikahokutoeigersundfrom-collection" +
+	"from-ctoyonezawafrom-dcherkasydneyuzawafrom-dellogliastraderfrom" +
+	"-flakstadtoyonofrom-gausdalfrom-higashiagatsumagoizumizakirafrom" +
+	"-iafrom-idfrom-ilfrom-incheonfrom-ksauheradfrom-kyotobetsuwanouc" +
+	"hikushinonsennanburyatiafrom-lahppiacenzamamicrolightoyookanrafr" +
+	"om-mannosegawafrom-mdfrom-medio-campidano-mediocampidanomediofro" +
+	"m-midoringerikefrom-mnfrom-mochizukirkenesavannahgafrom-msaves-t" +
+	"he-whalessandria-trani-barletta-andriatranibarlettaandriafrom-mt" +
+	"oyosatomobeneventochiokinoshimalselvendrellfrom-nchernigovernmen" +
+	"taxis-a-bruinsfanissedaluxembourgqcfauskedsmokorsettlementatsuno" +
+	"strolekanazawafrom-ndfrom-nefrom-nhachiojiyaizuwakamatsubushikus" +
+	"akadogawafrom-njessheiminamiminowafrom-nminamiogunionfrom-nvenne" +
+	"slaskerfrom-nyfrom-ohdafrom-oketogonohejis-a-hunterfrom-orlandfr" +
+	"om-pacifichernihivanovosibirskydivingretajimakanegasakisosakitag" +
+	"atakaharunjargafrom-prdfrom-rissagaeroclubindallaspeziamallamadr" +
+	"idvrdnsdojobojis-a-knightoyotaris-a-landscaperugiafrom-schlesisc" +
+	"hesavonakatsugawafrom-sdfrom-tnfrom-txn--54b7fta0cchernivtsiemen" +
+	"swedenisshingotsukisofukushimarburgrimstadfrom-utsiracusagamihar" +
+	"afrom-vadsoftwaremarkerfrom-vtoyotomiyazakis-a-lawyerfrom-wafrom" +
+	"-wielunnerfrom-wveronamsskoganeis-a-liberalfrom-wyfrosinonefrost" +
+	"argardfroyaitaiwanair-traffic-controlleyfstarostwodzislawfujiide" +
+	"rafujikawaguchikonefujiminohkurafujinomiyadafujiokayamansionsayo" +
+	"kkaichirurgiens-dentisteshikagamiishikarikaturindalfujisatoshoos" +
+	"hikamaishimodatefujisawafujishiroishidakabiratoridelmenhorstalow" +
+	"a-wolawafujiyoshidafukayabeauxartsandcraftschokoladenfukuchiyama" +
+	"dafukudominichernovtsykkylveneziafukuis-a-libertarianfukumitsuke" +
+	"fukuokazakirovogradoyfukuroishigakiryufuefukihabikinokawaircraft" +
+	"oyotsukaidofukusakisarazunzenfukuyamagatajimidsundfunabashiriuch" +
+	"inadafunagatajirittogurafunahashikamiamakusatsumasendaisenfundac" +
+	"iofuoiskujitawarafuosskoczowfurniturepbodyndns-at-homednschoolku" +
+	"szjetoyourafurubiraquariuminamisanrikubetsurgeonshalloffameiwama" +
+	"tsunofurudonostiafurukawaharafusogndalfussaikishiwadafutabayamag" +
+	"uchinomigawafuttsunanjohanamakinoharafylkesbiblfyresdalhakuis-a-" +
+	"linux-useranishiaritabashiibahccavuotnagaokakyotambadajozoraumai" +
+	"zurubtsovskjervoystre-slidrettozawahakusandnessjoenhaldenhalsain" +
+	"tlouis-a-anarchistoiretinazawahammarfeastafricapebretonamibungot" +
+	"akadahamurakamigoris-a-llamasfjordenhangglidingwangjurhannanmoku" +
+	"izumodellingxn--55qx5dhannoverhallancashirehanyuzenhapmirkutskha" +
+	"rkoverranhappousgardenhareidsbergbauernurembergzlgushikamifurano" +
+	"shirooharstadharvestcelebrationhasamarahasaminami-alpschoenbrunn" +
+	"hasudahasvikhersoniikappulawyhatogayakagehatoyamazakitahiroshima" +
+	"rugame-hostre-totenkawahatsukaichiharahattfjelldalhawaiijimarumo" +
+	"rimachidahayashimamotobusheyhazuminobusenetozsdehemsedalhigashih" +
+	"iroshimanehigashiizumozakitakatakamoriokamakurazakitakyushuaiahi" +
+	"gashikagawahigashikagurasoedahigashikawakitaaikitamidtre-gauldal" +
+	"higashikurumedizinhistorischesciencecentersciencehistoryhigashim" +
+	"atsushimarylandhigashimatsuyamakitaakitadaitoigawahigashimurayam" +
+	"alatvuopmifunehigashinarusells-for-lesscientisteigenhigashinehig" +
+	"ashiomihachimanchesterhigashiosakasayamamotorcycleikangerhigashi" +
+	"shirakawamatakanabedzin-addrammenhigashisumiyoshikawaminamiaikit" +
+	"amotosumidatlantichiryuoharuovatmpalermomanposts-and-telecommuni" +
+	"cationsapporostrowiecharterhigashitsunotogawahigashiurausukitana" +
+	"kagusukumodenakamuratakanezawahigashiyamatokoriyamanakakogawahig" +
+	"ashiyodogawahigashiyoshinogaris-a-musicianhiraizumisatohmarylhur" +
+	"stathelleirfjordhirakatashinagawahiranairlinedre-eikerimo-i-rana" +
+	"ciontariohirarahiratsukagawahirayakumodernhistorichousescrapper-" +
+	"sitehitachiomiyaginowaniigatakahamantovaksdalhitachiotagoogleapi" +
+	"sa-geekhmelnitskiyamasoyhitoyoshimihamadahitradinghjartdalhjelme" +
+	"landholeckobierzycehomelinuxn--90a3academykolaivano-frankivskier" +
+	"vaapsteiermarkhmelnytskyiversaillescrappinghomeunixn--9dbhblg6di" +
+	"elddanuorrimininghongooglecodespotranamsosnowiechitachinakagawaw" +
+	"loclawekatsushikabelaugustowadaejeonbukatsuyamashikokuchuostroww" +
+	"lkpalmspringsakerhonjyoichiropractichitosetogakushimotoganewport" +
+	"lligatewayuzhno-sakhalinskautokeinohornindalhortendofinternetran" +
+	"byhoteledatabaseballangenhoyangerhoylandetroitrani-andria-barlet" +
+	"ta-trani-andriahuissier-justicehumanitieseminehurdalhurumajis-a-" +
+	"nascarfanhyugawaraiwateiwatsukiyonotteroyjfkmsharis-a-personaltr" +
+	"ainerjgorajpnkooris-a-playerkopervikokonoekoryolbia-tempio-olbia" +
+	"tempioolbialystokkekosaigawakosakaerodromeconferencechirebungoon" +
+	"omichinomiyakeisenbahnkoseis-a-republicanadakoshimizumakis-a-roc" +
+	"kstarachowicekoshunantokamachippubetsubetsugaruwajimakostromahab" +
+	"merkosugekotohiradomurakotourakouhokutamakis-a-socialistationkou" +
+	"nosumypetsherbrookegawakouyamasudakouzushimateramoduminamiyamash" +
+	"irokawanabellevuedavvenjargalsadoes-itrevisolaquilapyatigorskolo" +
+	"brzegersundkozagawakozakis-a-soxfankrageroticarbonia-iglesias-ca" +
+	"rboniaiglesiascarboniakrakowkrasnoyarskomaganekristiansandefjord" +
+	"kristiansundkrodsheradkrokstadelvantaakryminanokumatorinokumejim" +
+	"atsumotofukekumenanyokaichibaikaliszczytnord-odalkunisakis-a-stu" +
+	"dentraniandriabarlettatraniandriakunitachiaraisaijoshkar-olangev" +
+	"agsoykunitomigusukukis-a-teacherkassykunneppukunstsammlungkunstu" +
+	"nddesignkurekurgankurobelgorodoykurogimimatakasagorgekuroisognek" +
+	"uromatsunairportland-4-salernogatagajoetsuruokadenagahamaroyerot" +
+	"ikafjordkurotakikawasakis-a-techietis-a-painteractivegarsheiheij" +
+	"is-a-nursells-for-uslivinghistorykurskomakis-a-photographeroykus" +
+	"hirogawakustanairtraffichocolatelemarkazimierz-dolnykusunndalkut" +
+	"chandakutnokuzbassnoasaitamatsukuris-a-therapistoiakuzumakis-an-" +
+	"accountantranoykvafjordkvalsundkvamsterdambulancertificationkvan" +
+	"angenkvinesdalkvinnheradkviteseidskogkvitsoykwkyowariasahikawaky" +
+	"uragis-an-actormishimatsuuramissileitungsenmisugitokashikis-an-a" +
+	"rtistavangermitakeharamitourismincommunitysvardomitoyoakemiurami" +
+	"yazumiyotamanomjondalenmombetsurgutriesteamurskiptveterinairecre" +
+	"ationmoneyagawamonmouthadanotaireschweizhevskharkivguernseymonti" +
+	"cellondonetskomatsushimassa-carrara-massacarraramassabuzenmontre" +
+	"alestatecouncilmonza-brianzamonza-e-della-brianzamonzabrianzamon" +
+	"zaebrianzamonzaedellabrianzamordoviamoriyamatsuzakis-an-engineer" +
+	"moriyoshiokamisunagawamoroyamatta-varjjatroandinosaureshinomosco" +
+	"wmoseushistorymosjoenmoskeneshimojis-an-entertainermosreggio-cal" +
+	"abriamosshimokawamosvikomforballooninggfarmerseine164muenstermug" +
+	"is-byklebesbydgoszczecincinnationalfirearmservegame-servercellil" +
+	"lesandiegorlicemuikamitondabayashiogamagoriziamukochikuseihigash" +
+	"ichichibuskerudinewmexicoldwarszawashingtondchofunatoristanore-o" +
+	"g-uvdaluzerniyodogawamulhousells-itrogstadmunakatanemuncieszynmu" +
+	"osattemurmanskomitamamuramurotorcraftromsakakinokis-certifiedoga" +
+	"warabikomaezakirunorthruhereggioemiliamusashimurayamamusashinode" +
+	"sashibetsukumiyamamuseetromsolognemuseumverenigingmutsuzawamypho" +
+	"toshimamytis-a-bookkeeperminnesotaketakashimatsushigepartis-foun" +
+	"dationpasadenakasatsunais-gonepassenger-associationpaviapescarap" +
+	"harmacienshimokitayamapharmacyberlevagangaviikarugaulardalphilad" +
+	"elphiaareadmyblogsitephilatelyphoenixn--aroport-byaotsuzakanonji" +
+	"s-into-animeereservicesettsurreyphotographyogoris-into-carsevast" +
+	"opolelpilotshimonitayanagis-into-cartoonshacknetravellinopippupi" +
+	"szparmapittsburghofermobarapkommunalforbundplanetariumisakis-an-" +
+	"actresseoullensakerplantationplantshimonosekikawaplazaplchonango" +
+	"kasejnynysafetychyllestadplorenskogpodhaleksvikommunepodlasiedlc" +
+	"epodzonepoltavaresearchaeologicalpomorzeszowpordenoneporsangerpo" +
+	"rsangujolsterporsgrunnanpoznanpreservationpresidioprincipesaro-u" +
+	"rbino-pesarourbinopesaromantelekommunikationprivneprochowiceprod" +
+	"uctionproferraraprojectrusteepromocionpruszkowprzeworskogpsienak" +
+	"atombetsurnadalptzwpvtrysilkomonopwpzqslattumisasaguris-an-anarc" +
+	"historicalsocietysneservebbserveftparliamentransportrapaniizashi" +
+	"ntokushimashintomikasaharashinyoshitomiokaneyamazoeshiojirishiri" +
+	"fujiedashioyanaizushirahamatonbetsusonoshirakoenigshiranukaniepc" +
+	"eshiraois-lostfoldshiraokanmakiyosemiteshiratakahagis-not-certif" +
+	"ieducatorahimeshimageandsoundandvisionshishikuis-savedunetnedals" +
+	"hisokndalshisuifuettertdasnetzshitaramashizukuishimofusaitokonam" +
+	"egatakatoris-slickhvestbyshizuokannamihokkaidoshibuyahabaghdadsi" +
+	"gdalsimbirskomorotsukamisatohoboldlygoingnowhere-for-moregontrai" +
+	"lroadsimple-urlsirdalsldslgslupskovestfoldsnzsolundsomasvuotnaka" +
+	"yamasomnakhodkamitsuesoosopotularssonsor-odalsor-varangersorfold" +
+	"sorreisahayakawakamiichikaiseiyokoshibahikariwanumatakayamasortl" +
+	"andsorumisawasouthcarolinaklodzkodairasouthwesterniiminamiashiga" +
+	"rasowaspace-to-renturystykanumazuryspbalsanagochihayaakasakawago" +
+	"ebinagisodegauravocataniaustrheimatunduhrennesoygardenvironmenta" +
+	"lconservationationalheritage12spjelkavikomvuxn--andy-iraspydeber" +
+	"gsquarendalenvikingatlantakazakis-uberleetreesrvestneshimosuwalk" +
+	"is-into-gamesaverdesteinkjerusalembetsukubahcavuotnagaivuotnagak" +
+	"utechnologystjohnstjordalshalsenstockholmestrandstor-elvdalstord" +
+	"alstorenburgstorfjordstpetersburgstuff-4-salevangerstuttgartuvar" +
+	"ggatverdalsuzukanoyaltaijis-very-badaddjamisongdalensvalbardurha" +
+	"mburgsveiosvelvikonantanangersvizzeraswidnicarrierswiebodzindero" +
+	"yswinoujscienceandhistorysxn--asky-iravestre-slidreamhostershimo" +
+	"tsukevestre-totenris-very-evillagematsubarakawachinaganoharaokin" +
+	"awashirosatobamagazinewhampshireggio-emiliavestvagoyvevelstadvib" +
+	"o-valentiavibovalentiavideovinnicartoonarteducationalchikugojome" +
+	"decinemamurogawatch-and-clockongsbergvinnytsiavirginiavirtualvir" +
+	"tuelviterbolognagasakikonaioirasecngvladikavkazanvladimirumasaki" +
+	"taurayasudavladivostokaizukarasjohkamiminershimotsumavlogvolgogr" +
+	"advolkenkunderseaportvologdanskongsvingervolyngdalvoronezhitomir" +
+	"vossevangenvrnvyatkarasjokoninohembygdsforbundxn--bdddj-mrabdxn-" +
+	"-bearalvhki-y4axn--berlevg-jxaxn--bhcavuotna-s4axn--bhccavuotna-" +
+	"k7axn--bidr-5nachikatsuuraxn--bievt-0qaxn--bjarky-fyaroslavlaand" +
+	"erenxn--bjddar-ptakinouexn--blt-elaborxn--bmlo-grajewolominamata" +
+	"ketomisatokuyamaxn--bod-2napleshingulenxn--brnny-wuaccident-inve" +
+	"stigationjukudoyamaceratabusebastopologyeongbukonskowolanshellas" +
+	"kimitsubatamiastarnbergxn--brnnysund-m8accident-preventionlinebr" +
+	"askaunbieidsvollxn--brum-voagatxn--btsfjord-9zaxn--ciqpnxn--clch" +
+	"c0ea0b2g2a9gcdxn--comunicaes-v6a2oxn--correios-e-telecomunicaes-" +
+	"ghc29axn--czrw28baltimore-og-romsdalinzaishobarakpetroleumbonebi" +
+	"zenakamagayahikobayashijonawatehimejiitatebayashichinohelsinkita" +
+	"kamiizumisanoksnesakyotanabellunordkappspotenzachpomorskienative" +
+	"americanantiquesalangenaturalhistorymuseumcenterxn--davvenjrga-y" +
+	"4axn--dnna-grandrapidshinichinanxn--drbak-wuaxn--dyry-iraxn--eve" +
+	"ni-0qa01gaxn--finny-yuaxn--fiqs8shinjoyoitakaokamchatkameokameya" +
+	"mashinashikiyosatohnoshowaxn--fiqz9shinjukumanoxn--fjord-lraxn--" +
+	"fl-ziaxn--flor-jraxn--fpcrj9c3dxn--frde-granexn--frna-woarais-ve" +
+	"ry-gooddaxn--frya-hraxn--fzc2c9e2choseikakudamatsuedtirollagrarb" +
+	"oretuminamiechizenlsaratovchattanooganordreisa-hockeynutazulsand" +
+	"oyuulvikaszubytomakomaibaraxn--gecrj9choshibukawaxn--ggaviika-8y" +
+	"a47hadselfiparisor-fronxn--gildeskl-g0axn--givuotna-8yasakaimina" +
+	"tonsbergxn--gjvik-wuaxn--gls-elachoyodontexistmein-the-bandaiwaf" +
+	"unewspaperxn--gmq050is-very-nicexn--gmqw5axn--h-2familyngenxn--h" +
+	"1aeghaebaruminamitanexn--h2brj9chtraeumtgeradefenseljejuifchelte" +
+	"nham-radio-openair-surveillancexn--hbmer-xqaxn--hcesuolo-7ya35ba" +
+	"mbleangaviikagoshimallorcadaquesalatambovaroyokozembroideryomita" +
+	"nobihirosakikamijimaxn--hery-iraxn--hgebostad-g3axn--hmmrfeasta-" +
+	"s4achungbukazoologyxn--hnefoss-q1axn--hobl-iraxn--holtlen-hxaxn-" +
+	"-hpmir-xqaxn--hyanger-q1axn--hylandet-54axn--indery-fyasugis-ver" +
+	"y-sweetrentinoxn--io0a7is-with-thebandovre-eikerxn--j1amhagaxn--" +
+	"j6w193gxn--jlster-byasuokarasuyamashikizunokunimilanoxn--jrpelan" +
+	"d-54axn--karmy-yuaxn--kfjord-iuaxn--klbu-woaxn--koluokta-7ya57ha" +
+	"gebostadxn--kprw13dxn--kpry57dxn--krager-gyatominamibosojaworzno" +
+	"xn--kranghke-b0axn--krdsherad-m8axn--krehamn-dxaxn--krjohka-hwab" +
+	"49jevnakershusculturexn--ksnes-uuaxn--kvfjord-nxaxn--kvitsy-fyat" +
+	"sukaratexn--kvnangen-k0axn--l-1fareastcoastaldefencexn--laheadju" +
+	"-7yatsushiroxn--langevg-jxaxn--lcvr32dxn--ldingen-q1axn--leagavi" +
+	"ika-52barcelonagaravennagareyamalopolskanlandnipropetrovskaruiza" +
+	"waxn--lesund-huaxn--lgbbat1ad8jewelryxn--lgrd-poachungnamdalseid" +
+	"fjordxn--lhppi-xqaxn--linds-pratottorisesakiwakunigamiharustkanz" +
+	"akiyosumitakaginozawaonsenxn--lns-qlarvikonyvelomzaporizhzhiaxn-" +
+	"-loabt-0qaxn--lrdal-sraxn--lrenskog-54axn--lt-liachuvashiaxn--lt" +
+	"en-granvindafjordxn--lury-iraxn--mely-iraxn--merker-kuaxn--mgb2d" +
+	"deshinkamigotoyohashimotokorozawaxn--mgb9awbfetsundxn--mgba3a4f1" +
+	"6axn--mgba3a4franarashinoharaxn--mgbaam7a8haibarakitahatakahatak" +
+	"aishimogosenxn--mgbayh7gpaduaxn--mgbbh1a71exn--mgbc0a9azcgxn--mg" +
+	"berp4a5d4a87gxn--mgberp4a5d4arxn--mgbqly7c0a67fbciminamifuranoxn" +
+	"--mgbqly7cvafranziskanerimarinexn--mgbtf8flandershinshinotsusaki" +
+	"s-leetrdxn--mjndalen-64axn--mk0axisleofmandalxn--mlatvuopmi-s4ax" +
+	"n--mli-tlavagiskexn--mlselv-iuaxn--moreke-juaxn--mosjen-eyawarax" +
+	"n--mot-tlavangenxn--mre-og-romsdal-qqbarreaudnedalnaturalscience" +
+	"snaturellesaltdalipetskarumaintenancemergencyclopedicasinordre-l" +
+	"andpalacepilepsyzranzanaturbruksgymnaturhistorischesalvadordalil" +
+	"lehammerfest-le-patrondheimeloyalistavropolkowicevje-og-hornness" +
+	"etagayaseljordrangedalivornobiraxn--msy-ula0hakatanohatakamatsuk" +
+	"awaxn--mtta-vrjjat-k7afgrongaxn--muost-0qaxn--mxtq1misconfusedxn" +
+	"--nmesjevuemie-tcbajddarchaeologyxn--nnx388axn--nodessakuhokksun" +
+	"dxn--nry-yla5gxn--nttery-byaesellsyourhomeiparochesterxn--nvuotn" +
+	"a-hwaxn--o3cw4hakodatexn--od0algxn--od0aq3barrel-of-knowledgeolo" +
+	"gyonabarullensvangjemnesalzburgjerdrumemorialosangelesamegawaxn-" +
+	"-ogbpf8flatangerxn--oppegrd-ixaxn--ostery-fyawatahamaxn--osyro-w" +
+	"uaxn--p1aisshikiyokawaraxn--pgbs0dhakonexn--porsgu-sta26fhskchri" +
+	"stiansburgrossetouchijiwadepotaruis-a-geekgroundhandlingroznyxn-" +
+	"-rady-iraxn--rdal-poaxn--rde-ulaxn--rdy-0nabarissmarterthanyouth" +
+	"achirogatakahashimamakitagawaxn--rennesy-v1axn--rhkkervju-01afhv" +
+	"alerxn--rholt-mragoworse-thandsondriodejaneiroxn--risa-5naritaku" +
+	"rashikiwatarailwayxn--risr-iraxn--rland-uuaxn--rlingen-mxaxn--rm" +
+	"skog-byaxn--rros-gratangenxn--rskog-uuaxn--rst-0naroyxn--rsta-fr" +
+	"ancaiseharaxn--ryken-vuaxn--ryrvik-byaxn--s-1farmequipmentxn--s9" +
+	"brj9circuscountryestateofdelawarezzoologicalvivdonskazunoxn--san" +
+	"dnessjen-ogbarrell-of-knowledgeometre-experts-comptablesamnanger" +
+	"xn--sandy-yuaxn--seral-lraxn--sgne-grazxn--skierv-utazaskoyabeno" +
+	"rd-fronxn--skjervy-v1axn--skjk-soaxn--sknit-yqaxn--sknland-fxaxn" +
+	"--slat-5narusawaxn--slt-elabourxn--smla-hraxn--smna-graxn--snase" +
+	"-nraxn--sndre-land-0cbgxn--snes-poaxn--snsa-roaxn--sr-aurdal-l8a" +
+	"xn--sr-fron-q1axn--sr-odal-q1axn--sr-varanger-ggbaselburgjerstad" +
+	"otsurugashimanxjeonnamerikawauexhibitionatuurwetenschappenaumbur" +
+	"gjesdaloteneiiyamanobeeldengeluidrobakrehamnaustdalouvrexpressex" +
+	"changets-itarantokyotangoceanographichisokananporovnoceanographi" +
+	"quebecastresistancexn--srfold-byaxn--srreisa-q1axn--srum-graxn--" +
+	"stfold-9xaxn--stjrdal-s1axn--stjrdalshalsen-sqbashkiriaxn--stre-" +
+	"toten-zcbatochigifuchukotkakamigaharaxn--tjme-hraxn--tn0agrigent" +
+	"omologyeonggiehtavuoatnaamesjevuemielnoboribetsuitachikawakayama" +
+	"gadanconagawakembuchikujobshinshiroxn--tnsberg-q1axn--trany-yuax" +
+	"n--trgstad-r1axn--trna-woaxn--troms-zuaxn--tysvr-vraxn--uc0atved" +
+	"estrandxn--uc0ay4axn--unjrga-rtakizawaxn--vads-jraxn--vard-jraxn" +
+	"--vegrshei-c0axn--vestvgy-ixa6oxn--vg-yiabatsfjordyndns-at-worki" +
+	"nggroupowiatargindianapolis-a-bloggerxn--vgan-qoaxn--vgsy-qoa0je" +
+	"wishartrentomsklabuyshouseshakotankzminamiuonumatsusakahogis-a-p" +
+	"atsfanxn--vler-qoaxn--vre-eiker-k8axn--vrggt-xqadxn--vry-yla5gxn" +
+	"--wcvs22dxn--wgbh1citydalxn--wgbl6axn--xkc2al3hye2axn--xkc2dl3a5" +
+	"ee0hakubanxn--yer-znarutokigawaxn--yfro4i67oxn--ygarden-p1axn--y" +
+	"gbi2ammxn--aurskog-hland-jnbalsfjordnepropetrovskarmoyokosukarat" +
+	"suginamikatagamilitaryokotebinorilskarpaczeladzgoravouesakuragaw" +
+	"authordalandivttasvuotnakaiwamizawaustinnasushiobaraurskog-holan" +
+	"divtasvuodnaharimaniwakurate-burg12xn--ystre-slidre-ujbeppuboles" +
+	"lawiecatanzarowfarmsteadyndns-blogdnsanfranciscolonialwilliamsbu" +
+	"rgjovikasaokaminokawanishiaizubangexn--zf0ao64axn--zf0avxn--aver" +
+	"y-yuasakegawaxxxn--b-5gaxz"
 
 // nodes is the list of nodes. Each node is represented as a uint32, which
 // encodes the node's children, wildcard bit and node type (as an index into
@@ -52,121 +374,6097 @@ const text = "clubacyfukuchiyamashinacionakagyomanpostatecouncilgovgvhomediaph" 
 //	[15 bits] text index
 //	[ 6 bits] text length
 var nodes = [...]uint32{
-	0x01a01442, // n0x0000 c0x0006 (n0x000d-n0x0013)  + I ao
-	0x01e01f82, // n0x0001 c0x0007 (n0x0013-n0x001d)* o I ar
-	0x026068c4, // n0x0002 c0x0009 (n0x001e-n0x0024)  o I arpa
-	0x02a05b03, // n0x0003 c0x000a (n0x0024-n0x0025)  o I com
-	0x01600142, // n0x0004 c0x0005 (---------------)* o I cy
-	0x02e02682, // n0x0005 c0x000b (n0x0025-n0x0028)  + I jp
-	0x03a00802, // n0x0006 c0x000e (n0x0048-n0x0052)* o I om
-	0x03e03583, // n0x0007 c0x000f (n0x0052-n0x0053)  o I org
-	0x04606b82, // n0x0008 c0x0011 (n0x0055-n0x0063)  + I tw
-	0x04a00202, // n0x0009 c0x0012 (n0x0063-n0x006e)* o I uk
-	0x05205dc2, // n0x000a c0x0014 (n0x006f-n0x0070)  o I us
-	0x00206f08, // n0x000b c0x0000 (---------------)  + I xn--p1ai
-	0x016050c2, // n0x000c c0x0005 (---------------)* o I zw
-	0x00200ac2, // n0x000d c0x0000 (---------------)  + I co
-	0x00200e82, // n0x000e c0x0000 (---------------)  + I ed
-	0x00200d42, // n0x000f c0x0000 (---------------)  + I gv
-	0x00201e82, // n0x0010 c0x0000 (---------------)  + I it
-	0x00202782, // n0x0011 c0x0000 (---------------)  + I og
-	0x002026c2, // n0x0012 c0x0000 (---------------)  + I pb
-	0x02205b03, // n0x0013 c0x0008 (n0x001d-n0x001e)  o I com
-	0x00603713, // n0x0014 c0x0001 (---------------)  ! I congresodelalengua3
-	0x00602b84, // n0x0015 c0x0001 (---------------)  ! I educ
-	0x00603113, // n0x0016 c0x0001 (---------------)  ! I gobiernoelectronico
-	0x00603685, // n0x0017 c0x0001 (---------------)  ! I mecon
-	0x00600546, // n0x0018 c0x0001 (---------------)  ! I nacion
-	0x006034c3, // n0x0019 c0x0001 (---------------)  ! I nic
-	0x00605689, // n0x001a c0x0001 (---------------)  ! I promocion
-	0x00601286, // n0x001b c0x0001 (---------------)  ! I retina
-	0x00600083, // n0x001c c0x0001 (---------------)  ! I uba
-	0x00002708, // n0x001d c0x0000 (---------------)  +   blogspot
-	0x00206e04, // n0x001e c0x0000 (---------------)  + I e164
-	0x00201107, // n0x001f c0x0000 (---------------)  + I in-addr
-	0x00201843, // n0x0020 c0x0000 (---------------)  + I ip6
-	0x00201904, // n0x0021 c0x0000 (---------------)  + I iris
-	0x00202a83, // n0x0022 c0x0000 (---------------)  + I uri
-	0x00204483, // n0x0023 c0x0000 (---------------)  + I urn
-	0x00000202, // n0x0024 c0x0000 (---------------)  +   uk
-	0x00200102, // n0x0025 c0x0000 (---------------)  + I ac
-	0x032051c4, // n0x0026 c0x000c (n0x0028-n0x0029)* o I kobe
-	0x03603bc5, // n0x0027 c0x000d (n0x0029-n0x0048)  + I kyoto
-	0x00602c84, // n0x0028 c0x0001 (---------------)  ! I city
-	0x00206d05, // n0x0029 c0x0000 (---------------)  + I ayabe
-	0x002001cb, // n0x002a c0x0000 (---------------)  + I fukuchiyama
-	0x00201a4b, // n0x002b c0x0000 (---------------)  + I higashiyama
-	0x00202b03, // n0x002c c0x0000 (---------------)  + I ide
-	0x00201743, // n0x002d c0x0000 (---------------)  + I ine
-	0x00202404, // n0x002e c0x0000 (---------------)  + I joyo
-	0x00205407, // n0x002f c0x0000 (---------------)  + I kameoka
-	0x00205544, // n0x0030 c0x0000 (---------------)  + I kamo
-	0x00203e84, // n0x0031 c0x0000 (---------------)  + I kita
-	0x002029c4, // n0x0032 c0x0000 (---------------)  + I kizu
-	0x00202d88, // n0x0033 c0x0000 (---------------)  + I kumiyama
-	0x00201548, // n0x0034 c0x0000 (---------------)  + I kyotamba
-	0x00204e09, // n0x0035 c0x0000 (---------------)  + I kyotanabe
-	0x00202f88, // n0x0036 c0x0000 (---------------)  + I kyotango
-	0x00201c87, // n0x0037 c0x0000 (---------------)  + I maizuru
-	0x00203f86, // n0x0038 c0x0000 (---------------)  + I minami
-	0x00203f8f, // n0x0039 c0x0000 (---------------)  + I minamiyamashiro
-	0x00204346, // n0x003a c0x0000 (---------------)  + I miyazu
-	0x00205144, // n0x003b c0x0000 (---------------)  + I muko
-	0x0020138a, // n0x003c c0x0000 (---------------)  + I nagaokakyo
-	0x00200687, // n0x003d c0x0000 (---------------)  + I nakagyo
-	0x00204506, // n0x003e c0x0000 (---------------)  + I nantan
-	0x00203cc9, // n0x003f c0x0000 (---------------)  + I oyamazaki
-	0x00204d85, // n0x0040 c0x0000 (---------------)  + I sakyo
-	0x00205345, // n0x0041 c0x0000 (---------------)  + I seika
-	0x00204ec6, // n0x0042 c0x0000 (---------------)  + I tanabe
-	0x00201e03, // n0x0043 c0x0000 (---------------)  + I uji
-	0x00201e09, // n0x0044 c0x0000 (---------------)  + I ujitawara
-	0x00206bc6, // n0x0045 c0x0000 (---------------)  + I wazuka
-	0x00200389, // n0x0046 c0x0000 (---------------)  + I yamashina
-	0x00206786, // n0x0047 c0x0000 (---------------)  + I yawata
-	0x00600e4a, // n0x0048 c0x0001 (---------------)  ! I mediaphone
-	0x00605886, // n0x0049 c0x0001 (---------------)  ! I nawras
-	0x0060588d, // n0x004a c0x0001 (---------------)  ! I nawrastelecom
-	0x00605b4a, // n0x004b c0x0001 (---------------)  ! I omanmobile
-	0x00600808, // n0x004c c0x0001 (---------------)  ! I omanpost
-	0x006024c7, // n0x004d c0x0001 (---------------)  ! I omantel
-	0x00601fcc, // n0x004e c0x0001 (---------------)  ! I rakpetroleum
-	0x00605e07, // n0x004f c0x0001 (---------------)  ! I siemens
-	0x00605f88, // n0x0050 c0x0001 (---------------)  ! I songfest
-	0x0060098c, // n0x0051 c0x0001 (---------------)  ! I statecouncil
-	0x04004c46, // n0x0052 c0x0010 (n0x0053-n0x0055)  +   dyndns
-	0x00000c82, // n0x0053 c0x0000 (---------------)  +   go
-	0x00000dc4, // n0x0054 c0x0000 (---------------)  +   home
-	0x00002708, // n0x0055 c0x0000 (---------------)  +   blogspot
-	0x00200004, // n0x0056 c0x0000 (---------------)  + I club
-	0x00205b03, // n0x0057 c0x0000 (---------------)  + I com
-	0x00205004, // n0x0058 c0x0000 (---------------)  + I ebiz
-	0x00202b83, // n0x0059 c0x0000 (---------------)  + I edu
-	0x00203604, // n0x005a c0x0000 (---------------)  + I game
-	0x00200c83, // n0x005b c0x0000 (---------------)  + I gov
-	0x002070c3, // n0x005c c0x0000 (---------------)  + I idv
-	0x00202283, // n0x005d c0x0000 (---------------)  + I mil
-	0x00201783, // n0x005e c0x0000 (---------------)  + I net
-	0x00203583, // n0x005f c0x0000 (---------------)  + I org
-	0x0020618b, // n0x0060 c0x0000 (---------------)  + I xn--czrw28b
-	0x0020718a, // n0x0061 c0x0000 (---------------)  + I xn--uc0atv
-	0x0020740c, // n0x0062 c0x0000 (---------------)  + I xn--zf0ao64a
-	0x00602702, // n0x0063 c0x0001 (---------------)  ! I bl
-	0x0060640f, // n0x0064 c0x0001 (---------------)  ! I british-library
-	0x04e00ac2, // n0x0065 c0x0013 (n0x006e-n0x006f)  o I co
-	0x00602343, // n0x0066 c0x0001 (---------------)  ! I jet
-	0x006055c3, // n0x0067 c0x0001 (---------------)  ! I mod
-	0x00604659, // n0x0068 c0x0001 (---------------)  ! I national-library-scotland
-	0x00601043, // n0x0069 c0x0001 (---------------)  ! I nel
-	0x006034c3, // n0x006a c0x0001 (---------------)  ! I nic
-	0x006052c3, // n0x006b c0x0001 (---------------)  ! I nls
-	0x0060694a, // n0x006c c0x0001 (---------------)  ! I parliament
-	0x016019c3, // n0x006d c0x0005 (---------------)* o I sch
-	0x00002708, // n0x006e c0x0000 (---------------)  +   blogspot
-	0x056006c2, // n0x006f c0x0015 (n0x0070-n0x0073)  + I ak
-	0x00202c42, // n0x0070 c0x0000 (---------------)  + I cc
-	0x00202903, // n0x0071 c0x0000 (---------------)  + I k12
-	0x00204883, // n0x0072 c0x0000 (---------------)  + I lib
+	0x01a01602, // n0x0000 c0x0006 (n0x0134-n0x013a)  + I ac
+	0x01e06c42, // n0x0001 c0x0007 (n0x013a-n0x013b)  + I ad
+	0x0220ac82, // n0x0002 c0x0008 (n0x013b-n0x0142)  + I ae
+	0x0262efc4, // n0x0003 c0x0009 (n0x0142-n0x019b)  + I aero
+	0x02a15f42, // n0x0004 c0x000a (n0x019b-n0x01a0)  + I af
+	0x02e00f42, // n0x0005 c0x000b (n0x01a0-n0x01a5)  + I ag
+	0x03200742, // n0x0006 c0x000c (n0x01a5-n0x01a9)  + I ai
+	0x03600302, // n0x0007 c0x000d (n0x01a9-n0x01af)  + I al
+	0x00205b02, // n0x0008 c0x0000 (---------------)  + I am
+	0x03a009c2, // n0x0009 c0x000e (n0x01af-n0x01b3)  + I an
+	0x03e0ce02, // n0x000a c0x000f (n0x01b3-n0x01b9)  + I ao
+	0x00271482, // n0x000b c0x0000 (---------------)  + I aq
+	0x04201202, // n0x000c c0x0010 (n0x01b9-n0x01c3)* o I ar
+	0x04b44904, // n0x000d c0x0012 (n0x01c4-n0x01ca)  o I arpa
+	0x04e00d42, // n0x000e c0x0013 (n0x01ca-n0x01cb)  + I as
+	0x002298c4, // n0x000f c0x0000 (---------------)  + I asia
+	0x05202c82, // n0x0010 c0x0014 (n0x01cb-n0x01d2)  + I at
+	0x05a02642, // n0x0011 c0x0016 (n0x01d3-n0x01e5)  o I au
+	0x06a04302, // n0x0012 c0x001a (n0x01f5-n0x01f6)  + I aw
+	0x0025c042, // n0x0013 c0x0000 (---------------)  + I ax
+	0x06e07182, // n0x0014 c0x001b (n0x01f6-n0x0202)  + I az
+	0x07207a42, // n0x0015 c0x001c (n0x0202-n0x020c)  + I ba
+	0x07640102, // n0x0016 c0x001d (n0x020c-n0x0214)  + I bb
+	0x016e7c82, // n0x0017 c0x0005 (---------------)* o I bd
+	0x07a00002, // n0x0018 c0x001e (n0x0214-n0x0216)  + I be
+	0x07f12ac2, // n0x0019 c0x001f (n0x0216-n0x0217)  + I bf
+	0x08331542, // n0x001a c0x0020 (n0x0217-n0x023b)  + I bg
+	0x0860e042, // n0x001b c0x0021 (n0x023b-n0x0240)  + I bh
+	0x08a04f02, // n0x001c c0x0022 (n0x0240-n0x0245)  + I bi
+	0x08ef0f83, // n0x001d c0x0023 (n0x0245-n0x024c)  + I biz
+	0x09212a02, // n0x001e c0x0024 (n0x024c-n0x0250)  + I bj
+	0x09614a42, // n0x001f c0x0025 (n0x0250-n0x0255)  + I bm
+	0x01653742, // n0x0020 c0x0005 (---------------)* o I bn
+	0x09a048c2, // n0x0021 c0x0026 (n0x0255-n0x025e)  + I bo
+	0x09e01302, // n0x0022 c0x0027 (n0x025e-n0x02a3)  + I br
+	0x0a6ca682, // n0x0023 c0x0029 (n0x02a4-n0x02a9)  + I bs
+	0x0aa0e542, // n0x0024 c0x002a (n0x02a9-n0x02ae)  + I bt
+	0x0ae325c2, // n0x0025 c0x002b (n0x02ae-n0x02b0)  + I bw
+	0x0b20aec2, // n0x0026 c0x002c (n0x02b0-n0x02b4)  + I by
+	0x0b632942, // n0x0027 c0x002d (n0x02b4-n0x02b9)  + I bz
+	0x0ba08582, // n0x0028 c0x002e (n0x02b9-n0x02ca)  + I ca
+	0x00214883, // n0x0029 c0x0000 (---------------)  + I cat
+	0x0be055c2, // n0x002a c0x002f (n0x02ca-n0x02ce)  + I cc
+	0x0c2ef302, // n0x002b c0x0030 (n0x02ce-n0x02cf)  + I cd
+	0x0c65c882, // n0x002c c0x0031 (n0x02cf-n0x02d0)  + I cf
+	0x00219502, // n0x002d c0x0000 (---------------)  + I cg
+	0x0ca01642, // n0x002e c0x0032 (n0x02d0-n0x02d1)  + I ch
+	0x0ce0a402, // n0x002f c0x0033 (n0x02d1-n0x02e0)  + I ci
+	0x0d222f02, // n0x0030 c0x0034 (n0x02e0-n0x02e1)* o I ck
+	0x0d61d842, // n0x0031 c0x0035 (n0x02e1-n0x02e5)  + I cl
+	0x0da36582, // n0x0032 c0x0036 (n0x02e5-n0x02e6)  + I cm
+	0x0de36dc2, // n0x0033 c0x0037 (n0x02e6-n0x0312)  + I cn
+	0x0e200182, // n0x0034 c0x0038 (n0x0312-n0x031f)  + I co
+	0x0e604543, // n0x0035 c0x0039 (n0x031f-n0x03d1)  + I com
+	0x0023d144, // n0x0036 c0x0000 (---------------)  + I coop
+	0x0ea13e82, // n0x0037 c0x003a (n0x03d1-n0x03d8)  + I cr
+	0x0ee1d742, // n0x0038 c0x003b (n0x03d8-n0x03de)  + I cu
+	0x0f30b802, // n0x0039 c0x003c (n0x03de-n0x03df)  + I cv
+	0x0f641642, // n0x003a c0x003d (n0x03df-n0x03e1)  + I cx
+	0x01641982, // n0x003b c0x0005 (---------------)* o I cy
+	0x0fa00442, // n0x003c c0x003e (n0x03e1-n0x03e2)  + I cz
+	0x0fe027c2, // n0x003d c0x003f (n0x03e2-n0x03ea)  + I de
+	0x00208f42, // n0x003e c0x0000 (---------------)  + I dj
+	0x1029d282, // n0x003f c0x0040 (n0x03ea-n0x03eb)  + I dk
+	0x10631382, // n0x0040 c0x0041 (n0x03eb-n0x03f0)  + I dm
+	0x10a074c2, // n0x0041 c0x0042 (n0x03f0-n0x03fa)  + I do
+	0x10e67c82, // n0x0042 c0x0043 (n0x03fa-n0x0402)  + I dz
+	0x11204502, // n0x0043 c0x0044 (n0x0402-n0x040e)  + I ec
+	0x002ce043, // n0x0044 c0x0000 (---------------)  + I edu
+	0x11600c82, // n0x0045 c0x0045 (n0x040e-n0x0418)  + I ee
+	0x11a013c2, // n0x0046 c0x0046 (n0x0418-n0x0421)  + I eg
+	0x01600042, // n0x0047 c0x0005 (---------------)* o I er
+	0x11e004c2, // n0x0048 c0x0047 (n0x0421-n0x0426)  + I es
+	0x01602182, // n0x0049 c0x0005 (---------------)* o I et
+	0x00232142, // n0x004a c0x0000 (---------------)  + I eu
+	0x1260dcc2, // n0x004b c0x0049 (n0x0427-n0x042a)  + I fi
+	0x01618c42, // n0x004c c0x0005 (---------------)* o I fj
+	0x01695a82, // n0x004d c0x0005 (---------------)* o I fk
+	0x00317982, // n0x004e c0x0000 (---------------)  + I fm
+	0x00204982, // n0x004f c0x0000 (---------------)  + I fo
+	0x12a00c02, // n0x0050 c0x004a (n0x042a-n0x0442)  + I fr
+	0x00201702, // n0x0051 c0x0000 (---------------)  + I ga
+	0x0021f482, // n0x0052 c0x0000 (---------------)  + I gd
+	0x12e06d02, // n0x0053 c0x004b (n0x0442-n0x0449)  + I ge
+	0x00248ec2, // n0x0054 c0x0000 (---------------)  + I gf
+	0x13206442, // n0x0055 c0x004c (n0x0449-n0x044e)  + I gg
+	0x1360ee42, // n0x0056 c0x004d (n0x044e-n0x0453)  + I gh
+	0x13a06482, // n0x0057 c0x004e (n0x0453-n0x0459)  + I gi
+	0x00202a02, // n0x0058 c0x0000 (---------------)  + I gl
+	0x002261c2, // n0x0059 c0x0000 (---------------)  + I gm
+	0x13e13342, // n0x005a c0x004f (n0x0459-n0x045f)  o I gn
+	0x0025bdc3, // n0x005b c0x0000 (---------------)  + I gov
+	0x142c4882, // n0x005c c0x0050 (n0x045f-n0x0465)  + I gp
+	0x0025c802, // n0x005d c0x0000 (---------------)  + I gq
+	0x1462f542, // n0x005e c0x0051 (n0x0465-n0x046b)  + I gr
+	0x00233182, // n0x005f c0x0000 (---------------)  + I gs
+	0x14ab79c2, // n0x0060 c0x0052 (n0x046b-n0x0472)  + I gt
+	0x01601e42, // n0x0061 c0x0005 (---------------)* o I gu
+	0x00226582, // n0x0062 c0x0000 (---------------)  + I gw
+	0x14e01402, // n0x0063 c0x0053 (n0x0472-n0x0475)  + I gy
+	0x1520ee82, // n0x0064 c0x0054 (n0x0475-n0x048b)  + I hk
+	0x00288dc2, // n0x0065 c0x0000 (---------------)  + I hm
+	0x15630ac2, // n0x0066 c0x0055 (n0x048b-n0x0491)  + I hn
+	0x15a3b3c2, // n0x0067 c0x0056 (n0x0491-n0x0495)  + I hr
+	0x15e05982, // n0x0068 c0x0057 (n0x0495-n0x04a6)  + I ht
+	0x16231242, // n0x0069 c0x0058 (n0x04a6-n0x04c6)  + I hu
+	0x16601842, // n0x006a c0x0059 (n0x04c6-n0x04d0)  + I id
+	0x16a04f42, // n0x006b c0x005a (n0x04d0-n0x04d2)  + I ie
+	0x16e028c2, // n0x006c c0x005b (n0x04d2-n0x04d3)* o I il
+	0x1760e5c2, // n0x006d c0x005d (n0x04d4-n0x04da)  + I im
+	0x17e00102, // n0x006e c0x005f (n0x04dc-n0x04e9)  + I in
+	0x18206344, // n0x006f c0x0060 (n0x04e9-n0x04f3)  + I info
+	0x1860ca03, // n0x0070 c0x0061 (n0x04f3-n0x04f4)  + I int
+	0x18a02d02, // n0x0071 c0x0062 (n0x04f4-n0x04f5)  + I io
+	0x18e37342, // n0x0072 c0x0063 (n0x04f5-n0x04fb)  + I iq
+	0x1920c882, // n0x0073 c0x0064 (n0x04fb-n0x0504)  + I ir
+	0x19600782, // n0x0074 c0x0065 (n0x0504-n0x050a)  + I is
+	0x19a08c82, // n0x0075 c0x0066 (n0x050a-n0x0620)  + I it
+	0x19e12f42, // n0x0076 c0x0067 (n0x0620-n0x0625)  + I je
+	0x01738a82, // n0x0077 c0x0005 (---------------)* o I jm
+	0x1a203382, // n0x0078 c0x0068 (n0x0625-n0x062d)  + I jo
+	0x0033a5c4, // n0x0079 c0x0000 (---------------)  + I jobs
+	0x1a696282, // n0x007a c0x0069 (n0x062d-n0x066d)  + I jp
+	0x01602142, // n0x007b c0x0005 (---------------)* o I ke
+	0x28325a42, // n0x007c c0x00a0 (n0x0d03-n0x0d09)  + I kg
+	0x0162ae42, // n0x007d c0x0005 (---------------)* o I kh
+	0x28601802, // n0x007e c0x00a1 (n0x0d09-n0x0d10)  + I ki
+	0x28a95ac2, // n0x007f c0x00a2 (n0x0d10-n0x0d21)  + I km
+	0x28e1dc02, // n0x0080 c0x00a3 (n0x0d21-n0x0d25)  + I kn
+	0x29291042, // n0x0081 c0x00a4 (n0x0d25-n0x0d2b)  o I kp
+	0x2960ed02, // n0x0082 c0x00a5 (n0x0d2b-n0x0d49)  + I kr
+	0x016aab02, // n0x0083 c0x0005 (---------------)* o I kw
+	0x29a19fc2, // n0x0084 c0x00a6 (n0x0d49-n0x0d4e)  + I ky
+	0x29f3f882, // n0x0085 c0x00a7 (n0x0d4e-n0x0d54)  + I kz
+	0x2a200642, // n0x0086 c0x00a8 (n0x0d54-n0x0d5d)  + I la
+	0x2a60cd82, // n0x0087 c0x00a9 (n0x0d5d-n0x0d62)  o I lb
+	0x2aa3b942, // n0x0088 c0x00aa (n0x0d62-n0x0d68)  + I lc
+	0x002000c2, // n0x0089 c0x0000 (---------------)  + I li
+	0x2ae0e342, // n0x008a c0x00ab (n0x0d68-n0x0d76)  + I lk
+	0x2b2d2002, // n0x008b c0x00ac (n0x0d76-n0x0d7b)  o I lr
+	0x2b609542, // n0x008c c0x00ad (n0x0d7b-n0x0d7d)  + I ls
+	0x2ba14fc2, // n0x008d c0x00ae (n0x0d7d-n0x0d7e)  + I lt
+	0x0020b2c2, // n0x008e c0x0000 (---------------)  + I lu
+	0x2be08a02, // n0x008f c0x00af (n0x0d7e-n0x0d87)  + I lv
+	0x2c248a02, // n0x0090 c0x00b0 (n0x0d87-n0x0d90)  + I ly
+	0x2c600702, // n0x0091 c0x00b1 (n0x0d90-n0x0d96)  + I ma
+	0x2caf3a42, // n0x0092 c0x00b2 (n0x0d96-n0x0d98)  + I mc
+	0x00214a82, // n0x0093 c0x0000 (---------------)  + I md
+	0x2ce05442, // n0x0094 c0x00b3 (n0x0d98-n0x0da0)  + I me
+	0x2d311ec2, // n0x0095 c0x00b4 (n0x0da0-n0x0da8)  + I mg
+	0x002dfd02, // n0x0096 c0x0000 (---------------)  + I mh
+	0x00232703, // n0x0097 c0x0000 (---------------)  + I mil
+	0x2d717702, // n0x0098 c0x00b5 (n0x0da8-n0x0daf)  + I mk
+	0x2da15c42, // n0x0099 c0x00b6 (n0x0daf-n0x0db6)  + I ml
+	0x01676802, // n0x009a c0x0005 (---------------)* o I mm
+	0x2de09a42, // n0x009b c0x00b7 (n0x0db6-n0x0db9)  + I mn
+	0x2e2045c2, // n0x009c c0x00b8 (n0x0db9-n0x0dbe)  + I mo
+	0x00224c84, // n0x009d c0x0000 (---------------)  + I mobi
+	0x00208602, // n0x009e c0x0000 (---------------)  + I mp
+	0x002fd3c2, // n0x009f c0x0000 (---------------)  + I mq
+	0x2e641a02, // n0x00a0 c0x00b9 (n0x0dbe-n0x0dc0)  + I mr
+	0x002525c2, // n0x00a1 c0x0000 (---------------)  + I ms
+	0x0165af82, // n0x00a2 c0x0005 (---------------)* o I mt
+	0x2ea0fe42, // n0x00a3 c0x00ba (n0x0dc0-n0x0dc7)  + I mu
+	0x2eebb886, // n0x00a4 c0x00bb (n0x0dc7-n0x0feb)  + I museum
+	0x2f21e342, // n0x00a5 c0x00bc (n0x0feb-n0x0ff9)  + I mv
+	0x2f6365c2, // n0x00a6 c0x00bd (n0x0ff9-n0x1004)  + I mw
+	0x2fb1eb82, // n0x00a7 c0x00be (n0x1004-n0x100a)  + I mx
+	0x2fe29b42, // n0x00a8 c0x00bf (n0x100a-n0x1011)  + I my
+	0x3030fc02, // n0x00a9 c0x00c0 (n0x1011-n0x1012)* o I mz
+	0x30600242, // n0x00aa c0x00c1 (n0x1012-n0x1023)  + I na
+	0x30a30d84, // n0x00ab c0x00c2 (n0x1023-n0x1025)  + I name
+	0x31600142, // n0x00ac c0x00c5 (n0x1027-n0x1028)  + I nc
+	0x00205c82, // n0x00ad c0x0000 (---------------)  + I ne
+	0x31a0e643, // n0x00ae c0x00c6 (n0x1028-n0x1051)  + I net
+	0x31e06382, // n0x00af c0x00c7 (n0x1051-n0x105b)  + I nf
+	0x32201942, // n0x00b0 c0x00c8 (n0x105b-n0x1061)  o I ng
+	0x01608c42, // n0x00b1 c0x0005 (---------------)* o I ni
+	0x32642e42, // n0x00b2 c0x00c9 (n0x1061-n0x1064)  + I nl
+	0x32a01282, // n0x00b3 c0x00ca (n0x1064-n0x133a)  + I no
+	0x01601582, // n0x00b4 c0x0005 (---------------)* o I np
+	0x3ae00e02, // n0x00b5 c0x00eb (n0x1362-n0x1369)  + I nr
+	0x3b204b42, // n0x00b6 c0x00ec (n0x1369-n0x136c)  + I nu
+	0x3b601b42, // n0x00b7 c0x00ed (n0x136c-n0x136d)* o I nz
+	0x3be04582, // n0x00b8 c0x00ef (n0x136e-n0x1378)* o I om
+	0x3c2375c3, // n0x00b9 c0x00f0 (n0x1378-n0x13ad)  + I org
+	0x3ca015c2, // n0x00ba c0x00f2 (n0x13af-n0x13ba)  + I pa
+	0x3ce13142, // n0x00bb c0x00f3 (n0x13ba-n0x13c1)  + I pe
+	0x3d323102, // n0x00bc c0x00f4 (n0x13c1-n0x13c4)  + I pf
+	0x01626182, // n0x00bd c0x0005 (---------------)* o I pg
+	0x3d63ee42, // n0x00be c0x00f5 (n0x13c4-n0x13cc)  + I ph
+	0x3dac26c2, // n0x00bf c0x00f6 (n0x13cc-n0x13da)  + I pk
+	0x3de02202, // n0x00c0 c0x00f7 (n0x13da-n0x1485)  + I pl
+	0x00278d42, // n0x00c1 c0x0000 (---------------)  + I pm
+	0x3e627f82, // n0x00c2 c0x00f9 (n0x148e-n0x1493)  + I pn
+	0x3ea61502, // n0x00c3 c0x00fa (n0x1493-n0x14a0)  + I pr
+	0x3eec7c83, // n0x00c4 c0x00fb (n0x14a0-n0x14a7)  + I pro
+	0x3f237502, // n0x00c5 c0x00fc (n0x14a7-n0x14ae)  + I ps
+	0x3f601482, // n0x00c6 c0x00fd (n0x14ae-n0x14b7)  + I pt
+	0x3fac9842, // n0x00c7 c0x00fe (n0x14b7-n0x14bd)  + I pw
+	0x3fe9ccc2, // n0x00c8 c0x00ff (n0x14bd-n0x14c4)  + I py
+	0x402e9942, // n0x00c9 c0x0100 (n0x14c4-n0x14cc)  + I qa
+	0x406008c2, // n0x00ca c0x0101 (n0x14cc-n0x14d0)  + I re
+	0x40a03d82, // n0x00cb c0x0102 (n0x14d0-n0x14dc)  + I ro
+	0x40e09842, // n0x00cc c0x0103 (n0x14dc-n0x14e2)  + I rs
+	0x4120a202, // n0x00cd c0x0104 (n0x14e2-n0x1567)  + I ru
+	0x41632e02, // n0x00ce c0x0105 (n0x1567-n0x1570)  + I rw
+	0x41a01782, // n0x00cf c0x0106 (n0x1570-n0x1578)  + I sa
+	0x41e33082, // n0x00d0 c0x0107 (n0x1578-n0x157d)  + I sb
+	0x42203082, // n0x00d1 c0x0108 (n0x157d-n0x1582)  + I sc
+	0x4263c5c2, // n0x00d2 c0x0109 (n0x1582-n0x158a)  + I sd
+	0x42a096c2, // n0x00d3 c0x010a (n0x158a-n0x15b3)  + I se
+	0x42e21582, // n0x00d4 c0x010b (n0x15b3-n0x15ba)  + I sg
+	0x43207982, // n0x00d5 c0x010c (n0x15ba-n0x15bf)  + I sh
+	0x00202bc2, // n0x00d6 c0x0000 (---------------)  + I si
+	0x436023c2, // n0x00d7 c0x010d (n0x15bf-n0x15c0)  + I sk
+	0x43a1c5c2, // n0x00d8 c0x010e (n0x15c0-n0x15c5)  + I sl
+	0x0020bd82, // n0x00d9 c0x0000 (---------------)  + I sm
+	0x43e07582, // n0x00da c0x010f (n0x15c5-n0x15cc)  + I sn
+	0x442007c2, // n0x00db c0x0110 (n0x15cc-n0x15cf)  + I so
+	0x002b3d42, // n0x00dc c0x0000 (---------------)  + I sr
+	0x44600502, // n0x00dd c0x0111 (n0x15cf-n0x15db)  + I st
+	0x00205142, // n0x00de c0x0000 (---------------)  + I su
+	0x01606782, // n0x00df c0x0005 (---------------)* o I sv
+	0x44adf642, // n0x00e0 c0x0112 (n0x15db-n0x15dc)  + I sx
+	0x44e36002, // n0x00e1 c0x0113 (n0x15dc-n0x15e2)  + I sy
+	0x45206b42, // n0x00e2 c0x0114 (n0x15e2-n0x15e5)  + I sz
+	0x0022bf02, // n0x00e3 c0x0000 (---------------)  + I tc
+	0x45610b82, // n0x00e4 c0x0115 (n0x15e5-n0x15e6)  + I td
+	0x00204443, // n0x00e5 c0x0000 (---------------)  + I tel
+	0x00236802, // n0x00e6 c0x0000 (---------------)  + I tf
+	0x00233282, // n0x00e7 c0x0000 (---------------)  + I tg
+	0x45a0dec2, // n0x00e8 c0x0116 (n0x15e6-n0x15ed)  + I th
+	0x45e36e42, // n0x00e9 c0x0117 (n0x15ed-n0x15fc)  + I tj
+	0x00239d82, // n0x00ea c0x0000 (---------------)  + I tk
+	0x46203142, // n0x00eb c0x0118 (n0x15fc-n0x15fd)  + I tl
+	0x4663bfc2, // n0x00ec c0x0119 (n0x15fd-n0x1605)  + I tm
+	0x46a03a82, // n0x00ed c0x011a (n0x1605-n0x1619)  + I tn
+	0x46e04182, // n0x00ee c0x011b (n0x1619-n0x161f)  + I to
+	0x4720a782, // n0x00ef c0x011c (n0x161f-n0x1621)* o I tr
+	0x002c1bc6, // n0x00f0 c0x0000 (---------------)  + I travel
+	0x47a08cc2, // n0x00f1 c0x011e (n0x1622-n0x1633)  + I tt
+	0x47e820c2, // n0x00f2 c0x011f (n0x1633-n0x1637)  + I tv
+	0x4824ccc2, // n0x00f3 c0x0120 (n0x1637-n0x1645)  + I tw
+	0x4860e6c2, // n0x00f4 c0x0121 (n0x1645-n0x1651)  o I tz
+	0x48a13a02, // n0x00f5 c0x0122 (n0x1651-n0x169f)  + I ua
+	0x48e0d902, // n0x00f6 c0x0123 (n0x169f-n0x16a7)  + I ug
+	0x49206042, // n0x00f7 c0x0124 (n0x16a7-n0x16b2)* o I uk
+	0x49a0a702, // n0x00f8 c0x0126 (n0x16b3-n0x16f2)  + I us
+	0x57e10102, // n0x00f9 c0x015f (n0x1799-n0x179f)  + I uy
+	0x58213f02, // n0x00fa c0x0160 (n0x179f-n0x17a3)  + I uz
+	0x002002c2, // n0x00fb c0x0000 (---------------)  + I va
+	0x586f9642, // n0x00fc c0x0161 (n0x17a3-n0x17a9)  + I vc
+	0x58a03642, // n0x00fd c0x0162 (n0x17a9-n0x17b3)  + I ve
+	0x002aec82, // n0x00fe c0x0000 (---------------)  + I vg
+	0x58e01a42, // n0x00ff c0x0163 (n0x17b3-n0x17b8)  + I vi
+	0x5920ab02, // n0x0100 c0x0164 (n0x17b8-n0x17c4)  + I vn
+	0x002039c2, // n0x0101 c0x0000 (---------------)  + I vu
+	0x00267e02, // n0x0102 c0x0000 (---------------)  + I wf
+	0x596233c2, // n0x0103 c0x0165 (n0x17c4-n0x17cb)  + I ws
+	0x0024168c, // n0x0104 c0x0000 (---------------)  + I xn--3e0b707e
+	0x002486cb, // n0x0105 c0x0000 (---------------)  + I xn--45brj9c
+	0x0026394e, // n0x0106 c0x0000 (---------------)  + I xn--54b7fta0cc
+	0x0028d6ca, // n0x0107 c0x0000 (---------------)  + I xn--90a3ac
+	0x002eee16, // n0x0108 c0x0000 (---------------)  + I xn--clchc0ea0b2g2a9gcd
+	0x002f55ca, // n0x0109 c0x0000 (---------------)  + I xn--fiqs8s
+	0x002f668a, // n0x010a c0x0000 (---------------)  + I xn--fiqz9s
+	0x002f748d, // n0x010b c0x0000 (---------------)  + I xn--fpcrj9c3d
+	0x002f854d, // n0x010c c0x0000 (---------------)  + I xn--fzc2c9e2c
+	0x002fa6cb, // n0x010d c0x0000 (---------------)  + I xn--gecrj9c
+	0x002fe54b, // n0x010e c0x0000 (---------------)  + I xn--h2brj9c
+	0x00304c09, // n0x010f c0x0000 (---------------)  + I xn--j1amh
+	0x00304f0b, // n0x0110 c0x0000 (---------------)  + I xn--j6w193g
+	0x0030720b, // n0x0111 c0x0000 (---------------)  + I xn--kprw13d
+	0x003074cb, // n0x0112 c0x0000 (---------------)  + I xn--kpry57d
+	0x0030d40f, // n0x0113 c0x0000 (---------------)  + I xn--lgbbat1ad8j
+	0x00311dcc, // n0x0114 c0x0000 (---------------)  + I xn--mgb2ddes
+	0x0031284c, // n0x0115 c0x0000 (---------------)  + I xn--mgb9awbf
+	0x00312ccf, // n0x0116 c0x0000 (---------------)  + I xn--mgba3a4f16a
+	0x0031308e, // n0x0117 c0x0000 (---------------)  + I xn--mgba3a4fra
+	0x0031374e, // n0x0118 c0x0000 (---------------)  + I xn--mgbaam7a8h
+	0x0031430e, // n0x0119 c0x0000 (---------------)  + I xn--mgbayh7gpa
+	0x0031474e, // n0x011a c0x0000 (---------------)  + I xn--mgbbh1a71e
+	0x00314acf, // n0x011b c0x0000 (---------------)  + I xn--mgbc0a9azcg
+	0x00314e93, // n0x011c c0x0000 (---------------)  + I xn--mgberp4a5d4a87g
+	0x00315351, // n0x011d c0x0000 (---------------)  + I xn--mgberp4a5d4ar
+	0x00315793, // n0x011e c0x0000 (---------------)  + I xn--mgbqly7c0a67fbc
+	0x00315f90, // n0x011f c0x0000 (---------------)  + I xn--mgbqly7cvafr
+	0x003167cc, // n0x0120 c0x0000 (---------------)  + I xn--mgbtf8fl
+	0x0031f84b, // n0x0121 c0x0000 (---------------)  + I xn--nnx388a
+	0x0031fb08, // n0x0122 c0x0000 (---------------)  + I xn--node
+	0x0032114a, // n0x0123 c0x0000 (---------------)  + I xn--o3cw4h
+	0x00322f4c, // n0x0124 c0x0000 (---------------)  + I xn--ogbpf8fl
+	0x00324088, // n0x0125 c0x0000 (---------------)  + I xn--p1ai
+	0x0032460b, // n0x0126 c0x0000 (---------------)  + I xn--pgbs0dh
+	0x0032be8b, // n0x0127 c0x0000 (---------------)  + I xn--s9brj9c
+	0x0034124a, // n0x0128 c0x0000 (---------------)  + I xn--wgbh1c
+	0x0034164a, // n0x0129 c0x0000 (---------------)  + I xn--wgbl6a
+	0x003418d0, // n0x012a c0x0000 (---------------)  + I xn--xkc2al3hye2a
+	0x00341cd1, // n0x012b c0x0000 (---------------)  + I xn--xkc2dl3a5ee0h
+	0x003427cd, // n0x012c c0x0000 (---------------)  + I xn--yfro4i67o
+	0x00342ecd, // n0x012d c0x0000 (---------------)  + I xn--ygbi2ammx
+	0x00349343, // n0x012e c0x0000 (---------------)  + I xxx
+	0x0161c0c2, // n0x012f c0x0005 (---------------)* o I ye
+	0x00252f82, // n0x0130 c0x0000 (---------------)  + I yt
+	0x01601b82, // n0x0131 c0x0005 (---------------)* o I za
+	0x0173f8c2, // n0x0132 c0x0005 (---------------)* o I zm
+	0x016c9442, // n0x0133 c0x0005 (---------------)* o I zw
+	0x00204543, // n0x0134 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0135 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0136 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0137 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0138 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0139 c0x0000 (---------------)  + I org
+	0x0020b903, // n0x013a c0x0000 (---------------)  + I nom
+	0x00201602, // n0x013b c0x0000 (---------------)  + I ac
+	0x00200182, // n0x013c c0x0000 (---------------)  + I co
+	0x0025bdc3, // n0x013d c0x0000 (---------------)  + I gov
+	0x00232703, // n0x013e c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x013f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0140 c0x0000 (---------------)  + I org
+	0x00244943, // n0x0141 c0x0000 (---------------)  + I sch
+	0x002ebcd6, // n0x0142 c0x0000 (---------------)  + I accident-investigation
+	0x002ed9d3, // n0x0143 c0x0000 (---------------)  + I accident-prevention
+	0x0022efc9, // n0x0144 c0x0000 (---------------)  + I aerobatic
+	0x00261888, // n0x0145 c0x0000 (---------------)  + I aeroclub
+	0x00297849, // n0x0146 c0x0000 (---------------)  + I aerodrome
+	0x0023d7c6, // n0x0147 c0x0000 (---------------)  + I agents
+	0x002ff3d0, // n0x0148 c0x0000 (---------------)  + I air-surveillance
+	0x00267493, // n0x0149 c0x0000 (---------------)  + I air-traffic-control
+	0x0026de08, // n0x014a c0x0000 (---------------)  + I aircraft
+	0x00289987, // n0x014b c0x0000 (---------------)  + I airline
+	0x002a4247, // n0x014c c0x0000 (---------------)  + I airport
+	0x002a738a, // n0x014d c0x0000 (---------------)  + I airtraffic
+	0x002a9a09, // n0x014e c0x0000 (---------------)  + I ambulance
+	0x00231509, // n0x014f c0x0000 (---------------)  + I amusement
+	0x002bda0b, // n0x0150 c0x0000 (---------------)  + I association
+	0x00345006, // n0x0151 c0x0000 (---------------)  + I author
+	0x002b470a, // n0x0152 c0x0000 (---------------)  + I ballooning
+	0x002239c6, // n0x0153 c0x0000 (---------------)  + I broker
+	0x00235703, // n0x0154 c0x0000 (---------------)  + I caa
+	0x0020b385, // n0x0155 c0x0000 (---------------)  + I cargo
+	0x00219cc8, // n0x0156 c0x0000 (---------------)  + I catering
+	0x002a9bcd, // n0x0157 c0x0000 (---------------)  + I certification
+	0x0024eecc, // n0x0158 c0x0000 (---------------)  + I championship
+	0x00286507, // n0x0159 c0x0000 (---------------)  + I charter
+	0x00232acd, // n0x015a c0x0000 (---------------)  + I civilaviation
+	0x00261984, // n0x015b c0x0000 (---------------)  + I club
+	0x00297a8a, // n0x015c c0x0000 (---------------)  + I conference
+	0x0023b14a, // n0x015d c0x0000 (---------------)  + I consultant
+	0x0023b60a, // n0x015e c0x0000 (---------------)  + I consulting
+	0x00267787, // n0x015f c0x0000 (---------------)  + I control
+	0x002b0207, // n0x0160 c0x0000 (---------------)  + I council
+	0x00240b44, // n0x0161 c0x0000 (---------------)  + I crew
+	0x00227746, // n0x0162 c0x0000 (---------------)  + I design
+	0x0022e184, // n0x0163 c0x0000 (---------------)  + I dgca
+	0x002ce048, // n0x0164 c0x0000 (---------------)  + I educator
+	0x0031a909, // n0x0165 c0x0000 (---------------)  + I emergency
+	0x002b1e06, // n0x0166 c0x0000 (---------------)  + I engine
+	0x002b1e08, // n0x0167 c0x0000 (---------------)  + I engineer
+	0x0022c88d, // n0x0168 c0x0000 (---------------)  + I entertainment
+	0x0032bc49, // n0x0169 c0x0000 (---------------)  + I equipment
+	0x00334f88, // n0x016a c0x0000 (---------------)  + I exchange
+	0x00334dc7, // n0x016b c0x0000 (---------------)  + I express
+	0x00215f8a, // n0x016c c0x0000 (---------------)  + I federation
+	0x00245446, // n0x016d c0x0000 (---------------)  + I flight
+	0x00250047, // n0x016e c0x0000 (---------------)  + I freight
+	0x00231844, // n0x016f c0x0000 (---------------)  + I fuel
+	0x0024f587, // n0x0170 c0x0000 (---------------)  + I gliding
+	0x0025bdca, // n0x0171 c0x0000 (---------------)  + I government
+	0x00325a8e, // n0x0172 c0x0000 (---------------)  + I groundhandling
+	0x0033e085, // n0x0173 c0x0000 (---------------)  + I group
+	0x0027790b, // n0x0174 c0x0000 (---------------)  + I hanggliding
+	0x0024b389, // n0x0175 c0x0000 (---------------)  + I homebuilt
+	0x00208049, // n0x0176 c0x0000 (---------------)  + I insurance
+	0x00203387, // n0x0177 c0x0000 (---------------)  + I journal
+	0x0020338a, // n0x0178 c0x0000 (---------------)  + I journalist
+	0x00221c47, // n0x0179 c0x0000 (---------------)  + I leasing
+	0x002456c9, // n0x017a c0x0000 (---------------)  + I logistics
+	0x002e1388, // n0x017b c0x0000 (---------------)  + I magazine
+	0x0031a68b, // n0x017c c0x0000 (---------------)  + I maintenance
+	0x0020208b, // n0x017d c0x0000 (---------------)  + I marketplace
+	0x0023ed05, // n0x017e c0x0000 (---------------)  + I media
+	0x00257aca, // n0x017f c0x0000 (---------------)  + I microlight
+	0x002780c9, // n0x0180 c0x0000 (---------------)  + I modelling
+	0x0020370a, // n0x0181 c0x0000 (---------------)  + I navigation
+	0x0024f18b, // n0x0182 c0x0000 (---------------)  + I parachuting
+	0x0024f48b, // n0x0183 c0x0000 (---------------)  + I paragliding
+	0x002bd795, // n0x0184 c0x0000 (---------------)  + I passenger-association
+	0x002c1185, // n0x0185 c0x0000 (---------------)  + I pilot
+	0x00334e45, // n0x0186 c0x0000 (---------------)  + I press
+	0x002c7f0a, // n0x0187 c0x0000 (---------------)  + I production
+	0x002adeca, // n0x0188 c0x0000 (---------------)  + I recreation
+	0x002708c7, // n0x0189 c0x0000 (---------------)  + I repbody
+	0x0021cd03, // n0x018a c0x0000 (---------------)  + I res
+	0x002c53c8, // n0x018b c0x0000 (---------------)  + I research
+	0x002b96ca, // n0x018c c0x0000 (---------------)  + I rotorcraft
+	0x002c4246, // n0x018d c0x0000 (---------------)  + I safety
+	0x00282989, // n0x018e c0x0000 (---------------)  + I scientist
+	0x002c03c8, // n0x018f c0x0000 (---------------)  + I services
+	0x002f6544, // n0x0190 c0x0000 (---------------)  + I show
+	0x00260709, // n0x0191 c0x0000 (---------------)  + I skydiving
+	0x00265248, // n0x0192 c0x0000 (---------------)  + I software
+	0x002a0f47, // n0x0193 c0x0000 (---------------)  + I student
+	0x0025c004, // n0x0194 c0x0000 (---------------)  + I taxi
+	0x00254d86, // n0x0195 c0x0000 (---------------)  + I trader
+	0x0028cac7, // n0x0196 c0x0000 (---------------)  + I trading
+	0x00295f87, // n0x0197 c0x0000 (---------------)  + I trainer
+	0x0025ec05, // n0x0198 c0x0000 (---------------)  + I union
+	0x0033decc, // n0x0199 c0x0000 (---------------)  + I workinggroup
+	0x00218f05, // n0x019a c0x0000 (---------------)  + I works
+	0x00204543, // n0x019b c0x0000 (---------------)  + I com
+	0x002ce043, // n0x019c c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x019d c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x019e c0x0000 (---------------)  + I net
+	0x002375c3, // n0x019f c0x0000 (---------------)  + I org
+	0x00200182, // n0x01a0 c0x0000 (---------------)  + I co
+	0x00204543, // n0x01a1 c0x0000 (---------------)  + I com
+	0x0020e643, // n0x01a2 c0x0000 (---------------)  + I net
+	0x0020b903, // n0x01a3 c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x01a4 c0x0000 (---------------)  + I org
+	0x00204543, // n0x01a5 c0x0000 (---------------)  + I com
+	0x0020e643, // n0x01a6 c0x0000 (---------------)  + I net
+	0x0020dc43, // n0x01a7 c0x0000 (---------------)  + I off
+	0x002375c3, // n0x01a8 c0x0000 (---------------)  + I org
+	0x00204543, // n0x01a9 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x01aa c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x01ab c0x0000 (---------------)  + I gov
+	0x00232703, // n0x01ac c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x01ad c0x0000 (---------------)  + I net
+	0x002375c3, // n0x01ae c0x0000 (---------------)  + I org
+	0x00204543, // n0x01af c0x0000 (---------------)  + I com
+	0x002ce043, // n0x01b0 c0x0000 (---------------)  + I edu
+	0x0020e643, // n0x01b1 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x01b2 c0x0000 (---------------)  + I org
+	0x00200182, // n0x01b3 c0x0000 (---------------)  + I co
+	0x00208d42, // n0x01b4 c0x0000 (---------------)  + I ed
+	0x0023b842, // n0x01b5 c0x0000 (---------------)  + I gv
+	0x00208c82, // n0x01b6 c0x0000 (---------------)  + I it
+	0x00206402, // n0x01b7 c0x0000 (---------------)  + I og
+	0x00270942, // n0x01b8 c0x0000 (---------------)  + I pb
+	0x04604543, // n0x01b9 c0x0011 (n0x01c3-n0x01c4)  o I com
+	0x00638b13, // n0x01ba c0x0001 (---------------)  ! I congresodelalengua3
+	0x006ce044, // n0x01bb c0x0001 (---------------)  ! I educ
+	0x00622693, // n0x01bc c0x0001 (---------------)  ! I gobiernoelectronico
+	0x00697a05, // n0x01bd c0x0001 (---------------)  ! I mecon
+	0x00689f86, // n0x01be c0x0001 (---------------)  ! I nacion
+	0x006180c3, // n0x01bf c0x0001 (---------------)  ! I nic
+	0x006c8749, // n0x01c0 c0x0001 (---------------)  ! I promocion
+	0x00676506, // n0x01c1 c0x0001 (---------------)  ! I retina
+	0x00629fc3, // n0x01c2 c0x0001 (---------------)  ! I uba
+	0x000330c8, // n0x01c3 c0x0000 (---------------)  +   blogspot
+	0x002b4c44, // n0x01c4 c0x0000 (---------------)  + I e164
+	0x00284547, // n0x01c5 c0x0000 (---------------)  + I in-addr
+	0x00234543, // n0x01c6 c0x0000 (---------------)  + I ip6
+	0x002cbe04, // n0x01c7 c0x0000 (---------------)  + I iris
+	0x00201e83, // n0x01c8 c0x0000 (---------------)  + I uri
+	0x00203403, // n0x01c9 c0x0000 (---------------)  + I urn
+	0x0025bdc3, // n0x01ca c0x0000 (---------------)  + I gov
+	0x00201602, // n0x01cb c0x0000 (---------------)  + I ac
+	0x000f0f83, // n0x01cc c0x0000 (---------------)  +   biz
+	0x05600182, // n0x01cd c0x0015 (n0x01d2-n0x01d3)  + I co
+	0x0023b842, // n0x01ce c0x0000 (---------------)  + I gv
+	0x00006344, // n0x01cf c0x0000 (---------------)  +   info
+	0x00201c42, // n0x01d0 c0x0000 (---------------)  + I or
+	0x000c7b04, // n0x01d1 c0x0000 (---------------)  +   priv
+	0x000330c8, // n0x01d2 c0x0000 (---------------)  +   blogspot
+	0x002917c3, // n0x01d3 c0x0000 (---------------)  + I act
+	0x0022ab03, // n0x01d4 c0x0000 (---------------)  + I asn
+	0x05e04543, // n0x01d5 c0x0017 (n0x01e5-n0x01e6)  + I com
+	0x00297a84, // n0x01d6 c0x0000 (---------------)  + I conf
+	0x062ce043, // n0x01d7 c0x0018 (n0x01e6-n0x01ee)  + I edu
+	0x0665bdc3, // n0x01d8 c0x0019 (n0x01ee-n0x01f5)  + I gov
+	0x00201842, // n0x01d9 c0x0000 (---------------)  + I id
+	0x00206344, // n0x01da c0x0000 (---------------)  + I info
+	0x0020e643, // n0x01db c0x0000 (---------------)  + I net
+	0x00263fc3, // n0x01dc c0x0000 (---------------)  + I nsw
+	0x002075c2, // n0x01dd c0x0000 (---------------)  + I nt
+	0x002375c3, // n0x01de c0x0000 (---------------)  + I org
+	0x0021b082, // n0x01df c0x0000 (---------------)  + I oz
+	0x00252cc3, // n0x01e0 c0x0000 (---------------)  + I qld
+	0x00201782, // n0x01e1 c0x0000 (---------------)  + I sa
+	0x0020fec3, // n0x01e2 c0x0000 (---------------)  + I tas
+	0x00201a43, // n0x01e3 c0x0000 (---------------)  + I vic
+	0x00205042, // n0x01e4 c0x0000 (---------------)  + I wa
+	0x000330c8, // n0x01e5 c0x0000 (---------------)  +   blogspot
+	0x002917c3, // n0x01e6 c0x0000 (---------------)  + I act
+	0x00263fc3, // n0x01e7 c0x0000 (---------------)  + I nsw
+	0x002075c2, // n0x01e8 c0x0000 (---------------)  + I nt
+	0x00252cc3, // n0x01e9 c0x0000 (---------------)  + I qld
+	0x00201782, // n0x01ea c0x0000 (---------------)  + I sa
+	0x0020fec3, // n0x01eb c0x0000 (---------------)  + I tas
+	0x00201a43, // n0x01ec c0x0000 (---------------)  + I vic
+	0x00205042, // n0x01ed c0x0000 (---------------)  + I wa
+	0x002917c3, // n0x01ee c0x0000 (---------------)  + I act
+	0x002075c2, // n0x01ef c0x0000 (---------------)  + I nt
+	0x00252cc3, // n0x01f0 c0x0000 (---------------)  + I qld
+	0x00201782, // n0x01f1 c0x0000 (---------------)  + I sa
+	0x0020fec3, // n0x01f2 c0x0000 (---------------)  + I tas
+	0x00201a43, // n0x01f3 c0x0000 (---------------)  + I vic
+	0x00205042, // n0x01f4 c0x0000 (---------------)  + I wa
+	0x00204543, // n0x01f5 c0x0000 (---------------)  + I com
+	0x002f0f83, // n0x01f6 c0x0000 (---------------)  + I biz
+	0x00204543, // n0x01f7 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x01f8 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x01f9 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x01fa c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x01fb c0x0000 (---------------)  + I int
+	0x00232703, // n0x01fc c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x01fd c0x0000 (---------------)  + I name
+	0x0020e643, // n0x01fe c0x0000 (---------------)  + I net
+	0x002375c3, // n0x01ff c0x0000 (---------------)  + I org
+	0x00205d02, // n0x0200 c0x0000 (---------------)  + I pp
+	0x002c7c83, // n0x0201 c0x0000 (---------------)  + I pro
+	0x00200182, // n0x0202 c0x0000 (---------------)  + I co
+	0x00204543, // n0x0203 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0204 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0205 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0206 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0207 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0208 c0x0000 (---------------)  + I org
+	0x00209842, // n0x0209 c0x0000 (---------------)  + I rs
+	0x002ee104, // n0x020a c0x0000 (---------------)  + I unbi
+	0x0024d844, // n0x020b c0x0000 (---------------)  + I unsa
+	0x002f0f83, // n0x020c c0x0000 (---------------)  + I biz
+	0x00204543, // n0x020d c0x0000 (---------------)  + I com
+	0x002ce043, // n0x020e c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x020f c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0210 c0x0000 (---------------)  + I info
+	0x0020e643, // n0x0211 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0212 c0x0000 (---------------)  + I org
+	0x002dc085, // n0x0213 c0x0000 (---------------)  + I store
+	0x00201602, // n0x0214 c0x0000 (---------------)  + I ac
+	0x000330c8, // n0x0215 c0x0000 (---------------)  +   blogspot
+	0x0025bdc3, // n0x0216 c0x0000 (---------------)  + I gov
+	0x00236d01, // n0x0217 c0x0000 (---------------)  + I 0
+	0x00236c81, // n0x0218 c0x0000 (---------------)  + I 1
+	0x00236cc1, // n0x0219 c0x0000 (---------------)  + I 2
+	0x00238f81, // n0x021a c0x0000 (---------------)  + I 3
+	0x002487c1, // n0x021b c0x0000 (---------------)  + I 4
+	0x00248801, // n0x021c c0x0000 (---------------)  + I 5
+	0x002345c1, // n0x021d c0x0000 (---------------)  + I 6
+	0x00241881, // n0x021e c0x0000 (---------------)  + I 7
+	0x002ed981, // n0x021f c0x0000 (---------------)  + I 8
+	0x00248901, // n0x0220 c0x0000 (---------------)  + I 9
+	0x00200281, // n0x0221 c0x0000 (---------------)  + I a
+	0x00200001, // n0x0222 c0x0000 (---------------)  + I b
+	0x00200181, // n0x0223 c0x0000 (---------------)  + I c
+	0x00200881, // n0x0224 c0x0000 (---------------)  + I d
+	0x00200041, // n0x0225 c0x0000 (---------------)  + I e
+	0x00200c01, // n0x0226 c0x0000 (---------------)  + I f
+	0x00200f81, // n0x0227 c0x0000 (---------------)  + I g
+	0x00201681, // n0x0228 c0x0000 (---------------)  + I h
+	0x00200101, // n0x0229 c0x0000 (---------------)  + I i
+	0x00203381, // n0x022a c0x0000 (---------------)  + I j
+	0x00201801, // n0x022b c0x0000 (---------------)  + I k
+	0x002000c1, // n0x022c c0x0000 (---------------)  + I l
+	0x00200701, // n0x022d c0x0000 (---------------)  + I m
+	0x00200141, // n0x022e c0x0000 (---------------)  + I n
+	0x002001c1, // n0x022f c0x0000 (---------------)  + I o
+	0x00201481, // n0x0230 c0x0000 (---------------)  + I p
+	0x00237381, // n0x0231 c0x0000 (---------------)  + I q
+	0x00200081, // n0x0232 c0x0000 (---------------)  + I r
+	0x00200501, // n0x0233 c0x0000 (---------------)  + I s
+	0x00200541, // n0x0234 c0x0000 (---------------)  + I t
+	0x00201a01, // n0x0235 c0x0000 (---------------)  + I u
+	0x002002c1, // n0x0236 c0x0000 (---------------)  + I v
+	0x002003c1, // n0x0237 c0x0000 (---------------)  + I w
+	0x00204941, // n0x0238 c0x0000 (---------------)  + I x
+	0x00200a81, // n0x0239 c0x0000 (---------------)  + I y
+	0x00200481, // n0x023a c0x0000 (---------------)  + I z
+	0x00204543, // n0x023b c0x0000 (---------------)  + I com
+	0x002ce043, // n0x023c c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x023d c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x023e c0x0000 (---------------)  + I net
+	0x002375c3, // n0x023f c0x0000 (---------------)  + I org
+	0x00200182, // n0x0240 c0x0000 (---------------)  + I co
+	0x00204543, // n0x0241 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0242 c0x0000 (---------------)  + I edu
+	0x00201c42, // n0x0243 c0x0000 (---------------)  + I or
+	0x002375c3, // n0x0244 c0x0000 (---------------)  + I org
+	0x00000a46, // n0x0245 c0x0000 (---------------)  +   dyndns
+	0x00046b4a, // n0x0246 c0x0000 (---------------)  +   for-better
+	0x000d1c48, // n0x0247 c0x0000 (---------------)  +   for-more
+	0x00047188, // n0x0248 c0x0000 (---------------)  +   for-some
+	0x00047b87, // n0x0249 c0x0000 (---------------)  +   for-the
+	0x000fb186, // n0x024a c0x0000 (---------------)  +   selfip
+	0x0000dfc6, // n0x024b c0x0000 (---------------)  +   webhop
+	0x00208704, // n0x024c c0x0000 (---------------)  + I asso
+	0x00319947, // n0x024d c0x0000 (---------------)  + I barreau
+	0x000330c8, // n0x024e c0x0000 (---------------)  +   blogspot
+	0x00201984, // n0x024f c0x0000 (---------------)  + I gouv
+	0x00204543, // n0x0250 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0251 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0252 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0253 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0254 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0255 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0256 c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x0257 c0x0000 (---------------)  + I gob
+	0x0025bdc3, // n0x0258 c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x0259 c0x0000 (---------------)  + I int
+	0x00232703, // n0x025a c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x025b c0x0000 (---------------)  + I net
+	0x002375c3, // n0x025c c0x0000 (---------------)  + I org
+	0x002820c2, // n0x025d c0x0000 (---------------)  + I tv
+	0x002b8a03, // n0x025e c0x0000 (---------------)  + I adm
+	0x0024a343, // n0x025f c0x0000 (---------------)  + I adv
+	0x0022f503, // n0x0260 c0x0000 (---------------)  + I agr
+	0x00205b02, // n0x0261 c0x0000 (---------------)  + I am
+	0x00252c43, // n0x0262 c0x0000 (---------------)  + I arq
+	0x00210b03, // n0x0263 c0x0000 (---------------)  + I art
+	0x00212643, // n0x0264 c0x0000 (---------------)  + I ato
+	0x00200001, // n0x0265 c0x0000 (---------------)  + I b
+	0x0020fd83, // n0x0266 c0x0000 (---------------)  + I bio
+	0x002323c4, // n0x0267 c0x0000 (---------------)  + I blog
+	0x00214a43, // n0x0268 c0x0000 (---------------)  + I bmd
+	0x00315c03, // n0x0269 c0x0000 (---------------)  + I cim
+	0x002e4843, // n0x026a c0x0000 (---------------)  + I cng
+	0x00236dc3, // n0x026b c0x0000 (---------------)  + I cnt
+	0x0a204543, // n0x026c c0x0028 (n0x02a3-n0x02a4)  + I com
+	0x0023d144, // n0x026d c0x0000 (---------------)  + I coop
+	0x002e4803, // n0x026e c0x0000 (---------------)  + I ecn
+	0x00204503, // n0x026f c0x0000 (---------------)  + I eco
+	0x002ce043, // n0x0270 c0x0000 (---------------)  + I edu
+	0x0023ba83, // n0x0271 c0x0000 (---------------)  + I emp
+	0x0020d5c3, // n0x0272 c0x0000 (---------------)  + I eng
+	0x0028f743, // n0x0273 c0x0000 (---------------)  + I esp
+	0x00236503, // n0x0274 c0x0000 (---------------)  + I etc
+	0x0021fc03, // n0x0275 c0x0000 (---------------)  + I eti
+	0x00217143, // n0x0276 c0x0000 (---------------)  + I far
+	0x00245684, // n0x0277 c0x0000 (---------------)  + I flog
+	0x00317982, // n0x0278 c0x0000 (---------------)  + I fm
+	0x002468c3, // n0x0279 c0x0000 (---------------)  + I fnd
+	0x0024e243, // n0x027a c0x0000 (---------------)  + I fot
+	0x00267a03, // n0x027b c0x0000 (---------------)  + I fst
+	0x00346803, // n0x027c c0x0000 (---------------)  + I g12
+	0x002b4943, // n0x027d c0x0000 (---------------)  + I ggf
+	0x0025bdc3, // n0x027e c0x0000 (---------------)  + I gov
+	0x002d1143, // n0x027f c0x0000 (---------------)  + I imb
+	0x00201f03, // n0x0280 c0x0000 (---------------)  + I ind
+	0x00206343, // n0x0281 c0x0000 (---------------)  + I inf
+	0x00218c83, // n0x0282 c0x0000 (---------------)  + I jor
+	0x00294603, // n0x0283 c0x0000 (---------------)  + I jus
+	0x0023f743, // n0x0284 c0x0000 (---------------)  + I leg
+	0x002c10c3, // n0x0285 c0x0000 (---------------)  + I lel
+	0x00207ec3, // n0x0286 c0x0000 (---------------)  + I mat
+	0x0023ed03, // n0x0287 c0x0000 (---------------)  + I med
+	0x00232703, // n0x0288 c0x0000 (---------------)  + I mil
+	0x00231543, // n0x0289 c0x0000 (---------------)  + I mus
+	0x0020e643, // n0x028a c0x0000 (---------------)  + I net
+	0x0020b903, // n0x028b c0x0000 (---------------)  + I nom
+	0x00204103, // n0x028c c0x0000 (---------------)  + I not
+	0x00267803, // n0x028d c0x0000 (---------------)  + I ntr
+	0x00207483, // n0x028e c0x0000 (---------------)  + I odo
+	0x002375c3, // n0x028f c0x0000 (---------------)  + I org
+	0x00226143, // n0x0290 c0x0000 (---------------)  + I ppg
+	0x002c7c83, // n0x0291 c0x0000 (---------------)  + I pro
+	0x0027ad03, // n0x0292 c0x0000 (---------------)  + I psc
+	0x002c8e43, // n0x0293 c0x0000 (---------------)  + I psi
+	0x002c9943, // n0x0294 c0x0000 (---------------)  + I qsl
+	0x002ff145, // n0x0295 c0x0000 (---------------)  + I radio
+	0x002adec3, // n0x0296 c0x0000 (---------------)  + I rec
+	0x002d2603, // n0x0297 c0x0000 (---------------)  + I slg
+	0x002d9b43, // n0x0298 c0x0000 (---------------)  + I srv
+	0x0025c004, // n0x0299 c0x0000 (---------------)  + I taxi
+	0x0032c543, // n0x029a c0x0000 (---------------)  + I teo
+	0x002857c3, // n0x029b c0x0000 (---------------)  + I tmp
+	0x00317143, // n0x029c c0x0000 (---------------)  + I trd
+	0x0023ad43, // n0x029d c0x0000 (---------------)  + I tur
+	0x002820c2, // n0x029e c0x0000 (---------------)  + I tv
+	0x0023de83, // n0x029f c0x0000 (---------------)  + I vet
+	0x002e5d44, // n0x02a0 c0x0000 (---------------)  + I vlog
+	0x00217484, // n0x02a1 c0x0000 (---------------)  + I wiki
+	0x00279bc3, // n0x02a2 c0x0000 (---------------)  + I zlg
+	0x000330c8, // n0x02a3 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x02a4 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x02a5 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x02a6 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x02a7 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x02a8 c0x0000 (---------------)  + I org
+	0x00204543, // n0x02a9 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x02aa c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x02ab c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x02ac c0x0000 (---------------)  + I net
+	0x002375c3, // n0x02ad c0x0000 (---------------)  + I org
+	0x00200182, // n0x02ae c0x0000 (---------------)  + I co
+	0x002375c3, // n0x02af c0x0000 (---------------)  + I org
+	0x00204543, // n0x02b0 c0x0000 (---------------)  + I com
+	0x0025bdc3, // n0x02b1 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x02b2 c0x0000 (---------------)  + I mil
+	0x0020dc42, // n0x02b3 c0x0000 (---------------)  + I of
+	0x00204543, // n0x02b4 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x02b5 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x02b6 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x02b7 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x02b8 c0x0000 (---------------)  + I org
+	0x00201042, // n0x02b9 c0x0000 (---------------)  + I ab
+	0x00314c42, // n0x02ba c0x0000 (---------------)  + I bc
+	0x000330c8, // n0x02bb c0x0000 (---------------)  +   blogspot
+	0x00000182, // n0x02bc c0x0000 (---------------)  +   co
+	0x0022e1c2, // n0x02bd c0x0000 (---------------)  + I gc
+	0x00220582, // n0x02be c0x0000 (---------------)  + I mb
+	0x00204c42, // n0x02bf c0x0000 (---------------)  + I nb
+	0x00206382, // n0x02c0 c0x0000 (---------------)  + I nf
+	0x00242e42, // n0x02c1 c0x0000 (---------------)  + I nl
+	0x00200b42, // n0x02c2 c0x0000 (---------------)  + I ns
+	0x002075c2, // n0x02c3 c0x0000 (---------------)  + I nt
+	0x00204b42, // n0x02c4 c0x0000 (---------------)  + I nu
+	0x00200802, // n0x02c5 c0x0000 (---------------)  + I on
+	0x00213142, // n0x02c6 c0x0000 (---------------)  + I pe
+	0x0025c842, // n0x02c7 c0x0000 (---------------)  + I qc
+	0x002023c2, // n0x02c8 c0x0000 (---------------)  + I sk
+	0x0022d8c2, // n0x02c9 c0x0000 (---------------)  + I yk
+	0x000054c9, // n0x02ca c0x0000 (---------------)  +   ftpaccess
+	0x000b5bcb, // n0x02cb c0x0000 (---------------)  +   game-server
+	0x000bbec8, // n0x02cc c0x0000 (---------------)  +   myphotos
+	0x0008e889, // n0x02cd c0x0000 (---------------)  +   scrapping
+	0x0025bdc3, // n0x02ce c0x0000 (---------------)  + I gov
+	0x000330c8, // n0x02cf c0x0000 (---------------)  +   blogspot
+	0x000330c8, // n0x02d0 c0x0000 (---------------)  +   blogspot
+	0x00201602, // n0x02d1 c0x0000 (---------------)  + I ac
+	0x00208704, // n0x02d2 c0x0000 (---------------)  + I asso
+	0x00200182, // n0x02d3 c0x0000 (---------------)  + I co
+	0x00204543, // n0x02d4 c0x0000 (---------------)  + I com
+	0x00208d42, // n0x02d5 c0x0000 (---------------)  + I ed
+	0x002ce043, // n0x02d6 c0x0000 (---------------)  + I edu
+	0x00200f82, // n0x02d7 c0x0000 (---------------)  + I go
+	0x00201984, // n0x02d8 c0x0000 (---------------)  + I gouv
+	0x0020ca03, // n0x02d9 c0x0000 (---------------)  + I int
+	0x00214a82, // n0x02da c0x0000 (---------------)  + I md
+	0x0020e643, // n0x02db c0x0000 (---------------)  + I net
+	0x00201c42, // n0x02dc c0x0000 (---------------)  + I or
+	0x002375c3, // n0x02dd c0x0000 (---------------)  + I org
+	0x00334e46, // n0x02de c0x0000 (---------------)  + I presse
+	0x002bf90f, // n0x02df c0x0000 (---------------)  + I xn--aroport-bya
+	0x00640d83, // n0x02e0 c0x0001 (---------------)  ! I www
+	0x00200182, // n0x02e1 c0x0000 (---------------)  + I co
+	0x002073c3, // n0x02e2 c0x0000 (---------------)  + I gob
+	0x0025bdc3, // n0x02e3 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x02e4 c0x0000 (---------------)  + I mil
+	0x0025bdc3, // n0x02e5 c0x0000 (---------------)  + I gov
+	0x00201602, // n0x02e6 c0x0000 (---------------)  + I ac
+	0x00208e42, // n0x02e7 c0x0000 (---------------)  + I ah
+	0x00212a02, // n0x02e8 c0x0000 (---------------)  + I bj
+	0x00204543, // n0x02e9 c0x0000 (---------------)  + I com
+	0x0023f402, // n0x02ea c0x0000 (---------------)  + I cq
+	0x002ce043, // n0x02eb c0x0000 (---------------)  + I edu
+	0x00218c42, // n0x02ec c0x0000 (---------------)  + I fj
+	0x0021f482, // n0x02ed c0x0000 (---------------)  + I gd
+	0x0025bdc3, // n0x02ee c0x0000 (---------------)  + I gov
+	0x00233182, // n0x02ef c0x0000 (---------------)  + I gs
+	0x002782c2, // n0x02f0 c0x0000 (---------------)  + I gx
+	0x00279b82, // n0x02f1 c0x0000 (---------------)  + I gz
+	0x0020aa82, // n0x02f2 c0x0000 (---------------)  + I ha
+	0x0028ee42, // n0x02f3 c0x0000 (---------------)  + I hb
+	0x00201dc2, // n0x02f4 c0x0000 (---------------)  + I he
+	0x00201682, // n0x02f5 c0x0000 (---------------)  + I hi
+	0x0020ee82, // n0x02f6 c0x0000 (---------------)  + I hk
+	0x00262e42, // n0x02f7 c0x0000 (---------------)  + I hl
+	0x00230ac2, // n0x02f8 c0x0000 (---------------)  + I hn
+	0x003052c2, // n0x02f9 c0x0000 (---------------)  + I jl
+	0x00231a02, // n0x02fa c0x0000 (---------------)  + I js
+	0x002e86c2, // n0x02fb c0x0000 (---------------)  + I jx
+	0x00200202, // n0x02fc c0x0000 (---------------)  + I ln
+	0x00232703, // n0x02fd c0x0000 (---------------)  + I mil
+	0x002045c2, // n0x02fe c0x0000 (---------------)  + I mo
+	0x0020e643, // n0x02ff c0x0000 (---------------)  + I net
+	0x00202042, // n0x0300 c0x0000 (---------------)  + I nm
+	0x002ea0c2, // n0x0301 c0x0000 (---------------)  + I nx
+	0x002375c3, // n0x0302 c0x0000 (---------------)  + I org
+	0x0023f442, // n0x0303 c0x0000 (---------------)  + I qh
+	0x00203082, // n0x0304 c0x0000 (---------------)  + I sc
+	0x0023c5c2, // n0x0305 c0x0000 (---------------)  + I sd
+	0x00207982, // n0x0306 c0x0000 (---------------)  + I sh
+	0x00207582, // n0x0307 c0x0000 (---------------)  + I sn
+	0x002df642, // n0x0308 c0x0000 (---------------)  + I sx
+	0x00236e42, // n0x0309 c0x0000 (---------------)  + I tj
+	0x0024ccc2, // n0x030a c0x0000 (---------------)  + I tw
+	0x00333382, // n0x030b c0x0000 (---------------)  + I xj
+	0x0027830a, // n0x030c c0x0000 (---------------)  + I xn--55qx5d
+	0x0030438a, // n0x030d c0x0000 (---------------)  + I xn--io0a7i
+	0x0032158a, // n0x030e c0x0000 (---------------)  + I xn--od0alg
+	0x00349602, // n0x030f c0x0000 (---------------)  + I xz
+	0x00200a82, // n0x0310 c0x0000 (---------------)  + I yn
+	0x00271042, // n0x0311 c0x0000 (---------------)  + I zj
+	0x00235e04, // n0x0312 c0x0000 (---------------)  + I arts
+	0x00204543, // n0x0313 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0314 c0x0000 (---------------)  + I edu
+	0x002432c4, // n0x0315 c0x0000 (---------------)  + I firm
+	0x0025bdc3, // n0x0316 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0317 c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x0318 c0x0000 (---------------)  + I int
+	0x00232703, // n0x0319 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x031a c0x0000 (---------------)  + I net
+	0x0020b903, // n0x031b c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x031c c0x0000 (---------------)  + I org
+	0x002adec3, // n0x031d c0x0000 (---------------)  + I rec
+	0x0020dfc3, // n0x031e c0x0000 (---------------)  + I web
+	0x000f2907, // n0x031f c0x0000 (---------------)  +   appspot
+	0x00001202, // n0x0320 c0x0000 (---------------)  +   ar
+	0x0000470a, // n0x0321 c0x0000 (---------------)  +   betainabox
+	0x00147787, // n0x0322 c0x0000 (---------------)  +   blogdns
+	0x000330c8, // n0x0323 c0x0000 (---------------)  +   blogspot
+	0x00001302, // n0x0324 c0x0000 (---------------)  +   br
+	0x00097c87, // n0x0325 c0x0000 (---------------)  +   cechire
+	0x00036dc2, // n0x0326 c0x0000 (---------------)  +   cn
+	0x0008f688, // n0x0327 c0x0000 (---------------)  +   codespot
+	0x000027c2, // n0x0328 c0x0000 (---------------)  +   de
+	0x00039288, // n0x0329 c0x0000 (---------------)  +   dnsalias
+	0x00062107, // n0x032a c0x0000 (---------------)  +   dnsdojo
+	0x000074cb, // n0x032b c0x0000 (---------------)  +   doesntexist
+	0x000fc949, // n0x032c c0x0000 (---------------)  +   dontexist
+	0x00039187, // n0x032d c0x0000 (---------------)  +   doomdns
+	0x000dfc0c, // n0x032e c0x0000 (---------------)  +   dreamhosters
+	0x0000248a, // n0x032f c0x0000 (---------------)  +   dyn-o-saur
+	0x00010cc8, // n0x0330 c0x0000 (---------------)  +   dynalias
+	0x00070a0e, // n0x0331 c0x0000 (---------------)  +   dyndns-at-home
+	0x0013dc4e, // n0x0332 c0x0000 (---------------)  +   dyndns-at-work
+	0x001475cb, // n0x0333 c0x0000 (---------------)  +   dyndns-blog
+	0x00000a4b, // n0x0334 c0x0000 (---------------)  +   dyndns-free
+	0x0000520b, // n0x0335 c0x0000 (---------------)  +   dyndns-home
+	0x00009209, // n0x0336 c0x0000 (---------------)  +   dyndns-ip
+	0x0000b04b, // n0x0337 c0x0000 (---------------)  +   dyndns-mail
+	0x0000da8d, // n0x0338 c0x0000 (---------------)  +   dyndns-office
+	0x00013acb, // n0x0339 c0x0000 (---------------)  +   dyndns-pics
+	0x000140cd, // n0x033a c0x0000 (---------------)  +   dyndns-remote
+	0x00014acd, // n0x033b c0x0000 (---------------)  +   dyndns-server
+	0x0001560a, // n0x033c c0x0000 (---------------)  +   dyndns-web
+	0x000172cb, // n0x033d c0x0000 (---------------)  +   dyndns-wiki
+	0x00018d4b, // n0x033e c0x0000 (---------------)  +   dyndns-work
+	0x000004cf, // n0x033f c0x0000 (---------------)  +   est-a-la-maison
+	0x00048f4f, // n0x0340 c0x0000 (---------------)  +   est-a-la-masion
+	0x0011c24d, // n0x0341 c0x0000 (---------------)  +   est-le-patron
+	0x000321d0, // n0x0342 c0x0000 (---------------)  +   est-mon-blogueur
+	0x00032142, // n0x0343 c0x0000 (---------------)  +   eu
+	0x00050b87, // n0x0344 c0x0000 (---------------)  +   from-ak
+	0x00052947, // n0x0345 c0x0000 (---------------)  +   from-al
+	0x00052b07, // n0x0346 c0x0000 (---------------)  +   from-ar
+	0x00053107, // n0x0347 c0x0000 (---------------)  +   from-ca
+	0x00054007, // n0x0348 c0x0000 (---------------)  +   from-ct
+	0x00054407, // n0x0349 c0x0000 (---------------)  +   from-dc
+	0x000549c7, // n0x034a c0x0000 (---------------)  +   from-de
+	0x00054f07, // n0x034b c0x0000 (---------------)  +   from-fl
+	0x000553c7, // n0x034c c0x0000 (---------------)  +   from-ga
+	0x000556c7, // n0x034d c0x0000 (---------------)  +   from-hi
+	0x00055f07, // n0x034e c0x0000 (---------------)  +   from-ia
+	0x000560c7, // n0x034f c0x0000 (---------------)  +   from-id
+	0x00056287, // n0x0350 c0x0000 (---------------)  +   from-il
+	0x00056447, // n0x0351 c0x0000 (---------------)  +   from-in
+	0x00056747, // n0x0352 c0x0000 (---------------)  +   from-ks
+	0x00056ac7, // n0x0353 c0x0000 (---------------)  +   from-ky
+	0x00057f87, // n0x0354 c0x0000 (---------------)  +   from-ma
+	0x00058387, // n0x0355 c0x0000 (---------------)  +   from-md
+	0x00058f47, // n0x0356 c0x0000 (---------------)  +   from-mi
+	0x000593c7, // n0x0357 c0x0000 (---------------)  +   from-mn
+	0x00059587, // n0x0358 c0x0000 (---------------)  +   from-mo
+	0x00059cc7, // n0x0359 c0x0000 (---------------)  +   from-ms
+	0x0005ae47, // n0x035a c0x0000 (---------------)  +   from-mt
+	0x0005bac7, // n0x035b c0x0000 (---------------)  +   from-nc
+	0x0005d387, // n0x035c c0x0000 (---------------)  +   from-nd
+	0x0005d547, // n0x035d c0x0000 (---------------)  +   from-ne
+	0x0005d707, // n0x035e c0x0000 (---------------)  +   from-nh
+	0x0005e247, // n0x035f c0x0000 (---------------)  +   from-nj
+	0x0005e887, // n0x0360 c0x0000 (---------------)  +   from-nm
+	0x0005ed47, // n0x0361 c0x0000 (---------------)  +   from-nv
+	0x0005f387, // n0x0362 c0x0000 (---------------)  +   from-oh
+	0x0005f5c7, // n0x0363 c0x0000 (---------------)  +   from-ok
+	0x0005fcc7, // n0x0364 c0x0000 (---------------)  +   from-or
+	0x0005ff87, // n0x0365 c0x0000 (---------------)  +   from-pa
+	0x000613c7, // n0x0366 c0x0000 (---------------)  +   from-pr
+	0x000615c7, // n0x0367 c0x0000 (---------------)  +   from-ri
+	0x00062c87, // n0x0368 c0x0000 (---------------)  +   from-sc
+	0x00063447, // n0x0369 c0x0000 (---------------)  +   from-sd
+	0x00063607, // n0x036a c0x0000 (---------------)  +   from-tn
+	0x000637c7, // n0x036b c0x0000 (---------------)  +   from-tx
+	0x00064a87, // n0x036c c0x0000 (---------------)  +   from-ut
+	0x00065047, // n0x036d c0x0000 (---------------)  +   from-va
+	0x000655c7, // n0x036e c0x0000 (---------------)  +   from-vt
+	0x00065d47, // n0x036f c0x0000 (---------------)  +   from-wa
+	0x00065f07, // n0x0370 c0x0000 (---------------)  +   from-wi
+	0x00066287, // n0x0371 c0x0000 (---------------)  +   from-wv
+	0x00066ac7, // n0x0372 c0x0000 (---------------)  +   from-wy
+	0x00079802, // n0x0373 c0x0000 (---------------)  +   gb
+	0x0003bf47, // n0x0374 c0x0000 (---------------)  +   getmyip
+	0x0008bdca, // n0x0375 c0x0000 (---------------)  +   googleapis
+	0x0008f50a, // n0x0376 c0x0000 (---------------)  +   googlecode
+	0x000484c6, // n0x0377 c0x0000 (---------------)  +   gotdns
+	0x0002f542, // n0x0378 c0x0000 (---------------)  +   gr
+	0x0004008a, // n0x0379 c0x0000 (---------------)  +   hobby-site
+	0x0008d4c9, // n0x037a c0x0000 (---------------)  +   homelinux
+	0x0008eac8, // n0x037b c0x0000 (---------------)  +   homeunix
+	0x00031242, // n0x037c c0x0000 (---------------)  +   hu
+	0x00061d49, // n0x037d c0x0000 (---------------)  +   iamallama
+	0x0007610e, // n0x037e c0x0000 (---------------)  +   is-a-anarchist
+	0x0013e64c, // n0x037f c0x0000 (---------------)  +   is-a-blogger
+	0x000bc28f, // n0x0380 c0x0000 (---------------)  +   is-a-bookkeeper
+	0x000116ce, // n0x0381 c0x0000 (---------------)  +   is-a-bulls-fan
+	0x0001474c, // n0x0382 c0x0000 (---------------)  +   is-a-caterer
+	0x00016f49, // n0x0383 c0x0000 (---------------)  +   is-a-chef
+	0x00018691, // n0x0384 c0x0000 (---------------)  +   is-a-conservative
+	0x0001a9c8, // n0x0385 c0x0000 (---------------)  +   is-a-cpa
+	0x0001d612, // n0x0386 c0x0000 (---------------)  +   is-a-cubicle-slave
+	0x0001fc8d, // n0x0387 c0x0000 (---------------)  +   is-a-democrat
+	0x0002760d, // n0x0388 c0x0000 (---------------)  +   is-a-designer
+	0x00049a4b, // n0x0389 c0x0000 (---------------)  +   is-a-doctor
+	0x00049fd5, // n0x038a c0x0000 (---------------)  +   is-a-financialadvisor
+	0x00125849, // n0x038b c0x0000 (---------------)  +   is-a-geek
+	0x00045a4a, // n0x038c c0x0000 (---------------)  +   is-a-green
+	0x0004d649, // n0x038d c0x0000 (---------------)  +   is-a-guru
+	0x0004dbd0, // n0x038e c0x0000 (---------------)  +   is-a-hard-worker
+	0x0005fa0b, // n0x038f c0x0000 (---------------)  +   is-a-hunter
+	0x000627cf, // n0x0390 c0x0000 (---------------)  +   is-a-landscaper
+	0x00065a8b, // n0x0391 c0x0000 (---------------)  +   is-a-lawyer
+	0x000667cc, // n0x0392 c0x0000 (---------------)  +   is-a-liberal
+	0x0006c950, // n0x0393 c0x0000 (---------------)  +   is-a-libertarian
+	0x0007748a, // n0x0394 c0x0000 (---------------)  +   is-a-llama
+	0x0008874d, // n0x0395 c0x0000 (---------------)  +   is-a-musician
+	0x00094ece, // n0x0396 c0x0000 (---------------)  +   is-a-nascarfan
+	0x000a600a, // n0x0397 c0x0000 (---------------)  +   is-a-nurse
+	0x000a58cc, // n0x0398 c0x0000 (---------------)  +   is-a-painter
+	0x00095c54, // n0x0399 c0x0000 (---------------)  +   is-a-personaltrainer
+	0x000a6a91, // n0x039a c0x0000 (---------------)  +   is-a-photographer
+	0x0009644b, // n0x039b c0x0000 (---------------)  +   is-a-player
+	0x0009868f, // n0x039c c0x0000 (---------------)  +   is-a-republican
+	0x00098e0d, // n0x039d c0x0000 (---------------)  +   is-a-rockstar
+	0x0009aa8e, // n0x039e c0x0000 (---------------)  +   is-a-socialist
+	0x000a0e0c, // n0x039f c0x0000 (---------------)  +   is-a-student
+	0x000a250c, // n0x03a0 c0x0000 (---------------)  +   is-a-teacher
+	0x000a55cb, // n0x03a1 c0x0000 (---------------)  +   is-a-techie
+	0x000a888e, // n0x03a2 c0x0000 (---------------)  +   is-a-therapist
+	0x000a8e90, // n0x03a3 c0x0000 (---------------)  +   is-an-accountant
+	0x000ab10b, // n0x03a4 c0x0000 (---------------)  +   is-an-actor
+	0x000c2e8d, // n0x03a5 c0x0000 (---------------)  +   is-an-actress
+	0x000c9d4f, // n0x03a6 c0x0000 (---------------)  +   is-an-anarchist
+	0x000abe4c, // n0x03a7 c0x0000 (---------------)  +   is-an-artist
+	0x000b1c8e, // n0x03a8 c0x0000 (---------------)  +   is-an-engineer
+	0x000b3891, // n0x03a9 c0x0000 (---------------)  +   is-an-entertainer
+	0x000b9c4c, // n0x03aa c0x0000 (---------------)  +   is-certified
+	0x000bd5c7, // n0x03ab c0x0000 (---------------)  +   is-gone
+	0x000bffcd, // n0x03ac c0x0000 (---------------)  +   is-into-anime
+	0x000c0bcc, // n0x03ad c0x0000 (---------------)  +   is-into-cars
+	0x000c1650, // n0x03ae c0x0000 (---------------)  +   is-into-cartoons
+	0x000da00d, // n0x03af c0x0000 (---------------)  +   is-into-games
+	0x00116fc7, // n0x03b0 c0x0000 (---------------)  +   is-leet
+	0x000cdcd0, // n0x03b1 c0x0000 (---------------)  +   is-not-certified
+	0x000d0288, // n0x03b2 c0x0000 (---------------)  +   is-slick
+	0x000d97cb, // n0x03b3 c0x0000 (---------------)  +   is-uberleet
+	0x001045cf, // n0x03b4 c0x0000 (---------------)  +   is-with-theband
+	0x0008bfc8, // n0x03b5 c0x0000 (---------------)  +   isa-geek
+	0x000f9acd, // n0x03b6 c0x0000 (---------------)  +   isa-hockeynut
+	0x00126b90, // n0x03b7 c0x0000 (---------------)  +   issmarterthanyou
+	0x00096283, // n0x03b8 c0x0000 (---------------)  +   jpn
+	0x0000ed02, // n0x03b9 c0x0000 (---------------)  +   kr
+	0x00047949, // n0x03ba c0x0000 (---------------)  +   likes-pie
+	0x0004b04a, // n0x03bb c0x0000 (---------------)  +   likescandy
+	0x00034688, // n0x03bc c0x0000 (---------------)  +   neat-url
+	0x00001282, // n0x03bd c0x0000 (---------------)  +   no
+	0x0003d1ca, // n0x03be c0x0000 (---------------)  +   operaunite
+	0x0005c842, // n0x03bf c0x0000 (---------------)  +   qc
+	0x00034ac7, // n0x03c0 c0x0000 (---------------)  +   rhcloud
+	0x0000a202, // n0x03c1 c0x0000 (---------------)  +   ru
+	0x00001782, // n0x03c2 c0x0000 (---------------)  +   sa
+	0x00059e50, // n0x03c3 c0x0000 (---------------)  +   saves-the-whales
+	0x000096c2, // n0x03c4 c0x0000 (---------------)  +   se
+	0x000fb186, // n0x03c5 c0x0000 (---------------)  +   selfip
+	0x0008264e, // n0x03c6 c0x0000 (---------------)  +   sells-for-less
+	0x000a620b, // n0x03c7 c0x0000 (---------------)  +   sells-for-u
+	0x000ca508, // n0x03c8 c0x0000 (---------------)  +   servebbs
+	0x000d214a, // n0x03c9 c0x0000 (---------------)  +   simple-url
+	0x000d618d, // n0x03ca c0x0000 (---------------)  +   space-to-rent
+	0x000358cc, // n0x03cb c0x0000 (---------------)  +   teaches-yoga
+	0x00006042, // n0x03cc c0x0000 (---------------)  +   uk
+	0x0000a702, // n0x03cd c0x0000 (---------------)  +   us
+	0x00010102, // n0x03ce c0x0000 (---------------)  +   uy
+	0x00032e4e, // n0x03cf c0x0000 (---------------)  +   writesthisblog
+	0x00001b82, // n0x03d0 c0x0000 (---------------)  +   za
+	0x00201602, // n0x03d1 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x03d2 c0x0000 (---------------)  + I co
+	0x00208d42, // n0x03d3 c0x0000 (---------------)  + I ed
+	0x0020dcc2, // n0x03d4 c0x0000 (---------------)  + I fi
+	0x00200f82, // n0x03d5 c0x0000 (---------------)  + I go
+	0x00201c42, // n0x03d6 c0x0000 (---------------)  + I or
+	0x00201782, // n0x03d7 c0x0000 (---------------)  + I sa
+	0x00204543, // n0x03d8 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x03d9 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x03da c0x0000 (---------------)  + I gov
+	0x00206343, // n0x03db c0x0000 (---------------)  + I inf
+	0x0020e643, // n0x03dc c0x0000 (---------------)  + I net
+	0x002375c3, // n0x03dd c0x0000 (---------------)  + I org
+	0x000330c8, // n0x03de c0x0000 (---------------)  +   blogspot
+	0x00015d83, // n0x03df c0x0000 (---------------)  +   ath
+	0x0025bdc3, // n0x03e0 c0x0000 (---------------)  + I gov
+	0x000330c8, // n0x03e1 c0x0000 (---------------)  +   blogspot
+	0x000330c8, // n0x03e2 c0x0000 (---------------)  +   blogspot
+	0x00004543, // n0x03e3 c0x0000 (---------------)  +   com
+	0x000cf3cf, // n0x03e4 c0x0000 (---------------)  +   fuettertdasnetz
+	0x000076ca, // n0x03e5 c0x0000 (---------------)  +   isteingeek
+	0x000fcac7, // n0x03e6 c0x0000 (---------------)  +   istmein
+	0x0000e4ca, // n0x03e7 c0x0000 (---------------)  +   lebtimnetz
+	0x000ab84a, // n0x03e8 c0x0000 (---------------)  +   leitungsen
+	0x000fe84d, // n0x03e9 c0x0000 (---------------)  +   traeumtgerade
+	0x000330c8, // n0x03ea c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x03eb c0x0000 (---------------)  + I com
+	0x002ce043, // n0x03ec c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x03ed c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x03ee c0x0000 (---------------)  + I net
+	0x002375c3, // n0x03ef c0x0000 (---------------)  + I org
+	0x00210b03, // n0x03f0 c0x0000 (---------------)  + I art
+	0x00204543, // n0x03f1 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x03f2 c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x03f3 c0x0000 (---------------)  + I gob
+	0x0025bdc3, // n0x03f4 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x03f5 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x03f6 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x03f7 c0x0000 (---------------)  + I org
+	0x002d2543, // n0x03f8 c0x0000 (---------------)  + I sld
+	0x0020dfc3, // n0x03f9 c0x0000 (---------------)  + I web
+	0x00210b03, // n0x03fa c0x0000 (---------------)  + I art
+	0x00208704, // n0x03fb c0x0000 (---------------)  + I asso
+	0x00204543, // n0x03fc c0x0000 (---------------)  + I com
+	0x002ce043, // n0x03fd c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x03fe c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x03ff c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0400 c0x0000 (---------------)  + I org
+	0x0023b483, // n0x0401 c0x0000 (---------------)  + I pol
+	0x00204543, // n0x0402 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0403 c0x0000 (---------------)  + I edu
+	0x00242903, // n0x0404 c0x0000 (---------------)  + I fin
+	0x002073c3, // n0x0405 c0x0000 (---------------)  + I gob
+	0x0025bdc3, // n0x0406 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0407 c0x0000 (---------------)  + I info
+	0x00236c43, // n0x0408 c0x0000 (---------------)  + I k12
+	0x0023ed03, // n0x0409 c0x0000 (---------------)  + I med
+	0x00232703, // n0x040a c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x040b c0x0000 (---------------)  + I net
+	0x002375c3, // n0x040c c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x040d c0x0000 (---------------)  + I pro
+	0x00234503, // n0x040e c0x0000 (---------------)  + I aip
+	0x00204543, // n0x040f c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0410 c0x0000 (---------------)  + I edu
+	0x00241bc3, // n0x0411 c0x0000 (---------------)  + I fie
+	0x0025bdc3, // n0x0412 c0x0000 (---------------)  + I gov
+	0x00202e83, // n0x0413 c0x0000 (---------------)  + I lib
+	0x0023ed03, // n0x0414 c0x0000 (---------------)  + I med
+	0x002375c3, // n0x0415 c0x0000 (---------------)  + I org
+	0x002911c3, // n0x0416 c0x0000 (---------------)  + I pri
+	0x00212c04, // n0x0417 c0x0000 (---------------)  + I riik
+	0x00204543, // n0x0418 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0419 c0x0000 (---------------)  + I edu
+	0x0028eb83, // n0x041a c0x0000 (---------------)  + I eun
+	0x0025bdc3, // n0x041b c0x0000 (---------------)  + I gov
+	0x00232703, // n0x041c c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x041d c0x0000 (---------------)  + I name
+	0x0020e643, // n0x041e c0x0000 (---------------)  + I net
+	0x002375c3, // n0x041f c0x0000 (---------------)  + I org
+	0x0020a3c3, // n0x0420 c0x0000 (---------------)  + I sci
+	0x12204543, // n0x0421 c0x0048 (n0x0426-n0x0427)  + I com
+	0x002ce043, // n0x0422 c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x0423 c0x0000 (---------------)  + I gob
+	0x0020b903, // n0x0424 c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x0425 c0x0000 (---------------)  + I org
+	0x000330c8, // n0x0426 c0x0000 (---------------)  +   blogspot
+	0x003451c5, // n0x0427 c0x0000 (---------------)  + I aland
+	0x000330c8, // n0x0428 c0x0000 (---------------)  +   blogspot
+	0x0000d2c3, // n0x0429 c0x0000 (---------------)  +   iki
+	0x00234c88, // n0x042a c0x0000 (---------------)  + I aeroport
+	0x0022b507, // n0x042b c0x0000 (---------------)  + I assedic
+	0x00208704, // n0x042c c0x0000 (---------------)  + I asso
+	0x002d73c6, // n0x042d c0x0000 (---------------)  + I avocat
+	0x00344c86, // n0x042e c0x0000 (---------------)  + I avoues
+	0x000330c8, // n0x042f c0x0000 (---------------)  +   blogspot
+	0x002ebd03, // n0x0430 c0x0000 (---------------)  + I cci
+	0x0023aa49, // n0x0431 c0x0000 (---------------)  + I chambagri
+	0x00269115, // n0x0432 c0x0000 (---------------)  + I chirurgiens-dentistes
+	0x00204543, // n0x0433 c0x0000 (---------------)  + I com
+	0x0032d992, // n0x0434 c0x0000 (---------------)  + I experts-comptables
+	0x0032d74f, // n0x0435 c0x0000 (---------------)  + I geometre-expert
+	0x00201984, // n0x0436 c0x0000 (---------------)  + I gouv
+	0x00260905, // n0x0437 c0x0000 (---------------)  + I greta
+	0x002943d0, // n0x0438 c0x0000 (---------------)  + I huissier-justice
+	0x002e2f87, // n0x0439 c0x0000 (---------------)  + I medecin
+	0x0020b903, // n0x043a c0x0000 (---------------)  + I nom
+	0x002ae688, // n0x043b c0x0000 (---------------)  + I notaires
+	0x002bdfca, // n0x043c c0x0000 (---------------)  + I pharmacien
+	0x00234d84, // n0x043d c0x0000 (---------------)  + I port
+	0x00261503, // n0x043e c0x0000 (---------------)  + I prd
+	0x00334e46, // n0x043f c0x0000 (---------------)  + I presse
+	0x0023bfc2, // n0x0440 c0x0000 (---------------)  + I tm
+	0x002adc8b, // n0x0441 c0x0000 (---------------)  + I veterinaire
+	0x00204543, // n0x0442 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0443 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0444 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0445 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0446 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0447 c0x0000 (---------------)  + I org
+	0x002c94c3, // n0x0448 c0x0000 (---------------)  + I pvt
+	0x00200182, // n0x0449 c0x0000 (---------------)  + I co
+	0x0025bdc3, // n0x044a c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x044b c0x0000 (---------------)  + I net
+	0x002375c3, // n0x044c c0x0000 (---------------)  + I org
+	0x00244943, // n0x044d c0x0000 (---------------)  + I sch
+	0x00204543, // n0x044e c0x0000 (---------------)  + I com
+	0x002ce043, // n0x044f c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0450 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0451 c0x0000 (---------------)  + I mil
+	0x002375c3, // n0x0452 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0453 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0454 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0455 c0x0000 (---------------)  + I gov
+	0x0031a303, // n0x0456 c0x0000 (---------------)  + I ltd
+	0x00238143, // n0x0457 c0x0000 (---------------)  + I mod
+	0x002375c3, // n0x0458 c0x0000 (---------------)  + I org
+	0x00201602, // n0x0459 c0x0000 (---------------)  + I ac
+	0x00204543, // n0x045a c0x0000 (---------------)  + I com
+	0x002ce043, // n0x045b c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x045c c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x045d c0x0000 (---------------)  + I net
+	0x002375c3, // n0x045e c0x0000 (---------------)  + I org
+	0x00208704, // n0x045f c0x0000 (---------------)  + I asso
+	0x00204543, // n0x0460 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0461 c0x0000 (---------------)  + I edu
+	0x00224c84, // n0x0462 c0x0000 (---------------)  + I mobi
+	0x0020e643, // n0x0463 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0464 c0x0000 (---------------)  + I org
+	0x000330c8, // n0x0465 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x0466 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0467 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0468 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0469 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x046a c0x0000 (---------------)  + I org
+	0x00204543, // n0x046b c0x0000 (---------------)  + I com
+	0x002ce043, // n0x046c c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x046d c0x0000 (---------------)  + I gob
+	0x00201f03, // n0x046e c0x0000 (---------------)  + I ind
+	0x00232703, // n0x046f c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0470 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0471 c0x0000 (---------------)  + I org
+	0x00200182, // n0x0472 c0x0000 (---------------)  + I co
+	0x00204543, // n0x0473 c0x0000 (---------------)  + I com
+	0x0020e643, // n0x0474 c0x0000 (---------------)  + I net
+	0x000330c8, // n0x0475 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x0476 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0477 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0478 c0x0000 (---------------)  + I gov
+	0x00262003, // n0x0479 c0x0000 (---------------)  + I idv
+	0x0020e643, // n0x047a c0x0000 (---------------)  + I net
+	0x002375c3, // n0x047b c0x0000 (---------------)  + I org
+	0x0027830a, // n0x047c c0x0000 (---------------)  + I xn--55qx5d
+	0x002eebc9, // n0x047d c0x0000 (---------------)  + I xn--ciqpn
+	0x002fd28b, // n0x047e c0x0000 (---------------)  + I xn--gmq050i
+	0x002fd80a, // n0x047f c0x0000 (---------------)  + I xn--gmqw5a
+	0x0030438a, // n0x0480 c0x0000 (---------------)  + I xn--io0a7i
+	0x0030b6cb, // n0x0481 c0x0000 (---------------)  + I xn--lcvr32d
+	0x0031760a, // n0x0482 c0x0000 (---------------)  + I xn--mk0axi
+	0x0031ea8a, // n0x0483 c0x0000 (---------------)  + I xn--mxtq1m
+	0x0032158a, // n0x0484 c0x0000 (---------------)  + I xn--od0alg
+	0x0032180b, // n0x0485 c0x0000 (---------------)  + I xn--od0aq3b
+	0x00338c49, // n0x0486 c0x0000 (---------------)  + I xn--tn0ag
+	0x0033bd0a, // n0x0487 c0x0000 (---------------)  + I xn--uc0atv
+	0x0033c1cb, // n0x0488 c0x0000 (---------------)  + I xn--uc0ay4a
+	0x00340f8b, // n0x0489 c0x0000 (---------------)  + I xn--wcvs22d
+	0x00348bca, // n0x048a c0x0000 (---------------)  + I xn--zf0avx
+	0x00204543, // n0x048b c0x0000 (---------------)  + I com
+	0x002ce043, // n0x048c c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x048d c0x0000 (---------------)  + I gob
+	0x00232703, // n0x048e c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x048f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0490 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0491 c0x0000 (---------------)  + I com
+	0x00250b84, // n0x0492 c0x0000 (---------------)  + I from
+	0x00201cc2, // n0x0493 c0x0000 (---------------)  + I iz
+	0x00230d84, // n0x0494 c0x0000 (---------------)  + I name
+	0x00251985, // n0x0495 c0x0000 (---------------)  + I adult
+	0x00210b03, // n0x0496 c0x0000 (---------------)  + I art
+	0x00208704, // n0x0497 c0x0000 (---------------)  + I asso
+	0x00204543, // n0x0498 c0x0000 (---------------)  + I com
+	0x0023d144, // n0x0499 c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x049a c0x0000 (---------------)  + I edu
+	0x002432c4, // n0x049b c0x0000 (---------------)  + I firm
+	0x00201984, // n0x049c c0x0000 (---------------)  + I gouv
+	0x00206344, // n0x049d c0x0000 (---------------)  + I info
+	0x0023ed03, // n0x049e c0x0000 (---------------)  + I med
+	0x0020e643, // n0x049f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x04a0 c0x0000 (---------------)  + I org
+	0x00295d85, // n0x04a1 c0x0000 (---------------)  + I perso
+	0x0023b483, // n0x04a2 c0x0000 (---------------)  + I pol
+	0x002c7c83, // n0x04a3 c0x0000 (---------------)  + I pro
+	0x00231b03, // n0x04a4 c0x0000 (---------------)  + I rel
+	0x00219004, // n0x04a5 c0x0000 (---------------)  + I shop
+	0x00236cc4, // n0x04a6 c0x0000 (---------------)  + I 2000
+	0x002f8e85, // n0x04a7 c0x0000 (---------------)  + I agrar
+	0x000330c8, // n0x04a8 c0x0000 (---------------)  +   blogspot
+	0x00214f44, // n0x04a9 c0x0000 (---------------)  + I bolt
+	0x0031ad06, // n0x04aa c0x0000 (---------------)  + I casino
+	0x00341484, // n0x04ab c0x0000 (---------------)  + I city
+	0x00200182, // n0x04ac c0x0000 (---------------)  + I co
+	0x0029d9c7, // n0x04ad c0x0000 (---------------)  + I erotica
+	0x002a4f07, // n0x04ae c0x0000 (---------------)  + I erotika
+	0x00242504, // n0x04af c0x0000 (---------------)  + I film
+	0x0024d305, // n0x04b0 c0x0000 (---------------)  + I forum
+	0x002da205, // n0x04b1 c0x0000 (---------------)  + I games
+	0x00293085, // n0x04b2 c0x0000 (---------------)  + I hotel
+	0x00206344, // n0x04b3 c0x0000 (---------------)  + I info
+	0x002d9408, // n0x04b4 c0x0000 (---------------)  + I ingatlan
+	0x0022a4c6, // n0x04b5 c0x0000 (---------------)  + I jogasz
+	0x0030fa08, // n0x04b6 c0x0000 (---------------)  + I konyvelo
+	0x0021d105, // n0x04b7 c0x0000 (---------------)  + I lakas
+	0x0023ed05, // n0x04b8 c0x0000 (---------------)  + I media
+	0x002fd044, // n0x04b9 c0x0000 (---------------)  + I news
+	0x002375c3, // n0x04ba c0x0000 (---------------)  + I org
+	0x002c7b04, // n0x04bb c0x0000 (---------------)  + I priv
+	0x0023adc6, // n0x04bc c0x0000 (---------------)  + I reklam
+	0x00334f43, // n0x04bd c0x0000 (---------------)  + I sex
+	0x00219004, // n0x04be c0x0000 (---------------)  + I shop
+	0x002cabc5, // n0x04bf c0x0000 (---------------)  + I sport
+	0x002478c4, // n0x04c0 c0x0000 (---------------)  + I suli
+	0x00223404, // n0x04c1 c0x0000 (---------------)  + I szex
+	0x0023bfc2, // n0x04c2 c0x0000 (---------------)  + I tm
+	0x0027da86, // n0x04c3 c0x0000 (---------------)  + I tozsde
+	0x0032ec86, // n0x04c4 c0x0000 (---------------)  + I utazas
+	0x002e2585, // n0x04c5 c0x0000 (---------------)  + I video
+	0x00201602, // n0x04c6 c0x0000 (---------------)  + I ac
+	0x002f0f83, // n0x04c7 c0x0000 (---------------)  + I biz
+	0x00200182, // n0x04c8 c0x0000 (---------------)  + I co
+	0x00200f82, // n0x04c9 c0x0000 (---------------)  + I go
+	0x00232703, // n0x04ca c0x0000 (---------------)  + I mil
+	0x00229b42, // n0x04cb c0x0000 (---------------)  + I my
+	0x0020e643, // n0x04cc c0x0000 (---------------)  + I net
+	0x00201c42, // n0x04cd c0x0000 (---------------)  + I or
+	0x00244943, // n0x04ce c0x0000 (---------------)  + I sch
+	0x0020dfc3, // n0x04cf c0x0000 (---------------)  + I web
+	0x000330c8, // n0x04d0 c0x0000 (---------------)  +   blogspot
+	0x0025bdc3, // n0x04d1 c0x0000 (---------------)  + I gov
+	0x17200182, // n0x04d2 c0x005c (n0x04d3-n0x04d4)  o I co
+	0x000330c8, // n0x04d3 c0x0000 (---------------)  +   blogspot
+	0x00201602, // n0x04d4 c0x0000 (---------------)  + I ac
+	0x17a00182, // n0x04d5 c0x005e (n0x04da-n0x04dc)  + I co
+	0x0025bdc3, // n0x04d6 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x04d7 c0x0000 (---------------)  + I net
+	0x002180c3, // n0x04d8 c0x0000 (---------------)  + I nic
+	0x002375c3, // n0x04d9 c0x0000 (---------------)  + I org
+	0x0031a303, // n0x04da c0x0000 (---------------)  + I ltd
+	0x002c3d83, // n0x04db c0x0000 (---------------)  + I plc
+	0x00201602, // n0x04dc c0x0000 (---------------)  + I ac
+	0x000330c8, // n0x04dd c0x0000 (---------------)  +   blogspot
+	0x00200182, // n0x04de c0x0000 (---------------)  + I co
+	0x002ce043, // n0x04df c0x0000 (---------------)  + I edu
+	0x002432c4, // n0x04e0 c0x0000 (---------------)  + I firm
+	0x0020cbc3, // n0x04e1 c0x0000 (---------------)  + I gen
+	0x0025bdc3, // n0x04e2 c0x0000 (---------------)  + I gov
+	0x00201f03, // n0x04e3 c0x0000 (---------------)  + I ind
+	0x00232703, // n0x04e4 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x04e5 c0x0000 (---------------)  + I net
+	0x002180c3, // n0x04e6 c0x0000 (---------------)  + I nic
+	0x002375c3, // n0x04e7 c0x0000 (---------------)  + I org
+	0x0021cd03, // n0x04e8 c0x0000 (---------------)  + I res
+	0x00121a93, // n0x04e9 c0x0000 (---------------)  +   barrel-of-knowledge
+	0x0012d2d4, // n0x04ea c0x0000 (---------------)  +   barrell-of-knowledge
+	0x00000a46, // n0x04eb c0x0000 (---------------)  +   dyndns
+	0x00046fc7, // n0x04ec c0x0000 (---------------)  +   for-our
+	0x0002f549, // n0x04ed c0x0000 (---------------)  +   groks-the
+	0x0003764a, // n0x04ee c0x0000 (---------------)  +   groks-this
+	0x000d1b0d, // n0x04ef c0x0000 (---------------)  +   here-for-more
+	0x0004204a, // n0x04f0 c0x0000 (---------------)  +   knowsitall
+	0x000fb186, // n0x04f1 c0x0000 (---------------)  +   selfip
+	0x0000dfc6, // n0x04f2 c0x0000 (---------------)  +   webhop
+	0x00232142, // n0x04f3 c0x0000 (---------------)  + I eu
+	0x00204543, // n0x04f4 c0x0000 (---------------)  + I com
+	0x00204543, // n0x04f5 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x04f6 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x04f7 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x04f8 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x04f9 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x04fa c0x0000 (---------------)  + I org
+	0x00201602, // n0x04fb c0x0000 (---------------)  + I ac
+	0x00200182, // n0x04fc c0x0000 (---------------)  + I co
+	0x0025bdc3, // n0x04fd c0x0000 (---------------)  + I gov
+	0x00201842, // n0x04fe c0x0000 (---------------)  + I id
+	0x0020e643, // n0x04ff c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0500 c0x0000 (---------------)  + I org
+	0x00244943, // n0x0501 c0x0000 (---------------)  + I sch
+	0x00312ccf, // n0x0502 c0x0000 (---------------)  + I xn--mgba3a4f16a
+	0x0031308e, // n0x0503 c0x0000 (---------------)  + I xn--mgba3a4fra
+	0x00204543, // n0x0504 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0505 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0506 c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x0507 c0x0000 (---------------)  + I int
+	0x0020e643, // n0x0508 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0509 c0x0000 (---------------)  + I org
+	0x00200f42, // n0x050a c0x0000 (---------------)  + I ag
+	0x00338e09, // n0x050b c0x0000 (---------------)  + I agrigento
+	0x00200302, // n0x050c c0x0000 (---------------)  + I al
+	0x0025a14b, // n0x050d c0x0000 (---------------)  + I alessandria
+	0x00222b4a, // n0x050e c0x0000 (---------------)  + I alto-adige
+	0x0023a189, // n0x050f c0x0000 (---------------)  + I altoadige
+	0x002009c2, // n0x0510 c0x0000 (---------------)  + I an
+	0x0033a0c6, // n0x0511 c0x0000 (---------------)  + I ancona
+	0x00293cd5, // n0x0512 c0x0000 (---------------)  + I andria-barletta-trani
+	0x0025a295, // n0x0513 c0x0000 (---------------)  + I andria-trani-barletta
+	0x002a1213, // n0x0514 c0x0000 (---------------)  + I andriabarlettatrani
+	0x0025a813, // n0x0515 c0x0000 (---------------)  + I andriatranibarletta
+	0x0020ce02, // n0x0516 c0x0000 (---------------)  + I ao
+	0x0022ec05, // n0x0517 c0x0000 (---------------)  + I aosta
+	0x0022ddc5, // n0x0518 c0x0000 (---------------)  + I aoste
+	0x00201bc2, // n0x0519 c0x0000 (---------------)  + I ap
+	0x00271482, // n0x051a c0x0000 (---------------)  + I aq
+	0x0029cb46, // n0x051b c0x0000 (---------------)  + I aquila
+	0x00201202, // n0x051c c0x0000 (---------------)  + I ar
+	0x0032c786, // n0x051d c0x0000 (---------------)  + I arezzo
+	0x00210e4d, // n0x051e c0x0000 (---------------)  + I ascoli-piceno
+	0x0023940c, // n0x051f c0x0000 (---------------)  + I ascolipiceno
+	0x0022a8c4, // n0x0520 c0x0000 (---------------)  + I asti
+	0x00202c82, // n0x0521 c0x0000 (---------------)  + I at
+	0x00200282, // n0x0522 c0x0000 (---------------)  + I av
+	0x002c1c48, // n0x0523 c0x0000 (---------------)  + I avellino
+	0x00207a42, // n0x0524 c0x0000 (---------------)  + I ba
+	0x002d6946, // n0x0525 c0x0000 (---------------)  + I balsan
+	0x0021a304, // n0x0526 c0x0000 (---------------)  + I bari
+	0x00293e95, // n0x0527 c0x0000 (---------------)  + I barletta-trani-andria
+	0x002a1393, // n0x0528 c0x0000 (---------------)  + I barlettatraniandria
+	0x002f2687, // n0x0529 c0x0000 (---------------)  + I belluno
+	0x0025b249, // n0x052a c0x0000 (---------------)  + I benevento
+	0x00227c87, // n0x052b c0x0000 (---------------)  + I bergamo
+	0x00331542, // n0x052c c0x0000 (---------------)  + I bg
+	0x00204f02, // n0x052d c0x0000 (---------------)  + I bi
+	0x00206546, // n0x052e c0x0000 (---------------)  + I biella
+	0x0020e482, // n0x052f c0x0000 (---------------)  + I bl
+	0x000330c8, // n0x0530 c0x0000 (---------------)  +   blogspot
+	0x00253742, // n0x0531 c0x0000 (---------------)  + I bn
+	0x002048c2, // n0x0532 c0x0000 (---------------)  + I bo
+	0x002e4247, // n0x0533 c0x0000 (---------------)  + I bologna
+	0x00215307, // n0x0534 c0x0000 (---------------)  + I bolzano
+	0x0021b045, // n0x0535 c0x0000 (---------------)  + I bozen
+	0x00201302, // n0x0536 c0x0000 (---------------)  + I br
+	0x0021ccc7, // n0x0537 c0x0000 (---------------)  + I brescia
+	0x0021ce88, // n0x0538 c0x0000 (---------------)  + I brindisi
+	0x002ca682, // n0x0539 c0x0000 (---------------)  + I bs
+	0x0020e542, // n0x053a c0x0000 (---------------)  + I bt
+	0x00232942, // n0x053b c0x0000 (---------------)  + I bz
+	0x00208582, // n0x053c c0x0000 (---------------)  + I ca
+	0x0022e208, // n0x053d c0x0000 (---------------)  + I cagliari
+	0x0024740d, // n0x053e c0x0000 (---------------)  + I caltanissetta
+	0x0025880f, // n0x053f c0x0000 (---------------)  + I campidano-medio
+	0x00258bce, // n0x0540 c0x0000 (---------------)  + I campidanomedio
+	0x0020858a, // n0x0541 c0x0000 (---------------)  + I campobasso
+	0x0029db11, // n0x0542 c0x0000 (---------------)  + I carbonia-iglesias
+	0x0029df90, // n0x0543 c0x0000 (---------------)  + I carboniaiglesias
+	0x002af70d, // n0x0544 c0x0000 (---------------)  + I carrara-massa
+	0x002afa4c, // n0x0545 c0x0000 (---------------)  + I carraramassa
+	0x0022b687, // n0x0546 c0x0000 (---------------)  + I caserta
+	0x002d7487, // n0x0547 c0x0000 (---------------)  + I catania
+	0x00347149, // n0x0548 c0x0000 (---------------)  + I catanzaro
+	0x0031f402, // n0x0549 c0x0000 (---------------)  + I cb
+	0x00201ac2, // n0x054a c0x0000 (---------------)  + I ce
+	0x0024ab0c, // n0x054b c0x0000 (---------------)  + I cesena-forli
+	0x0024ae0b, // n0x054c c0x0000 (---------------)  + I cesenaforli
+	0x00201642, // n0x054d c0x0000 (---------------)  + I ch
+	0x002a5786, // n0x054e c0x0000 (---------------)  + I chieti
+	0x0020a402, // n0x054f c0x0000 (---------------)  + I ci
+	0x0021d842, // n0x0550 c0x0000 (---------------)  + I cl
+	0x00236dc2, // n0x0551 c0x0000 (---------------)  + I cn
+	0x00200182, // n0x0552 c0x0000 (---------------)  + I co
+	0x00204544, // n0x0553 c0x0000 (---------------)  + I como
+	0x0023e307, // n0x0554 c0x0000 (---------------)  + I cosenza
+	0x00213e82, // n0x0555 c0x0000 (---------------)  + I cr
+	0x00240607, // n0x0556 c0x0000 (---------------)  + I cremona
+	0x00240fc7, // n0x0557 c0x0000 (---------------)  + I crotone
+	0x00213d02, // n0x0558 c0x0000 (---------------)  + I cs
+	0x00222942, // n0x0559 c0x0000 (---------------)  + I ct
+	0x00241505, // n0x055a c0x0000 (---------------)  + I cuneo
+	0x00200442, // n0x055b c0x0000 (---------------)  + I cz
+	0x0024c5ce, // n0x055c c0x0000 (---------------)  + I dell-ogliastra
+	0x00254b0d, // n0x055d c0x0000 (---------------)  + I dellogliastra
+	0x002ce043, // n0x055e c0x0000 (---------------)  + I edu
+	0x00201b02, // n0x055f c0x0000 (---------------)  + I en
+	0x002572c4, // n0x0560 c0x0000 (---------------)  + I enna
+	0x002fee42, // n0x0561 c0x0000 (---------------)  + I fc
+	0x00215f82, // n0x0562 c0x0000 (---------------)  + I fe
+	0x002c2485, // n0x0563 c0x0000 (---------------)  + I fermo
+	0x002c8247, // n0x0564 c0x0000 (---------------)  + I ferrara
+	0x0031e582, // n0x0565 c0x0000 (---------------)  + I fg
+	0x0020dcc2, // n0x0566 c0x0000 (---------------)  + I fi
+	0x00243107, // n0x0567 c0x0000 (---------------)  + I firenze
+	0x00245e08, // n0x0568 c0x0000 (---------------)  + I florence
+	0x00317982, // n0x0569 c0x0000 (---------------)  + I fm
+	0x002063c6, // n0x056a c0x0000 (---------------)  + I foggia
+	0x0024a98c, // n0x056b c0x0000 (---------------)  + I forli-cesena
+	0x0024accb, // n0x056c c0x0000 (---------------)  + I forlicesena
+	0x00200c02, // n0x056d c0x0000 (---------------)  + I fr
+	0x00266c89, // n0x056e c0x0000 (---------------)  + I frosinone
+	0x00206d02, // n0x056f c0x0000 (---------------)  + I ge
+	0x00212305, // n0x0570 c0x0000 (---------------)  + I genoa
+	0x00217dc6, // n0x0571 c0x0000 (---------------)  + I genova
+	0x00200f82, // n0x0572 c0x0000 (---------------)  + I go
+	0x002b69c7, // n0x0573 c0x0000 (---------------)  + I gorizia
+	0x0025bdc3, // n0x0574 c0x0000 (---------------)  + I gov
+	0x0022f542, // n0x0575 c0x0000 (---------------)  + I gr
+	0x00325248, // n0x0576 c0x0000 (---------------)  + I grosseto
+	0x0029dd51, // n0x0577 c0x0000 (---------------)  + I iglesias-carbonia
+	0x0029e190, // n0x0578 c0x0000 (---------------)  + I iglesiascarbonia
+	0x0020e5c2, // n0x0579 c0x0000 (---------------)  + I im
+	0x002130c7, // n0x057a c0x0000 (---------------)  + I imperia
+	0x00200782, // n0x057b c0x0000 (---------------)  + I is
+	0x00242747, // n0x057c c0x0000 (---------------)  + I isernia
+	0x0020ed02, // n0x057d c0x0000 (---------------)  + I kr
+	0x0022a6c9, // n0x057e c0x0000 (---------------)  + I la-spezia
+	0x0029cb07, // n0x057f c0x0000 (---------------)  + I laquila
+	0x00261bc8, // n0x0580 c0x0000 (---------------)  + I laspezia
+	0x0022a086, // n0x0581 c0x0000 (---------------)  + I latina
+	0x0023b942, // n0x0582 c0x0000 (---------------)  + I lc
+	0x002044c2, // n0x0583 c0x0000 (---------------)  + I le
+	0x00206945, // n0x0584 c0x0000 (---------------)  + I lecce
+	0x0020e885, // n0x0585 c0x0000 (---------------)  + I lecco
+	0x002000c2, // n0x0586 c0x0000 (---------------)  + I li
+	0x0031d547, // n0x0587 c0x0000 (---------------)  + I livorno
+	0x00200342, // n0x0588 c0x0000 (---------------)  + I lo
+	0x0024c004, // n0x0589 c0x0000 (---------------)  + I lodi
+	0x00214fc2, // n0x058a c0x0000 (---------------)  + I lt
+	0x0020b2c2, // n0x058b c0x0000 (---------------)  + I lu
+	0x0020b2c5, // n0x058c c0x0000 (---------------)  + I lucca
+	0x002ec448, // n0x058d c0x0000 (---------------)  + I macerata
+	0x0028b847, // n0x058e c0x0000 (---------------)  + I mantova
+	0x002af58d, // n0x058f c0x0000 (---------------)  + I massa-carrara
+	0x002af90c, // n0x0590 c0x0000 (---------------)  + I massacarrara
+	0x0029ba86, // n0x0591 c0x0000 (---------------)  + I matera
+	0x00220582, // n0x0592 c0x0000 (---------------)  + I mb
+	0x002f3a42, // n0x0593 c0x0000 (---------------)  + I mc
+	0x00205442, // n0x0594 c0x0000 (---------------)  + I me
+	0x0025868f, // n0x0595 c0x0000 (---------------)  + I medio-campidano
+	0x00258a8e, // n0x0596 c0x0000 (---------------)  + I mediocampidano
+	0x00205e07, // n0x0597 c0x0000 (---------------)  + I messina
+	0x00206882, // n0x0598 c0x0000 (---------------)  + I mi
+	0x00305bc5, // n0x0599 c0x0000 (---------------)  + I milan
+	0x00305bc6, // n0x059a c0x0000 (---------------)  + I milano
+	0x00209a42, // n0x059b c0x0000 (---------------)  + I mn
+	0x002045c2, // n0x059c c0x0000 (---------------)  + I mo
+	0x00287206, // n0x059d c0x0000 (---------------)  + I modena
+	0x002b03c5, // n0x059e c0x0000 (---------------)  + I monza
+	0x002b03cd, // n0x059f c0x0000 (---------------)  + I monza-brianza
+	0x002b0715, // n0x05a0 c0x0000 (---------------)  + I monza-e-della-brianza
+	0x002b0c4c, // n0x05a1 c0x0000 (---------------)  + I monzabrianza
+	0x002b0f4d, // n0x05a2 c0x0000 (---------------)  + I monzaebrianza
+	0x002b1292, // n0x05a3 c0x0000 (---------------)  + I monzaedellabrianza
+	0x002525c2, // n0x05a4 c0x0000 (---------------)  + I ms
+	0x0025af82, // n0x05a5 c0x0000 (---------------)  + I mt
+	0x00200242, // n0x05a6 c0x0000 (---------------)  + I na
+	0x002eb646, // n0x05a7 c0x0000 (---------------)  + I naples
+	0x0033e506, // n0x05a8 c0x0000 (---------------)  + I napoli
+	0x00201282, // n0x05a9 c0x0000 (---------------)  + I no
+	0x00217e46, // n0x05aa c0x0000 (---------------)  + I novara
+	0x00204b42, // n0x05ab c0x0000 (---------------)  + I nu
+	0x00252485, // n0x05ac c0x0000 (---------------)  + I nuoro
+	0x00206402, // n0x05ad c0x0000 (---------------)  + I og
+	0x0024c709, // n0x05ae c0x0000 (---------------)  + I ogliastra
+	0x00296b8c, // n0x05af c0x0000 (---------------)  + I olbia-tempio
+	0x00296ecb, // n0x05b0 c0x0000 (---------------)  + I olbiatempio
+	0x00201c42, // n0x05b1 c0x0000 (---------------)  + I or
+	0x002b7d08, // n0x05b2 c0x0000 (---------------)  + I oristano
+	0x00203102, // n0x05b3 c0x0000 (---------------)  + I ot
+	0x002015c2, // n0x05b4 c0x0000 (---------------)  + I pa
+	0x0021c6c6, // n0x05b5 c0x0000 (---------------)  + I padova
+	0x00314605, // n0x05b6 c0x0000 (---------------)  + I padua
+	0x00285847, // n0x05b7 c0x0000 (---------------)  + I palermo
+	0x002c2085, // n0x05b8 c0x0000 (---------------)  + I parma
+	0x002bdcc5, // n0x05b9 c0x0000 (---------------)  + I pavia
+	0x002ccf82, // n0x05ba c0x0000 (---------------)  + I pc
+	0x00219102, // n0x05bb c0x0000 (---------------)  + I pd
+	0x00213142, // n0x05bc c0x0000 (---------------)  + I pe
+	0x00262ac7, // n0x05bd c0x0000 (---------------)  + I perugia
+	0x002c6e0d, // n0x05be c0x0000 (---------------)  + I pesaro-urbino
+	0x002c718c, // n0x05bf c0x0000 (---------------)  + I pesarourbino
+	0x002bde07, // n0x05c0 c0x0000 (---------------)  + I pescara
+	0x00226182, // n0x05c1 c0x0000 (---------------)  + I pg
+	0x00211002, // n0x05c2 c0x0000 (---------------)  + I pi
+	0x00257848, // n0x05c3 c0x0000 (---------------)  + I piacenza
+	0x0028bf84, // n0x05c4 c0x0000 (---------------)  + I pisa
+	0x002a8b07, // n0x05c5 c0x0000 (---------------)  + I pistoia
+	0x00227f82, // n0x05c6 c0x0000 (---------------)  + I pn
+	0x00201c02, // n0x05c7 c0x0000 (---------------)  + I po
+	0x002c5b09, // n0x05c8 c0x0000 (---------------)  + I pordenone
+	0x002f2a07, // n0x05c9 c0x0000 (---------------)  + I potenza
+	0x00261502, // n0x05ca c0x0000 (---------------)  + I pr
+	0x0030e705, // n0x05cb c0x0000 (---------------)  + I prato
+	0x00201482, // n0x05cc c0x0000 (---------------)  + I pt
+	0x00205d42, // n0x05cd c0x0000 (---------------)  + I pu
+	0x002c94c2, // n0x05ce c0x0000 (---------------)  + I pv
+	0x002c98c2, // n0x05cf c0x0000 (---------------)  + I pz
+	0x00202f42, // n0x05d0 c0x0000 (---------------)  + I ra
+	0x00235cc6, // n0x05d1 c0x0000 (---------------)  + I ragusa
+	0x0030c447, // n0x05d2 c0x0000 (---------------)  + I ravenna
+	0x002414c2, // n0x05d3 c0x0000 (---------------)  + I rc
+	0x002008c2, // n0x05d4 c0x0000 (---------------)  + I re
+	0x002b3d8f, // n0x05d5 c0x0000 (---------------)  + I reggio-calabria
+	0x002e178d, // n0x05d6 c0x0000 (---------------)  + I reggio-emilia
+	0x0023e84e, // n0x05d7 c0x0000 (---------------)  + I reggiocalabria
+	0x002ba68c, // n0x05d8 c0x0000 (---------------)  + I reggioemilia
+	0x00204d02, // n0x05d9 c0x0000 (---------------)  + I rg
+	0x00201c82, // n0x05da c0x0000 (---------------)  + I ri
+	0x0021fb85, // n0x05db c0x0000 (---------------)  + I rieti
+	0x0028f246, // n0x05dc c0x0000 (---------------)  + I rimini
+	0x00233b82, // n0x05dd c0x0000 (---------------)  + I rm
+	0x00201102, // n0x05de c0x0000 (---------------)  + I rn
+	0x00203d82, // n0x05df c0x0000 (---------------)  + I ro
+	0x00299e44, // n0x05e0 c0x0000 (---------------)  + I roma
+	0x00297984, // n0x05e1 c0x0000 (---------------)  + I rome
+	0x00203d86, // n0x05e2 c0x0000 (---------------)  + I rovigo
+	0x00201782, // n0x05e3 c0x0000 (---------------)  + I sa
+	0x002a45c7, // n0x05e4 c0x0000 (---------------)  + I salerno
+	0x002458c7, // n0x05e5 c0x0000 (---------------)  + I sassari
+	0x00263086, // n0x05e6 c0x0000 (---------------)  + I savona
+	0x00202bc2, // n0x05e7 c0x0000 (---------------)  + I si
+	0x002c8e85, // n0x05e8 c0x0000 (---------------)  + I siena
+	0x00264c48, // n0x05e9 c0x0000 (---------------)  + I siracusa
+	0x002007c2, // n0x05ea c0x0000 (---------------)  + I so
+	0x00328787, // n0x05eb c0x0000 (---------------)  + I sondrio
+	0x0022a782, // n0x05ec c0x0000 (---------------)  + I sp
+	0x002b3d42, // n0x05ed c0x0000 (---------------)  + I sr
+	0x00202ac2, // n0x05ee c0x0000 (---------------)  + I ss
+	0x002f8c09, // n0x05ef c0x0000 (---------------)  + I suedtirol
+	0x00206782, // n0x05f0 c0x0000 (---------------)  + I sv
+	0x002011c2, // n0x05f1 c0x0000 (---------------)  + I ta
+	0x00335287, // n0x05f2 c0x0000 (---------------)  + I taranto
+	0x00204442, // n0x05f3 c0x0000 (---------------)  + I te
+	0x00296d0c, // n0x05f4 c0x0000 (---------------)  + I tempio-olbia
+	0x0029700b, // n0x05f5 c0x0000 (---------------)  + I tempioolbia
+	0x0029bb06, // n0x05f6 c0x0000 (---------------)  + I teramo
+	0x002d5b85, // n0x05f7 c0x0000 (---------------)  + I terni
+	0x00203a82, // n0x05f8 c0x0000 (---------------)  + I tn
+	0x00204182, // n0x05f9 c0x0000 (---------------)  + I to
+	0x0029fcc6, // n0x05fa c0x0000 (---------------)  + I torino
+	0x002021c2, // n0x05fb c0x0000 (---------------)  + I tp
+	0x0020a782, // n0x05fc c0x0000 (---------------)  + I tr
+	0x00293b55, // n0x05fd c0x0000 (---------------)  + I trani-andria-barletta
+	0x0025a455, // n0x05fe c0x0000 (---------------)  + I trani-barletta-andria
+	0x002a10d3, // n0x05ff c0x0000 (---------------)  + I traniandriabarletta
+	0x0025a993, // n0x0600 c0x0000 (---------------)  + I tranibarlettaandria
+	0x002cacc7, // n0x0601 c0x0000 (---------------)  + I trapani
+	0x00304188, // n0x0602 c0x0000 (---------------)  + I trentino
+	0x0033f186, // n0x0603 c0x0000 (---------------)  + I trento
+	0x0029c947, // n0x0604 c0x0000 (---------------)  + I treviso
+	0x002ad887, // n0x0605 c0x0000 (---------------)  + I trieste
+	0x00205fc2, // n0x0606 c0x0000 (---------------)  + I ts
+	0x00269ac5, // n0x0607 c0x0000 (---------------)  + I turin
+	0x002820c2, // n0x0608 c0x0000 (---------------)  + I tv
+	0x002072c2, // n0x0609 c0x0000 (---------------)  + I ud
+	0x002b7345, // n0x060a c0x0000 (---------------)  + I udine
+	0x002c6fcd, // n0x060b c0x0000 (---------------)  + I urbino-pesaro
+	0x002c730c, // n0x060c c0x0000 (---------------)  + I urbinopesaro
+	0x002002c2, // n0x060d c0x0000 (---------------)  + I va
+	0x002c5346, // n0x060e c0x0000 (---------------)  + I varese
+	0x00227982, // n0x060f c0x0000 (---------------)  + I vb
+	0x002f9642, // n0x0610 c0x0000 (---------------)  + I vc
+	0x00203642, // n0x0611 c0x0000 (---------------)  + I ve
+	0x0026c687, // n0x0612 c0x0000 (---------------)  + I venezia
+	0x0021c906, // n0x0613 c0x0000 (---------------)  + I venice
+	0x00214d48, // n0x0614 c0x0000 (---------------)  + I verbania
+	0x002b5dc8, // n0x0615 c0x0000 (---------------)  + I vercelli
+	0x00266406, // n0x0616 c0x0000 (---------------)  + I verona
+	0x00201a42, // n0x0617 c0x0000 (---------------)  + I vi
+	0x002e1f4d, // n0x0618 c0x0000 (---------------)  + I vibo-valentia
+	0x002e228c, // n0x0619 c0x0000 (---------------)  + I vibovalentia
+	0x00201a47, // n0x061a c0x0000 (---------------)  + I vicenza
+	0x002e4107, // n0x061b c0x0000 (---------------)  + I viterbo
+	0x00262082, // n0x061c c0x0000 (---------------)  + I vr
+	0x00248002, // n0x061d c0x0000 (---------------)  + I vs
+	0x00263e02, // n0x061e c0x0000 (---------------)  + I vt
+	0x00206fc2, // n0x061f c0x0000 (---------------)  + I vv
+	0x00200182, // n0x0620 c0x0000 (---------------)  + I co
+	0x0025bdc3, // n0x0621 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0622 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0623 c0x0000 (---------------)  + I org
+	0x00244943, // n0x0624 c0x0000 (---------------)  + I sch
+	0x00204543, // n0x0625 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0626 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0627 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0628 c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x0629 c0x0000 (---------------)  + I name
+	0x0020e643, // n0x062a c0x0000 (---------------)  + I net
+	0x002375c3, // n0x062b c0x0000 (---------------)  + I org
+	0x00244943, // n0x062c c0x0000 (---------------)  + I sch
+	0x00201602, // n0x062d c0x0000 (---------------)  + I ac
+	0x00206c42, // n0x062e c0x0000 (---------------)  + I ad
+	0x1aa69085, // n0x062f c0x006a (n0x066d-n0x06a2)  + I aichi
+	0x1ae106c5, // n0x0630 c0x006b (n0x06a2-n0x06be)  + I akita
+	0x1b231c06, // n0x0631 c0x006c (n0x06be-n0x06d4)  + I aomori
+	0x000330c8, // n0x0632 c0x0000 (---------------)  +   blogspot
+	0x1b6a0605, // n0x0633 c0x006d (n0x06d4-n0x070e)  + I chiba
+	0x00200182, // n0x0634 c0x0000 (---------------)  + I co
+	0x00208d42, // n0x0635 c0x0000 (---------------)  + I ed
+	0x1baf1785, // n0x0636 c0x006e (n0x070e-n0x0724)  + I ehime
+	0x1be6c845, // n0x0637 c0x006f (n0x0724-n0x0733)  + I fukui
+	0x1c26d007, // n0x0638 c0x0070 (n0x0733-n0x0772)  + I fukuoka
+	0x1c664549, // n0x0639 c0x0071 (n0x0772-n0x07a5)  + I fukushima
+	0x1cb383c4, // n0x063a c0x0072 (n0x07a5-n0x07cb)  + I gifu
+	0x00200f82, // n0x063b c0x0000 (---------------)  + I go
+	0x0022f542, // n0x063c c0x0000 (---------------)  + I gr
+	0x1ce50585, // n0x063d c0x0073 (n0x07cb-n0x07ef)  + I gunma
+	0x1d27bdc9, // n0x063e c0x0074 (n0x07ef-n0x0808)  + I hiroshima
+	0x1d6d0988, // n0x063f c0x0075 (n0x0808-n0x0896)  + I hokkaido
+	0x1dac0a45, // n0x0640 c0x0076 (n0x0896-n0x08c4)  + I hyogo
+	0x1df13b07, // n0x0641 c0x0077 (n0x08c4-n0x08f7)  + I ibaraki
+	0x1e2196c8, // n0x0642 c0x0078 (n0x08f7-n0x090a)  + I ishikawa
+	0x1e695485, // n0x0643 c0x0079 (n0x090a-n0x092d)  + I iwate
+	0x1ea09f06, // n0x0644 c0x007a (n0x092d-n0x093c)  + I kagawa
+	0x1ef002c9, // n0x0645 c0x007b (n0x093c-n0x0950)  + I kagoshima
+	0x1f219948, // n0x0646 c0x007c (n0x0950-n0x096e)  + I kanagawa
+	0x1f6a5408, // n0x0647 c0x007d (n0x096e-n0x096f)* o I kawasaki
+	0x1fa7ec4a, // n0x0648 c0x007e (n0x096f-n0x0970)* o I kitakyushu
+	0x1fe4e8c4, // n0x0649 c0x007f (n0x0970-n0x0971)* o I kobe
+	0x202b6c05, // n0x064a c0x0080 (n0x0971-n0x0990)  + I kochi
+	0x20626f88, // n0x064b c0x0081 (n0x0990-n0x09aa)  + I kumamoto
+	0x20a56c05, // n0x064c c0x0082 (n0x09aa-n0x09c9)  + I kyoto
+	0x002181c2, // n0x064d c0x0000 (---------------)  + I lg
+	0x20e06883, // n0x064e c0x0083 (n0x09c9-n0x09e7)  + I mie
+	0x2128b306, // n0x064f c0x0084 (n0x09e7-n0x0a08)  + I miyagi
+	0x216658c8, // n0x0650 c0x0085 (n0x0a08-n0x0a23)  + I miyazaki
+	0x21ae0c86, // n0x0651 c0x0086 (n0x0a23-n0x0a6e)  + I nagano
+	0x21ee4388, // n0x0652 c0x0087 (n0x0a6e-n0x0a84)  + I nagasaki
+	0x22200f06, // n0x0653 c0x0088 (n0x0a84-n0x0a85)* o I nagoya
+	0x22713404, // n0x0654 c0x0089 (n0x0a85-n0x0aab)  + I nara
+	0x00205c82, // n0x0655 c0x0000 (---------------)  + I ne
+	0x22a8b587, // n0x0656 c0x008a (n0x0aab-n0x0acd)  + I niigata
+	0x22ef59c4, // n0x0657 c0x008b (n0x0acd-n0x0ae0)  + I oita
+	0x23268c07, // n0x0658 c0x008c (n0x0ae0-n0x0afa)  + I okayama
+	0x236e0f07, // n0x0659 c0x008d (n0x0afa-n0x0b24)  + I okinawa
+	0x00201c42, // n0x065a c0x0000 (---------------)  + I or
+	0x23a83745, // n0x065b c0x008e (n0x0b24-n0x0b56)  + I osaka
+	0x23e617c4, // n0x065c c0x008f (n0x0b56-n0x0b70)  + I saga
+	0x242a8547, // n0x065d c0x0090 (n0x0b70-n0x0bb5)  + I saitama
+	0x24686187, // n0x065e c0x0091 (n0x0bb5-n0x0bb6)* o I sapporo
+	0x24a6fc46, // n0x065f c0x0092 (n0x0bb6-n0x0bb7)* o I sendai
+	0x24e51045, // n0x0660 c0x0093 (n0x0bb7-n0x0bce)  + I shiga
+	0x2527e0c7, // n0x0661 c0x0094 (n0x0bce-n0x0be5)  + I shimane
+	0x256d0648, // n0x0662 c0x0095 (n0x0be5-n0x0c09)  + I shizuoka
+	0x25b38287, // n0x0663 c0x0096 (n0x0c09-n0x0c28)  + I tochigi
+	0x25ecb049, // n0x0664 c0x0097 (n0x0c28-n0x0c39)  + I tokushima
+	0x263353c5, // n0x0665 c0x0098 (n0x0c39-n0x0c72)  + I tokyo
+	0x2670e7c7, // n0x0666 c0x0099 (n0x0c72-n0x0c7f)  + I tottori
+	0x26a27106, // n0x0667 c0x009a (n0x0c7f-n0x0c97)  + I toyama
+	0x26f39e08, // n0x0668 c0x009b (n0x0c97-n0x0cb4)  + I wakayama
+	0x2726e848, // n0x0669 c0x009c (n0x0cb4-n0x0cd6)  + I yamagata
+	0x27672ec9, // n0x066a c0x009d (n0x0cd6-n0x0ce6)  + I yamaguchi
+	0x27a37909, // n0x066b c0x009e (n0x0ce6-n0x0d02)  + I yamanashi
+	0x27e29b88, // n0x066c c0x009f (n0x0d02-n0x0d03)* o I yokohama
+	0x002a1b05, // n0x066d c0x0000 (---------------)  + I aisai
+	0x00207e83, // n0x066e c0x0000 (---------------)  + I ama
+	0x00203304, // n0x066f c0x0000 (---------------)  + I anjo
+	0x0020b645, // n0x0670 c0x0000 (---------------)  + I asuke
+	0x00285446, // n0x0671 c0x0000 (---------------)  + I chiryu
+	0x0028fbc5, // n0x0672 c0x0000 (---------------)  + I chita
+	0x00272744, // n0x0673 c0x0000 (---------------)  + I fuso
+	0x002b68c8, // n0x0674 c0x0000 (---------------)  + I gamagori
+	0x002a8045, // n0x0675 c0x0000 (---------------)  + I handa
+	0x0027d704, // n0x0676 c0x0000 (---------------)  + I hazu
+	0x0024cfc7, // n0x0677 c0x0000 (---------------)  + I hekinan
+	0x00286b4a, // n0x0678 c0x0000 (---------------)  + I higashiura
+	0x0029808a, // n0x0679 c0x0000 (---------------)  + I ichinomiya
+	0x002765c7, // n0x067a c0x0000 (---------------)  + I inazawa
+	0x00210087, // n0x067b c0x0000 (---------------)  + I inuyama
+	0x00324247, // n0x067c c0x0000 (---------------)  + I isshiki
+	0x003464c7, // n0x067d c0x0000 (---------------)  + I iwakura
+	0x002cce45, // n0x067e c0x0000 (---------------)  + I kanie
+	0x0022c186, // n0x067f c0x0000 (---------------)  + I kariya
+	0x00216dc7, // n0x0680 c0x0000 (---------------)  + I kasugai
+	0x00255e04, // n0x0681 c0x0000 (---------------)  + I kira
+	0x0030f046, // n0x0682 c0x0000 (---------------)  + I kiyosu
+	0x002a6946, // n0x0683 c0x0000 (---------------)  + I komaki
+	0x002de405, // n0x0684 c0x0000 (---------------)  + I konan
+	0x0033f744, // n0x0685 c0x0000 (---------------)  + I kota
+	0x0028c846, // n0x0686 c0x0000 (---------------)  + I mihama
+	0x00284a87, // n0x0687 c0x0000 (---------------)  + I miyoshi
+	0x002daec8, // n0x0688 c0x0000 (---------------)  + I nagakute
+	0x00226646, // n0x0689 c0x0000 (---------------)  + I nishio
+	0x00264147, // n0x068a c0x0000 (---------------)  + I nisshin
+	0x0027d543, // n0x068b c0x0000 (---------------)  + I obu
+	0x00252686, // n0x068c c0x0000 (---------------)  + I oguchi
+	0x002855c5, // n0x068d c0x0000 (---------------)  + I oharu
+	0x0026d107, // n0x068e c0x0000 (---------------)  + I okazaki
+	0x002aac0a, // n0x068f c0x0000 (---------------)  + I owariasahi
+	0x00291a04, // n0x0690 c0x0000 (---------------)  + I seto
+	0x002183c8, // n0x0691 c0x0000 (---------------)  + I shikatsu
+	0x0033a689, // n0x0692 c0x0000 (---------------)  + I shinshiro
+	0x002cf787, // n0x0693 c0x0000 (---------------)  + I shitara
+	0x002177c6, // n0x0694 c0x0000 (---------------)  + I tahara
+	0x0028b6c8, // n0x0695 c0x0000 (---------------)  + I takahama
+	0x00239a89, // n0x0696 c0x0000 (---------------)  + I tobishima
+	0x00253984, // n0x0697 c0x0000 (---------------)  + I toei
+	0x0025f7c4, // n0x0698 c0x0000 (---------------)  + I togo
+	0x002e54c5, // n0x0699 c0x0000 (---------------)  + I tokai
+	0x002cfe48, // n0x069a c0x0000 (---------------)  + I tokoname
+	0x002acc87, // n0x069b c0x0000 (---------------)  + I toyoake
+	0x00312309, // n0x069c c0x0000 (---------------)  + I toyohashi
+	0x002501c8, // n0x069d c0x0000 (---------------)  + I toyokawa
+	0x00254186, // n0x069e c0x0000 (---------------)  + I toyone
+	0x00262606, // n0x069f c0x0000 (---------------)  + I toyota
+	0x00281048, // n0x06a0 c0x0000 (---------------)  + I tsushima
+	0x00307a86, // n0x06a1 c0x0000 (---------------)  + I yatomi
+	0x002106c5, // n0x06a2 c0x0000 (---------------)  + I akita
+	0x0026fd06, // n0x06a3 c0x0000 (---------------)  + I daisen
+	0x00269cc8, // n0x06a4 c0x0000 (---------------)  + I fujisato
+	0x002e2e86, // n0x06a5 c0x0000 (---------------)  + I gojome
+	0x00326fcb, // n0x06a6 c0x0000 (---------------)  + I hachirogata
+	0x00279246, // n0x06a7 c0x0000 (---------------)  + I happou
+	0x0028238d, // n0x06a8 c0x0000 (---------------)  + I higashinaruse
+	0x0021e905, // n0x06a9 c0x0000 (---------------)  + I honjo
+	0x00291446, // n0x06aa c0x0000 (---------------)  + I honjyo
+	0x00219785, // n0x06ab c0x0000 (---------------)  + I ikawa
+	0x002439c9, // n0x06ac c0x0000 (---------------)  + I kamikoani
+	0x0024b707, // n0x06ad c0x0000 (---------------)  + I kamioka
+	0x00344208, // n0x06ae c0x0000 (---------------)  + I katagami
+	0x0032ccc6, // n0x06af c0x0000 (---------------)  + I kazuno
+	0x002817c9, // n0x06b0 c0x0000 (---------------)  + I kitaakita
+	0x00297706, // n0x06b1 c0x0000 (---------------)  + I kosaka
+	0x002aab85, // n0x06b2 c0x0000 (---------------)  + I kyowa
+	0x00239986, // n0x06b3 c0x0000 (---------------)  + I misato
+	0x002fe3c6, // n0x06b4 c0x0000 (---------------)  + I mitane
+	0x002b2009, // n0x06b5 c0x0000 (---------------)  + I moriyoshi
+	0x00253786, // n0x06b6 c0x0000 (---------------)  + I nikaho
+	0x00279f87, // n0x06b7 c0x0000 (---------------)  + I noshiro
+	0x0026a2c5, // n0x06b8 c0x0000 (---------------)  + I odate
+	0x0020ce43, // n0x06b9 c0x0000 (---------------)  + I oga
+	0x002a4745, // n0x06ba c0x0000 (---------------)  + I ogata
+	0x00226e47, // n0x06bb c0x0000 (---------------)  + I semboku
+	0x00344546, // n0x06bc c0x0000 (---------------)  + I yokote
+	0x0021e809, // n0x06bd c0x0000 (---------------)  + I yurihonjo
+	0x00231c06, // n0x06be c0x0000 (---------------)  + I aomori
+	0x0025f846, // n0x06bf c0x0000 (---------------)  + I gonohe
+	0x0024ce09, // n0x06c0 c0x0000 (---------------)  + I hachinohe
+	0x0026f709, // n0x06c1 c0x0000 (---------------)  + I hashikami
+	0x00289847, // n0x06c2 c0x0000 (---------------)  + I hiranai
+	0x00301108, // n0x06c3 c0x0000 (---------------)  + I hirosaki
+	0x002c1449, // n0x06c4 c0x0000 (---------------)  + I itayanagi
+	0x0026d5c8, // n0x06c5 c0x0000 (---------------)  + I kuroishi
+	0x002d51c6, // n0x06c6 c0x0000 (---------------)  + I misawa
+	0x002bbc85, // n0x06c7 c0x0000 (---------------)  + I mutsu
+	0x0021f08a, // n0x06c8 c0x0000 (---------------)  + I nakadomari
+	0x0025f8c6, // n0x06c9 c0x0000 (---------------)  + I noheji
+	0x002e46c6, // n0x06ca c0x0000 (---------------)  + I oirase
+	0x0028b4c5, // n0x06cb c0x0000 (---------------)  + I owani
+	0x00246288, // n0x06cc c0x0000 (---------------)  + I rokunohe
+	0x00209887, // n0x06cd c0x0000 (---------------)  + I sannohe
+	0x002f1b8a, // n0x06ce c0x0000 (---------------)  + I shichinohe
+	0x00264206, // n0x06cf c0x0000 (---------------)  + I shingo
+	0x00231705, // n0x06d0 c0x0000 (---------------)  + I takko
+	0x00290646, // n0x06d1 c0x0000 (---------------)  + I towada
+	0x00299a07, // n0x06d2 c0x0000 (---------------)  + I tsugaru
+	0x00217687, // n0x06d3 c0x0000 (---------------)  + I tsuruta
+	0x002ba0c5, // n0x06d4 c0x0000 (---------------)  + I abiko
+	0x002aad45, // n0x06d5 c0x0000 (---------------)  + I asahi
+	0x002c3e06, // n0x06d6 c0x0000 (---------------)  + I chonan
+	0x002f8846, // n0x06d7 c0x0000 (---------------)  + I chosei
+	0x002fa946, // n0x06d8 c0x0000 (---------------)  + I choshi
+	0x00231204, // n0x06d9 c0x0000 (---------------)  + I chuo
+	0x0026ec89, // n0x06da c0x0000 (---------------)  + I funabashi
+	0x00273306, // n0x06db c0x0000 (---------------)  + I futtsu
+	0x0024c98a, // n0x06dc c0x0000 (---------------)  + I hanamigawa
+	0x0027c788, // n0x06dd c0x0000 (---------------)  + I ichihara
+	0x00239788, // n0x06de c0x0000 (---------------)  + I ichikawa
+	0x0029808a, // n0x06df c0x0000 (---------------)  + I ichinomiya
+	0x002f0905, // n0x06e0 c0x0000 (---------------)  + I inzai
+	0x002849c5, // n0x06e1 c0x0000 (---------------)  + I isumi
+	0x002f1108, // n0x06e2 c0x0000 (---------------)  + I kamagaya
+	0x00236208, // n0x06e3 c0x0000 (---------------)  + I kamogawa
+	0x00212cc7, // n0x06e4 c0x0000 (---------------)  + I kashiwa
+	0x002d0146, // n0x06e5 c0x0000 (---------------)  + I katori
+	0x002e9488, // n0x06e6 c0x0000 (---------------)  + I katsuura
+	0x002ed007, // n0x06e7 c0x0000 (---------------)  + I kimitsu
+	0x0026e448, // n0x06e8 c0x0000 (---------------)  + I kisarazu
+	0x0029d4c6, // n0x06e9 c0x0000 (---------------)  + I kozaki
+	0x00237d48, // n0x06ea c0x0000 (---------------)  + I kujukuri
+	0x00219fc6, // n0x06eb c0x0000 (---------------)  + I kyonan
+	0x0021d287, // n0x06ec c0x0000 (---------------)  + I matsudo
+	0x00259086, // n0x06ed c0x0000 (---------------)  + I midori
+	0x0028c846, // n0x06ee c0x0000 (---------------)  + I mihama
+	0x00307b8a, // n0x06ef c0x0000 (---------------)  + I minamiboso
+	0x002c2546, // n0x06f0 c0x0000 (---------------)  + I mobara
+	0x002bbc89, // n0x06f1 c0x0000 (---------------)  + I mutsuzawa
+	0x0030c346, // n0x06f2 c0x0000 (---------------)  + I nagara
+	0x0030c58a, // n0x06f3 c0x0000 (---------------)  + I nagareyama
+	0x00313409, // n0x06f4 c0x0000 (---------------)  + I narashino
+	0x00328e06, // n0x06f5 c0x0000 (---------------)  + I narita
+	0x00230344, // n0x06f6 c0x0000 (---------------)  + I noda
+	0x002123cd, // n0x06f7 c0x0000 (---------------)  + I oamishirasato
+	0x00273147, // n0x06f8 c0x0000 (---------------)  + I omigawa
+	0x002ec1c6, // n0x06f9 c0x0000 (---------------)  + I onjuku
+	0x002a52c5, // n0x06fa c0x0000 (---------------)  + I otaki
+	0x00297785, // n0x06fb c0x0000 (---------------)  + I sakae
+	0x00228346, // n0x06fc c0x0000 (---------------)  + I sakura
+	0x002cfbc9, // n0x06fd c0x0000 (---------------)  + I shimofusa
+	0x002cc9c7, // n0x06fe c0x0000 (---------------)  + I shirako
+	0x0026a706, // n0x06ff c0x0000 (---------------)  + I shiroi
+	0x002cf246, // n0x0700 c0x0000 (---------------)  + I shisui
+	0x002d71c9, // n0x0701 c0x0000 (---------------)  + I sodegaura
+	0x00260dc4, // n0x0702 c0x0000 (---------------)  + I sosa
+	0x0023cf84, // n0x0703 c0x0000 (---------------)  + I tako
+	0x002237c8, // n0x0704 c0x0000 (---------------)  + I tateyama
+	0x00291d46, // n0x0705 c0x0000 (---------------)  + I togane
+	0x002f6408, // n0x0706 c0x0000 (---------------)  + I tohnosho
+	0x002eb088, // n0x0707 c0x0000 (---------------)  + I tomisato
+	0x002e5087, // n0x0708 c0x0000 (---------------)  + I urayasu
+	0x00251189, // n0x0709 c0x0000 (---------------)  + I yachimata
+	0x00206d87, // n0x070a c0x0000 (---------------)  + I yachiyo
+	0x002a04ca, // n0x070b c0x0000 (---------------)  + I yokaichiba
+	0x002d478f, // n0x070c c0x0000 (---------------)  + I yokoshibahikari
+	0x0026e04a, // n0x070d c0x0000 (---------------)  + I yotsukaido
+	0x0021f985, // n0x070e c0x0000 (---------------)  + I ainan
+	0x00234445, // n0x070f c0x0000 (---------------)  + I honai
+	0x00216c85, // n0x0710 c0x0000 (---------------)  + I ikata
+	0x0021a247, // n0x0711 c0x0000 (---------------)  + I imabari
+	0x00206e83, // n0x0712 c0x0000 (---------------)  + I iyo
+	0x00301308, // n0x0713 c0x0000 (---------------)  + I kamijima
+	0x0020d306, // n0x0714 c0x0000 (---------------)  + I kihoku
+	0x0020d409, // n0x0715 c0x0000 (---------------)  + I kumakogen
+	0x002e4e86, // n0x0716 c0x0000 (---------------)  + I masaki
+	0x00271f87, // n0x0717 c0x0000 (---------------)  + I matsuno
+	0x00281589, // n0x0718 c0x0000 (---------------)  + I matsuyama
+	0x00344108, // n0x0719 c0x0000 (---------------)  + I namikata
+	0x00243b87, // n0x071a c0x0000 (---------------)  + I niihama
+	0x002312c3, // n0x071b c0x0000 (---------------)  + I ozu
+	0x002a1b85, // n0x071c c0x0000 (---------------)  + I saijo
+	0x002d46c5, // n0x071d c0x0000 (---------------)  + I seiyo
+	0x00290bcb, // n0x071e c0x0000 (---------------)  + I shikokuchuo
+	0x00256cc4, // n0x071f c0x0000 (---------------)  + I tobe
+	0x002c1904, // n0x0720 c0x0000 (---------------)  + I toon
+	0x002682c6, // n0x0721 c0x0000 (---------------)  + I uchiko
+	0x00299b87, // n0x0722 c0x0000 (---------------)  + I uwajima
+	0x00323aca, // n0x0723 c0x0000 (---------------)  + I yawatahama
+	0x002f92c7, // n0x0724 c0x0000 (---------------)  + I echizen
+	0x002a5e87, // n0x0725 c0x0000 (---------------)  + I eiheiji
+	0x0026c845, // n0x0726 c0x0000 (---------------)  + I fukui
+	0x002440c5, // n0x0727 c0x0000 (---------------)  + I ikeda
+	0x00290989, // n0x0728 c0x0000 (---------------)  + I katsuyama
+	0x0028c846, // n0x0729 c0x0000 (---------------)  + I mihama
+	0x002f914d, // n0x072a c0x0000 (---------------)  + I minamiechizen
+	0x002e12c5, // n0x072b c0x0000 (---------------)  + I obama
+	0x0028a203, // n0x072c c0x0000 (---------------)  + I ohi
+	0x0020bac3, // n0x072d c0x0000 (---------------)  + I ono
+	0x0022ef05, // n0x072e c0x0000 (---------------)  + I sabae
+	0x002fbdc5, // n0x072f c0x0000 (---------------)  + I sakai
+	0x0028b6c8, // n0x0730 c0x0000 (---------------)  + I takahama
+	0x00333047, // n0x0731 c0x0000 (---------------)  + I tsuruga
+	0x0023cd06, // n0x0732 c0x0000 (---------------)  + I wakasa
+	0x00287846, // n0x0733 c0x0000 (---------------)  + I ashiya
+	0x002afd45, // n0x0734 c0x0000 (---------------)  + I buzen
+	0x002e2d47, // n0x0735 c0x0000 (---------------)  + I chikugo
+	0x00210307, // n0x0736 c0x0000 (---------------)  + I chikuho
+	0x0033a487, // n0x0737 c0x0000 (---------------)  + I chikujo
+	0x00256fca, // n0x0738 c0x0000 (---------------)  + I chikushino
+	0x00252748, // n0x0739 c0x0000 (---------------)  + I chikuzen
+	0x00231204, // n0x073a c0x0000 (---------------)  + I chuo
+	0x00207147, // n0x073b c0x0000 (---------------)  + I dazaifu
+	0x0026bd47, // n0x073c c0x0000 (---------------)  + I fukuchi
+	0x0031db06, // n0x073d c0x0000 (---------------)  + I hakata
+	0x00255807, // n0x073e c0x0000 (---------------)  + I higashi
+	0x0029bfc8, // n0x073f c0x0000 (---------------)  + I hirokawa
+	0x00237808, // n0x0740 c0x0000 (---------------)  + I hisayama
+	0x002434c6, // n0x0741 c0x0000 (---------------)  + I iizuka
+	0x00205f08, // n0x0742 c0x0000 (---------------)  + I inatsuki
+	0x00253804, // n0x0743 c0x0000 (---------------)  + I kaho
+	0x00216dc6, // n0x0744 c0x0000 (---------------)  + I kasuga
+	0x00224f06, // n0x0745 c0x0000 (---------------)  + I kasuya
+	0x00324486, // n0x0746 c0x0000 (---------------)  + I kawara
+	0x00298306, // n0x0747 c0x0000 (---------------)  + I keisen
+	0x00266644, // n0x0748 c0x0000 (---------------)  + I koga
+	0x00346586, // n0x0749 c0x0000 (---------------)  + I kurate
+	0x002a3806, // n0x074a c0x0000 (---------------)  + I kurogi
+	0x002801c6, // n0x074b c0x0000 (---------------)  + I kurume
+	0x00224906, // n0x074c c0x0000 (---------------)  + I minami
+	0x0020b986, // n0x074d c0x0000 (---------------)  + I miyako
+	0x0029be06, // n0x074e c0x0000 (---------------)  + I miyama
+	0x0023cc08, // n0x074f c0x0000 (---------------)  + I miyawaka
+	0x00298c48, // n0x0750 c0x0000 (---------------)  + I mizumaki
+	0x002b8a88, // n0x0751 c0x0000 (---------------)  + I munakata
+	0x0028fdc8, // n0x0752 c0x0000 (---------------)  + I nakagawa
+	0x002f1086, // n0x0753 c0x0000 (---------------)  + I nakama
+	0x0020fa85, // n0x0754 c0x0000 (---------------)  + I nishi
+	0x002a4706, // n0x0755 c0x0000 (---------------)  + I nogata
+	0x002c0ac5, // n0x0756 c0x0000 (---------------)  + I ogori
+	0x0024e6c7, // n0x0757 c0x0000 (---------------)  + I okagaki
+	0x00250285, // n0x0758 c0x0000 (---------------)  + I okawa
+	0x0025b543, // n0x0759 c0x0000 (---------------)  + I oki
+	0x0020fe05, // n0x075a c0x0000 (---------------)  + I omuta
+	0x0031e644, // n0x075b c0x0000 (---------------)  + I onga
+	0x0020bac5, // n0x075c c0x0000 (---------------)  + I onojo
+	0x00204143, // n0x075d c0x0000 (---------------)  + I oto
+	0x00297547, // n0x075e c0x0000 (---------------)  + I saigawa
+	0x002c9b88, // n0x075f c0x0000 (---------------)  + I sasaguri
+	0x002eb786, // n0x0760 c0x0000 (---------------)  + I shingu
+	0x002cb68d, // n0x0761 c0x0000 (---------------)  + I shinyoshitomi
+	0x00234406, // n0x0762 c0x0000 (---------------)  + I shonai
+	0x0027f605, // n0x0763 c0x0000 (---------------)  + I soeda
+	0x002d3483, // n0x0764 c0x0000 (---------------)  + I sue
+	0x002a1949, // n0x0765 c0x0000 (---------------)  + I tachiarai
+	0x003275c6, // n0x0766 c0x0000 (---------------)  + I tagawa
+	0x0022ea06, // n0x0767 c0x0000 (---------------)  + I takata
+	0x002d1684, // n0x0768 c0x0000 (---------------)  + I toho
+	0x0026dfc7, // n0x0769 c0x0000 (---------------)  + I toyotsu
+	0x002158c6, // n0x076a c0x0000 (---------------)  + I tsuiki
+	0x0026da85, // n0x076b c0x0000 (---------------)  + I ukiha
+	0x00211483, // n0x076c c0x0000 (---------------)  + I umi
+	0x00226d04, // n0x076d c0x0000 (---------------)  + I usui
+	0x0026bf06, // n0x076e c0x0000 (---------------)  + I yamada
+	0x0022c284, // n0x076f c0x0000 (---------------)  + I yame
+	0x00225008, // n0x0770 c0x0000 (---------------)  + I yanagawa
+	0x0021b709, // n0x0771 c0x0000 (---------------)  + I yukuhashi
+	0x00348689, // n0x0772 c0x0000 (---------------)  + I aizubange
+	0x00288b4a, // n0x0773 c0x0000 (---------------)  + I aizumisato
+	0x0025dacd, // n0x0774 c0x0000 (---------------)  + I aizuwakamatsu
+	0x002d6dc7, // n0x0775 c0x0000 (---------------)  + I asakawa
+	0x002fcdc6, // n0x0776 c0x0000 (---------------)  + I bandai
+	0x00211e84, // n0x0777 c0x0000 (---------------)  + I date
+	0x00264549, // n0x0778 c0x0000 (---------------)  + I fukushima
+	0x00272148, // n0x0779 c0x0000 (---------------)  + I furudono
+	0x00272d46, // n0x077a c0x0000 (---------------)  + I futaba
+	0x00246e46, // n0x077b c0x0000 (---------------)  + I hanawa
+	0x00255807, // n0x077c c0x0000 (---------------)  + I higashi
+	0x002cda06, // n0x077d c0x0000 (---------------)  + I hirata
+	0x0021c446, // n0x077e c0x0000 (---------------)  + I hirono
+	0x002f1906, // n0x077f c0x0000 (---------------)  + I iitate
+	0x002e0f8a, // n0x0780 c0x0000 (---------------)  + I inawashiro
+	0x002196c8, // n0x0781 c0x0000 (---------------)  + I ishikawa
+	0x00249ec5, // n0x0782 c0x0000 (---------------)  + I iwaki
+	0x00255c49, // n0x0783 c0x0000 (---------------)  + I izumizaki
+	0x002696ca, // n0x0784 c0x0000 (---------------)  + I kagamiishi
+	0x002cba08, // n0x0785 c0x0000 (---------------)  + I kaneyama
+	0x00284148, // n0x0786 c0x0000 (---------------)  + I kawamata
+	0x0027e608, // n0x0787 c0x0000 (---------------)  + I kitakata
+	0x0021070c, // n0x0788 c0x0000 (---------------)  + I kitashiobara
+	0x00296345, // n0x0789 c0x0000 (---------------)  + I koori
+	0x00287ac8, // n0x078a c0x0000 (---------------)  + I koriyama
+	0x00305ac6, // n0x078b c0x0000 (---------------)  + I kunimi
+	0x0030ed06, // n0x078c c0x0000 (---------------)  + I miharu
+	0x002ab3c7, // n0x078d c0x0000 (---------------)  + I mishima
+	0x002f91c5, // n0x078e c0x0000 (---------------)  + I namie
+	0x002c3ec5, // n0x078f c0x0000 (---------------)  + I nango
+	0x00348549, // n0x0790 c0x0000 (---------------)  + I nishiaizu
+	0x00213387, // n0x0791 c0x0000 (---------------)  + I nishigo
+	0x0020d3c5, // n0x0792 c0x0000 (---------------)  + I okuma
+	0x00220347, // n0x0793 c0x0000 (---------------)  + I omotego
+	0x0020bac3, // n0x0794 c0x0000 (---------------)  + I ono
+	0x002ad1c5, // n0x0795 c0x0000 (---------------)  + I otama
+	0x00322d48, // n0x0796 c0x0000 (---------------)  + I samegawa
+	0x00314087, // n0x0797 c0x0000 (---------------)  + I shimogo
+	0x00284009, // n0x0798 c0x0000 (---------------)  + I shirakawa
+	0x002f6545, // n0x0799 c0x0000 (---------------)  + I showa
+	0x002d2cc4, // n0x079a c0x0000 (---------------)  + I soma
+	0x0028a508, // n0x079b c0x0000 (---------------)  + I sukagawa
+	0x0022b7c7, // n0x079c c0x0000 (---------------)  + I taishin
+	0x00243d48, // n0x079d c0x0000 (---------------)  + I tamakawa
+	0x0021df08, // n0x079e c0x0000 (---------------)  + I tanagura
+	0x00334205, // n0x079f c0x0000 (---------------)  + I tenei
+	0x00231006, // n0x07a0 c0x0000 (---------------)  + I yabuki
+	0x0024ba46, // n0x07a1 c0x0000 (---------------)  + I yamato
+	0x00207e49, // n0x07a2 c0x0000 (---------------)  + I yamatsuri
+	0x002cc2c7, // n0x07a3 c0x0000 (---------------)  + I yanaizu
+	0x00295286, // n0x07a4 c0x0000 (---------------)  + I yugawa
+	0x00201547, // n0x07a5 c0x0000 (---------------)  + I anpachi
+	0x00204283, // n0x07a6 c0x0000 (---------------)  + I ena
+	0x003383c4, // n0x07a7 c0x0000 (---------------)  + I gifu
+	0x00214405, // n0x07a8 c0x0000 (---------------)  + I ginan
+	0x0020b444, // n0x07a9 c0x0000 (---------------)  + I godo
+	0x002c6104, // n0x07aa c0x0000 (---------------)  + I gujo
+	0x00327307, // n0x07ab c0x0000 (---------------)  + I hashima
+	0x00335887, // n0x07ac c0x0000 (---------------)  + I hichiso
+	0x0026a8c4, // n0x07ad c0x0000 (---------------)  + I hida
+	0x00283e50, // n0x07ae c0x0000 (---------------)  + I higashishirakawa
+	0x0022a987, // n0x07af c0x0000 (---------------)  + I ibigawa
+	0x002440c5, // n0x07b0 c0x0000 (---------------)  + I ikeda
+	0x0033864c, // n0x07b1 c0x0000 (---------------)  + I kakamigahara
+	0x00208bc4, // n0x07b2 c0x0000 (---------------)  + I kani
+	0x002cb488, // n0x07b3 c0x0000 (---------------)  + I kasahara
+	0x0021d189, // n0x07b4 c0x0000 (---------------)  + I kasamatsu
+	0x00333646, // n0x07b5 c0x0000 (---------------)  + I kawaue
+	0x00260ec8, // n0x07b6 c0x0000 (---------------)  + I kitagata
+	0x00207d44, // n0x07b7 c0x0000 (---------------)  + I mino
+	0x00213688, // n0x07b8 c0x0000 (---------------)  + I minokamo
+	0x002ac306, // n0x07b9 c0x0000 (---------------)  + I mitake
+	0x002495c8, // n0x07ba c0x0000 (---------------)  + I mizunami
+	0x00285046, // n0x07bb c0x0000 (---------------)  + I motosu
+	0x0026318b, // n0x07bc c0x0000 (---------------)  + I nakatsugawa
+	0x0020ce45, // n0x07bd c0x0000 (---------------)  + I ogaki
+	0x0033fcc8, // n0x07be c0x0000 (---------------)  + I sakahogi
+	0x00217c44, // n0x07bf c0x0000 (---------------)  + I seki
+	0x0021bb4a, // n0x07c0 c0x0000 (---------------)  + I sekigahara
+	0x00284009, // n0x07c1 c0x0000 (---------------)  + I shirakawa
+	0x0026e9c6, // n0x07c2 c0x0000 (---------------)  + I tajimi
+	0x002d4cc8, // n0x07c3 c0x0000 (---------------)  + I takayama
+	0x00325745, // n0x07c4 c0x0000 (---------------)  + I tarui
+	0x003425c4, // n0x07c5 c0x0000 (---------------)  + I toki
+	0x002cb386, // n0x07c6 c0x0000 (---------------)  + I tomika
+	0x00256e88, // n0x07c7 c0x0000 (---------------)  + I wanouchi
+	0x0026e848, // n0x07c8 c0x0000 (---------------)  + I yamagata
+	0x002bfc46, // n0x07c9 c0x0000 (---------------)  + I yaotsu
+	0x00205884, // n0x07ca c0x0000 (---------------)  + I yoro
+	0x0021f006, // n0x07cb c0x0000 (---------------)  + I annaka
+	0x00206e07, // n0x07cc c0x0000 (---------------)  + I chiyoda
+	0x00268b07, // n0x07cd c0x0000 (---------------)  + I fujioka
+	0x0025580f, // n0x07ce c0x0000 (---------------)  + I higashiagatsuma
+	0x0030e947, // n0x07cf c0x0000 (---------------)  + I isesaki
+	0x00328ec7, // n0x07d0 c0x0000 (---------------)  + I itakura
+	0x002d07c5, // n0x07d1 c0x0000 (---------------)  + I kanna
+	0x00257e45, // n0x07d2 c0x0000 (---------------)  + I kanra
+	0x00289509, // n0x07d3 c0x0000 (---------------)  + I katashina
+	0x002514c6, // n0x07d4 c0x0000 (---------------)  + I kawaba
+	0x0026d845, // n0x07d5 c0x0000 (---------------)  + I kiryu
+	0x0026fa07, // n0x07d6 c0x0000 (---------------)  + I kusatsu
+	0x00227348, // n0x07d7 c0x0000 (---------------)  + I maebashi
+	0x00271e45, // n0x07d8 c0x0000 (---------------)  + I meiwa
+	0x00259086, // n0x07d9 c0x0000 (---------------)  + I midori
+	0x00226208, // n0x07da c0x0000 (---------------)  + I minakami
+	0x002e0c8a, // n0x07db c0x0000 (---------------)  + I naganohara
+	0x00203ac8, // n0x07dc c0x0000 (---------------)  + I nakanojo
+	0x00277e47, // n0x07dd c0x0000 (---------------)  + I nanmoku
+	0x002d4bc6, // n0x07de c0x0000 (---------------)  + I numata
+	0x00255c06, // n0x07df c0x0000 (---------------)  + I oizumi
+	0x0020ea03, // n0x07e0 c0x0000 (---------------)  + I ora
+	0x00218003, // n0x07e1 c0x0000 (---------------)  + I ota
+	0x002faa09, // n0x07e2 c0x0000 (---------------)  + I shibukawa
+	0x002c12c9, // n0x07e3 c0x0000 (---------------)  + I shimonita
+	0x002caf46, // n0x07e4 c0x0000 (---------------)  + I shinto
+	0x002f6545, // n0x07e5 c0x0000 (---------------)  + I showa
+	0x00206188, // n0x07e6 c0x0000 (---------------)  + I takasaki
+	0x002d4cc8, // n0x07e7 c0x0000 (---------------)  + I takayama
+	0x002b9448, // n0x07e8 c0x0000 (---------------)  + I tamamura
+	0x002f198b, // n0x07e9 c0x0000 (---------------)  + I tatebayashi
+	0x002cb8c7, // n0x07ea c0x0000 (---------------)  + I tomioka
+	0x00295689, // n0x07eb c0x0000 (---------------)  + I tsukiyono
+	0x00255a88, // n0x07ec c0x0000 (---------------)  + I tsumagoi
+	0x0024f784, // n0x07ed c0x0000 (---------------)  + I ueno
+	0x002b2108, // n0x07ee c0x0000 (---------------)  + I yoshioka
+	0x0027aa09, // n0x07ef c0x0000 (---------------)  + I asaminami
+	0x002fce85, // n0x07f0 c0x0000 (---------------)  + I daiwa
+	0x00260987, // n0x07f1 c0x0000 (---------------)  + I etajima
+	0x00338445, // n0x07f2 c0x0000 (---------------)  + I fuchu
+	0x0026e748, // n0x07f3 c0x0000 (---------------)  + I fukuyama
+	0x0027c5cb, // n0x07f4 c0x0000 (---------------)  + I hatsukaichi
+	0x0027de10, // n0x07f5 c0x0000 (---------------)  + I higashihiroshima
+	0x0028f445, // n0x07f6 c0x0000 (---------------)  + I hongo
+	0x00217b8c, // n0x07f7 c0x0000 (---------------)  + I jinsekikogen
+	0x0023cec5, // n0x07f8 c0x0000 (---------------)  + I kaita
+	0x00211643, // n0x07f9 c0x0000 (---------------)  + I kui
+	0x002f6a46, // n0x07fa c0x0000 (---------------)  + I kumano
+	0x002a3204, // n0x07fb c0x0000 (---------------)  + I kure
+	0x00264ec6, // n0x07fc c0x0000 (---------------)  + I mihara
+	0x00284a87, // n0x07fd c0x0000 (---------------)  + I miyoshi
+	0x00203ac4, // n0x07fe c0x0000 (---------------)  + I naka
+	0x00297f88, // n0x07ff c0x0000 (---------------)  + I onomichi
+	0x003011cd, // n0x0800 c0x0000 (---------------)  + I osakikamijima
+	0x002bc7c5, // n0x0801 c0x0000 (---------------)  + I otake
+	0x0024d8c4, // n0x0802 c0x0000 (---------------)  + I saka
+	0x0021f6c4, // n0x0803 c0x0000 (---------------)  + I sera
+	0x002741c9, // n0x0804 c0x0000 (---------------)  + I seranishi
+	0x002f4548, // n0x0805 c0x0000 (---------------)  + I shinichi
+	0x002f0a47, // n0x0806 c0x0000 (---------------)  + I shobara
+	0x002ac388, // n0x0807 c0x0000 (---------------)  + I takehara
+	0x0026ed48, // n0x0808 c0x0000 (---------------)  + I abashiri
+	0x0026aa05, // n0x0809 c0x0000 (---------------)  + I abira
+	0x0022fb87, // n0x080a c0x0000 (---------------)  + I aibetsu
+	0x0026a987, // n0x080b c0x0000 (---------------)  + I akabira
+	0x0023a807, // n0x080c c0x0000 (---------------)  + I akkeshi
+	0x002aad49, // n0x080d c0x0000 (---------------)  + I asahikawa
+	0x002bb049, // n0x080e c0x0000 (---------------)  + I ashibetsu
+	0x0023e006, // n0x080f c0x0000 (---------------)  + I ashoro
+	0x002afc46, // n0x0810 c0x0000 (---------------)  + I assabu
+	0x00227246, // n0x0811 c0x0000 (---------------)  + I atsuma
+	0x0024fe45, // n0x0812 c0x0000 (---------------)  + I bibai
+	0x002ee184, // n0x0813 c0x0000 (---------------)  + I biei
+	0x00209e06, // n0x0814 c0x0000 (---------------)  + I bifuka
+	0x0020c186, // n0x0815 c0x0000 (---------------)  + I bihoro
+	0x0026aa48, // n0x0816 c0x0000 (---------------)  + I biratori
+	0x002996cb, // n0x0817 c0x0000 (---------------)  + I chippubetsu
+	0x002918c7, // n0x0818 c0x0000 (---------------)  + I chitose
+	0x00211e84, // n0x0819 c0x0000 (---------------)  + I date
+	0x00215806, // n0x081a c0x0000 (---------------)  + I ebetsu
+	0x002da807, // n0x081b c0x0000 (---------------)  + I embetsu
+	0x002112c5, // n0x081c c0x0000 (---------------)  + I eniwa
+	0x00289d05, // n0x081d c0x0000 (---------------)  + I erimo
+	0x00203284, // n0x081e c0x0000 (---------------)  + I esan
+	0x002bafc6, // n0x081f c0x0000 (---------------)  + I esashi
+	0x00209e88, // n0x0820 c0x0000 (---------------)  + I fukagawa
+	0x00264549, // n0x0821 c0x0000 (---------------)  + I fukushima
+	0x00279e86, // n0x0822 c0x0000 (---------------)  + I furano
+	0x002712c8, // n0x0823 c0x0000 (---------------)  + I furubira
+	0x0023f486, // n0x0824 c0x0000 (---------------)  + I haboro
+	0x00321388, // n0x0825 c0x0000 (---------------)  + I hakodate
+	0x002cc5cc, // n0x0826 c0x0000 (---------------)  + I hamatonbetsu
+	0x0026a8c6, // n0x0827 c0x0000 (---------------)  + I hidaka
+	0x0027f2cd, // n0x0828 c0x0000 (---------------)  + I higashikagura
+	0x0027f74b, // n0x0829 c0x0000 (---------------)  + I higashikawa
+	0x0027a045, // n0x082a c0x0000 (---------------)  + I hiroo
+	0x00210447, // n0x082b c0x0000 (---------------)  + I hokuryu
+	0x00253886, // n0x082c c0x0000 (---------------)  + I hokuto
+	0x0022d3c8, // n0x082d c0x0000 (---------------)  + I honbetsu
+	0x0023e089, // n0x082e c0x0000 (---------------)  + I horokanai
+	0x00243788, // n0x082f c0x0000 (---------------)  + I horonobe
+	0x002440c5, // n0x0830 c0x0000 (---------------)  + I ikeda
+	0x00260a87, // n0x0831 c0x0000 (---------------)  + I imakane
+	0x00269848, // n0x0832 c0x0000 (---------------)  + I ishikari
+	0x00345689, // n0x0833 c0x0000 (---------------)  + I iwamizawa
+	0x00267386, // n0x0834 c0x0000 (---------------)  + I iwanai
+	0x00279d8a, // n0x0835 c0x0000 (---------------)  + I kamifurano
+	0x0022d148, // n0x0836 c0x0000 (---------------)  + I kamikawa
+	0x002435cb, // n0x0837 c0x0000 (---------------)  + I kamishihoro
+	0x002b228c, // n0x0838 c0x0000 (---------------)  + I kamisunagawa
+	0x00213788, // n0x0839 c0x0000 (---------------)  + I kamoenai
+	0x0026b546, // n0x083a c0x0000 (---------------)  + I kayabe
+	0x0033a348, // n0x083b c0x0000 (---------------)  + I kembuchi
+	0x002e4507, // n0x083c c0x0000 (---------------)  + I kikonai
+	0x00217509, // n0x083d c0x0000 (---------------)  + I kimobetsu
+	0x0027bccd, // n0x083e c0x0000 (---------------)  + I kitahiroshima
+	0x0027fb86, // n0x083f c0x0000 (---------------)  + I kitami
+	0x002f6288, // n0x0840 c0x0000 (---------------)  + I kiyosato
+	0x00298b09, // n0x0841 c0x0000 (---------------)  + I koshimizu
+	0x002a2948, // n0x0842 c0x0000 (---------------)  + I kunneppu
+	0x00237e48, // n0x0843 c0x0000 (---------------)  + I kuriyama
+	0x002a3fcc, // n0x0844 c0x0000 (---------------)  + I kuromatsunai
+	0x002a6f47, // n0x0845 c0x0000 (---------------)  + I kushiro
+	0x002a7f47, // n0x0846 c0x0000 (---------------)  + I kutchan
+	0x002aab85, // n0x0847 c0x0000 (---------------)  + I kyowa
+	0x00243fc7, // n0x0848 c0x0000 (---------------)  + I mashike
+	0x00227208, // n0x0849 c0x0000 (---------------)  + I matsumae
+	0x002cb406, // n0x084a c0x0000 (---------------)  + I mikasa
+	0x00315c8c, // n0x084b c0x0000 (---------------)  + I minamifurano
+	0x002ad5c8, // n0x084c c0x0000 (---------------)  + I mombetsu
+	0x002b3048, // n0x084d c0x0000 (---------------)  + I moseushi
+	0x0022e646, // n0x084e c0x0000 (---------------)  + I mukawa
+	0x00250e07, // n0x084f c0x0000 (---------------)  + I muroran
+	0x0023e204, // n0x0850 c0x0000 (---------------)  + I naie
+	0x0028fdc8, // n0x0851 c0x0000 (---------------)  + I nakagawa
+	0x002bd30c, // n0x0852 c0x0000 (---------------)  + I nakasatsunai
+	0x002c8f4c, // n0x0853 c0x0000 (---------------)  + I nakatombetsu
+	0x0021fa05, // n0x0854 c0x0000 (---------------)  + I nanae
+	0x00335ac7, // n0x0855 c0x0000 (---------------)  + I nanporo
+	0x00205806, // n0x0856 c0x0000 (---------------)  + I nayoro
+	0x00250d86, // n0x0857 c0x0000 (---------------)  + I nemuro
+	0x0027b448, // n0x0858 c0x0000 (---------------)  + I niikappu
+	0x0020d284, // n0x0859 c0x0000 (---------------)  + I niki
+	0x0022664b, // n0x085a c0x0000 (---------------)  + I nishiokoppe
+	0x0033994b, // n0x085b c0x0000 (---------------)  + I noboribetsu
+	0x002d4bc6, // n0x085c c0x0000 (---------------)  + I numata
+	0x00301047, // n0x085d c0x0000 (---------------)  + I obihiro
+	0x0031d6c5, // n0x085e c0x0000 (---------------)  + I obira
+	0x0025f705, // n0x085f c0x0000 (---------------)  + I oketo
+	0x00226786, // n0x0860 c0x0000 (---------------)  + I okoppe
+	0x00325705, // n0x0861 c0x0000 (---------------)  + I otaru
+	0x00256c85, // n0x0862 c0x0000 (---------------)  + I otobe
+	0x002a0147, // n0x0863 c0x0000 (---------------)  + I otofuke
+	0x00205b89, // n0x0864 c0x0000 (---------------)  + I otoineppu
+	0x0023a504, // n0x0865 c0x0000 (---------------)  + I oumu
+	0x00274dc5, // n0x0866 c0x0000 (---------------)  + I ozora
+	0x002c1e45, // n0x0867 c0x0000 (---------------)  + I pippu
+	0x00250f08, // n0x0868 c0x0000 (---------------)  + I rankoshi
+	0x00297dc5, // n0x0869 c0x0000 (---------------)  + I rebun
+	0x00271889, // n0x086a c0x0000 (---------------)  + I rikubetsu
+	0x002cbe47, // n0x086b c0x0000 (---------------)  + I rishiri
+	0x002cbe4b, // n0x086c c0x0000 (---------------)  + I rishirifuji
+	0x002c7506, // n0x086d c0x0000 (---------------)  + I saroma
+	0x0023c949, // n0x086e c0x0000 (---------------)  + I sarufutsu
+	0x0033f688, // n0x086f c0x0000 (---------------)  + I shakotan
+	0x00295b45, // n0x0870 c0x0000 (---------------)  + I shari
+	0x0023a908, // n0x0871 c0x0000 (---------------)  + I shibecha
+	0x002bb088, // n0x0872 c0x0000 (---------------)  + I shibetsu
+	0x00290307, // n0x0873 c0x0000 (---------------)  + I shikabe
+	0x00227487, // n0x0874 c0x0000 (---------------)  + I shikaoi
+	0x00327389, // n0x0875 c0x0000 (---------------)  + I shimamaki
+	0x00249507, // n0x0876 c0x0000 (---------------)  + I shimizu
+	0x002b4209, // n0x0877 c0x0000 (---------------)  + I shimokawa
+	0x00316c0c, // n0x0878 c0x0000 (---------------)  + I shinshinotsu
+	0x002caf48, // n0x0879 c0x0000 (---------------)  + I shintoku
+	0x002ccc89, // n0x087a c0x0000 (---------------)  + I shiranuka
+	0x002cd047, // n0x087b c0x0000 (---------------)  + I shiraoi
+	0x0026ee09, // n0x087c c0x0000 (---------------)  + I shiriuchi
+	0x00208787, // n0x087d c0x0000 (---------------)  + I sobetsu
+	0x002b2388, // n0x087e c0x0000 (---------------)  + I sunagawa
+	0x0022b2c5, // n0x087f c0x0000 (---------------)  + I taiki
+	0x00216d46, // n0x0880 c0x0000 (---------------)  + I takasu
+	0x002a5308, // n0x0881 c0x0000 (---------------)  + I takikawa
+	0x002ea408, // n0x0882 c0x0000 (---------------)  + I takinoue
+	0x00269589, // n0x0883 c0x0000 (---------------)  + I teshikaga
+	0x00256cc7, // n0x0884 c0x0000 (---------------)  + I tobetsu
+	0x00288d45, // n0x0885 c0x0000 (---------------)  + I tohma
+	0x002fa389, // n0x0886 c0x0000 (---------------)  + I tomakomai
+	0x00251dc6, // n0x0887 c0x0000 (---------------)  + I tomari
+	0x00227104, // n0x0888 c0x0000 (---------------)  + I toya
+	0x0024b586, // n0x0889 c0x0000 (---------------)  + I toyako
+	0x00265748, // n0x088a c0x0000 (---------------)  + I toyotomi
+	0x00271107, // n0x088b c0x0000 (---------------)  + I toyoura
+	0x002998c8, // n0x088c c0x0000 (---------------)  + I tsubetsu
+	0x00205fc9, // n0x088d c0x0000 (---------------)  + I tsukigata
+	0x00234047, // n0x088e c0x0000 (---------------)  + I urakawa
+	0x00286d06, // n0x088f c0x0000 (---------------)  + I urausu
+	0x00210504, // n0x0890 c0x0000 (---------------)  + I uryu
+	0x0020fe89, // n0x0891 c0x0000 (---------------)  + I utashinai
+	0x0022fa08, // n0x0892 c0x0000 (---------------)  + I wakkanai
+	0x0022e507, // n0x0893 c0x0000 (---------------)  + I wassamu
+	0x0028a806, // n0x0894 c0x0000 (---------------)  + I yakumo
+	0x00291546, // n0x0895 c0x0000 (---------------)  + I yoichi
+	0x002e4644, // n0x0896 c0x0000 (---------------)  + I aioi
+	0x002bc946, // n0x0897 c0x0000 (---------------)  + I akashi
+	0x0020ba43, // n0x0898 c0x0000 (---------------)  + I ako
+	0x00234f89, // n0x0899 c0x0000 (---------------)  + I amagasaki
+	0x0020ce06, // n0x089a c0x0000 (---------------)  + I aogaki
+	0x002a3b45, // n0x089b c0x0000 (---------------)  + I asago
+	0x00287846, // n0x089c c0x0000 (---------------)  + I ashiya
+	0x00243e85, // n0x089d c0x0000 (---------------)  + I awaji
+	0x0026e2c8, // n0x089e c0x0000 (---------------)  + I fukusaki
+	0x002134c7, // n0x089f c0x0000 (---------------)  + I goshiki
+	0x00346306, // n0x08a0 c0x0000 (---------------)  + I harima
+	0x002f17c6, // n0x08a1 c0x0000 (---------------)  + I himeji
+	0x00239788, // n0x08a2 c0x0000 (---------------)  + I ichikawa
+	0x00289687, // n0x08a3 c0x0000 (---------------)  + I inagawa
+	0x0027fbc5, // n0x08a4 c0x0000 (---------------)  + I itami
+	0x00287d48, // n0x08a5 c0x0000 (---------------)  + I kakogawa
+	0x002772c8, // n0x08a6 c0x0000 (---------------)  + I kamigori
+	0x0022d148, // n0x08a7 c0x0000 (---------------)  + I kamikawa
+	0x0023cd85, // n0x08a8 c0x0000 (---------------)  + I kasai
+	0x00216dc6, // n0x08a9 c0x0000 (---------------)  + I kasuga
+	0x00348449, // n0x08aa c0x0000 (---------------)  + I kawanishi
+	0x0024b8c4, // n0x08ab c0x0000 (---------------)  + I miki
+	0x0024974b, // n0x08ac c0x0000 (---------------)  + I minamiawaji
+	0x0021c14b, // n0x08ad c0x0000 (---------------)  + I nishinomiya
+	0x00249dc9, // n0x08ae c0x0000 (---------------)  + I nishiwaki
+	0x0020bac3, // n0x08af c0x0000 (---------------)  + I ono
+	0x0024be05, // n0x08b0 c0x0000 (---------------)  + I sanda
+	0x002056c6, // n0x08b1 c0x0000 (---------------)  + I sannan
+	0x0023d908, // n0x08b2 c0x0000 (---------------)  + I sasayama
+	0x00268f04, // n0x08b3 c0x0000 (---------------)  + I sayo
+	0x002eb786, // n0x08b4 c0x0000 (---------------)  + I shingu
+	0x00257109, // n0x08b5 c0x0000 (---------------)  + I shinonsen
+	0x002cefc5, // n0x08b6 c0x0000 (---------------)  + I shiso
+	0x002a0086, // n0x08b7 c0x0000 (---------------)  + I sumoto
+	0x0022b7c6, // n0x08b8 c0x0000 (---------------)  + I taishi
+	0x00206184, // n0x08b9 c0x0000 (---------------)  + I taka
+	0x00207aca, // n0x08ba c0x0000 (---------------)  + I takarazuka
+	0x002a3a88, // n0x08bb c0x0000 (---------------)  + I takasago
+	0x002ea406, // n0x08bc c0x0000 (---------------)  + I takino
+	0x00274bc5, // n0x08bd c0x0000 (---------------)  + I tamba
+	0x0025ce47, // n0x08be c0x0000 (---------------)  + I tatsuno
+	0x00257d07, // n0x08bf c0x0000 (---------------)  + I toyooka
+	0x00231004, // n0x08c0 c0x0000 (---------------)  + I yabu
+	0x0021c387, // n0x08c1 c0x0000 (---------------)  + I yashiro
+	0x0022d0c4, // n0x08c2 c0x0000 (---------------)  + I yoka
+	0x00250246, // n0x08c3 c0x0000 (---------------)  + I yokawa
+	0x00207d03, // n0x08c4 c0x0000 (---------------)  + I ami
+	0x002aad45, // n0x08c5 c0x0000 (---------------)  + I asahi
+	0x00304885, // n0x08c6 c0x0000 (---------------)  + I bando
+	0x002b6c88, // n0x08c7 c0x0000 (---------------)  + I chikusei
+	0x00207305, // n0x08c8 c0x0000 (---------------)  + I daigo
+	0x0026a609, // n0x08c9 c0x0000 (---------------)  + I fujishiro
+	0x0028b107, // n0x08ca c0x0000 (---------------)  + I hitachi
+	0x0028fc0b, // n0x08cb c0x0000 (---------------)  + I hitachinaka
+	0x0028b10c, // n0x08cc c0x0000 (---------------)  + I hitachiomiya
+	0x0028bb4a, // n0x08cd c0x0000 (---------------)  + I hitachiota
+	0x00313b07, // n0x08ce c0x0000 (---------------)  + I ibaraki
+	0x00202c03, // n0x08cf c0x0000 (---------------)  + I ina
+	0x002f6108, // n0x08d0 c0x0000 (---------------)  + I inashiki
+	0x0023cf45, // n0x08d1 c0x0000 (---------------)  + I itako
+	0x00271ec5, // n0x08d2 c0x0000 (---------------)  + I iwama
+	0x00203c44, // n0x08d3 c0x0000 (---------------)  + I joso
+	0x002b2286, // n0x08d4 c0x0000 (---------------)  + I kamisu
+	0x0021d186, // n0x08d5 c0x0000 (---------------)  + I kasama
+	0x002bc987, // n0x08d6 c0x0000 (---------------)  + I kashima
+	0x00222f4b, // n0x08d7 c0x0000 (---------------)  + I kasumigaura
+	0x00266644, // n0x08d8 c0x0000 (---------------)  + I koga
+	0x002d0904, // n0x08d9 c0x0000 (---------------)  + I miho
+	0x002ac584, // n0x08da c0x0000 (---------------)  + I mito
+	0x002b1906, // n0x08db c0x0000 (---------------)  + I moriya
+	0x00203ac4, // n0x08dc c0x0000 (---------------)  + I naka
+	0x002cff48, // n0x08dd c0x0000 (---------------)  + I namegata
+	0x002f7dc5, // n0x08de c0x0000 (---------------)  + I oarai
+	0x002362c5, // n0x08df c0x0000 (---------------)  + I ogawa
+	0x002b9387, // n0x08e0 c0x0000 (---------------)  + I omitama
+	0x00210549, // n0x08e1 c0x0000 (---------------)  + I ryugasaki
+	0x002fbdc5, // n0x08e2 c0x0000 (---------------)  + I sakai
+	0x00344dca, // n0x08e3 c0x0000 (---------------)  + I sakuragawa
+	0x0026a1c9, // n0x08e4 c0x0000 (---------------)  + I shimodate
+	0x002e5aca, // n0x08e5 c0x0000 (---------------)  + I shimotsuma
+	0x002e10c9, // n0x08e6 c0x0000 (---------------)  + I shirosato
+	0x002d6084, // n0x08e7 c0x0000 (---------------)  + I sowa
+	0x002cf305, // n0x08e8 c0x0000 (---------------)  + I suifu
+	0x002cdb08, // n0x08e9 c0x0000 (---------------)  + I takahagi
+	0x002a860b, // n0x08ea c0x0000 (---------------)  + I tamatsukuri
+	0x002e54c5, // n0x08eb c0x0000 (---------------)  + I tokai
+	0x0025b146, // n0x08ec c0x0000 (---------------)  + I tomobe
+	0x00241084, // n0x08ed c0x0000 (---------------)  + I tone
+	0x0026ab46, // n0x08ee c0x0000 (---------------)  + I toride
+	0x00233ec9, // n0x08ef c0x0000 (---------------)  + I tsuchiura
+	0x002da907, // n0x08f0 c0x0000 (---------------)  + I tsukuba
+	0x00231dc8, // n0x08f1 c0x0000 (---------------)  + I uchihara
+	0x0025de46, // n0x08f2 c0x0000 (---------------)  + I ushiku
+	0x00206d87, // n0x08f3 c0x0000 (---------------)  + I yachiyo
+	0x0026e848, // n0x08f4 c0x0000 (---------------)  + I yamagata
+	0x00318e46, // n0x08f5 c0x0000 (---------------)  + I yawara
+	0x0022cc84, // n0x08f6 c0x0000 (---------------)  + I yuki
+	0x0023fec7, // n0x08f7 c0x0000 (---------------)  + I anamizu
+	0x00273dc5, // n0x08f8 c0x0000 (---------------)  + I hakui
+	0x002758c7, // n0x08f9 c0x0000 (---------------)  + I hakusan
+	0x00209f04, // n0x08fa c0x0000 (---------------)  + I kaga
+	0x00253806, // n0x08fb c0x0000 (---------------)  + I kahoku
+	0x0025d188, // n0x08fc c0x0000 (---------------)  + I kanazawa
+	0x0027f908, // n0x08fd c0x0000 (---------------)  + I kawakita
+	0x002af307, // n0x08fe c0x0000 (---------------)  + I komatsu
+	0x00204008, // n0x08ff c0x0000 (---------------)  + I nakanoto
+	0x0021a085, // n0x0900 c0x0000 (---------------)  + I nanao
+	0x0020b904, // n0x0901 c0x0000 (---------------)  + I nomi
+	0x00239688, // n0x0902 c0x0000 (---------------)  + I nonoichi
+	0x00204104, // n0x0903 c0x0000 (---------------)  + I noto
+	0x00216c05, // n0x0904 c0x0000 (---------------)  + I shika
+	0x002dd284, // n0x0905 c0x0000 (---------------)  + I suzu
+	0x002ed107, // n0x0906 c0x0000 (---------------)  + I tsubata
+	0x0022d507, // n0x0907 c0x0000 (---------------)  + I tsurugi
+	0x0026ef48, // n0x0908 c0x0000 (---------------)  + I uchinada
+	0x00243ec6, // n0x0909 c0x0000 (---------------)  + I wajima
+	0x00207285, // n0x090a c0x0000 (---------------)  + I fudai
+	0x0026a408, // n0x090b c0x0000 (---------------)  + I fujisawa
+	0x002735c8, // n0x090c c0x0000 (---------------)  + I hanamaki
+	0x00288a89, // n0x090d c0x0000 (---------------)  + I hiraizumi
+	0x0021c446, // n0x090e c0x0000 (---------------)  + I hirono
+	0x002f1c08, // n0x090f c0x0000 (---------------)  + I ichinohe
+	0x0021b9ca, // n0x0910 c0x0000 (---------------)  + I ichinoseki
+	0x00211348, // n0x0911 c0x0000 (---------------)  + I iwaizumi
+	0x00295485, // n0x0912 c0x0000 (---------------)  + I iwate
+	0x00262246, // n0x0913 c0x0000 (---------------)  + I joboji
+	0x0026a088, // n0x0914 c0x0000 (---------------)  + I kamaishi
+	0x00260b4a, // n0x0915 c0x0000 (---------------)  + I kanegasaki
+	0x0031a587, // n0x0916 c0x0000 (---------------)  + I karumai
+	0x0026dd45, // n0x0917 c0x0000 (---------------)  + I kawai
+	0x002f1f08, // n0x0918 c0x0000 (---------------)  + I kitakami
+	0x002701c4, // n0x0919 c0x0000 (---------------)  + I kuji
+	0x00246306, // n0x091a c0x0000 (---------------)  + I kunohe
+	0x002a8cc8, // n0x091b c0x0000 (---------------)  + I kuzumaki
+	0x0020b986, // n0x091c c0x0000 (---------------)  + I miyako
+	0x00215108, // n0x091d c0x0000 (---------------)  + I mizusawa
+	0x0027e887, // n0x091e c0x0000 (---------------)  + I morioka
+	0x002e76c6, // n0x091f c0x0000 (---------------)  + I ninohe
+	0x00230344, // n0x0920 c0x0000 (---------------)  + I noda
+	0x002b7b87, // n0x0921 c0x0000 (---------------)  + I ofunato
+	0x00299384, // n0x0922 c0x0000 (---------------)  + I oshu
+	0x00233e87, // n0x0923 c0x0000 (---------------)  + I otsuchi
+	0x0022e84d, // n0x0924 c0x0000 (---------------)  + I rikuzentakata
+	0x00212d45, // n0x0925 c0x0000 (---------------)  + I shiwa
+	0x002cf9cb, // n0x0926 c0x0000 (---------------)  + I shizukuishi
+	0x0030f146, // n0x0927 c0x0000 (---------------)  + I sumita
+	0x0033c788, // n0x0928 c0x0000 (---------------)  + I takizawa
+	0x0031dc08, // n0x0929 c0x0000 (---------------)  + I tanohata
+	0x00234304, // n0x092a c0x0000 (---------------)  + I tono
+	0x002d0cc6, // n0x092b c0x0000 (---------------)  + I yahaba
+	0x0026bf06, // n0x092c c0x0000 (---------------)  + I yamada
+	0x0022bd47, // n0x092d c0x0000 (---------------)  + I ayagawa
+	0x0027ef8d, // n0x092e c0x0000 (---------------)  + I higashikagawa
+	0x002bfe47, // n0x092f c0x0000 (---------------)  + I kanonji
+	0x0029a248, // n0x0930 c0x0000 (---------------)  + I kotohira
+	0x002580c5, // n0x0931 c0x0000 (---------------)  + I manno
+	0x0027bf88, // n0x0932 c0x0000 (---------------)  + I marugame
+	0x002acc06, // n0x0933 c0x0000 (---------------)  + I mitoyo
+	0x0021a108, // n0x0934 c0x0000 (---------------)  + I naoshima
+	0x0021d4c6, // n0x0935 c0x0000 (---------------)  + I sanuki
+	0x00332f47, // n0x0936 c0x0000 (---------------)  + I tadotsu
+	0x0031dd89, // n0x0937 c0x0000 (---------------)  + I takamatsu
+	0x00234307, // n0x0938 c0x0000 (---------------)  + I tonosho
+	0x00273008, // n0x0939 c0x0000 (---------------)  + I uchinomi
+	0x002f9d85, // n0x093a c0x0000 (---------------)  + I utazu
+	0x0021b0c8, // n0x093b c0x0000 (---------------)  + I zentsuji
+	0x00250cc5, // n0x093c c0x0000 (---------------)  + I akune
+	0x00257a05, // n0x093d c0x0000 (---------------)  + I amami
+	0x0025b4c5, // n0x093e c0x0000 (---------------)  + I hioki
+	0x00233503, // n0x093f c0x0000 (---------------)  + I isa
+	0x0026fd84, // n0x0940 c0x0000 (---------------)  + I isen
+	0x00211405, // n0x0941 c0x0000 (---------------)  + I izumi
+	0x003002c9, // n0x0942 c0x0000 (---------------)  + I kagoshima
+	0x002dd386, // n0x0943 c0x0000 (---------------)  + I kanoya
+	0x0029c0c8, // n0x0944 c0x0000 (---------------)  + I kawanabe
+	0x0024e805, // n0x0945 c0x0000 (---------------)  + I kinko
+	0x0029b5c7, // n0x0946 c0x0000 (---------------)  + I kouyama
+	0x0027ea4a, // n0x0947 c0x0000 (---------------)  + I makurazaki
+	0x0029ffc9, // n0x0948 c0x0000 (---------------)  + I matsumoto
+	0x002fe2ca, // n0x0949 c0x0000 (---------------)  + I minamitane
+	0x002b8b08, // n0x094a c0x0000 (---------------)  + I nakatane
+	0x0022018c, // n0x094b c0x0000 (---------------)  + I nishinoomote
+	0x0026fa8d, // n0x094c c0x0000 (---------------)  + I satsumasendai
+	0x002d3543, // n0x094d c0x0000 (---------------)  + I soo
+	0x00215008, // n0x094e c0x0000 (---------------)  + I tarumizu
+	0x00226cc5, // n0x094f c0x0000 (---------------)  + I yusui
+	0x00251446, // n0x0950 c0x0000 (---------------)  + I aikawa
+	0x00343f86, // n0x0951 c0x0000 (---------------)  + I atsugi
+	0x0031d105, // n0x0952 c0x0000 (---------------)  + I ayase
+	0x00201649, // n0x0953 c0x0000 (---------------)  + I chigasaki
+	0x002d7005, // n0x0954 c0x0000 (---------------)  + I ebina
+	0x0026a408, // n0x0955 c0x0000 (---------------)  + I fujisawa
+	0x002ae586, // n0x0956 c0x0000 (---------------)  + I hadano
+	0x00324886, // n0x0957 c0x0000 (---------------)  + I hakone
+	0x0028a3c9, // n0x0958 c0x0000 (---------------)  + I hiratsuka
+	0x0032b107, // n0x0959 c0x0000 (---------------)  + I isehara
+	0x002d4606, // n0x095a c0x0000 (---------------)  + I kaisei
+	0x0027e9c8, // n0x095b c0x0000 (---------------)  + I kamakura
+	0x00324388, // n0x095c c0x0000 (---------------)  + I kiyokawa
+	0x00229d87, // n0x095d c0x0000 (---------------)  + I matsuda
+	0x002d5d0e, // n0x095e c0x0000 (---------------)  + I minamiashigara
+	0x002ace45, // n0x095f c0x0000 (---------------)  + I miura
+	0x00345585, // n0x0960 c0x0000 (---------------)  + I nakai
+	0x0020b888, // n0x0961 c0x0000 (---------------)  + I ninomiya
+	0x00230387, // n0x0962 c0x0000 (---------------)  + I odawara
+	0x00205c02, // n0x0963 c0x0000 (---------------)  + I oi
+	0x002a3e04, // n0x0964 c0x0000 (---------------)  + I oiso
+	0x00264dca, // n0x0965 c0x0000 (---------------)  + I sagamihara
+	0x0022e5c8, // n0x0966 c0x0000 (---------------)  + I samukawa
+	0x00211586, // n0x0967 c0x0000 (---------------)  + I tsukui
+	0x002816c8, // n0x0968 c0x0000 (---------------)  + I yamakita
+	0x0024ba46, // n0x0969 c0x0000 (---------------)  + I yamato
+	0x00343d48, // n0x096a c0x0000 (---------------)  + I yokosuka
+	0x00295288, // n0x096b c0x0000 (---------------)  + I yugawara
+	0x002579c4, // n0x096c c0x0000 (---------------)  + I zama
+	0x0029b945, // n0x096d c0x0000 (---------------)  + I zushi
+	0x00741484, // n0x096e c0x0001 (---------------)  ! I city
+	0x00741484, // n0x096f c0x0001 (---------------)  ! I city
+	0x00741484, // n0x0970 c0x0001 (---------------)  ! I city
+	0x002017c3, // n0x0971 c0x0000 (---------------)  + I aki
+	0x0023a346, // n0x0972 c0x0000 (---------------)  + I geisei
+	0x0026a8c6, // n0x0973 c0x0000 (---------------)  + I hidaka
+	0x002866cc, // n0x0974 c0x0000 (---------------)  + I higashitsuno
+	0x00207d83, // n0x0975 c0x0000 (---------------)  + I ino
+	0x00239dc6, // n0x0976 c0x0000 (---------------)  + I kagami
+	0x00207cc4, // n0x0977 c0x0000 (---------------)  + I kami
+	0x00327548, // n0x0978 c0x0000 (---------------)  + I kitagawa
+	0x002b6c05, // n0x0979 c0x0000 (---------------)  + I kochi
+	0x00264ec6, // n0x097a c0x0000 (---------------)  + I mihara
+	0x00227088, // n0x097b c0x0000 (---------------)  + I motoyama
+	0x002b9646, // n0x097c c0x0000 (---------------)  + I muroto
+	0x00346286, // n0x097d c0x0000 (---------------)  + I nahari
+	0x00287308, // n0x097e c0x0000 (---------------)  + I nakamura
+	0x00214487, // n0x097f c0x0000 (---------------)  + I nankoku
+	0x002492c9, // n0x0980 c0x0000 (---------------)  + I nishitosa
+	0x002b82ca, // n0x0981 c0x0000 (---------------)  + I niyodogawa
+	0x00259704, // n0x0982 c0x0000 (---------------)  + I ochi
+	0x00250285, // n0x0983 c0x0000 (---------------)  + I okawa
+	0x003122c5, // n0x0984 c0x0000 (---------------)  + I otoyo
+	0x00264346, // n0x0985 c0x0000 (---------------)  + I otsuki
+	0x002d6e06, // n0x0986 c0x0000 (---------------)  + I sakawa
+	0x00287106, // n0x0987 c0x0000 (---------------)  + I sukumo
+	0x00316e86, // n0x0988 c0x0000 (---------------)  + I susaki
+	0x00249404, // n0x0989 c0x0000 (---------------)  + I tosa
+	0x0024940b, // n0x098a c0x0000 (---------------)  + I tosashimizu
+	0x002501c4, // n0x098b c0x0000 (---------------)  + I toyo
+	0x0023cac5, // n0x098c c0x0000 (---------------)  + I tsuno
+	0x00294dc5, // n0x098d c0x0000 (---------------)  + I umaji
+	0x002e5146, // n0x098e c0x0000 (---------------)  + I yasuda
+	0x00225748, // n0x098f c0x0000 (---------------)  + I yusuhara
+	0x0026f947, // n0x0990 c0x0000 (---------------)  + I amakusa
+	0x002e0e44, // n0x0991 c0x0000 (---------------)  + I arao
+	0x00200d43, // n0x0992 c0x0000 (---------------)  + I aso
+	0x002fc805, // n0x0993 c0x0000 (---------------)  + I choyo
+	0x00251c87, // n0x0994 c0x0000 (---------------)  + I gyokuto
+	0x0028c609, // n0x0995 c0x0000 (---------------)  + I hitoyoshi
+	0x0026f84b, // n0x0996 c0x0000 (---------------)  + I kamiamakusa
+	0x002bc987, // n0x0997 c0x0000 (---------------)  + I kashima
+	0x0022ba47, // n0x0998 c0x0000 (---------------)  + I kikuchi
+	0x002974c4, // n0x0999 c0x0000 (---------------)  + I kosa
+	0x00226f88, // n0x099a c0x0000 (---------------)  + I kumamoto
+	0x00305807, // n0x099b c0x0000 (---------------)  + I mashiki
+	0x00282206, // n0x099c c0x0000 (---------------)  + I mifune
+	0x002eae08, // n0x099d c0x0000 (---------------)  + I minamata
+	0x0025ea0b, // n0x099e c0x0000 (---------------)  + I minamioguni
+	0x0020b586, // n0x099f c0x0000 (---------------)  + I nagasu
+	0x002161c9, // n0x09a0 c0x0000 (---------------)  + I nishihara
+	0x0025eb85, // n0x09a1 c0x0000 (---------------)  + I oguni
+	0x002312c3, // n0x09a2 c0x0000 (---------------)  + I ozu
+	0x002a0086, // n0x09a3 c0x0000 (---------------)  + I sumoto
+	0x0027e788, // n0x09a4 c0x0000 (---------------)  + I takamori
+	0x00206043, // n0x09a5 c0x0000 (---------------)  + I uki
+	0x00228743, // n0x09a6 c0x0000 (---------------)  + I uto
+	0x0026e846, // n0x09a7 c0x0000 (---------------)  + I yamaga
+	0x0024ba46, // n0x09a8 c0x0000 (---------------)  + I yamato
+	0x0030b08a, // n0x09a9 c0x0000 (---------------)  + I yatsushiro
+	0x0026b585, // n0x09aa c0x0000 (---------------)  + I ayabe
+	0x0026bd4b, // n0x09ab c0x0000 (---------------)  + I fukuchiyama
+	0x0028778b, // n0x09ac c0x0000 (---------------)  + I higashiyama
+	0x00267f43, // n0x09ad c0x0000 (---------------)  + I ide
+	0x00205c43, // n0x09ae c0x0000 (---------------)  + I ine
+	0x002f5904, // n0x09af c0x0000 (---------------)  + I joyo
+	0x002f5d47, // n0x09b0 c0x0000 (---------------)  + I kameoka
+	0x00213784, // n0x09b1 c0x0000 (---------------)  + I kamo
+	0x00210704, // n0x09b2 c0x0000 (---------------)  + I kita
+	0x00305944, // n0x09b3 c0x0000 (---------------)  + I kizu
+	0x002bb288, // n0x09b4 c0x0000 (---------------)  + I kumiyama
+	0x00274b08, // n0x09b5 c0x0000 (---------------)  + I kyotamba
+	0x002f24c9, // n0x09b6 c0x0000 (---------------)  + I kyotanabe
+	0x00335448, // n0x09b7 c0x0000 (---------------)  + I kyotango
+	0x00274f47, // n0x09b8 c0x0000 (---------------)  + I maizuru
+	0x00224906, // n0x09b9 c0x0000 (---------------)  + I minami
+	0x0029bd0f, // n0x09ba c0x0000 (---------------)  + I minamiyamashiro
+	0x002acf86, // n0x09bb c0x0000 (---------------)  + I miyazu
+	0x002b6b84, // n0x09bc c0x0000 (---------------)  + I muko
+	0x0027494a, // n0x09bd c0x0000 (---------------)  + I nagaokakyo
+	0x00251b87, // n0x09be c0x0000 (---------------)  + I nakagyo
+	0x002de486, // n0x09bf c0x0000 (---------------)  + I nantan
+	0x0027bb09, // n0x09c0 c0x0000 (---------------)  + I oyamazaki
+	0x002f2445, // n0x09c1 c0x0000 (---------------)  + I sakyo
+	0x002f8905, // n0x09c2 c0x0000 (---------------)  + I seika
+	0x002f2586, // n0x09c3 c0x0000 (---------------)  + I tanabe
+	0x0021b203, // n0x09c4 c0x0000 (---------------)  + I uji
+	0x00270209, // n0x09c5 c0x0000 (---------------)  + I ujitawara
+	0x00219846, // n0x09c6 c0x0000 (---------------)  + I wazuka
+	0x002f5f89, // n0x09c7 c0x0000 (---------------)  + I yamashina
+	0x00323ac6, // n0x09c8 c0x0000 (---------------)  + I yawata
+	0x002aad45, // n0x09c9 c0x0000 (---------------)  + I asahi
+	0x0022a145, // n0x09ca c0x0000 (---------------)  + I inabe
+	0x0023a3c3, // n0x09cb c0x0000 (---------------)  + I ise
+	0x002f5e88, // n0x09cc c0x0000 (---------------)  + I kameyama
+	0x002d6e87, // n0x09cd c0x0000 (---------------)  + I kawagoe
+	0x0020d304, // n0x09ce c0x0000 (---------------)  + I kiho
+	0x00260d48, // n0x09cf c0x0000 (---------------)  + I kisosaki
+	0x0030ea84, // n0x09d0 c0x0000 (---------------)  + I kiwa
+	0x002c96c6, // n0x09d1 c0x0000 (---------------)  + I komono
+	0x002f6a46, // n0x09d2 c0x0000 (---------------)  + I kumano
+	0x0023fe06, // n0x09d3 c0x0000 (---------------)  + I kuwana
+	0x0033fb89, // n0x09d4 c0x0000 (---------------)  + I matsusaka
+	0x00271e45, // n0x09d5 c0x0000 (---------------)  + I meiwa
+	0x0028c846, // n0x09d6 c0x0000 (---------------)  + I mihama
+	0x002425c9, // n0x09d7 c0x0000 (---------------)  + I minamiise
+	0x002abac6, // n0x09d8 c0x0000 (---------------)  + I misugi
+	0x0029be06, // n0x09d9 c0x0000 (---------------)  + I miyama
+	0x00326a46, // n0x09da c0x0000 (---------------)  + I nabari
+	0x0021a1c5, // n0x09db c0x0000 (---------------)  + I shima
+	0x002dd286, // n0x09dc c0x0000 (---------------)  + I suzuka
+	0x00332f44, // n0x09dd c0x0000 (---------------)  + I tado
+	0x0022b2c5, // n0x09de c0x0000 (---------------)  + I taiki
+	0x002a5304, // n0x09df c0x0000 (---------------)  + I taki
+	0x0029a946, // n0x09e0 c0x0000 (---------------)  + I tamaki
+	0x002e1284, // n0x09e1 c0x0000 (---------------)  + I toba
+	0x00205fc3, // n0x09e2 c0x0000 (---------------)  + I tsu
+	0x00272205, // n0x09e3 c0x0000 (---------------)  + I udono
+	0x002b2cc8, // n0x09e4 c0x0000 (---------------)  + I ureshino
+	0x003291c7, // n0x09e5 c0x0000 (---------------)  + I watarai
+	0x00268f89, // n0x09e6 c0x0000 (---------------)  + I yokkaichi
+	0x00272448, // n0x09e7 c0x0000 (---------------)  + I furukawa
+	0x00280e11, // n0x09e8 c0x0000 (---------------)  + I higashimatsushima
+	0x0022b84a, // n0x09e9 c0x0000 (---------------)  + I ishinomaki
+	0x002d4b07, // n0x09ea c0x0000 (---------------)  + I iwanuma
+	0x002f89c6, // n0x09eb c0x0000 (---------------)  + I kakuda
+	0x00207cc4, // n0x09ec c0x0000 (---------------)  + I kami
+	0x002a5408, // n0x09ed c0x0000 (---------------)  + I kawasaki
+	0x0021a449, // n0x09ee c0x0000 (---------------)  + I kesennuma
+	0x0027ce88, // n0x09ef c0x0000 (---------------)  + I marumori
+	0x00280fca, // n0x09f0 c0x0000 (---------------)  + I matsushima
+	0x0027164d, // n0x09f1 c0x0000 (---------------)  + I minamisanriku
+	0x00239986, // n0x09f2 c0x0000 (---------------)  + I misato
+	0x00287406, // n0x09f3 c0x0000 (---------------)  + I murata
+	0x002b7c46, // n0x09f4 c0x0000 (---------------)  + I natori
+	0x002b9f47, // n0x09f5 c0x0000 (---------------)  + I ogawara
+	0x0028a205, // n0x09f6 c0x0000 (---------------)  + I ohira
+	0x0033a187, // n0x09f7 c0x0000 (---------------)  + I onagawa
+	0x00260e05, // n0x09f8 c0x0000 (---------------)  + I osaki
+	0x002cbf84, // n0x09f9 c0x0000 (---------------)  + I rifu
+	0x00294a06, // n0x09fa c0x0000 (---------------)  + I semine
+	0x00207987, // n0x09fb c0x0000 (---------------)  + I shibata
+	0x00237a8d, // n0x09fc c0x0000 (---------------)  + I shichikashuku
+	0x00269fc7, // n0x09fd c0x0000 (---------------)  + I shikama
+	0x002b67c8, // n0x09fe c0x0000 (---------------)  + I shiogama
+	0x0026a709, // n0x09ff c0x0000 (---------------)  + I shiroishi
+	0x002a4806, // n0x0a00 c0x0000 (---------------)  + I tagajo
+	0x00267305, // n0x0a01 c0x0000 (---------------)  + I taiwa
+	0x00225484, // n0x0a02 c0x0000 (---------------)  + I tome
+	0x00265846, // n0x0a03 c0x0000 (---------------)  + I tomiya
+	0x00230f06, // n0x0a04 c0x0000 (---------------)  + I wakuya
+	0x0022e746, // n0x0a05 c0x0000 (---------------)  + I watari
+	0x00283908, // n0x0a06 c0x0000 (---------------)  + I yamamoto
+	0x00222243, // n0x0a07 c0x0000 (---------------)  + I zao
+	0x0022bd43, // n0x0a08 c0x0000 (---------------)  + I aya
+	0x00344685, // n0x0a09 c0x0000 (---------------)  + I ebino
+	0x002c3f86, // n0x0a0a c0x0000 (---------------)  + I gokase
+	0x00295245, // n0x0a0b c0x0000 (---------------)  + I hyuga
+	0x0025e048, // n0x0a0c c0x0000 (---------------)  + I kadogawa
+	0x00284c4a, // n0x0a0d c0x0000 (---------------)  + I kawaminami
+	0x0022a444, // n0x0a0e c0x0000 (---------------)  + I kijo
+	0x00327548, // n0x0a0f c0x0000 (---------------)  + I kitagawa
+	0x0027e608, // n0x0a10 c0x0000 (---------------)  + I kitakata
+	0x002e4f87, // n0x0a11 c0x0000 (---------------)  + I kitaura
+	0x002f1389, // n0x0a12 c0x0000 (---------------)  + I kobayashi
+	0x002a2148, // n0x0a13 c0x0000 (---------------)  + I kunitomi
+	0x002645c7, // n0x0a14 c0x0000 (---------------)  + I kushima
+	0x002a3986, // n0x0a15 c0x0000 (---------------)  + I mimata
+	0x0020b98a, // n0x0a16 c0x0000 (---------------)  + I miyakonojo
+	0x002658c8, // n0x0a17 c0x0000 (---------------)  + I miyazaki
+	0x002d1349, // n0x0a18 c0x0000 (---------------)  + I morotsuka
+	0x002f4608, // n0x0a19 c0x0000 (---------------)  + I nichinan
+	0x0021ad49, // n0x0a1a c0x0000 (---------------)  + I nishimera
+	0x00243887, // n0x0a1b c0x0000 (---------------)  + I nobeoka
+	0x002cfd85, // n0x0a1c c0x0000 (---------------)  + I saito
+	0x002745c6, // n0x0a1d c0x0000 (---------------)  + I shiiba
+	0x002cb288, // n0x0a1e c0x0000 (---------------)  + I shintomi
+	0x00261048, // n0x0a1f c0x0000 (---------------)  + I takaharu
+	0x002842c8, // n0x0a20 c0x0000 (---------------)  + I takanabe
+	0x002d9608, // n0x0a21 c0x0000 (---------------)  + I takazaki
+	0x0023cac5, // n0x0a22 c0x0000 (---------------)  + I tsuno
+	0x00201604, // n0x0a23 c0x0000 (---------------)  + I achi
+	0x002e07c8, // n0x0a24 c0x0000 (---------------)  + I agematsu
+	0x002a9f84, // n0x0a25 c0x0000 (---------------)  + I anan
+	0x002e0ec4, // n0x0a26 c0x0000 (---------------)  + I aoki
+	0x002aad45, // n0x0a27 c0x0000 (---------------)  + I asahi
+	0x0027d747, // n0x0a28 c0x0000 (---------------)  + I azumino
+	0x00210309, // n0x0a29 c0x0000 (---------------)  + I chikuhoku
+	0x0022bb47, // n0x0a2a c0x0000 (---------------)  + I chikuma
+	0x0021ba05, // n0x0a2b c0x0000 (---------------)  + I chino
+	0x002684c6, // n0x0a2c c0x0000 (---------------)  + I fujimi
+	0x003420c6, // n0x0a2d c0x0000 (---------------)  + I hakuba
+	0x0020c084, // n0x0a2e c0x0000 (---------------)  + I hara
+	0x0028a706, // n0x0a2f c0x0000 (---------------)  + I hiraya
+	0x002070c4, // n0x0a30 c0x0000 (---------------)  + I iida
+	0x0027cd86, // n0x0a31 c0x0000 (---------------)  + I iijima
+	0x00334306, // n0x0a32 c0x0000 (---------------)  + I iiyama
+	0x002165c6, // n0x0a33 c0x0000 (---------------)  + I iizuna
+	0x002440c5, // n0x0a34 c0x0000 (---------------)  + I ikeda
+	0x0025df07, // n0x0a35 c0x0000 (---------------)  + I ikusaka
+	0x00202c03, // n0x0a36 c0x0000 (---------------)  + I ina
+	0x0030ce49, // n0x0a37 c0x0000 (---------------)  + I karuizawa
+	0x002d4308, // n0x0a38 c0x0000 (---------------)  + I kawakami
+	0x00260d44, // n0x0a39 c0x0000 (---------------)  + I kiso
+	0x0026444d, // n0x0a3a c0x0000 (---------------)  + I kisofukushima
+	0x0027fa08, // n0x0a3b c0x0000 (---------------)  + I kitaaiki
+	0x0029e988, // n0x0a3c c0x0000 (---------------)  + I komagane
+	0x002d12c6, // n0x0a3d c0x0000 (---------------)  + I komoro
+	0x0031de89, // n0x0a3e c0x0000 (---------------)  + I matsukawa
+	0x0029ffc9, // n0x0a3f c0x0000 (---------------)  + I matsumoto
+	0x00233bc5, // n0x0a40 c0x0000 (---------------)  + I miasa
+	0x00284d4a, // n0x0a41 c0x0000 (---------------)  + I minamiaiki
+	0x0024d40a, // n0x0a42 c0x0000 (---------------)  + I minamimaki
+	0x0025e58c, // n0x0a43 c0x0000 (---------------)  + I minamiminowa
+	0x0025e706, // n0x0a44 c0x0000 (---------------)  + I minowa
+	0x00268986, // n0x0a45 c0x0000 (---------------)  + I miyada
+	0x002ad106, // n0x0a46 c0x0000 (---------------)  + I miyota
+	0x002596c9, // n0x0a47 c0x0000 (---------------)  + I mochizuki
+	0x002e0c86, // n0x0a48 c0x0000 (---------------)  + I nagano
+	0x002199c6, // n0x0a49 c0x0000 (---------------)  + I nagawa
+	0x002d70c6, // n0x0a4a c0x0000 (---------------)  + I nagiso
+	0x0028fdc8, // n0x0a4b c0x0000 (---------------)  + I nakagawa
+	0x00203ac6, // n0x0a4c c0x0000 (---------------)  + I nakano
+	0x0030f3cb, // n0x0a4d c0x0000 (---------------)  + I nozawaonsen
+	0x0027d8c5, // n0x0a4e c0x0000 (---------------)  + I obuse
+	0x002362c5, // n0x0a4f c0x0000 (---------------)  + I ogawa
+	0x00268c05, // n0x0a50 c0x0000 (---------------)  + I okaya
+	0x002212c6, // n0x0a51 c0x0000 (---------------)  + I omachi
+	0x0020b943, // n0x0a52 c0x0000 (---------------)  + I omi
+	0x0023fd86, // n0x0a53 c0x0000 (---------------)  + I ookuwa
+	0x00269f47, // n0x0a54 c0x0000 (---------------)  + I ooshika
+	0x002a52c5, // n0x0a55 c0x0000 (---------------)  + I otaki
+	0x002626c5, // n0x0a56 c0x0000 (---------------)  + I otari
+	0x00297785, // n0x0a57 c0x0000 (---------------)  + I sakae
+	0x002b9a06, // n0x0a58 c0x0000 (---------------)  + I sakaki
+	0x00228344, // n0x0a59 c0x0000 (---------------)  + I saku
+	0x0031fd46, // n0x0a5a c0x0000 (---------------)  + I sakuho
+	0x002d9d49, // n0x0a5b c0x0000 (---------------)  + I shimosuwa
+	0x0022114c, // n0x0a5c c0x0000 (---------------)  + I shinanomachi
+	0x002cbcc8, // n0x0a5d c0x0000 (---------------)  + I shiojiri
+	0x00256e04, // n0x0a5e c0x0000 (---------------)  + I suwa
+	0x002bfd46, // n0x0a5f c0x0000 (---------------)  + I suzaka
+	0x0030f246, // n0x0a60 c0x0000 (---------------)  + I takagi
+	0x0027e788, // n0x0a61 c0x0000 (---------------)  + I takamori
+	0x002d4cc8, // n0x0a62 c0x0000 (---------------)  + I takayama
+	0x00221049, // n0x0a63 c0x0000 (---------------)  + I tateshina
+	0x0025ce47, // n0x0a64 c0x0000 (---------------)  + I tatsuno
+	0x00291a89, // n0x0a65 c0x0000 (---------------)  + I togakushi
+	0x0026f486, // n0x0a66 c0x0000 (---------------)  + I togura
+	0x00265844, // n0x0a67 c0x0000 (---------------)  + I tomi
+	0x0029c3c4, // n0x0a68 c0x0000 (---------------)  + I ueda
+	0x00272c44, // n0x0a69 c0x0000 (---------------)  + I wada
+	0x0026e848, // n0x0a6a c0x0000 (---------------)  + I yamagata
+	0x0021014a, // n0x0a6b c0x0000 (---------------)  + I yamanouchi
+	0x002fbd46, // n0x0a6c c0x0000 (---------------)  + I yasaka
+	0x003054c7, // n0x0a6d c0x0000 (---------------)  + I yasuoka
+	0x00325487, // n0x0a6e c0x0000 (---------------)  + I chijiwa
+	0x0023ca45, // n0x0a6f c0x0000 (---------------)  + I futsu
+	0x00312284, // n0x0a70 c0x0000 (---------------)  + I goto
+	0x0027a9c6, // n0x0a71 c0x0000 (---------------)  + I hasami
+	0x0029a346, // n0x0a72 c0x0000 (---------------)  + I hirado
+	0x0020d2c3, // n0x0a73 c0x0000 (---------------)  + I iki
+	0x002d4147, // n0x0a74 c0x0000 (---------------)  + I isahaya
+	0x0021de08, // n0x0a75 c0x0000 (---------------)  + I kawatana
+	0x00233d0a, // n0x0a76 c0x0000 (---------------)  + I kuchinotsu
+	0x002ab508, // n0x0a77 c0x0000 (---------------)  + I matsuura
+	0x002e4388, // n0x0a78 c0x0000 (---------------)  + I nagasaki
+	0x002e12c5, // n0x0a79 c0x0000 (---------------)  + I obama
+	0x0029a485, // n0x0a7a c0x0000 (---------------)  + I omura
+	0x002919c5, // n0x0a7b c0x0000 (---------------)  + I oseto
+	0x0023ce06, // n0x0a7c c0x0000 (---------------)  + I saikai
+	0x00241ec6, // n0x0a7d c0x0000 (---------------)  + I sasebo
+	0x002b6dc5, // n0x0a7e c0x0000 (---------------)  + I seihi
+	0x002351c9, // n0x0a7f c0x0000 (---------------)  + I shimabara
+	0x0031208c, // n0x0a80 c0x0000 (---------------)  + I shinkamigoto
+	0x00247787, // n0x0a81 c0x0000 (---------------)  + I togitsu
+	0x00281048, // n0x0a82 c0x0000 (---------------)  + I tsushima
+	0x0026e605, // n0x0a83 c0x0000 (---------------)  + I unzen
+	0x00741484, // n0x0a84 c0x0001 (---------------)  ! I city
+	0x002f9f44, // n0x0a85 c0x0000 (---------------)  + I ando
+	0x003141c4, // n0x0a86 c0x0000 (---------------)  + I gose
+	0x00201dc6, // n0x0a87 c0x0000 (---------------)  + I heguri
+	0x0028830e, // n0x0a88 c0x0000 (---------------)  + I higashiyoshino
+	0x002beb07, // n0x0a89 c0x0000 (---------------)  + I ikaruga
+	0x002ba145, // n0x0a8a c0x0000 (---------------)  + I ikoma
+	0x0024b84c, // n0x0a8b c0x0000 (---------------)  + I kamikitayama
+	0x002cd607, // n0x0a8c c0x0000 (---------------)  + I kanmaki
+	0x00207907, // n0x0a8d c0x0000 (---------------)  + I kashiba
+	0x0020bf49, // n0x0a8e c0x0000 (---------------)  + I kashihara
+	0x00218489, // n0x0a8f c0x0000 (---------------)  + I katsuragi
+	0x0026dd45, // n0x0a90 c0x0000 (---------------)  + I kawai
+	0x002d4308, // n0x0a91 c0x0000 (---------------)  + I kawakami
+	0x00348449, // n0x0a92 c0x0000 (---------------)  + I kawanishi
+	0x00296a85, // n0x0a93 c0x0000 (---------------)  + I koryo
+	0x002a5208, // n0x0a94 c0x0000 (---------------)  + I kurotaki
+	0x002d33c6, // n0x0a95 c0x0000 (---------------)  + I mitsue
+	0x00298206, // n0x0a96 c0x0000 (---------------)  + I miyake
+	0x00313404, // n0x0a97 c0x0000 (---------------)  + I nara
+	0x00258188, // n0x0a98 c0x0000 (---------------)  + I nosegawa
+	0x0025d9c3, // n0x0a99 c0x0000 (---------------)  + I oji
+	0x00234bc4, // n0x0a9a c0x0000 (---------------)  + I ouda
+	0x002fc885, // n0x0a9b c0x0000 (---------------)  + I oyodo
+	0x00228347, // n0x0a9c c0x0000 (---------------)  + I sakurai
+	0x002018c5, // n0x0a9d c0x0000 (---------------)  + I sango
+	0x0021b889, // n0x0a9e c0x0000 (---------------)  + I shimoichi
+	0x002be24d, // n0x0a9f c0x0000 (---------------)  + I shimokitayama
+	0x002f5806, // n0x0aa0 c0x0000 (---------------)  + I shinjo
+	0x0027b3c4, // n0x0aa1 c0x0000 (---------------)  + I soni
+	0x002d00c8, // n0x0aa2 c0x0000 (---------------)  + I takatori
+	0x002059ca, // n0x0aa3 c0x0000 (---------------)  + I tawaramoto
+	0x0027c407, // n0x0aa4 c0x0000 (---------------)  + I tenkawa
+	0x002e0385, // n0x0aa5 c0x0000 (---------------)  + I tenri
+	0x002072c3, // n0x0aa6 c0x0000 (---------------)  + I uda
+	0x0028794e, // n0x0aa7 c0x0000 (---------------)  + I yamatokoriyama
+	0x0024ba4c, // n0x0aa8 c0x0000 (---------------)  + I yamatotakada
+	0x002cbb07, // n0x0aa9 c0x0000 (---------------)  + I yamazoe
+	0x002884c7, // n0x0aaa c0x0000 (---------------)  + I yoshino
+	0x00209f43, // n0x0aab c0x0000 (---------------)  + I aga
+	0x002e0cc5, // n0x0aac c0x0000 (---------------)  + I agano
+	0x003141c5, // n0x0aad c0x0000 (---------------)  + I gosen
+	0x00281a88, // n0x0aae c0x0000 (---------------)  + I itoigawa
+	0x0027e449, // n0x0aaf c0x0000 (---------------)  + I izumozaki
+	0x002a4906, // n0x0ab0 c0x0000 (---------------)  + I joetsu
+	0x00213784, // n0x0ab1 c0x0000 (---------------)  + I kamo
+	0x002d4a46, // n0x0ab2 c0x0000 (---------------)  + I kariwa
+	0x0021a74b, // n0x0ab3 c0x0000 (---------------)  + I kashiwazaki
+	0x0033f90c, // n0x0ab4 c0x0000 (---------------)  + I minamiuonuma
+	0x0026ce47, // n0x0ab5 c0x0000 (---------------)  + I mitsuke
+	0x002b63c5, // n0x0ab6 c0x0000 (---------------)  + I muika
+	0x002771c8, // n0x0ab7 c0x0000 (---------------)  + I murakami
+	0x00229b45, // n0x0ab8 c0x0000 (---------------)  + I myoko
+	0x00274947, // n0x0ab9 c0x0000 (---------------)  + I nagaoka
+	0x0028b587, // n0x0aba c0x0000 (---------------)  + I niigata
+	0x0025d9c5, // n0x0abb c0x0000 (---------------)  + I ojiya
+	0x0020b943, // n0x0abc c0x0000 (---------------)  + I omi
+	0x0029c744, // n0x0abd c0x0000 (---------------)  + I sado
+	0x002032c5, // n0x0abe c0x0000 (---------------)  + I sanjo
+	0x0023a405, // n0x0abf c0x0000 (---------------)  + I seiro
+	0x0023a406, // n0x0ac0 c0x0000 (---------------)  + I seirou
+	0x002c3a48, // n0x0ac1 c0x0000 (---------------)  + I sekikawa
+	0x00207987, // n0x0ac2 c0x0000 (---------------)  + I shibata
+	0x00344286, // n0x0ac3 c0x0000 (---------------)  + I tagami
+	0x00251346, // n0x0ac4 c0x0000 (---------------)  + I tainai
+	0x0025b406, // n0x0ac5 c0x0000 (---------------)  + I tochio
+	0x00299549, // n0x0ac6 c0x0000 (---------------)  + I tokamachi
+	0x0022fc87, // n0x0ac7 c0x0000 (---------------)  + I tsubame
+	0x002733c6, // n0x0ac8 c0x0000 (---------------)  + I tsunan
+	0x0033fa86, // n0x0ac9 c0x0000 (---------------)  + I uonuma
+	0x002f1286, // n0x0aca c0x0000 (---------------)  + I yahiko
+	0x002f5985, // n0x0acb c0x0000 (---------------)  + I yoita
+	0x00254846, // n0x0acc c0x0000 (---------------)  + I yuzawa
+	0x00346d85, // n0x0acd c0x0000 (---------------)  + I beppu
+	0x00297e48, // n0x0ace c0x0000 (---------------)  + I bungoono
+	0x00276e8b, // n0x0acf c0x0000 (---------------)  + I bungotakada
+	0x0027a7c6, // n0x0ad0 c0x0000 (---------------)  + I hasama
+	0x003254c4, // n0x0ad1 c0x0000 (---------------)  + I hiji
+	0x002ce289, // n0x0ad2 c0x0000 (---------------)  + I himeshima
+	0x0028b104, // n0x0ad3 c0x0000 (---------------)  + I hita
+	0x002d3348, // n0x0ad4 c0x0000 (---------------)  + I kamitsue
+	0x002968c7, // n0x0ad5 c0x0000 (---------------)  + I kokonoe
+	0x00237d44, // n0x0ad6 c0x0000 (---------------)  + I kuju
+	0x002a0c48, // n0x0ad7 c0x0000 (---------------)  + I kunisaki
+	0x002a7d04, // n0x0ad8 c0x0000 (---------------)  + I kusu
+	0x002f59c4, // n0x0ad9 c0x0000 (---------------)  + I oita
+	0x00272a45, // n0x0ada c0x0000 (---------------)  + I saiki
+	0x002bc806, // n0x0adb c0x0000 (---------------)  + I taketa
+	0x002bb1c7, // n0x0adc c0x0000 (---------------)  + I tsukumi
+	0x002151c3, // n0x0add c0x0000 (---------------)  + I usa
+	0x00286dc5, // n0x0ade c0x0000 (---------------)  + I usuki
+	0x0026d904, // n0x0adf c0x0000 (---------------)  + I yufu
+	0x003455c6, // n0x0ae0 c0x0000 (---------------)  + I akaiwa
+	0x00233c48, // n0x0ae1 c0x0000 (---------------)  + I asakuchi
+	0x002f0f85, // n0x0ae2 c0x0000 (---------------)  + I bizen
+	0x0027d249, // n0x0ae3 c0x0000 (---------------)  + I hayashima
+	0x002fa585, // n0x0ae4 c0x0000 (---------------)  + I ibara
+	0x00239dc8, // n0x0ae5 c0x0000 (---------------)  + I kagamino
+	0x00348187, // n0x0ae6 c0x0000 (---------------)  + I kasaoka
+	0x00231108, // n0x0ae7 c0x0000 (---------------)  + I kibichuo
+	0x002a0307, // n0x0ae8 c0x0000 (---------------)  + I kumenan
+	0x00328f89, // n0x0ae9 c0x0000 (---------------)  + I kurashiki
+	0x00346406, // n0x0aea c0x0000 (---------------)  + I maniwa
+	0x002c2d46, // n0x0aeb c0x0000 (---------------)  + I misaki
+	0x002c1584, // n0x0aec c0x0000 (---------------)  + I nagi
+	0x002d5c45, // n0x0aed c0x0000 (---------------)  + I niimi
+	0x0020fa8c, // n0x0aee c0x0000 (---------------)  + I nishiawakura
+	0x00268c07, // n0x0aef c0x0000 (---------------)  + I okayama
+	0x00269dc7, // n0x0af0 c0x0000 (---------------)  + I satosho
+	0x00325348, // n0x0af1 c0x0000 (---------------)  + I setouchi
+	0x002f5806, // n0x0af2 c0x0000 (---------------)  + I shinjo
+	0x00269ec4, // n0x0af3 c0x0000 (---------------)  + I shoo
+	0x00307d84, // n0x0af4 c0x0000 (---------------)  + I soja
+	0x00327209, // n0x0af5 c0x0000 (---------------)  + I takahashi
+	0x002ad206, // n0x0af6 c0x0000 (---------------)  + I tamano
+	0x00281607, // n0x0af7 c0x0000 (---------------)  + I tsuyama
+	0x0033a2c4, // n0x0af8 c0x0000 (---------------)  + I wake
+	0x0027b8c6, // n0x0af9 c0x0000 (---------------)  + I yakage
+	0x0020c485, // n0x0afa c0x0000 (---------------)  + I aguni
+	0x0028b407, // n0x0afb c0x0000 (---------------)  + I ginowan
+	0x0030f346, // n0x0afc c0x0000 (---------------)  + I ginoza
+	0x00279c49, // n0x0afd c0x0000 (---------------)  + I gushikami
+	0x002fe107, // n0x0afe c0x0000 (---------------)  + I haebaru
+	0x00255807, // n0x0aff c0x0000 (---------------)  + I higashi
+	0x0028a246, // n0x0b00 c0x0000 (---------------)  + I hirara
+	0x002284c5, // n0x0b01 c0x0000 (---------------)  + I iheya
+	0x0026d6c8, // n0x0b02 c0x0000 (---------------)  + I ishigaki
+	0x002196c8, // n0x0b03 c0x0000 (---------------)  + I ishikawa
+	0x00224b06, // n0x0b04 c0x0000 (---------------)  + I itoman
+	0x002f0fc5, // n0x0b05 c0x0000 (---------------)  + I izena
+	0x002a4b46, // n0x0b06 c0x0000 (---------------)  + I kadena
+	0x00206303, // n0x0b07 c0x0000 (---------------)  + I kin
+	0x00281909, // n0x0b08 c0x0000 (---------------)  + I kitadaito
+	0x00286e8e, // n0x0b09 c0x0000 (---------------)  + I kitanakagusuku
+	0x0029fe48, // n0x0b0a c0x0000 (---------------)  + I kumejima
+	0x0030eb88, // n0x0b0b c0x0000 (---------------)  + I kunigami
+	0x0022490b, // n0x0b0c c0x0000 (---------------)  + I minamidaito
+	0x0027d486, // n0x0b0d c0x0000 (---------------)  + I motobu
+	0x00200f04, // n0x0b0e c0x0000 (---------------)  + I nago
+	0x0026f684, // n0x0b0f c0x0000 (---------------)  + I naha
+	0x00286f8a, // n0x0b10 c0x0000 (---------------)  + I nakagusuku
+	0x00217a87, // n0x0b11 c0x0000 (---------------)  + I nakijin
+	0x00273485, // n0x0b12 c0x0000 (---------------)  + I nanjo
+	0x002161c9, // n0x0b13 c0x0000 (---------------)  + I nishihara
+	0x002a38c5, // n0x0b14 c0x0000 (---------------)  + I ogimi
+	0x002e0f07, // n0x0b15 c0x0000 (---------------)  + I okinawa
+	0x0020b504, // n0x0b16 c0x0000 (---------------)  + I onna
+	0x002b3707, // n0x0b17 c0x0000 (---------------)  + I shimoji
+	0x002eaf88, // n0x0b18 c0x0000 (---------------)  + I taketomi
+	0x002cf846, // n0x0b19 c0x0000 (---------------)  + I tarama
+	0x002abc49, // n0x0b1a c0x0000 (---------------)  + I tokashiki
+	0x002a224a, // n0x0b1b c0x0000 (---------------)  + I tomigusuku
+	0x00217a06, // n0x0b1c c0x0000 (---------------)  + I tonaki
+	0x0027f546, // n0x0b1d c0x0000 (---------------)  + I urasoe
+	0x00294d45, // n0x0b1e c0x0000 (---------------)  + I uruma
+	0x00320685, // n0x0b1f c0x0000 (---------------)  + I yaese
+	0x00300e87, // n0x0b20 c0x0000 (---------------)  + I yomitan
+	0x00322048, // n0x0b21 c0x0000 (---------------)  + I yonabaru
+	0x0020c3c8, // n0x0b22 c0x0000 (---------------)  + I yonaguni
+	0x002579c6, // n0x0b23 c0x0000 (---------------)  + I zamami
+	0x0032eec5, // n0x0b24 c0x0000 (---------------)  + I abeno
+	0x002d6b8e, // n0x0b25 c0x0000 (---------------)  + I chihayaakasaka
+	0x00231204, // n0x0b26 c0x0000 (---------------)  + I chuo
+	0x00224a85, // n0x0b27 c0x0000 (---------------)  + I daito
+	0x00267e49, // n0x0b28 c0x0000 (---------------)  + I fujiidera
+	0x0026db48, // n0x0b29 c0x0000 (---------------)  + I habikino
+	0x00277d86, // n0x0b2a c0x0000 (---------------)  + I hannan
+	0x0028358c, // n0x0b2b c0x0000 (---------------)  + I higashiosaka
+	0x00284850, // n0x0b2c c0x0000 (---------------)  + I higashisumiyoshi
+	0x00287f4f, // n0x0b2d c0x0000 (---------------)  + I higashiyodogawa
+	0x00289408, // n0x0b2e c0x0000 (---------------)  + I hirakata
+	0x00313b07, // n0x0b2f c0x0000 (---------------)  + I ibaraki
+	0x002440c5, // n0x0b30 c0x0000 (---------------)  + I ikeda
+	0x00211405, // n0x0b31 c0x0000 (---------------)  + I izumi
+	0x00211409, // n0x0b32 c0x0000 (---------------)  + I izumiotsu
+	0x002f2109, // n0x0b33 c0x0000 (---------------)  + I izumisano
+	0x0021f106, // n0x0b34 c0x0000 (---------------)  + I kadoma
+	0x002e5547, // n0x0b35 c0x0000 (---------------)  + I kaizuka
+	0x00335a45, // n0x0b36 c0x0000 (---------------)  + I kanan
+	0x00212cc9, // n0x0b37 c0x0000 (---------------)  + I kashiwara
+	0x0031db86, // n0x0b38 c0x0000 (---------------)  + I katano
+	0x002e0acd, // n0x0b39 c0x0000 (---------------)  + I kawachinagano
+	0x00272b09, // n0x0b3a c0x0000 (---------------)  + I kishiwada
+	0x00210704, // n0x0b3b c0x0000 (---------------)  + I kita
+	0x0029fbc8, // n0x0b3c c0x0000 (---------------)  + I kumatori
+	0x002e0889, // n0x0b3d c0x0000 (---------------)  + I matsubara
+	0x002fbf06, // n0x0b3e c0x0000 (---------------)  + I minato
+	0x002685c5, // n0x0b3f c0x0000 (---------------)  + I minoh
+	0x002c2d46, // n0x0b40 c0x0000 (---------------)  + I misaki
+	0x00231c89, // n0x0b41 c0x0000 (---------------)  + I moriguchi
+	0x002ae1c8, // n0x0b42 c0x0000 (---------------)  + I neyagawa
+	0x0020fa85, // n0x0b43 c0x0000 (---------------)  + I nishi
+	0x0021bac4, // n0x0b44 c0x0000 (---------------)  + I nose
+	0x0028374b, // n0x0b45 c0x0000 (---------------)  + I osakasayama
+	0x002fbdc5, // n0x0b46 c0x0000 (---------------)  + I sakai
+	0x00237886, // n0x0b47 c0x0000 (---------------)  + I sayama
+	0x00257286, // n0x0b48 c0x0000 (---------------)  + I sennan
+	0x002c0586, // n0x0b49 c0x0000 (---------------)  + I settsu
+	0x002f150b, // n0x0b4a c0x0000 (---------------)  + I shijonawate
+	0x0027d349, // n0x0b4b c0x0000 (---------------)  + I shimamoto
+	0x00339b85, // n0x0b4c c0x0000 (---------------)  + I suita
+	0x0024e5c7, // n0x0b4d c0x0000 (---------------)  + I tadaoka
+	0x0022b7c6, // n0x0b4e c0x0000 (---------------)  + I taishi
+	0x0026f2c6, // n0x0b4f c0x0000 (---------------)  + I tajiri
+	0x00313f48, // n0x0b50 c0x0000 (---------------)  + I takaishi
+	0x0024d9c9, // n0x0b51 c0x0000 (---------------)  + I takatsuki
+	0x002b658c, // n0x0b52 c0x0000 (---------------)  + I tondabayashi
+	0x00251a88, // n0x0b53 c0x0000 (---------------)  + I toyonaka
+	0x00255246, // n0x0b54 c0x0000 (---------------)  + I toyono
+	0x002bfc43, // n0x0b55 c0x0000 (---------------)  + I yao
+	0x0021a346, // n0x0b56 c0x0000 (---------------)  + I ariake
+	0x00274405, // n0x0b57 c0x0000 (---------------)  + I arita
+	0x0026c088, // n0x0b58 c0x0000 (---------------)  + I fukudomi
+	0x0021f886, // n0x0b59 c0x0000 (---------------)  + I genkai
+	0x00243c48, // n0x0b5a c0x0000 (---------------)  + I hamatama
+	0x002f9345, // n0x0b5b c0x0000 (---------------)  + I hizen
+	0x00316605, // n0x0b5c c0x0000 (---------------)  + I imari
+	0x002e5888, // n0x0b5d c0x0000 (---------------)  + I kamimine
+	0x0030ef07, // n0x0b5e c0x0000 (---------------)  + I kanzaki
+	0x00343ec7, // n0x0b5f c0x0000 (---------------)  + I karatsu
+	0x002bc987, // n0x0b60 c0x0000 (---------------)  + I kashima
+	0x00260ec8, // n0x0b61 c0x0000 (---------------)  + I kitagata
+	0x00313c48, // n0x0b62 c0x0000 (---------------)  + I kitahata
+	0x0028c3c6, // n0x0b63 c0x0000 (---------------)  + I kiyama
+	0x0029a787, // n0x0b64 c0x0000 (---------------)  + I kouhoku
+	0x002aaf87, // n0x0b65 c0x0000 (---------------)  + I kyuragi
+	0x002742ca, // n0x0b66 c0x0000 (---------------)  + I nishiarita
+	0x0020f443, // n0x0b67 c0x0000 (---------------)  + I ogi
+	0x002212c6, // n0x0b68 c0x0000 (---------------)  + I omachi
+	0x00210285, // n0x0b69 c0x0000 (---------------)  + I ouchi
+	0x002617c4, // n0x0b6a c0x0000 (---------------)  + I saga
+	0x0026a709, // n0x0b6b c0x0000 (---------------)  + I shiroishi
+	0x00328f04, // n0x0b6c c0x0000 (---------------)  + I taku
+	0x00299084, // n0x0b6d c0x0000 (---------------)  + I tara
+	0x002850c4, // n0x0b6e c0x0000 (---------------)  + I tosu
+	0x002884cb, // n0x0b6f c0x0000 (---------------)  + I yoshinogari
+	0x002e0a07, // n0x0b70 c0x0000 (---------------)  + I arakawa
+	0x002d6dc5, // n0x0b71 c0x0000 (---------------)  + I asaka
+	0x002b7048, // n0x0b72 c0x0000 (---------------)  + I chichibu
+	0x002684c6, // n0x0b73 c0x0000 (---------------)  + I fujimi
+	0x002684c8, // n0x0b74 c0x0000 (---------------)  + I fujimino
+	0x0026b4c6, // n0x0b75 c0x0000 (---------------)  + I fukaya
+	0x00278585, // n0x0b76 c0x0000 (---------------)  + I hanno
+	0x00278ac5, // n0x0b77 c0x0000 (---------------)  + I hanyu
+	0x0027b006, // n0x0b78 c0x0000 (---------------)  + I hasuda
+	0x0027b748, // n0x0b79 c0x0000 (---------------)  + I hatogaya
+	0x0027ba48, // n0x0b7a c0x0000 (---------------)  + I hatoyama
+	0x0026a8c6, // n0x0b7b c0x0000 (---------------)  + I hidaka
+	0x002b6e8f, // n0x0b7c c0x0000 (---------------)  + I higashichichibu
+	0x002813d0, // n0x0b7d c0x0000 (---------------)  + I higashimatsuyama
+	0x0021e905, // n0x0b7e c0x0000 (---------------)  + I honjo
+	0x00202c03, // n0x0b7f c0x0000 (---------------)  + I ina
+	0x002e4dc5, // n0x0b80 c0x0000 (---------------)  + I iruma
+	0x002955c8, // n0x0b81 c0x0000 (---------------)  + I iwatsuki
+	0x002f2009, // n0x0b82 c0x0000 (---------------)  + I kamiizumi
+	0x0022d148, // n0x0b83 c0x0000 (---------------)  + I kamikawa
+	0x002d1508, // n0x0b84 c0x0000 (---------------)  + I kamisato
+	0x0021e408, // n0x0b85 c0x0000 (---------------)  + I kasukabe
+	0x002d6e87, // n0x0b86 c0x0000 (---------------)  + I kawagoe
+	0x00268189, // n0x0b87 c0x0000 (---------------)  + I kawaguchi
+	0x00243e48, // n0x0b88 c0x0000 (---------------)  + I kawajima
+	0x00302284, // n0x0b89 c0x0000 (---------------)  + I kazo
+	0x00284f48, // n0x0b8a c0x0000 (---------------)  + I kitamoto
+	0x00250fc9, // n0x0b8b c0x0000 (---------------)  + I koshigaya
+	0x0029af47, // n0x0b8c c0x0000 (---------------)  + I kounosu
+	0x002a2444, // n0x0b8d c0x0000 (---------------)  + I kuki
+	0x0022bc08, // n0x0b8e c0x0000 (---------------)  + I kumagaya
+	0x0025dcca, // n0x0b8f c0x0000 (---------------)  + I matsubushi
+	0x0029fa46, // n0x0b90 c0x0000 (---------------)  + I minano
+	0x00239986, // n0x0b91 c0x0000 (---------------)  + I misato
+	0x0021c309, // n0x0b92 c0x0000 (---------------)  + I miyashiro
+	0x00284a87, // n0x0b93 c0x0000 (---------------)  + I miyoshi
+	0x002b2588, // n0x0b94 c0x0000 (---------------)  + I moroyama
+	0x00240748, // n0x0b95 c0x0000 (---------------)  + I nagatoro
+	0x00230d88, // n0x0b96 c0x0000 (---------------)  + I namegawa
+	0x002cae05, // n0x0b97 c0x0000 (---------------)  + I niiza
+	0x002f9885, // n0x0b98 c0x0000 (---------------)  + I ogano
+	0x002362c5, // n0x0b99 c0x0000 (---------------)  + I ogawa
+	0x00314185, // n0x0b9a c0x0000 (---------------)  + I ogose
+	0x0029b407, // n0x0b9b c0x0000 (---------------)  + I okegawa
+	0x0020b945, // n0x0b9c c0x0000 (---------------)  + I omiya
+	0x002a52c5, // n0x0b9d c0x0000 (---------------)  + I otaki
+	0x0031b446, // n0x0b9e c0x0000 (---------------)  + I ranzan
+	0x0022d087, // n0x0b9f c0x0000 (---------------)  + I ryokami
+	0x002a8547, // n0x0ba0 c0x0000 (---------------)  + I saitama
+	0x0025dfc6, // n0x0ba1 c0x0000 (---------------)  + I sakado
+	0x002b9045, // n0x0ba2 c0x0000 (---------------)  + I satte
+	0x00237886, // n0x0ba3 c0x0000 (---------------)  + I sayama
+	0x00213545, // n0x0ba4 c0x0000 (---------------)  + I shiki
+	0x002cd488, // n0x0ba5 c0x0000 (---------------)  + I shiraoka
+	0x003359c4, // n0x0ba6 c0x0000 (---------------)  + I soka
+	0x002abb46, // n0x0ba7 c0x0000 (---------------)  + I sugito
+	0x00212684, // n0x0ba8 c0x0000 (---------------)  + I toda
+	0x003425c8, // n0x0ba9 c0x0000 (---------------)  + I tokigawa
+	0x003125ca, // n0x0baa c0x0000 (---------------)  + I tokorozawa
+	0x0033304c, // n0x0bab c0x0000 (---------------)  + I tsurugashima
+	0x00223145, // n0x0bac c0x0000 (---------------)  + I urawa
+	0x002ba006, // n0x0bad c0x0000 (---------------)  + I warabi
+	0x002b6746, // n0x0bae c0x0000 (---------------)  + I yashio
+	0x00300b06, // n0x0baf c0x0000 (---------------)  + I yokoze
+	0x002552c4, // n0x0bb0 c0x0000 (---------------)  + I yono
+	0x00212b85, // n0x0bb1 c0x0000 (---------------)  + I yorii
+	0x0026b307, // n0x0bb2 c0x0000 (---------------)  + I yoshida
+	0x00284b09, // n0x0bb3 c0x0000 (---------------)  + I yoshikawa
+	0x0028c707, // n0x0bb4 c0x0000 (---------------)  + I yoshimi
+	0x00741484, // n0x0bb5 c0x0001 (---------------)  ! I city
+	0x00741484, // n0x0bb6 c0x0001 (---------------)  ! I city
+	0x002f09c5, // n0x0bb7 c0x0000 (---------------)  + I aisho
+	0x00227d44, // n0x0bb8 c0x0000 (---------------)  + I gamo
+	0x00282f4a, // n0x0bb9 c0x0000 (---------------)  + I higashiomi
+	0x00268346, // n0x0bba c0x0000 (---------------)  + I hikone
+	0x0024b684, // n0x0bbb c0x0000 (---------------)  + I koka
+	0x002de405, // n0x0bbc c0x0000 (---------------)  + I konan
+	0x00298585, // n0x0bbd c0x0000 (---------------)  + I kosei
+	0x0029a244, // n0x0bbe c0x0000 (---------------)  + I koto
+	0x0026fa07, // n0x0bbf c0x0000 (---------------)  + I kusatsu
+	0x002fa507, // n0x0bc0 c0x0000 (---------------)  + I maibara
+	0x002b1908, // n0x0bc1 c0x0000 (---------------)  + I moriyama
+	0x002a4c48, // n0x0bc2 c0x0000 (---------------)  + I nagahama
+	0x00211a09, // n0x0bc3 c0x0000 (---------------)  + I nishiazai
+	0x00286948, // n0x0bc4 c0x0000 (---------------)  + I notogawa
+	0x0028310b, // n0x0bc5 c0x0000 (---------------)  + I omihachiman
+	0x00211544, // n0x0bc6 c0x0000 (---------------)  + I otsu
+	0x0026f3c5, // n0x0bc7 c0x0000 (---------------)  + I ritto
+	0x00285505, // n0x0bc8 c0x0000 (---------------)  + I ryuoh
+	0x002bc909, // n0x0bc9 c0x0000 (---------------)  + I takashima
+	0x0024d9c9, // n0x0bca c0x0000 (---------------)  + I takatsuki
+	0x002ce188, // n0x0bcb c0x0000 (---------------)  + I torahime
+	0x0025afc8, // n0x0bcc c0x0000 (---------------)  + I toyosato
+	0x002e5144, // n0x0bcd c0x0000 (---------------)  + I yasu
+	0x0030f285, // n0x0bce c0x0000 (---------------)  + I akagi
+	0x00207e83, // n0x0bcf c0x0000 (---------------)  + I ama
+	0x00264305, // n0x0bd0 c0x0000 (---------------)  + I gotsu
+	0x0028c8c6, // n0x0bd1 c0x0000 (---------------)  + I hamada
+	0x0027e28c, // n0x0bd2 c0x0000 (---------------)  + I higashiizumo
+	0x00219746, // n0x0bd3 c0x0000 (---------------)  + I hikawa
+	0x00213586, // n0x0bd4 c0x0000 (---------------)  + I hikimi
+	0x00278005, // n0x0bd5 c0x0000 (---------------)  + I izumo
+	0x002b9a88, // n0x0bd6 c0x0000 (---------------)  + I kakinoki
+	0x0029b706, // n0x0bd7 c0x0000 (---------------)  + I masuda
+	0x002f8b46, // n0x0bd8 c0x0000 (---------------)  + I matsue
+	0x00239986, // n0x0bd9 c0x0000 (---------------)  + I misato
+	0x0022170c, // n0x0bda c0x0000 (---------------)  + I nishinoshima
+	0x0025f4c4, // n0x0bdb c0x0000 (---------------)  + I ohda
+	0x0025b54a, // n0x0bdc c0x0000 (---------------)  + I okinoshima
+	0x00277f48, // n0x0bdd c0x0000 (---------------)  + I okuizumo
+	0x0027e0c7, // n0x0bde c0x0000 (---------------)  + I shimane
+	0x0022cb86, // n0x0bdf c0x0000 (---------------)  + I tamayu
+	0x00256dc7, // n0x0be0 c0x0000 (---------------)  + I tsuwano
+	0x002c64c5, // n0x0be1 c0x0000 (---------------)  + I unnan
+	0x0028a806, // n0x0be2 c0x0000 (---------------)  + I yakumo
+	0x00303d46, // n0x0be3 c0x0000 (---------------)  + I yasugi
+	0x00309f47, // n0x0be4 c0x0000 (---------------)  + I yatsuka
+	0x002953c4, // n0x0be5 c0x0000 (---------------)  + I arai
+	0x002ed205, // n0x0be6 c0x0000 (---------------)  + I atami
+	0x00267e44, // n0x0be7 c0x0000 (---------------)  + I fuji
+	0x002cc007, // n0x0be8 c0x0000 (---------------)  + I fujieda
+	0x00268088, // n0x0be9 c0x0000 (---------------)  + I fujikawa
+	0x0026880a, // n0x0bea c0x0000 (---------------)  + I fujinomiya
+	0x0026d547, // n0x0beb c0x0000 (---------------)  + I fukuroi
+	0x00220487, // n0x0bec c0x0000 (---------------)  + I gotemba
+	0x00313a87, // n0x0bed c0x0000 (---------------)  + I haibara
+	0x00229c89, // n0x0bee c0x0000 (---------------)  + I hamamatsu
+	0x0027e28a, // n0x0bef c0x0000 (---------------)  + I higashiizu
+	0x00224b03, // n0x0bf0 c0x0000 (---------------)  + I ito
+	0x00329185, // n0x0bf1 c0x0000 (---------------)  + I iwata
+	0x00211403, // n0x0bf2 c0x0000 (---------------)  + I izu
+	0x00305989, // n0x0bf3 c0x0000 (---------------)  + I izunokuni
+	0x0024eb88, // n0x0bf4 c0x0000 (---------------)  + I kakegawa
+	0x002d07c7, // n0x0bf5 c0x0000 (---------------)  + I kannami
+	0x0022d249, // n0x0bf6 c0x0000 (---------------)  + I kawanehon
+	0x002197c6, // n0x0bf7 c0x0000 (---------------)  + I kawazu
+	0x002159c8, // n0x0bf8 c0x0000 (---------------)  + I kikugawa
+	0x002974c5, // n0x0bf9 c0x0000 (---------------)  + I kosai
+	0x002736ca, // n0x0bfa c0x0000 (---------------)  + I makinohara
+	0x002b1a89, // n0x0bfb c0x0000 (---------------)  + I matsuzaki
+	0x00243389, // n0x0bfc c0x0000 (---------------)  + I minamiizu
+	0x002ab3c7, // n0x0bfd c0x0000 (---------------)  + I mishima
+	0x0027cf89, // n0x0bfe c0x0000 (---------------)  + I morimachi
+	0x002164c8, // n0x0bff c0x0000 (---------------)  + I nishiizu
+	0x002d66c6, // n0x0c00 c0x0000 (---------------)  + I numazu
+	0x002ba1c8, // n0x0c01 c0x0000 (---------------)  + I omaezaki
+	0x00222387, // n0x0c02 c0x0000 (---------------)  + I shimada
+	0x00249507, // n0x0c03 c0x0000 (---------------)  + I shimizu
+	0x0026a1c7, // n0x0c04 c0x0000 (---------------)  + I shimoda
+	0x002d0648, // n0x0c05 c0x0000 (---------------)  + I shizuoka
+	0x002cc846, // n0x0c06 c0x0000 (---------------)  + I susono
+	0x0025da85, // n0x0c07 c0x0000 (---------------)  + I yaizu
+	0x0026b307, // n0x0c08 c0x0000 (---------------)  + I yoshida
+	0x0027f048, // n0x0c09 c0x0000 (---------------)  + I ashikaga
+	0x00338204, // n0x0c0a c0x0000 (---------------)  + I bato
+	0x00304e04, // n0x0c0b c0x0000 (---------------)  + I haga
+	0x002d4507, // n0x0c0c c0x0000 (---------------)  + I ichikai
+	0x002fcf07, // n0x0c0d c0x0000 (---------------)  + I iwafune
+	0x003482ca, // n0x0c0e c0x0000 (---------------)  + I kaminokawa
+	0x002d6646, // n0x0c0f c0x0000 (---------------)  + I kanuma
+	0x0030560a, // n0x0c10 c0x0000 (---------------)  + I karasuyama
+	0x002a3d47, // n0x0c11 c0x0000 (---------------)  + I kuroiso
+	0x00290b47, // n0x0c12 c0x0000 (---------------)  + I mashiko
+	0x00276e04, // n0x0c13 c0x0000 (---------------)  + I mibu
+	0x002b42c4, // n0x0c14 c0x0000 (---------------)  + I moka
+	0x00214306, // n0x0c15 c0x0000 (---------------)  + I motegi
+	0x00345a04, // n0x0c16 c0x0000 (---------------)  + I nasu
+	0x00345a0c, // n0x0c17 c0x0000 (---------------)  + I nasushiobara
+	0x0020a845, // n0x0c18 c0x0000 (---------------)  + I nikko
+	0x00216b89, // n0x0c19 c0x0000 (---------------)  + I nishikata
+	0x00211104, // n0x0c1a c0x0000 (---------------)  + I nogi
+	0x0028a205, // n0x0c1b c0x0000 (---------------)  + I ohira
+	0x00205948, // n0x0c1c c0x0000 (---------------)  + I ohtawara
+	0x00207e05, // n0x0c1d c0x0000 (---------------)  + I oyama
+	0x00228346, // n0x0c1e c0x0000 (---------------)  + I sakura
+	0x002f2244, // n0x0c1f c0x0000 (---------------)  + I sano
+	0x002dfeca, // n0x0c20 c0x0000 (---------------)  + I shimotsuke
+	0x002cc1c6, // n0x0c21 c0x0000 (---------------)  + I shioya
+	0x0028750a, // n0x0c22 c0x0000 (---------------)  + I takanezawa
+	0x00338287, // n0x0c23 c0x0000 (---------------)  + I tochigi
+	0x00263285, // n0x0c24 c0x0000 (---------------)  + I tsuga
+	0x0021b205, // n0x0c25 c0x0000 (---------------)  + I ujiie
+	0x0023ca8a, // n0x0c26 c0x0000 (---------------)  + I utsunomiya
+	0x00267245, // n0x0c27 c0x0000 (---------------)  + I yaita
+	0x002113c6, // n0x0c28 c0x0000 (---------------)  + I aizumi
+	0x002a9f84, // n0x0c29 c0x0000 (---------------)  + I anan
+	0x002a05c6, // n0x0c2a c0x0000 (---------------)  + I ichiba
+	0x00300f45, // n0x0c2b c0x0000 (---------------)  + I itano
+	0x0021f946, // n0x0c2c c0x0000 (---------------)  + I kainan
+	0x002af30c, // n0x0c2d c0x0000 (---------------)  + I komatsushima
+	0x002bcaca, // n0x0c2e c0x0000 (---------------)  + I matsushige
+	0x0024d504, // n0x0c2f c0x0000 (---------------)  + I mima
+	0x00224906, // n0x0c30 c0x0000 (---------------)  + I minami
+	0x00284a87, // n0x0c31 c0x0000 (---------------)  + I miyoshi
+	0x002b4f44, // n0x0c32 c0x0000 (---------------)  + I mugi
+	0x0028fdc8, // n0x0c33 c0x0000 (---------------)  + I nakagawa
+	0x003424c6, // n0x0c34 c0x0000 (---------------)  + I naruto
+	0x002d6a09, // n0x0c35 c0x0000 (---------------)  + I sanagochi
+	0x002ce989, // n0x0c36 c0x0000 (---------------)  + I shishikui
+	0x002cb049, // n0x0c37 c0x0000 (---------------)  + I tokushima
+	0x00249906, // n0x0c38 c0x0000 (---------------)  + I wajiki
+	0x00222486, // n0x0c39 c0x0000 (---------------)  + I adachi
+	0x002ba307, // n0x0c3a c0x0000 (---------------)  + I akiruno
+	0x00235108, // n0x0c3b c0x0000 (---------------)  + I akishima
+	0x00222289, // n0x0c3c c0x0000 (---------------)  + I aogashima
+	0x002e0a07, // n0x0c3d c0x0000 (---------------)  + I arakawa
+	0x00219f06, // n0x0c3e c0x0000 (---------------)  + I bunkyo
+	0x00206e07, // n0x0c3f c0x0000 (---------------)  + I chiyoda
+	0x002b7b05, // n0x0c40 c0x0000 (---------------)  + I chofu
+	0x00231204, // n0x0c41 c0x0000 (---------------)  + I chuo
+	0x002b9ec7, // n0x0c42 c0x0000 (---------------)  + I edogawa
+	0x00338445, // n0x0c43 c0x0000 (---------------)  + I fuchu
+	0x00272985, // n0x0c44 c0x0000 (---------------)  + I fussa
+	0x00246547, // n0x0c45 c0x0000 (---------------)  + I hachijo
+	0x0025d888, // n0x0c46 c0x0000 (---------------)  + I hachioji
+	0x00277146, // n0x0c47 c0x0000 (---------------)  + I hamura
+	0x0028000d, // n0x0c48 c0x0000 (---------------)  + I higashikurume
+	0x00281c8f, // n0x0c49 c0x0000 (---------------)  + I higashimurayama
+	0x0028778d, // n0x0c4a c0x0000 (---------------)  + I higashiyamato
+	0x0021ba44, // n0x0c4b c0x0000 (---------------)  + I hino
+	0x002bae86, // n0x0c4c c0x0000 (---------------)  + I hinode
+	0x00313548, // n0x0c4d c0x0000 (---------------)  + I hinohara
+	0x002d7085, // n0x0c4e c0x0000 (---------------)  + I inagi
+	0x00274488, // n0x0c4f c0x0000 (---------------)  + I itabashi
+	0x002901ca, // n0x0c50 c0x0000 (---------------)  + I katsushika
+	0x00210704, // n0x0c51 c0x0000 (---------------)  + I kita
+	0x002cd746, // n0x0c52 c0x0000 (---------------)  + I kiyose
+	0x002d57c7, // n0x0c53 c0x0000 (---------------)  + I kodaira
+	0x00266647, // n0x0c54 c0x0000 (---------------)  + I koganei
+	0x00214549, // n0x0c55 c0x0000 (---------------)  + I kokubunji
+	0x002ba185, // n0x0c56 c0x0000 (---------------)  + I komae
+	0x0029a244, // n0x0c57 c0x0000 (---------------)  + I koto
+	0x0029b88a, // n0x0c58 c0x0000 (---------------)  + I kouzushima
+	0x002a1849, // n0x0c59 c0x0000 (---------------)  + I kunitachi
+	0x0027d087, // n0x0c5a c0x0000 (---------------)  + I machida
+	0x0022c306, // n0x0c5b c0x0000 (---------------)  + I meguro
+	0x002fbf06, // n0x0c5c c0x0000 (---------------)  + I minato
+	0x0030f1c6, // n0x0c5d c0x0000 (---------------)  + I mitaka
+	0x0023ff86, // n0x0c5e c0x0000 (---------------)  + I mizuho
+	0x002ba98f, // n0x0c5f c0x0000 (---------------)  + I musashimurayama
+	0x002bad49, // n0x0c60 c0x0000 (---------------)  + I musashino
+	0x00203ac6, // n0x0c61 c0x0000 (---------------)  + I nakano
+	0x00316546, // n0x0c62 c0x0000 (---------------)  + I nerima
+	0x00235b09, // n0x0c63 c0x0000 (---------------)  + I ogasawara
+	0x0029a887, // n0x0c64 c0x0000 (---------------)  + I okutama
+	0x00205403, // n0x0c65 c0x0000 (---------------)  + I ome
+	0x0021a186, // n0x0c66 c0x0000 (---------------)  + I oshima
+	0x00218003, // n0x0c67 c0x0000 (---------------)  + I ota
+	0x0031cfc8, // n0x0c68 c0x0000 (---------------)  + I setagaya
+	0x002d0b87, // n0x0c69 c0x0000 (---------------)  + I shibuya
+	0x00289609, // n0x0c6a c0x0000 (---------------)  + I shinagawa
+	0x002f68c8, // n0x0c6b c0x0000 (---------------)  + I shinjuku
+	0x00344008, // n0x0c6c c0x0000 (---------------)  + I suginami
+	0x00285146, // n0x0c6d c0x0000 (---------------)  + I sumida
+	0x00339c49, // n0x0c6e c0x0000 (---------------)  + I tachikawa
+	0x002476c5, // n0x0c6f c0x0000 (---------------)  + I taito
+	0x0022cb84, // n0x0c70 c0x0000 (---------------)  + I tama
+	0x002bc007, // n0x0c71 c0x0000 (---------------)  + I toshima
+	0x00259745, // n0x0c72 c0x0000 (---------------)  + I chizu
+	0x0021ba44, // n0x0c73 c0x0000 (---------------)  + I hino
+	0x00272548, // n0x0c74 c0x0000 (---------------)  + I kawahara
+	0x0020d504, // n0x0c75 c0x0000 (---------------)  + I koge
+	0x0029a5c7, // n0x0c76 c0x0000 (---------------)  + I kotoura
+	0x002c9b06, // n0x0c77 c0x0000 (---------------)  + I misasa
+	0x00257345, // n0x0c78 c0x0000 (---------------)  + I nanbu
+	0x002f4608, // n0x0c79 c0x0000 (---------------)  + I nichinan
+	0x002fbdcb, // n0x0c7a c0x0000 (---------------)  + I sakaiminato
+	0x0030e7c7, // n0x0c7b c0x0000 (---------------)  + I tottori
+	0x0023cd06, // n0x0c7c c0x0000 (---------------)  + I wakasa
+	0x002ad004, // n0x0c7d c0x0000 (---------------)  + I yazu
+	0x00200e86, // n0x0c7e c0x0000 (---------------)  + I yonago
+	0x002aad45, // n0x0c7f c0x0000 (---------------)  + I asahi
+	0x00338445, // n0x0c80 c0x0000 (---------------)  + I fuchu
+	0x0026cd49, // n0x0c81 c0x0000 (---------------)  + I fukumitsu
+	0x0026f609, // n0x0c82 c0x0000 (---------------)  + I funahashi
+	0x00249544, // n0x0c83 c0x0000 (---------------)  + I himi
+	0x00249585, // n0x0c84 c0x0000 (---------------)  + I imizu
+	0x00224945, // n0x0c85 c0x0000 (---------------)  + I inami
+	0x00273546, // n0x0c86 c0x0000 (---------------)  + I johana
+	0x002d4408, // n0x0c87 c0x0000 (---------------)  + I kamiichi
+	0x002a3486, // n0x0c88 c0x0000 (---------------)  + I kurobe
+	0x0021dc4b, // n0x0c89 c0x0000 (---------------)  + I nakaniikawa
+	0x003334ca, // n0x0c8a c0x0000 (---------------)  + I namerikawa
+	0x00299485, // n0x0c8b c0x0000 (---------------)  + I nanto
+	0x00278b46, // n0x0c8c c0x0000 (---------------)  + I nyuzen
+	0x00200fc5, // n0x0c8d c0x0000 (---------------)  + I oyabe
+	0x0022eb05, // n0x0c8e c0x0000 (---------------)  + I taira
+	0x002f5a47, // n0x0c8f c0x0000 (---------------)  + I takaoka
+	0x002237c8, // n0x0c90 c0x0000 (---------------)  + I tateyama
+	0x0027b7c4, // n0x0c91 c0x0000 (---------------)  + I toga
+	0x00276d06, // n0x0c92 c0x0000 (---------------)  + I tonami
+	0x00227106, // n0x0c93 c0x0000 (---------------)  + I toyama
+	0x00216687, // n0x0c94 c0x0000 (---------------)  + I unazuki
+	0x00231284, // n0x0c95 c0x0000 (---------------)  + I uozu
+	0x0026bf06, // n0x0c96 c0x0000 (---------------)  + I yamada
+	0x0022e345, // n0x0c97 c0x0000 (---------------)  + I arida
+	0x0022e349, // n0x0c98 c0x0000 (---------------)  + I aridagawa
+	0x002073c4, // n0x0c99 c0x0000 (---------------)  + I gobo
+	0x00312409, // n0x0c9a c0x0000 (---------------)  + I hashimoto
+	0x0026a8c6, // n0x0c9b c0x0000 (---------------)  + I hidaka
+	0x002a7008, // n0x0c9c c0x0000 (---------------)  + I hirogawa
+	0x00224945, // n0x0c9d c0x0000 (---------------)  + I inami
+	0x00325585, // n0x0c9e c0x0000 (---------------)  + I iwade
+	0x0021f946, // n0x0c9f c0x0000 (---------------)  + I kainan
+	0x002b6489, // n0x0ca0 c0x0000 (---------------)  + I kamitonda
+	0x00218489, // n0x0ca1 c0x0000 (---------------)  + I katsuragi
+	0x00213606, // n0x0ca2 c0x0000 (---------------)  + I kimino
+	0x0026dc48, // n0x0ca3 c0x0000 (---------------)  + I kinokawa
+	0x0024b948, // n0x0ca4 c0x0000 (---------------)  + I kitayama
+	0x0032ee04, // n0x0ca5 c0x0000 (---------------)  + I koya
+	0x0029d2c4, // n0x0ca6 c0x0000 (---------------)  + I koza
+	0x0029d2c8, // n0x0ca7 c0x0000 (---------------)  + I kozagawa
+	0x002ec2c8, // n0x0ca8 c0x0000 (---------------)  + I kudoyama
+	0x00291b89, // n0x0ca9 c0x0000 (---------------)  + I kushimoto
+	0x0028c846, // n0x0caa c0x0000 (---------------)  + I mihama
+	0x00239986, // n0x0cab c0x0000 (---------------)  + I misato
+	0x002e934d, // n0x0cac c0x0000 (---------------)  + I nachikatsuura
+	0x002eb786, // n0x0cad c0x0000 (---------------)  + I shingu
+	0x002cc489, // n0x0cae c0x0000 (---------------)  + I shirahama
+	0x002dd545, // n0x0caf c0x0000 (---------------)  + I taiji
+	0x002f2586, // n0x0cb0 c0x0000 (---------------)  + I tanabe
+	0x00339e08, // n0x0cb1 c0x0000 (---------------)  + I wakayama
+	0x00349085, // n0x0cb2 c0x0000 (---------------)  + I yuasa
+	0x002aafc4, // n0x0cb3 c0x0000 (---------------)  + I yura
+	0x002aad45, // n0x0cb4 c0x0000 (---------------)  + I asahi
+	0x0026f148, // n0x0cb5 c0x0000 (---------------)  + I funagata
+	0x00282d09, // n0x0cb6 c0x0000 (---------------)  + I higashine
+	0x00267f04, // n0x0cb7 c0x0000 (---------------)  + I iide
+	0x00253806, // n0x0cb8 c0x0000 (---------------)  + I kahoku
+	0x00207cca, // n0x0cb9 c0x0000 (---------------)  + I kaminoyama
+	0x002cba08, // n0x0cba c0x0000 (---------------)  + I kaneyama
+	0x00348449, // n0x0cbb c0x0000 (---------------)  + I kawanishi
+	0x002e318a, // n0x0cbc c0x0000 (---------------)  + I mamurogawa
+	0x0022d1c6, // n0x0cbd c0x0000 (---------------)  + I mikawa
+	0x00281e48, // n0x0cbe c0x0000 (---------------)  + I murayama
+	0x002dac85, // n0x0cbf c0x0000 (---------------)  + I nagai
+	0x002d2f08, // n0x0cc0 c0x0000 (---------------)  + I nakayama
+	0x002a0405, // n0x0cc1 c0x0000 (---------------)  + I nanyo
+	0x00219689, // n0x0cc2 c0x0000 (---------------)  + I nishikawa
+	0x0022c449, // n0x0cc3 c0x0000 (---------------)  + I obanazawa
+	0x00207502, // n0x0cc4 c0x0000 (---------------)  + I oe
+	0x0025eb85, // n0x0cc5 c0x0000 (---------------)  + I oguni
+	0x00268686, // n0x0cc6 c0x0000 (---------------)  + I ohkura
+	0x0026a807, // n0x0cc7 c0x0000 (---------------)  + I oishida
+	0x002617c5, // n0x0cc8 c0x0000 (---------------)  + I sagae
+	0x0024d8c6, // n0x0cc9 c0x0000 (---------------)  + I sakata
+	0x00349148, // n0x0cca c0x0000 (---------------)  + I sakegawa
+	0x002f5806, // n0x0ccb c0x0000 (---------------)  + I shinjo
+	0x002cd9c9, // n0x0ccc c0x0000 (---------------)  + I shirataka
+	0x00234406, // n0x0ccd c0x0000 (---------------)  + I shonai
+	0x00313dc8, // n0x0cce c0x0000 (---------------)  + I takahata
+	0x00292bc5, // n0x0ccf c0x0000 (---------------)  + I tendo
+	0x00275746, // n0x0cd0 c0x0000 (---------------)  + I tozawa
+	0x002a49c8, // n0x0cd1 c0x0000 (---------------)  + I tsuruoka
+	0x0026e848, // n0x0cd2 c0x0000 (---------------)  + I yamagata
+	0x00334388, // n0x0cd3 c0x0000 (---------------)  + I yamanobe
+	0x00254208, // n0x0cd4 c0x0000 (---------------)  + I yonezawa
+	0x00254844, // n0x0cd5 c0x0000 (---------------)  + I yuza
+	0x00231043, // n0x0cd6 c0x0000 (---------------)  + I abu
+	0x002cdc04, // n0x0cd7 c0x0000 (---------------)  + I hagi
+	0x002698c6, // n0x0cd8 c0x0000 (---------------)  + I hikari
+	0x002b7b44, // n0x0cd9 c0x0000 (---------------)  + I hofu
+	0x0030eac7, // n0x0cda c0x0000 (---------------)  + I iwakuni
+	0x002f8a49, // n0x0cdb c0x0000 (---------------)  + I kudamatsu
+	0x002ac585, // n0x0cdc c0x0000 (---------------)  + I mitou
+	0x00240746, // n0x0cdd c0x0000 (---------------)  + I nagato
+	0x0021a186, // n0x0cde c0x0000 (---------------)  + I oshima
+	0x002c388b, // n0x0cdf c0x0000 (---------------)  + I shimonoseki
+	0x002993c6, // n0x0ce0 c0x0000 (---------------)  + I shunan
+	0x002ec5c6, // n0x0ce1 c0x0000 (---------------)  + I tabuse
+	0x002eb208, // n0x0ce2 c0x0000 (---------------)  + I tokuyama
+	0x00262606, // n0x0ce3 c0x0000 (---------------)  + I toyota
+	0x00271943, // n0x0ce4 c0x0000 (---------------)  + I ube
+	0x002fa043, // n0x0ce5 c0x0000 (---------------)  + I yuu
+	0x00231204, // n0x0ce6 c0x0000 (---------------)  + I chuo
+	0x002d0b05, // n0x0ce7 c0x0000 (---------------)  + I doshi
+	0x0026d987, // n0x0ce8 c0x0000 (---------------)  + I fuefuki
+	0x00268088, // n0x0ce9 c0x0000 (---------------)  + I fujikawa
+	0x0026808f, // n0x0cea c0x0000 (---------------)  + I fujikawaguchiko
+	0x0026b20b, // n0x0ceb c0x0000 (---------------)  + I fujiyoshida
+	0x002d4208, // n0x0cec c0x0000 (---------------)  + I hayakawa
+	0x00253886, // n0x0ced c0x0000 (---------------)  + I hokuto
+	0x0023978e, // n0x0cee c0x0000 (---------------)  + I ichikawamisato
+	0x0021f943, // n0x0cef c0x0000 (---------------)  + I kai
+	0x002317c4, // n0x0cf0 c0x0000 (---------------)  + I kofu
+	0x00299345, // n0x0cf1 c0x0000 (---------------)  + I koshu
+	0x0029a0c6, // n0x0cf2 c0x0000 (---------------)  + I kosuge
+	0x0027aacb, // n0x0cf3 c0x0000 (---------------)  + I minami-alps
+	0x0027d806, // n0x0cf4 c0x0000 (---------------)  + I minobu
+	0x00226289, // n0x0cf5 c0x0000 (---------------)  + I nakamichi
+	0x00257345, // n0x0cf6 c0x0000 (---------------)  + I nanbu
+	0x00330208, // n0x0cf7 c0x0000 (---------------)  + I narusawa
+	0x0020c848, // n0x0cf8 c0x0000 (---------------)  + I nirasaki
+	0x0021834c, // n0x0cf9 c0x0000 (---------------)  + I nishikatsura
+	0x00288506, // n0x0cfa c0x0000 (---------------)  + I oshino
+	0x00264346, // n0x0cfb c0x0000 (---------------)  + I otsuki
+	0x002f6545, // n0x0cfc c0x0000 (---------------)  + I showa
+	0x00272dc8, // n0x0cfd c0x0000 (---------------)  + I tabayama
+	0x00217685, // n0x0cfe c0x0000 (---------------)  + I tsuru
+	0x0024f788, // n0x0cff c0x0000 (---------------)  + I uenohara
+	0x00287bca, // n0x0d00 c0x0000 (---------------)  + I yamanakako
+	0x00237909, // n0x0d01 c0x0000 (---------------)  + I yamanashi
+	0x00741484, // n0x0d02 c0x0001 (---------------)  ! I city
+	0x00204543, // n0x0d03 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d04 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d05 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0d06 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0d07 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d08 c0x0000 (---------------)  + I org
+	0x002f0f83, // n0x0d09 c0x0000 (---------------)  + I biz
+	0x00204543, // n0x0d0a c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d0b c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d0c c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0d0d c0x0000 (---------------)  + I info
+	0x0020e643, // n0x0d0e c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d0f c0x0000 (---------------)  + I org
+	0x00202a83, // n0x0d10 c0x0000 (---------------)  + I ass
+	0x00208704, // n0x0d11 c0x0000 (---------------)  + I asso
+	0x00204543, // n0x0d12 c0x0000 (---------------)  + I com
+	0x0023d144, // n0x0d13 c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x0d14 c0x0000 (---------------)  + I edu
+	0x00201984, // n0x0d15 c0x0000 (---------------)  + I gouv
+	0x0025bdc3, // n0x0d16 c0x0000 (---------------)  + I gov
+	0x002e2f87, // n0x0d17 c0x0000 (---------------)  + I medecin
+	0x00232703, // n0x0d18 c0x0000 (---------------)  + I mil
+	0x0020b903, // n0x0d19 c0x0000 (---------------)  + I nom
+	0x002ae688, // n0x0d1a c0x0000 (---------------)  + I notaires
+	0x002375c3, // n0x0d1b c0x0000 (---------------)  + I org
+	0x002bdfcb, // n0x0d1c c0x0000 (---------------)  + I pharmaciens
+	0x00261503, // n0x0d1d c0x0000 (---------------)  + I prd
+	0x00334e46, // n0x0d1e c0x0000 (---------------)  + I presse
+	0x0023bfc2, // n0x0d1f c0x0000 (---------------)  + I tm
+	0x002adc8b, // n0x0d20 c0x0000 (---------------)  + I veterinaire
+	0x002ce043, // n0x0d21 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d22 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d23 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d24 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0d25 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d26 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d27 c0x0000 (---------------)  + I gov
+	0x002375c3, // n0x0d28 c0x0000 (---------------)  + I org
+	0x002708c3, // n0x0d29 c0x0000 (---------------)  + I rep
+	0x0020f903, // n0x0d2a c0x0000 (---------------)  + I tra
+	0x00201602, // n0x0d2b c0x0000 (---------------)  + I ac
+	0x000330c8, // n0x0d2c c0x0000 (---------------)  +   blogspot
+	0x002371c5, // n0x0d2d c0x0000 (---------------)  + I busan
+	0x003020c8, // n0x0d2e c0x0000 (---------------)  + I chungbuk
+	0x0030dc48, // n0x0d2f c0x0000 (---------------)  + I chungnam
+	0x00200182, // n0x0d30 c0x0000 (---------------)  + I co
+	0x00229ec5, // n0x0d31 c0x0000 (---------------)  + I daegu
+	0x00290747, // n0x0d32 c0x0000 (---------------)  + I daejeon
+	0x002004c2, // n0x0d33 c0x0000 (---------------)  + I es
+	0x002264c7, // n0x0d34 c0x0000 (---------------)  + I gangwon
+	0x00200f82, // n0x0d35 c0x0000 (---------------)  + I go
+	0x00277b87, // n0x0d36 c0x0000 (---------------)  + I gwangju
+	0x002ec989, // n0x0d37 c0x0000 (---------------)  + I gyeongbuk
+	0x00339148, // n0x0d38 c0x0000 (---------------)  + I gyeonggi
+	0x00230c09, // n0x0d39 c0x0000 (---------------)  + I gyeongnam
+	0x00215e02, // n0x0d3a c0x0000 (---------------)  + I hs
+	0x00256587, // n0x0d3b c0x0000 (---------------)  + I incheon
+	0x002fed04, // n0x0d3c c0x0000 (---------------)  + I jeju
+	0x00290807, // n0x0d3d c0x0000 (---------------)  + I jeonbuk
+	0x003333c7, // n0x0d3e c0x0000 (---------------)  + I jeonnam
+	0x00325a42, // n0x0d3f c0x0000 (---------------)  + I kg
+	0x00232703, // n0x0d40 c0x0000 (---------------)  + I mil
+	0x002525c2, // n0x0d41 c0x0000 (---------------)  + I ms
+	0x00205c82, // n0x0d42 c0x0000 (---------------)  + I ne
+	0x00201c42, // n0x0d43 c0x0000 (---------------)  + I or
+	0x00213142, // n0x0d44 c0x0000 (---------------)  + I pe
+	0x002008c2, // n0x0d45 c0x0000 (---------------)  + I re
+	0x00203082, // n0x0d46 c0x0000 (---------------)  + I sc
+	0x002c3185, // n0x0d47 c0x0000 (---------------)  + I seoul
+	0x002f9e85, // n0x0d48 c0x0000 (---------------)  + I ulsan
+	0x00204543, // n0x0d49 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d4a c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d4b c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d4c c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d4d c0x0000 (---------------)  + I org
+	0x00204543, // n0x0d4e c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d4f c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d50 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0d51 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0d52 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d53 c0x0000 (---------------)  + I org
+	0x00000181, // n0x0d54 c0x0000 (---------------)  +   c
+	0x00204543, // n0x0d55 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d56 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d57 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0d58 c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x0d59 c0x0000 (---------------)  + I int
+	0x0020e643, // n0x0d5a c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d5b c0x0000 (---------------)  + I org
+	0x00213143, // n0x0d5c c0x0000 (---------------)  + I per
+	0x00204543, // n0x0d5d c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d5e c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d5f c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d60 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d61 c0x0000 (---------------)  + I org
+	0x00200182, // n0x0d62 c0x0000 (---------------)  + I co
+	0x00204543, // n0x0d63 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d64 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d65 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d66 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d67 c0x0000 (---------------)  + I org
+	0x002a83c4, // n0x0d68 c0x0000 (---------------)  + I assn
+	0x00204543, // n0x0d69 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d6a c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d6b c0x0000 (---------------)  + I gov
+	0x0024f403, // n0x0d6c c0x0000 (---------------)  + I grp
+	0x00293085, // n0x0d6d c0x0000 (---------------)  + I hotel
+	0x0020ca03, // n0x0d6e c0x0000 (---------------)  + I int
+	0x0031a303, // n0x0d6f c0x0000 (---------------)  + I ltd
+	0x0020e643, // n0x0d70 c0x0000 (---------------)  + I net
+	0x00201943, // n0x0d71 c0x0000 (---------------)  + I ngo
+	0x002375c3, // n0x0d72 c0x0000 (---------------)  + I org
+	0x00244943, // n0x0d73 c0x0000 (---------------)  + I sch
+	0x0029abc3, // n0x0d74 c0x0000 (---------------)  + I soc
+	0x0020dfc3, // n0x0d75 c0x0000 (---------------)  + I web
+	0x00204543, // n0x0d76 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d77 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d78 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d79 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d7a c0x0000 (---------------)  + I org
+	0x00200182, // n0x0d7b c0x0000 (---------------)  + I co
+	0x002375c3, // n0x0d7c c0x0000 (---------------)  + I org
+	0x0025bdc3, // n0x0d7d c0x0000 (---------------)  + I gov
+	0x0022ab03, // n0x0d7e c0x0000 (---------------)  + I asn
+	0x00204543, // n0x0d7f c0x0000 (---------------)  + I com
+	0x00297a84, // n0x0d80 c0x0000 (---------------)  + I conf
+	0x002ce043, // n0x0d81 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d82 c0x0000 (---------------)  + I gov
+	0x00201842, // n0x0d83 c0x0000 (---------------)  + I id
+	0x00232703, // n0x0d84 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x0d85 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d86 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0d87 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0d88 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d89 c0x0000 (---------------)  + I gov
+	0x00201842, // n0x0d8a c0x0000 (---------------)  + I id
+	0x0023ed03, // n0x0d8b c0x0000 (---------------)  + I med
+	0x0020e643, // n0x0d8c c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d8d c0x0000 (---------------)  + I org
+	0x002c3d83, // n0x0d8e c0x0000 (---------------)  + I plc
+	0x00244943, // n0x0d8f c0x0000 (---------------)  + I sch
+	0x00201602, // n0x0d90 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x0d91 c0x0000 (---------------)  + I co
+	0x0025bdc3, // n0x0d92 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0d93 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d94 c0x0000 (---------------)  + I org
+	0x00334e45, // n0x0d95 c0x0000 (---------------)  + I press
+	0x00208704, // n0x0d96 c0x0000 (---------------)  + I asso
+	0x0023bfc2, // n0x0d97 c0x0000 (---------------)  + I tm
+	0x00201602, // n0x0d98 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x0d99 c0x0000 (---------------)  + I co
+	0x002ce043, // n0x0d9a c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0d9b c0x0000 (---------------)  + I gov
+	0x00235f83, // n0x0d9c c0x0000 (---------------)  + I its
+	0x0020e643, // n0x0d9d c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0d9e c0x0000 (---------------)  + I org
+	0x002c7b04, // n0x0d9f c0x0000 (---------------)  + I priv
+	0x00204543, // n0x0da0 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0da1 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0da2 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x0da3 c0x0000 (---------------)  + I mil
+	0x0020b903, // n0x0da4 c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x0da5 c0x0000 (---------------)  + I org
+	0x00261503, // n0x0da6 c0x0000 (---------------)  + I prd
+	0x0023bfc2, // n0x0da7 c0x0000 (---------------)  + I tm
+	0x00204543, // n0x0da8 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0da9 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0daa c0x0000 (---------------)  + I gov
+	0x00206343, // n0x0dab c0x0000 (---------------)  + I inf
+	0x00230d84, // n0x0dac c0x0000 (---------------)  + I name
+	0x0020e643, // n0x0dad c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0dae c0x0000 (---------------)  + I org
+	0x00204543, // n0x0daf c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0db0 c0x0000 (---------------)  + I edu
+	0x00201984, // n0x0db1 c0x0000 (---------------)  + I gouv
+	0x0025bdc3, // n0x0db2 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0db3 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0db4 c0x0000 (---------------)  + I org
+	0x00334e46, // n0x0db5 c0x0000 (---------------)  + I presse
+	0x002ce043, // n0x0db6 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0db7 c0x0000 (---------------)  + I gov
+	0x002375c3, // n0x0db8 c0x0000 (---------------)  + I org
+	0x00204543, // n0x0db9 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x0dba c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0dbb c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0dbc c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0dbd c0x0000 (---------------)  + I org
+	0x000330c8, // n0x0dbe c0x0000 (---------------)  +   blogspot
+	0x0025bdc3, // n0x0dbf c0x0000 (---------------)  + I gov
+	0x00201602, // n0x0dc0 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x0dc1 c0x0000 (---------------)  + I co
+	0x00204543, // n0x0dc2 c0x0000 (---------------)  + I com
+	0x0025bdc3, // n0x0dc3 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x0dc4 c0x0000 (---------------)  + I net
+	0x00201c42, // n0x0dc5 c0x0000 (---------------)  + I or
+	0x002375c3, // n0x0dc6 c0x0000 (---------------)  + I org
+	0x0028d8c7, // n0x0dc7 c0x0000 (---------------)  + I academy
+	0x0023ab8b, // n0x0dc8 c0x0000 (---------------)  + I agriculture
+	0x00213903, // n0x0dc9 c0x0000 (---------------)  + I air
+	0x00213908, // n0x0dca c0x0000 (---------------)  + I airguard
+	0x00234e87, // n0x0dcb c0x0000 (---------------)  + I alabama
+	0x00208ac6, // n0x0dcc c0x0000 (---------------)  + I alaska
+	0x0023aec5, // n0x0dcd c0x0000 (---------------)  + I amber
+	0x002a9a09, // n0x0dce c0x0000 (---------------)  + I ambulance
+	0x0022fd88, // n0x0dcf c0x0000 (---------------)  + I american
+	0x0022fd89, // n0x0dd0 c0x0000 (---------------)  + I americana
+	0x002f3010, // n0x0dd1 c0x0000 (---------------)  + I americanantiques
+	0x0022fd8b, // n0x0dd2 c0x0000 (---------------)  + I americanart
+	0x002a9849, // n0x0dd3 c0x0000 (---------------)  + I amsterdam
+	0x002009c3, // n0x0dd4 c0x0000 (---------------)  + I and
+	0x00220d49, // n0x0dd5 c0x0000 (---------------)  + I annefrank
+	0x0023b306, // n0x0dd6 c0x0000 (---------------)  + I anthro
+	0x0023b30c, // n0x0dd7 c0x0000 (---------------)  + I anthropology
+	0x00237288, // n0x0dd8 c0x0000 (---------------)  + I antiques
+	0x00271488, // n0x0dd9 c0x0000 (---------------)  + I aquarium
+	0x002f8f49, // n0x0dda c0x0000 (---------------)  + I arboretum
+	0x002c54ce, // n0x0ddb c0x0000 (---------------)  + I archaeological
+	0x0031f58b, // n0x0ddc c0x0000 (---------------)  + I archaeology
+	0x0024430c, // n0x0ddd c0x0000 (---------------)  + I architecture
+	0x00210b03, // n0x0dde c0x0000 (---------------)  + I art
+	0x0022ff8c, // n0x0ddf c0x0000 (---------------)  + I artanddesign
+	0x0022c789, // n0x0de0 c0x0000 (---------------)  + I artcenter
+	0x00210b07, // n0x0de1 c0x0000 (---------------)  + I artdeco
+	0x002e29cc, // n0x0de2 c0x0000 (---------------)  + I arteducation
+	0x0023bc8a, // n0x0de3 c0x0000 (---------------)  + I artgallery
+	0x00235e04, // n0x0de4 c0x0000 (---------------)  + I arts
+	0x0026b78d, // n0x0de5 c0x0000 (---------------)  + I artsandcrafts
+	0x0022c648, // n0x0de6 c0x0000 (---------------)  + I asmatart
+	0x00202a8d, // n0x0de7 c0x0000 (---------------)  + I assassination
+	0x0020d086, // n0x0de8 c0x0000 (---------------)  + I assisi
+	0x002bda0b, // n0x0de9 c0x0000 (---------------)  + I association
+	0x00229989, // n0x0dea c0x0000 (---------------)  + I astronomy
+	0x002d94c7, // n0x0deb c0x0000 (---------------)  + I atlanta
+	0x00345886, // n0x0dec c0x0000 (---------------)  + I austin
+	0x002293c9, // n0x0ded c0x0000 (---------------)  + I australia
+	0x0022870a, // n0x0dee c0x0000 (---------------)  + I automotive
+	0x00232c08, // n0x0def c0x0000 (---------------)  + I aviation
+	0x0025c044, // n0x0df0 c0x0000 (---------------)  + I axis
+	0x00274c87, // n0x0df1 c0x0000 (---------------)  + I badajoz
+	0x002d0dc7, // n0x0df2 c0x0000 (---------------)  + I baghdad
+	0x00298484, // n0x0df3 c0x0000 (---------------)  + I bahn
+	0x002279c4, // n0x0df4 c0x0000 (---------------)  + I bale
+	0x002f0409, // n0x0df5 c0x0000 (---------------)  + I baltimore
+	0x0030c189, // n0x0df6 c0x0000 (---------------)  + I barcelona
+	0x00293308, // n0x0df7 c0x0000 (---------------)  + I baseball
+	0x00332c05, // n0x0df8 c0x0000 (---------------)  + I basel
+	0x00215d45, // n0x0df9 c0x0000 (---------------)  + I baths
+	0x00279846, // n0x0dfa c0x0000 (---------------)  + I bauern
+	0x0026b649, // n0x0dfb c0x0000 (---------------)  + I beauxarts
+	0x0033450d, // n0x0dfc c0x0000 (---------------)  + I beeldengeluid
+	0x0029c248, // n0x0dfd c0x0000 (---------------)  + I bellevue
+	0x00279747, // n0x0dfe c0x0000 (---------------)  + I bergbau
+	0x0023af48, // n0x0dff c0x0000 (---------------)  + I berkeley
+	0x00200006, // n0x0e00 c0x0000 (---------------)  + I berlin
+	0x00201084, // n0x0e01 c0x0000 (---------------)  + I bern
+	0x0020e405, // n0x0e02 c0x0000 (---------------)  + I bible
+	0x0020cd06, // n0x0e03 c0x0000 (---------------)  + I bilbao
+	0x0020f784, // n0x0e04 c0x0000 (---------------)  + I bill
+	0x00210a07, // n0x0e05 c0x0000 (---------------)  + I birdart
+	0x0021278a, // n0x0e06 c0x0000 (---------------)  + I birthplace
+	0x00216404, // n0x0e07 c0x0000 (---------------)  + I bonn
+	0x00217946, // n0x0e08 c0x0000 (---------------)  + I boston
+	0x00217fc9, // n0x0e09 c0x0000 (---------------)  + I botanical
+	0x00217fcf, // n0x0e0a c0x0000 (---------------)  + I botanicalgarden
+	0x0021938d, // n0x0e0b c0x0000 (---------------)  + I botanicgarden
+	0x00219b46, // n0x0e0c c0x0000 (---------------)  + I botany
+	0x0021b350, // n0x0e0d c0x0000 (---------------)  + I brandywinevalley
+	0x0021bdc6, // n0x0e0e c0x0000 (---------------)  + I brasil
+	0x0021e107, // n0x0e0f c0x0000 (---------------)  + I bristol
+	0x0021ebc7, // n0x0e10 c0x0000 (---------------)  + I british
+	0x0022078f, // n0x0e11 c0x0000 (---------------)  + I britishcolumbia
+	0x00221a09, // n0x0e12 c0x0000 (---------------)  + I broadcast
+	0x00224686, // n0x0e13 c0x0000 (---------------)  + I brunel
+	0x00225207, // n0x0e14 c0x0000 (---------------)  + I brussel
+	0x00225208, // n0x0e15 c0x0000 (---------------)  + I brussels
+	0x00225949, // n0x0e16 c0x0000 (---------------)  + I bruxelles
+	0x00202848, // n0x0e17 c0x0000 (---------------)  + I building
+	0x002c2307, // n0x0e18 c0x0000 (---------------)  + I burghof
+	0x002371c3, // n0x0e19 c0x0000 (---------------)  + I bus
+	0x0027d586, // n0x0e1a c0x0000 (---------------)  + I bushey
+	0x00300608, // n0x0e1b c0x0000 (---------------)  + I cadaques
+	0x0020f50a, // n0x0e1c c0x0000 (---------------)  + I california
+	0x0023f889, // n0x0e1d c0x0000 (---------------)  + I cambridge
+	0x00211d43, // n0x0e1e c0x0000 (---------------)  + I can
+	0x00298986, // n0x0e1f c0x0000 (---------------)  + I canada
+	0x00276b4a, // n0x0e20 c0x0000 (---------------)  + I capebreton
+	0x002deac7, // n0x0e21 c0x0000 (---------------)  + I carrier
+	0x002e280a, // n0x0e22 c0x0000 (---------------)  + I cartoonart
+	0x0022f1ce, // n0x0e23 c0x0000 (---------------)  + I casadelamoneda
+	0x00221b46, // n0x0e24 c0x0000 (---------------)  + I castle
+	0x00336147, // n0x0e25 c0x0000 (---------------)  + I castres
+	0x00216946, // n0x0e26 c0x0000 (---------------)  + I celtic
+	0x0022c846, // n0x0e27 c0x0000 (---------------)  + I center
+	0x002f968b, // n0x0e28 c0x0000 (---------------)  + I chattanooga
+	0x002fee8a, // n0x0e29 c0x0000 (---------------)  + I cheltenham
+	0x0024498d, // n0x0e2a c0x0000 (---------------)  + I chesapeakebay
+	0x00222547, // n0x0e2b c0x0000 (---------------)  + I chicago
+	0x00221388, // n0x0e2c c0x0000 (---------------)  + I children
+	0x00221389, // n0x0e2d c0x0000 (---------------)  + I childrens
+	0x0022138f, // n0x0e2e c0x0000 (---------------)  + I childrensgarden
+	0x0029160c, // n0x0e2f c0x0000 (---------------)  + I chiropractic
+	0x002a75c9, // n0x0e30 c0x0000 (---------------)  + I chocolate
+	0x00324f0e, // n0x0e31 c0x0000 (---------------)  + I christiansburg
+	0x002b554a, // n0x0e32 c0x0000 (---------------)  + I cincinnati
+	0x002e3086, // n0x0e33 c0x0000 (---------------)  + I cinema
+	0x0032c106, // n0x0e34 c0x0000 (---------------)  + I circus
+	0x002333cc, // n0x0e35 c0x0000 (---------------)  + I civilisation
+	0x002336cc, // n0x0e36 c0x0000 (---------------)  + I civilization
+	0x002339c8, // n0x0e37 c0x0000 (---------------)  + I civilwar
+	0x00234207, // n0x0e38 c0x0000 (---------------)  + I clinton
+	0x0022c085, // n0x0e39 c0x0000 (---------------)  + I clock
+	0x00222ac4, // n0x0e3a c0x0000 (---------------)  + I coal
+	0x0030a98e, // n0x0e3b c0x0000 (---------------)  + I coastaldefence
+	0x00210c44, // n0x0e3c c0x0000 (---------------)  + I cody
+	0x002b75c7, // n0x0e3d c0x0000 (---------------)  + I coldwar
+	0x00253d8a, // n0x0e3e c0x0000 (---------------)  + I collection
+	0x00347b94, // n0x0e3f c0x0000 (---------------)  + I colonialwilliamsburg
+	0x0020e94f, // n0x0e40 c0x0000 (---------------)  + I coloradoplateau
+	0x00220948, // n0x0e41 c0x0000 (---------------)  + I columbia
+	0x00237088, // n0x0e42 c0x0000 (---------------)  + I columbus
+	0x00285e4d, // n0x0e43 c0x0000 (---------------)  + I communication
+	0x00285e4e, // n0x0e44 c0x0000 (---------------)  + I communications
+	0x002ac849, // n0x0e45 c0x0000 (---------------)  + I community
+	0x00238308, // n0x0e46 c0x0000 (---------------)  + I computer
+	0x0023830f, // n0x0e47 c0x0000 (---------------)  + I computerhistory
+	0x0023b98c, // n0x0e48 c0x0000 (---------------)  + I contemporary
+	0x0023b98f, // n0x0e49 c0x0000 (---------------)  + I contemporaryart
+	0x0023c247, // n0x0e4a c0x0000 (---------------)  + I convent
+	0x0023d64a, // n0x0e4b c0x0000 (---------------)  + I copenhagen
+	0x0023db0b, // n0x0e4c c0x0000 (---------------)  + I corporation
+	0x0023ddc8, // n0x0e4d c0x0000 (---------------)  + I corvette
+	0x0023ebc7, // n0x0e4e c0x0000 (---------------)  + I costume
+	0x0032c28d, // n0x0e4f c0x0000 (---------------)  + I countryestate
+	0x0023f106, // n0x0e50 c0x0000 (---------------)  + I county
+	0x0026b946, // n0x0e51 c0x0000 (---------------)  + I crafts
+	0x0023fc09, // n0x0e52 c0x0000 (---------------)  + I cranbrook
+	0x002adf48, // n0x0e53 c0x0000 (---------------)  + I creation
+	0x00241188, // n0x0e54 c0x0000 (---------------)  + I cultural
+	0x0024118e, // n0x0e55 c0x0000 (---------------)  + I culturalcenter
+	0x0023ac87, // n0x0e56 c0x0000 (---------------)  + I culture
+	0x002be705, // n0x0e57 c0x0000 (---------------)  + I cyber
+	0x00241985, // n0x0e58 c0x0000 (---------------)  + I cymru
+	0x002280c4, // n0x0e59 c0x0000 (---------------)  + I dali
+	0x00261b06, // n0x0e5a c0x0000 (---------------)  + I dallas
+	0x00293208, // n0x0e5b c0x0000 (---------------)  + I database
+	0x00284643, // n0x0e5c c0x0000 (---------------)  + I ddr
+	0x0023c60e, // n0x0e5d c0x0000 (---------------)  + I decorativearts
+	0x0032c648, // n0x0e5e c0x0000 (---------------)  + I delaware
+	0x0026ac4b, // n0x0e5f c0x0000 (---------------)  + I delmenhorst
+	0x0022acc7, // n0x0e60 c0x0000 (---------------)  + I denmark
+	0x00325645, // n0x0e61 c0x0000 (---------------)  + I depot
+	0x00227746, // n0x0e62 c0x0000 (---------------)  + I design
+	0x002939c7, // n0x0e63 c0x0000 (---------------)  + I detroit
+	0x002b2b48, // n0x0e64 c0x0000 (---------------)  + I dinosaur
+	0x0022cec9, // n0x0e65 c0x0000 (---------------)  + I discovery
+	0x0021d3c5, // n0x0e66 c0x0000 (---------------)  + I dolls
+	0x00272248, // n0x0e67 c0x0000 (---------------)  + I donostia
+	0x002ddec6, // n0x0e68 c0x0000 (---------------)  + I durham
+	0x0027694a, // n0x0e69 c0x0000 (---------------)  + I eastafrica
+	0x0030a889, // n0x0e6a c0x0000 (---------------)  + I eastcoast
+	0x002e2a89, // n0x0e6b c0x0000 (---------------)  + I education
+	0x002e2a8b, // n0x0e6c c0x0000 (---------------)  + I educational
+	0x002013c8, // n0x0e6d c0x0000 (---------------)  + I egyptian
+	0x00298349, // n0x0e6e c0x0000 (---------------)  + I eisenbahn
+	0x00332cc6, // n0x0e6f c0x0000 (---------------)  + I elburg
+	0x0025b84a, // n0x0e70 c0x0000 (---------------)  + I elvendrell
+	0x00300c4a, // n0x0e71 c0x0000 (---------------)  + I embroidery
+	0x0031aa4c, // n0x0e72 c0x0000 (---------------)  + I encyclopedic
+	0x0022e007, // n0x0e73 c0x0000 (---------------)  + I england
+	0x00338f4a, // n0x0e74 c0x0000 (---------------)  + I entomology
+	0x002d7d0b, // n0x0e75 c0x0000 (---------------)  + I environment
+	0x002d7d19, // n0x0e76 c0x0000 (---------------)  + I environmentalconservation
+	0x0031b208, // n0x0e77 c0x0000 (---------------)  + I epilepsy
+	0x00334ec5, // n0x0e78 c0x0000 (---------------)  + I essex
+	0x002b0086, // n0x0e79 c0x0000 (---------------)  + I estate
+	0x00230a49, // n0x0e7a c0x0000 (---------------)  + I ethnology
+	0x00223486, // n0x0e7b c0x0000 (---------------)  + I exeter
+	0x0033378a, // n0x0e7c c0x0000 (---------------)  + I exhibition
+	0x002fdc46, // n0x0e7d c0x0000 (---------------)  + I family
+	0x002b49c4, // n0x0e7e c0x0000 (---------------)  + I farm
+	0x0032bb4d, // n0x0e7f c0x0000 (---------------)  + I farmequipment
+	0x002b49c7, // n0x0e80 c0x0000 (---------------)  + I farmers
+	0x003473c9, // n0x0e81 c0x0000 (---------------)  + I farmstead
+	0x00241bc5, // n0x0e82 c0x0000 (---------------)  + I field
+	0x00241d08, // n0x0e83 c0x0000 (---------------)  + I figueres
+	0x002422c9, // n0x0e84 c0x0000 (---------------)  + I filatelia
+	0x00242504, // n0x0e85 c0x0000 (---------------)  + I film
+	0x00242907, // n0x0e86 c0x0000 (---------------)  + I fineart
+	0x00242908, // n0x0e87 c0x0000 (---------------)  + I finearts
+	0x00242dc7, // n0x0e88 c0x0000 (---------------)  + I finland
+	0x00316a48, // n0x0e89 c0x0000 (---------------)  + I flanders
+	0x00246007, // n0x0e8a c0x0000 (---------------)  + I florida
+	0x002482c5, // n0x0e8b c0x0000 (---------------)  + I force
+	0x0024c20c, // n0x0e8c c0x0000 (---------------)  + I fortmissoula
+	0x0024cc09, // n0x0e8d c0x0000 (---------------)  + I fortworth
+	0x002bcf0a, // n0x0e8e c0x0000 (---------------)  + I foundation
+	0x0032af89, // n0x0e8f c0x0000 (---------------)  + I francaise
+	0x00220e49, // n0x0e90 c0x0000 (---------------)  + I frankfurt
+	0x0031630c, // n0x0e91 c0x0000 (---------------)  + I franziskaner
+	0x00200c0b, // n0x0e92 c0x0000 (---------------)  + I freemasonry
+	0x0024f988, // n0x0e93 c0x0000 (---------------)  + I freiburg
+	0x002503c8, // n0x0e94 c0x0000 (---------------)  + I fribourg
+	0x00250884, // n0x0e95 c0x0000 (---------------)  + I frog
+	0x0026fe88, // n0x0e96 c0x0000 (---------------)  + I fundacio
+	0x00270709, // n0x0e97 c0x0000 (---------------)  + I furniture
+	0x0023bd47, // n0x0e98 c0x0000 (---------------)  + I gallery
+	0x00218206, // n0x0e99 c0x0000 (---------------)  + I garden
+	0x002920c7, // n0x0e9a c0x0000 (---------------)  + I gateway
+	0x00222d49, // n0x0e9b c0x0000 (---------------)  + I geelvinck
+	0x0020f30b, // n0x0e9c c0x0000 (---------------)  + I gemological
+	0x00321ec7, // n0x0e9d c0x0000 (---------------)  + I geology
+	0x0023fa47, // n0x0e9e c0x0000 (---------------)  + I georgia
+	0x00211187, // n0x0e9f c0x0000 (---------------)  + I giessen
+	0x00202a04, // n0x0ea0 c0x0000 (---------------)  + I glas
+	0x00202a05, // n0x0ea1 c0x0000 (---------------)  + I glass
+	0x002a3c05, // n0x0ea2 c0x0000 (---------------)  + I gorge
+	0x002f42cb, // n0x0ea3 c0x0000 (---------------)  + I grandrapids
+	0x0032e8c4, // n0x0ea4 c0x0000 (---------------)  + I graz
+	0x002aecc8, // n0x0ea5 c0x0000 (---------------)  + I guernsey
+	0x00271c4a, // n0x0ea6 c0x0000 (---------------)  + I halloffame
+	0x002ddf87, // n0x0ea7 c0x0000 (---------------)  + I hamburg
+	0x00328687, // n0x0ea8 c0x0000 (---------------)  + I handson
+	0x0027a352, // n0x0ea9 c0x0000 (---------------)  + I harvestcelebration
+	0x0027cc86, // n0x0eaa c0x0000 (---------------)  + I hawaii
+	0x00246406, // n0x0eab c0x0000 (---------------)  + I health
+	0x002d774e, // n0x0eac c0x0000 (---------------)  + I heimatunduhren
+	0x002ece86, // n0x0ead c0x0000 (---------------)  + I hellas
+	0x002f1d88, // n0x0eae c0x0000 (---------------)  + I helsinki
+	0x002e77cf, // n0x0eaf c0x0000 (---------------)  + I hembygdsforbund
+	0x002d8508, // n0x0eb0 c0x0000 (---------------)  + I heritage
+	0x00276388, // n0x0eb1 c0x0000 (---------------)  + I histoire
+	0x002ca00a, // n0x0eb2 c0x0000 (---------------)  + I historical
+	0x002ca011, // n0x0eb3 c0x0000 (---------------)  + I historicalsociety
+	0x0028aa8e, // n0x0eb4 c0x0000 (---------------)  + I historichouses
+	0x0028048a, // n0x0eb5 c0x0000 (---------------)  + I historisch
+	0x0028048c, // n0x0eb6 c0x0000 (---------------)  + I historisches
+	0x00238507, // n0x0eb7 c0x0000 (---------------)  + I history
+	0x00238510, // n0x0eb8 c0x0000 (---------------)  + I historyofscience
+	0x0020c208, // n0x0eb9 c0x0000 (---------------)  + I horology
+	0x0028ac85, // n0x0eba c0x0000 (---------------)  + I house
+	0x002947ca, // n0x0ebb c0x0000 (---------------)  + I humanities
+	0x0020f7cc, // n0x0ebc c0x0000 (---------------)  + I illustration
+	0x002ce40d, // n0x0ebd c0x0000 (---------------)  + I imageandsound
+	0x00201f06, // n0x0ebe c0x0000 (---------------)  + I indian
+	0x0033e3c7, // n0x0ebf c0x0000 (---------------)  + I indiana
+	0x0033e3cc, // n0x0ec0 c0x0000 (---------------)  + I indianapolis
+	0x00201f0c, // n0x0ec1 c0x0000 (---------------)  + I indianmarket
+	0x0020ca0c, // n0x0ec2 c0x0000 (---------------)  + I intelligence
+	0x002a5a8b, // n0x0ec3 c0x0000 (---------------)  + I interactive
+	0x00271404, // n0x0ec4 c0x0000 (---------------)  + I iraq
+	0x0021c484, // n0x0ec5 c0x0000 (---------------)  + I iron
+	0x00317849, // n0x0ec6 c0x0000 (---------------)  + I isleofman
+	0x002dd9c7, // n0x0ec7 c0x0000 (---------------)  + I jamison
+	0x00248c89, // n0x0ec8 c0x0000 (---------------)  + I jefferson
+	0x002da649, // n0x0ec9 c0x0000 (---------------)  + I jerusalem
+	0x0030d787, // n0x0eca c0x0000 (---------------)  + I jewelry
+	0x0033ef86, // n0x0ecb c0x0000 (---------------)  + I jewish
+	0x0033ef89, // n0x0ecc c0x0000 (---------------)  + I jewishart
+	0x00295a43, // n0x0ecd c0x0000 (---------------)  + I jfk
+	0x0020bb8a, // n0x0ece c0x0000 (---------------)  + I journalism
+	0x002355c7, // n0x0ecf c0x0000 (---------------)  + I judaica
+	0x00208f8b, // n0x0ed0 c0x0000 (---------------)  + I judygarland
+	0x0024480a, // n0x0ed1 c0x0000 (---------------)  + I juedisches
+	0x002fed84, // n0x0ed2 c0x0000 (---------------)  + I juif
+	0x0030a086, // n0x0ed3 c0x0000 (---------------)  + I karate
+	0x00269949, // n0x0ed4 c0x0000 (---------------)  + I karikatur
+	0x00201804, // n0x0ed5 c0x0000 (---------------)  + I kids
+	0x0020a90a, // n0x0ed6 c0x0000 (---------------)  + I koebenhavn
+	0x0023d005, // n0x0ed7 c0x0000 (---------------)  + I koeln
+	0x002a2b45, // n0x0ed8 c0x0000 (---------------)  + I kunst
+	0x002a2b4d, // n0x0ed9 c0x0000 (---------------)  + I kunstsammlung
+	0x002a2e8e, // n0x0eda c0x0000 (---------------)  + I kunstunddesign
+	0x002ea845, // n0x0edb c0x0000 (---------------)  + I labor
+	0x00330646, // n0x0edc c0x0000 (---------------)  + I labour
+	0x0024fc47, // n0x0edd c0x0000 (---------------)  + I lajolla
+	0x0027884a, // n0x0ede c0x0000 (---------------)  + I lancashire
+	0x00203186, // n0x0edf c0x0000 (---------------)  + I landes
+	0x002ecd84, // n0x0ee0 c0x0000 (---------------)  + I lans
+	0x002d3787, // n0x0ee1 c0x0000 (---------------)  + I larsson
+	0x0023484b, // n0x0ee2 c0x0000 (---------------)  + I lewismiller
+	0x002000c7, // n0x0ee3 c0x0000 (---------------)  + I lincoln
+	0x002f08c4, // n0x0ee4 c0x0000 (---------------)  + I linz
+	0x002a6506, // n0x0ee5 c0x0000 (---------------)  + I living
+	0x002a650d, // n0x0ee6 c0x0000 (---------------)  + I livinghistory
+	0x0025344c, // n0x0ee7 c0x0000 (---------------)  + I localhistory
+	0x002af0c6, // n0x0ee8 c0x0000 (---------------)  + I london
+	0x00322b0a, // n0x0ee9 c0x0000 (---------------)  + I losangeles
+	0x00334c86, // n0x0eea c0x0000 (---------------)  + I louvre
+	0x0031c708, // n0x0eeb c0x0000 (---------------)  + I loyalist
+	0x002191c7, // n0x0eec c0x0000 (---------------)  + I lucerne
+	0x0025c5ca, // n0x0eed c0x0000 (---------------)  + I luxembourg
+	0x002b8186, // n0x0eee c0x0000 (---------------)  + I luzern
+	0x00222443, // n0x0eef c0x0000 (---------------)  + I mad
+	0x00261f06, // n0x0ef0 c0x0000 (---------------)  + I madrid
+	0x00300488, // n0x0ef1 c0x0000 (---------------)  + I mallorca
+	0x0028330a, // n0x0ef2 c0x0000 (---------------)  + I manchester
+	0x00268d47, // n0x0ef3 c0x0000 (---------------)  + I mansion
+	0x00268d48, // n0x0ef4 c0x0000 (---------------)  + I mansions
+	0x003332c4, // n0x0ef5 c0x0000 (---------------)  + I manx
+	0x00264707, // n0x0ef6 c0x0000 (---------------)  + I marburg
+	0x00251e48, // n0x0ef7 c0x0000 (---------------)  + I maritime
+	0x00237fc8, // n0x0ef8 c0x0000 (---------------)  + I maritimo
+	0x002811c8, // n0x0ef9 c0x0000 (---------------)  + I maryland
+	0x00288e0a, // n0x0efa c0x0000 (---------------)  + I marylhurst
+	0x0023ed05, // n0x0efb c0x0000 (---------------)  + I media
+	0x00247307, // n0x0efc c0x0000 (---------------)  + I medical
+	0x002802d3, // n0x0efd c0x0000 (---------------)  + I medizinhistorisches
+	0x002c0286, // n0x0efe c0x0000 (---------------)  + I meeres
+	0x00322948, // n0x0eff c0x0000 (---------------)  + I memorial
+	0x002da289, // n0x0f00 c0x0000 (---------------)  + I mesaverde
+	0x00226388, // n0x0f01 c0x0000 (---------------)  + I michigan
+	0x002851cb, // n0x0f02 c0x0000 (---------------)  + I midatlantic
+	0x00344388, // n0x0f03 c0x0000 (---------------)  + I military
+	0x00232704, // n0x0f04 c0x0000 (---------------)  + I mill
+	0x002e5986, // n0x0f05 c0x0000 (---------------)  + I miners
+	0x0028f2c6, // n0x0f06 c0x0000 (---------------)  + I mining
+	0x002bc649, // n0x0f07 c0x0000 (---------------)  + I minnesota
+	0x002ab707, // n0x0f08 c0x0000 (---------------)  + I missile
+	0x0024c308, // n0x0f09 c0x0000 (---------------)  + I missoula
+	0x0028a906, // n0x0f0a c0x0000 (---------------)  + I modern
+	0x00285984, // n0x0f0b c0x0000 (---------------)  + I moma
+	0x002ae145, // n0x0f0c c0x0000 (---------------)  + I money
+	0x002ae3c8, // n0x0f0d c0x0000 (---------------)  + I monmouth
+	0x002aeeca, // n0x0f0e c0x0000 (---------------)  + I monticello
+	0x002afe88, // n0x0f0f c0x0000 (---------------)  + I montreal
+	0x002b2ec6, // n0x0f10 c0x0000 (---------------)  + I moscow
+	0x00283a0a, // n0x0f11 c0x0000 (---------------)  + I motorcycle
+	0x0023a588, // n0x0f12 c0x0000 (---------------)  + I muenchen
+	0x002b4d48, // n0x0f13 c0x0000 (---------------)  + I muenster
+	0x002b8548, // n0x0f14 c0x0000 (---------------)  + I mulhouse
+	0x002b8d06, // n0x0f15 c0x0000 (---------------)  + I muncie
+	0x002bb486, // n0x0f16 c0x0000 (---------------)  + I museet
+	0x002f390c, // n0x0f17 c0x0000 (---------------)  + I museumcenter
+	0x002bb890, // n0x0f18 c0x0000 (---------------)  + I museumvereniging
+	0x00288885, // n0x0f19 c0x0000 (---------------)  + I music
+	0x00202c48, // n0x0f1a c0x0000 (---------------)  + I national
+	0x002b56d0, // n0x0f1b c0x0000 (---------------)  + I nationalfirearms
+	0x002d8310, // n0x0f1c c0x0000 (---------------)  + I nationalheritage
+	0x002f2e8e, // n0x0f1d c0x0000 (---------------)  + I nativeamerican
+	0x002f358e, // n0x0f1e c0x0000 (---------------)  + I naturalhistory
+	0x002f3594, // n0x0f1f c0x0000 (---------------)  + I naturalhistorymuseum
+	0x00319c8f, // n0x0f20 c0x0000 (---------------)  + I naturalsciences
+	0x0031a046, // n0x0f21 c0x0000 (---------------)  + I nature
+	0x0031b8d1, // n0x0f22 c0x0000 (---------------)  + I naturhistorisches
+	0x003339d3, // n0x0f23 c0x0000 (---------------)  + I natuurwetenschappen
+	0x00333e48, // n0x0f24 c0x0000 (---------------)  + I naumburg
+	0x00200245, // n0x0f25 c0x0000 (---------------)  + I naval
+	0x002edf08, // n0x0f26 c0x0000 (---------------)  + I nebraska
+	0x00232105, // n0x0f27 c0x0000 (---------------)  + I neues
+	0x002e150c, // n0x0f28 c0x0000 (---------------)  + I newhampshire
+	0x00226ac9, // n0x0f29 c0x0000 (---------------)  + I newjersey
+	0x002b7409, // n0x0f2a c0x0000 (---------------)  + I newmexico
+	0x00291e47, // n0x0f2b c0x0000 (---------------)  + I newport
+	0x002fd049, // n0x0f2c c0x0000 (---------------)  + I newspaper
+	0x0023e5c7, // n0x0f2d c0x0000 (---------------)  + I newyork
+	0x002ccec6, // n0x0f2e c0x0000 (---------------)  + I niepce
+	0x0020e207, // n0x0f2f c0x0000 (---------------)  + I norfolk
+	0x002ba445, // n0x0f30 c0x0000 (---------------)  + I north
+	0x00232dc3, // n0x0f31 c0x0000 (---------------)  + I nrw
+	0x00204b49, // n0x0f32 c0x0000 (---------------)  + I nuernberg
+	0x00279989, // n0x0f33 c0x0000 (---------------)  + I nuremberg
+	0x00219c43, // n0x0f34 c0x0000 (---------------)  + I nyc
+	0x002c4144, // n0x0f35 c0x0000 (---------------)  + I nyny
+	0x0033560d, // n0x0f36 c0x0000 (---------------)  + I oceanographic
+	0x00335d0f, // n0x0f37 c0x0000 (---------------)  + I oceanographique
+	0x00299e85, // n0x0f38 c0x0000 (---------------)  + I omaha
+	0x002ede06, // n0x0f39 c0x0000 (---------------)  + I online
+	0x0028a087, // n0x0f3a c0x0000 (---------------)  + I ontario
+	0x002ff2c7, // n0x0f3b c0x0000 (---------------)  + I openair
+	0x002d1d86, // n0x0f3c c0x0000 (---------------)  + I oregon
+	0x002d1d8b, // n0x0f3d c0x0000 (---------------)  + I oregontrail
+	0x0028bd05, // n0x0f3e c0x0000 (---------------)  + I otago
+	0x00204906, // n0x0f3f c0x0000 (---------------)  + I oxford
+	0x002600c7, // n0x0f40 c0x0000 (---------------)  + I pacific
+	0x0021ab49, // n0x0f41 c0x0000 (---------------)  + I paderborn
+	0x0031b0c6, // n0x0f42 c0x0000 (---------------)  + I palace
+	0x00209405, // n0x0f43 c0x0000 (---------------)  + I paleo
+	0x0029108b, // n0x0f44 c0x0000 (---------------)  + I palmsprings
+	0x0023c0c6, // n0x0f45 c0x0000 (---------------)  + I panama
+	0x002fb2c5, // n0x0f46 c0x0000 (---------------)  + I paris
+	0x002bd188, // n0x0f47 c0x0000 (---------------)  + I pasadena
+	0x002be588, // n0x0f48 c0x0000 (---------------)  + I pharmacy
+	0x002bee8c, // n0x0f49 c0x0000 (---------------)  + I philadelphia
+	0x002bee90, // n0x0f4a c0x0000 (---------------)  + I philadelphiaarea
+	0x002bf549, // n0x0f4b c0x0000 (---------------)  + I philately
+	0x002bf787, // n0x0f4c c0x0000 (---------------)  + I phoenix
+	0x002c080b, // n0x0f4d c0x0000 (---------------)  + I photography
+	0x002c1186, // n0x0f4e c0x0000 (---------------)  + I pilots
+	0x002c21ca, // n0x0f4f c0x0000 (---------------)  + I pittsburgh
+	0x002c2acb, // n0x0f50 c0x0000 (---------------)  + I planetarium
+	0x002c34ca, // n0x0f51 c0x0000 (---------------)  + I plantation
+	0x002c3746, // n0x0f52 c0x0000 (---------------)  + I plants
+	0x002c3c45, // n0x0f53 c0x0000 (---------------)  + I plaza
+	0x00234d86, // n0x0f54 c0x0000 (---------------)  + I portal
+	0x002a4308, // n0x0f55 c0x0000 (---------------)  + I portland
+	0x00291f0a, // n0x0f56 c0x0000 (---------------)  + I portlligat
+	0x00285adc, // n0x0f57 c0x0000 (---------------)  + I posts-and-telecommunications
+	0x002c678c, // n0x0f58 c0x0000 (---------------)  + I preservation
+	0x002c6a88, // n0x0f59 c0x0000 (---------------)  + I presidio
+	0x00334e45, // n0x0f5a c0x0000 (---------------)  + I press
+	0x002c8407, // n0x0f5b c0x0000 (---------------)  + I project
+	0x00298846, // n0x0f5c c0x0000 (---------------)  + I public
+	0x00346e45, // n0x0f5d c0x0000 (---------------)  + I pubol
+	0x00336006, // n0x0f5e c0x0000 (---------------)  + I quebec
+	0x002d1f48, // n0x0f5f c0x0000 (---------------)  + I railroad
+	0x003292c7, // n0x0f60 c0x0000 (---------------)  + I railway
+	0x002c53c8, // n0x0f61 c0x0000 (---------------)  + I research
+	0x0033624a, // n0x0f62 c0x0000 (---------------)  + I resistance
+	0x0032888c, // n0x0f63 c0x0000 (---------------)  + I riodejaneiro
+	0x00320b49, // n0x0f64 c0x0000 (---------------)  + I rochester
+	0x002408c7, // n0x0f65 c0x0000 (---------------)  + I rockart
+	0x00299e44, // n0x0f66 c0x0000 (---------------)  + I roma
+	0x00241a46, // n0x0f67 c0x0000 (---------------)  + I russia
+	0x00275f0a, // n0x0f68 c0x0000 (---------------)  + I saintlouis
+	0x002da745, // n0x0f69 c0x0000 (---------------)  + I salem
+	0x0031bccc, // n0x0f6a c0x0000 (---------------)  + I salvadordali
+	0x003225c8, // n0x0f6b c0x0000 (---------------)  + I salzburg
+	0x002b6088, // n0x0f6c c0x0000 (---------------)  + I sandiego
+	0x0034790c, // n0x0f6d c0x0000 (---------------)  + I sanfrancisco
+	0x00209b0c, // n0x0f6e c0x0000 (---------------)  + I santabarbara
+	0x00213d49, // n0x0f6f c0x0000 (---------------)  + I santacruz
+	0x00215e47, // n0x0f70 c0x0000 (---------------)  + I santafe
+	0x00242acc, // n0x0f71 c0x0000 (---------------)  + I saskatchewan
+	0x00248604, // n0x0f72 c0x0000 (---------------)  + I satx
+	0x00259a4a, // n0x0f73 c0x0000 (---------------)  + I savannahga
+	0x00262dcc, // n0x0f74 c0x0000 (---------------)  + I schlesisches
+	0x0027ad4b, // n0x0f75 c0x0000 (---------------)  + I schoenbrunn
+	0x0026ba8b, // n0x0f76 c0x0000 (---------------)  + I schokoladen
+	0x00270e06, // n0x0f77 c0x0000 (---------------)  + I school
+	0x002ae847, // n0x0f78 c0x0000 (---------------)  + I schweiz
+	0x0020a3c7, // n0x0f79 c0x0000 (---------------)  + I science
+	0x0023874f, // n0x0f7a c0x0000 (---------------)  + I science-fiction
+	0x002df211, // n0x0f7b c0x0000 (---------------)  + I scienceandhistory
+	0x0020a3d2, // n0x0f7c c0x0000 (---------------)  + I scienceandindustry
+	0x0028074d, // n0x0f7d c0x0000 (---------------)  + I sciencecenter
+	0x0028074e, // n0x0f7e c0x0000 (---------------)  + I sciencecenters
+	0x00280a8e, // n0x0f7f c0x0000 (---------------)  + I sciencehistory
+	0x00319e48, // n0x0f80 c0x0000 (---------------)  + I sciences
+	0x00319e52, // n0x0f81 c0x0000 (---------------)  + I sciencesnaturelles
+	0x00203088, // n0x0f82 c0x0000 (---------------)  + I scotland
+	0x002e6387, // n0x0f83 c0x0000 (---------------)  + I seaport
+	0x0025cc0a, // n0x0f84 c0x0000 (---------------)  + I settlement
+	0x002096c8, // n0x0f85 c0x0000 (---------------)  + I settlers
+	0x002ece45, // n0x0f86 c0x0000 (---------------)  + I shell
+	0x0029b24a, // n0x0f87 c0x0000 (---------------)  + I sherbrooke
+	0x0020d187, // n0x0f88 c0x0000 (---------------)  + I sibenik
+	0x002c9604, // n0x0f89 c0x0000 (---------------)  + I silk
+	0x002023c3, // n0x0f8a c0x0000 (---------------)  + I ski
+	0x0023f685, // n0x0f8b c0x0000 (---------------)  + I skole
+	0x002ca287, // n0x0f8c c0x0000 (---------------)  + I society
+	0x002bb6c7, // n0x0f8d c0x0000 (---------------)  + I sologne
+	0x002ce60e, // n0x0f8e c0x0000 (---------------)  + I soundandvision
+	0x002d534d, // n0x0f8f c0x0000 (---------------)  + I southcarolina
+	0x002d5989, // n0x0f90 c0x0000 (---------------)  + I southwest
+	0x002d6185, // n0x0f91 c0x0000 (---------------)  + I space
+	0x002d8e03, // n0x0f92 c0x0000 (---------------)  + I spy
+	0x002d9046, // n0x0f93 c0x0000 (---------------)  + I square
+	0x00255145, // n0x0f94 c0x0000 (---------------)  + I stadt
+	0x0022ec88, // n0x0f95 c0x0000 (---------------)  + I stalbans
+	0x002ed389, // n0x0f96 c0x0000 (---------------)  + I starnberg
+	0x002b00c5, // n0x0f97 c0x0000 (---------------)  + I state
+	0x0032c48f, // n0x0f98 c0x0000 (---------------)  + I stateofdelaware
+	0x0029ad87, // n0x0f99 c0x0000 (---------------)  + I station
+	0x002ad985, // n0x0f9a c0x0000 (---------------)  + I steam
+	0x0028e10a, // n0x0f9b c0x0000 (---------------)  + I steiermark
+	0x002db2c6, // n0x0f9c c0x0000 (---------------)  + I stjohn
+	0x002db809, // n0x0f9d c0x0000 (---------------)  + I stockholm
+	0x002dc54c, // n0x0f9e c0x0000 (---------------)  + I stpetersburg
+	0x002dccc9, // n0x0f9f c0x0000 (---------------)  + I stuttgart
+	0x00226d46, // n0x0fa0 c0x0000 (---------------)  + I suisse
+	0x00271a4c, // n0x0fa1 c0x0000 (---------------)  + I surgeonshall
+	0x002c0686, // n0x0fa2 c0x0000 (---------------)  + I surrey
+	0x002de748, // n0x0fa3 c0x0000 (---------------)  + I svizzera
+	0x00264006, // n0x0fa4 c0x0000 (---------------)  + I sweden
+	0x00254706, // n0x0fa5 c0x0000 (---------------)  + I sydney
+	0x0033f7c4, // n0x0fa6 c0x0000 (---------------)  + I tank
+	0x00236543, // n0x0fa7 c0x0000 (---------------)  + I tcm
+	0x002db04a, // n0x0fa8 c0x0000 (---------------)  + I technology
+	0x002c76d1, // n0x0fa9 c0x0000 (---------------)  + I telekommunikation
+	0x0023d3ca, // n0x0faa c0x0000 (---------------)  + I television
+	0x0023df45, // n0x0fab c0x0000 (---------------)  + I texas
+	0x00240287, // n0x0fac c0x0000 (---------------)  + I textile
+	0x0022f6c7, // n0x0fad c0x0000 (---------------)  + I theater
+	0x00251f44, // n0x0fae c0x0000 (---------------)  + I time
+	0x00251f4b, // n0x0faf c0x0000 (---------------)  + I timekeeping
+	0x002ec808, // n0x0fb0 c0x0000 (---------------)  + I topology
+	0x0029fcc6, // n0x0fb1 c0x0000 (---------------)  + I torino
+	0x003253c5, // n0x0fb2 c0x0000 (---------------)  + I touch
+	0x00245584, // n0x0fb3 c0x0000 (---------------)  + I town
+	0x002caac9, // n0x0fb4 c0x0000 (---------------)  + I transport
+	0x002d9a44, // n0x0fb5 c0x0000 (---------------)  + I tree
+	0x00267847, // n0x0fb6 c0x0000 (---------------)  + I trolley
+	0x002c8585, // n0x0fb7 c0x0000 (---------------)  + I trust
+	0x002c8587, // n0x0fb8 c0x0000 (---------------)  + I trustee
+	0x002d7985, // n0x0fb9 c0x0000 (---------------)  + I uhren
+	0x00205d83, // n0x0fba c0x0000 (---------------)  + I ulm
+	0x002e6248, // n0x0fbb c0x0000 (---------------)  + I undersea
+	0x0020c50a, // n0x0fbc c0x0000 (---------------)  + I university
+	0x002151c3, // n0x0fbd c0x0000 (---------------)  + I usa
+	0x0023720a, // n0x0fbe c0x0000 (---------------)  + I usantiques
+	0x00235d86, // n0x0fbf c0x0000 (---------------)  + I usarts
+	0x0032c20f, // n0x0fc0 c0x0000 (---------------)  + I uscountryestate
+	0x00309309, // n0x0fc1 c0x0000 (---------------)  + I usculture
+	0x0023c590, // n0x0fc2 c0x0000 (---------------)  + I usdecorativearts
+	0x00279388, // n0x0fc3 c0x0000 (---------------)  + I usgarden
+	0x002b3149, // n0x0fc4 c0x0000 (---------------)  + I ushistory
+	0x0027edc7, // n0x0fc5 c0x0000 (---------------)  + I ushuaia
+	0x002a648f, // n0x0fc6 c0x0000 (---------------)  + I uslivinghistory
+	0x00217784, // n0x0fc7 c0x0000 (---------------)  + I utah
+	0x00201a04, // n0x0fc8 c0x0000 (---------------)  + I uvic
+	0x0021b5c6, // n0x0fc9 c0x0000 (---------------)  + I valley
+	0x0029f806, // n0x0fca c0x0000 (---------------)  + I vantaa
+	0x0028e64a, // n0x0fcb c0x0000 (---------------)  + I versailles
+	0x002d9346, // n0x0fcc c0x0000 (---------------)  + I viking
+	0x002e06c7, // n0x0fcd c0x0000 (---------------)  + I village
+	0x002e3b88, // n0x0fce c0x0000 (---------------)  + I virginia
+	0x002e3d87, // n0x0fcf c0x0000 (---------------)  + I virtual
+	0x002e3f47, // n0x0fd0 c0x0000 (---------------)  + I virtuel
+	0x002e9e8a, // n0x0fd1 c0x0000 (---------------)  + I vlaanderen
+	0x002e608b, // n0x0fd2 c0x0000 (---------------)  + I volkenkunde
+	0x00205045, // n0x0fd3 c0x0000 (---------------)  + I wales
+	0x0020a008, // n0x0fd4 c0x0000 (---------------)  + I wallonie
+	0x00205a43, // n0x0fd5 c0x0000 (---------------)  + I war
+	0x002b784c, // n0x0fd6 c0x0000 (---------------)  + I washingtondc
+	0x002e338f, // n0x0fd7 c0x0000 (---------------)  + I watch-and-clock
+	0x0022be8d, // n0x0fd8 c0x0000 (---------------)  + I watchandclock
+	0x002d5ac7, // n0x0fd9 c0x0000 (---------------)  + I western
+	0x00236749, // n0x0fda c0x0000 (---------------)  + I westfalen
+	0x00221f07, // n0x0fdb c0x0000 (---------------)  + I whaling
+	0x00224148, // n0x0fdc c0x0000 (---------------)  + I wildlife
+	0x00347d8c, // n0x0fdd c0x0000 (---------------)  + I williamsburg
+	0x00232608, // n0x0fde c0x0000 (---------------)  + I windmill
+	0x00218f08, // n0x0fdf c0x0000 (---------------)  + I workshop
+	0x0028ec8e, // n0x0fe0 c0x0000 (---------------)  + I xn--9dbhblg6di
+	0x002ef394, // n0x0fe1 c0x0000 (---------------)  + I xn--comunicaes-v6a2o
+	0x002ef8a4, // n0x0fe2 c0x0000 (---------------)  + I xn--correios-e-telecomunicaes-ghc29a
+	0x002fdeca, // n0x0fe3 c0x0000 (---------------)  + I xn--h1aegh
+	0x0030f68b, // n0x0fe4 c0x0000 (---------------)  + I xn--lns-qla
+	0x0023e684, // n0x0fe5 c0x0000 (---------------)  + I york
+	0x0023e689, // n0x0fe6 c0x0000 (---------------)  + I yorkshire
+	0x002cd7c8, // n0x0fe7 c0x0000 (---------------)  + I yosemite
+	0x00326ec5, // n0x0fe8 c0x0000 (---------------)  + I youth
+	0x0032c88a, // n0x0fe9 c0x0000 (---------------)  + I zoological
+	0x00302307, // n0x0fea c0x0000 (---------------)  + I zoology
+	0x0022efc4, // n0x0feb c0x0000 (---------------)  + I aero
+	0x002f0f83, // n0x0fec c0x0000 (---------------)  + I biz
+	0x00204543, // n0x0fed c0x0000 (---------------)  + I com
+	0x0023d144, // n0x0fee c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x0fef c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0ff0 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x0ff1 c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x0ff2 c0x0000 (---------------)  + I int
+	0x00232703, // n0x0ff3 c0x0000 (---------------)  + I mil
+	0x002bb886, // n0x0ff4 c0x0000 (---------------)  + I museum
+	0x00230d84, // n0x0ff5 c0x0000 (---------------)  + I name
+	0x0020e643, // n0x0ff6 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x0ff7 c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x0ff8 c0x0000 (---------------)  + I pro
+	0x00201602, // n0x0ff9 c0x0000 (---------------)  + I ac
+	0x002f0f83, // n0x0ffa c0x0000 (---------------)  + I biz
+	0x00200182, // n0x0ffb c0x0000 (---------------)  + I co
+	0x00204543, // n0x0ffc c0x0000 (---------------)  + I com
+	0x0023d144, // n0x0ffd c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x0ffe c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x0fff c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x1000 c0x0000 (---------------)  + I int
+	0x002bb886, // n0x1001 c0x0000 (---------------)  + I museum
+	0x0020e643, // n0x1002 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1003 c0x0000 (---------------)  + I org
+	0x000330c8, // n0x1004 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x1005 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1006 c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x1007 c0x0000 (---------------)  + I gob
+	0x0020e643, // n0x1008 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1009 c0x0000 (---------------)  + I org
+	0x00204543, // n0x100a c0x0000 (---------------)  + I com
+	0x002ce043, // n0x100b c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x100c c0x0000 (---------------)  + I gov
+	0x00232703, // n0x100d c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x100e c0x0000 (---------------)  + I name
+	0x0020e643, // n0x100f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1010 c0x0000 (---------------)  + I org
+	0x00693108, // n0x1011 c0x0001 (---------------)  ! I teledata
+	0x00208582, // n0x1012 c0x0000 (---------------)  + I ca
+	0x002055c2, // n0x1013 c0x0000 (---------------)  + I cc
+	0x00200182, // n0x1014 c0x0000 (---------------)  + I co
+	0x00204543, // n0x1015 c0x0000 (---------------)  + I com
+	0x00200882, // n0x1016 c0x0000 (---------------)  + I dr
+	0x00200102, // n0x1017 c0x0000 (---------------)  + I in
+	0x00206344, // n0x1018 c0x0000 (---------------)  + I info
+	0x00224c84, // n0x1019 c0x0000 (---------------)  + I mobi
+	0x0031eb82, // n0x101a c0x0000 (---------------)  + I mx
+	0x00230d84, // n0x101b c0x0000 (---------------)  + I name
+	0x00201c42, // n0x101c c0x0000 (---------------)  + I or
+	0x002375c3, // n0x101d c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x101e c0x0000 (---------------)  + I pro
+	0x00270e06, // n0x101f c0x0000 (---------------)  + I school
+	0x002820c2, // n0x1020 c0x0000 (---------------)  + I tv
+	0x0020a702, // n0x1021 c0x0000 (---------------)  + I us
+	0x002233c2, // n0x1022 c0x0000 (---------------)  + I ws
+	0x30e4e303, // n0x1023 c0x00c3 (n0x1025-n0x1026)  o I her
+	0x31233003, // n0x1024 c0x00c4 (n0x1026-n0x1027)  o I his
+	0x00048406, // n0x1025 c0x0000 (---------------)  +   forgot
+	0x00048406, // n0x1026 c0x0000 (---------------)  +   forgot
+	0x00208704, // n0x1027 c0x0000 (---------------)  + I asso
+	0x0000838c, // n0x1028 c0x0000 (---------------)  +   at-band-camp
+	0x00147787, // n0x1029 c0x0000 (---------------)  +   blogdns
+	0x00023608, // n0x102a c0x0000 (---------------)  +   broke-it
+	0x0013f44a, // n0x102b c0x0000 (---------------)  +   buyshouses
+	0x00039288, // n0x102c c0x0000 (---------------)  +   dnsalias
+	0x00062107, // n0x102d c0x0000 (---------------)  +   dnsdojo
+	0x0009c7c7, // n0x102e c0x0000 (---------------)  +   does-it
+	0x000fc949, // n0x102f c0x0000 (---------------)  +   dontexist
+	0x00010cc8, // n0x1030 c0x0000 (---------------)  +   dynalias
+	0x0004b249, // n0x1031 c0x0000 (---------------)  +   dynathome
+	0x00092c0d, // n0x1032 c0x0000 (---------------)  +   endofinternet
+	0x00052d87, // n0x1033 c0x0000 (---------------)  +   from-az
+	0x00053c47, // n0x1034 c0x0000 (---------------)  +   from-co
+	0x00057607, // n0x1035 c0x0000 (---------------)  +   from-la
+	0x0005f1c7, // n0x1036 c0x0000 (---------------)  +   from-ny
+	0x00079802, // n0x1037 c0x0000 (---------------)  +   gb
+	0x00135107, // n0x1038 c0x0000 (---------------)  +   gets-it
+	0x000ff04c, // n0x1039 c0x0000 (---------------)  +   ham-radio-op
+	0x000053c7, // n0x103a c0x0000 (---------------)  +   homeftp
+	0x00120986, // n0x103b c0x0000 (---------------)  +   homeip
+	0x0008d4c9, // n0x103c c0x0000 (---------------)  +   homelinux
+	0x0008eac8, // n0x103d c0x0000 (---------------)  +   homeunix
+	0x00031242, // n0x103e c0x0000 (---------------)  +   hu
+	0x000fcc0b, // n0x103f c0x0000 (---------------)  +   in-the-band
+	0x00016f49, // n0x1040 c0x0000 (---------------)  +   is-a-chef
+	0x00125849, // n0x1041 c0x0000 (---------------)  +   is-a-geek
+	0x0008bfc8, // n0x1042 c0x0000 (---------------)  +   isa-geek
+	0x00096282, // n0x1043 c0x0000 (---------------)  +   jp
+	0x0002b389, // n0x1044 c0x0000 (---------------)  +   kicks-ass
+	0x0000dc4d, // n0x1045 c0x0000 (---------------)  +   office-on-the
+	0x000c5047, // n0x1046 c0x0000 (---------------)  +   podzone
+	0x0008adcd, // n0x1047 c0x0000 (---------------)  +   scrapper-site
+	0x000096c2, // n0x1048 c0x0000 (---------------)  +   se
+	0x000fb186, // n0x1049 c0x0000 (---------------)  +   selfip
+	0x000b86c8, // n0x104a c0x0000 (---------------)  +   sells-it
+	0x000ca508, // n0x104b c0x0000 (---------------)  +   servebbs
+	0x000ca6c8, // n0x104c c0x0000 (---------------)  +   serveftp
+	0x000ba508, // n0x104d c0x0000 (---------------)  +   thruhere
+	0x00006042, // n0x104e c0x0000 (---------------)  +   uk
+	0x0000dfc6, // n0x104f c0x0000 (---------------)  +   webhop
+	0x00001b82, // n0x1050 c0x0000 (---------------)  +   za
+	0x00235e04, // n0x1051 c0x0000 (---------------)  + I arts
+	0x00204543, // n0x1052 c0x0000 (---------------)  + I com
+	0x002432c4, // n0x1053 c0x0000 (---------------)  + I firm
+	0x00206344, // n0x1054 c0x0000 (---------------)  + I info
+	0x0020e643, // n0x1055 c0x0000 (---------------)  + I net
+	0x0024e285, // n0x1056 c0x0000 (---------------)  + I other
+	0x00213143, // n0x1057 c0x0000 (---------------)  + I per
+	0x002adec3, // n0x1058 c0x0000 (---------------)  + I rec
+	0x002dc085, // n0x1059 c0x0000 (---------------)  + I store
+	0x0020dfc3, // n0x105a c0x0000 (---------------)  + I web
+	0x00201602, // n0x105b c0x0000 (---------------)  + I ac
+	0x00204543, // n0x105c c0x0000 (---------------)  + I com
+	0x002ce043, // n0x105d c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x105e c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x105f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1060 c0x0000 (---------------)  + I org
+	0x000330c8, // n0x1061 c0x0000 (---------------)  +   blogspot
+	0x00227942, // n0x1062 c0x0000 (---------------)  + I bv
+	0x00000182, // n0x1063 c0x0000 (---------------)  +   co
+	0x32e06682, // n0x1064 c0x00cb (n0x133a-n0x133b)  + I aa
+	0x00235748, // n0x1065 c0x0000 (---------------)  + I aarborte
+	0x0021fac6, // n0x1066 c0x0000 (---------------)  + I aejrie
+	0x002a5086, // n0x1067 c0x0000 (---------------)  + I afjord
+	0x0021f447, // n0x1068 c0x0000 (---------------)  + I agdenes
+	0x33208e42, // n0x1069 c0x00cc (n0x133b-n0x133c)  + I ah
+	0x33709188, // n0x106a c0x00cd (n0x133c-n0x133d)  o I akershus
+	0x0022b0ca, // n0x106b c0x0000 (---------------)  + I aknoluokta
+	0x00334908, // n0x106c c0x0000 (---------------)  + I akrehamn
+	0x00200302, // n0x106d c0x0000 (---------------)  + I al
+	0x00208dc9, // n0x106e c0x0000 (---------------)  + I alaheadju
+	0x00205087, // n0x106f c0x0000 (---------------)  + I alesund
+	0x00218186, // n0x1070 c0x0000 (---------------)  + I algard
+	0x0020d749, // n0x1071 c0x0000 (---------------)  + I alstahaug
+	0x00247444, // n0x1072 c0x0000 (---------------)  + I alta
+	0x002089c6, // n0x1073 c0x0000 (---------------)  + I alvdal
+	0x00231f84, // n0x1074 c0x0000 (---------------)  + I amli
+	0x00205b04, // n0x1075 c0x0000 (---------------)  + I amot
+	0x0024be49, // n0x1076 c0x0000 (---------------)  + I andasuolo
+	0x00202746, // n0x1077 c0x0000 (---------------)  + I andebu
+	0x002f9f45, // n0x1078 c0x0000 (---------------)  + I andoy
+	0x00250745, // n0x1079 c0x0000 (---------------)  + I ardal
+	0x00265387, // n0x107a c0x0000 (---------------)  + I aremark
+	0x002d9107, // n0x107b c0x0000 (---------------)  + I arendal
+	0x00250684, // n0x107c c0x0000 (---------------)  + I arna
+	0x0021f686, // n0x107d c0x0000 (---------------)  + I aseral
+	0x0025f085, // n0x107e c0x0000 (---------------)  + I asker
+	0x002ecf85, // n0x107f c0x0000 (---------------)  + I askim
+	0x0032ed85, // n0x1080 c0x0000 (---------------)  + I askoy
+	0x0022d987, // n0x1081 c0x0000 (---------------)  + I askvoll
+	0x0022ab05, // n0x1082 c0x0000 (---------------)  + I asnes
+	0x00319a89, // n0x1083 c0x0000 (---------------)  + I audnedaln
+	0x0020ec85, // n0x1084 c0x0000 (---------------)  + I aukra
+	0x002b2c84, // n0x1085 c0x0000 (---------------)  + I aure
+	0x00202647, // n0x1086 c0x0000 (---------------)  + I aurland
+	0x00345cce, // n0x1087 c0x0000 (---------------)  + I aurskog-holand
+	0x002295c9, // n0x1088 c0x0000 (---------------)  + I austevoll
+	0x002d7609, // n0x1089 c0x0000 (---------------)  + I austrheim
+	0x0021d9c6, // n0x108a c0x0000 (---------------)  + I averoy
+	0x002dd848, // n0x108b c0x0000 (---------------)  + I badaddja
+	0x002daa4b, // n0x108c c0x0000 (---------------)  + I bahcavuotna
+	0x002746cc, // n0x108d c0x0000 (---------------)  + I bahccavuotna
+	0x0024fec6, // n0x108e c0x0000 (---------------)  + I baidar
+	0x0031f447, // n0x108f c0x0000 (---------------)  + I bajddar
+	0x0022a005, // n0x1090 c0x0000 (---------------)  + I balat
+	0x002279ca, // n0x1091 c0x0000 (---------------)  + I balestrand
+	0x00293409, // n0x1092 c0x0000 (---------------)  + I ballangen
+	0x003436c9, // n0x1093 c0x0000 (---------------)  + I balsfjord
+	0x002fff86, // n0x1094 c0x0000 (---------------)  + I bamble
+	0x002dde05, // n0x1095 c0x0000 (---------------)  + I bardu
+	0x002fe1c5, // n0x1096 c0x0000 (---------------)  + I barum
+	0x0033da49, // n0x1097 c0x0000 (---------------)  + I batsfjord
+	0x0022a20b, // n0x1098 c0x0000 (---------------)  + I bearalvahki
+	0x0024e946, // n0x1099 c0x0000 (---------------)  + I beardu
+	0x0021e586, // n0x109a c0x0000 (---------------)  + I beiarn
+	0x00204c84, // n0x109b c0x0000 (---------------)  + I berg
+	0x002452c6, // n0x109c c0x0000 (---------------)  + I bergen
+	0x002be788, // n0x109d c0x0000 (---------------)  + I berlevag
+	0x00208286, // n0x109e c0x0000 (---------------)  + I bievat
+	0x00261a46, // n0x109f c0x0000 (---------------)  + I bindal
+	0x00211f88, // n0x10a0 c0x0000 (---------------)  + I birkenes
+	0x00212a07, // n0x10a1 c0x0000 (---------------)  + I bjarkoy
+	0x00212f09, // n0x10a2 c0x0000 (---------------)  + I bjerkreim
+	0x00213285, // n0x10a3 c0x0000 (---------------)  + I bjugn
+	0x000330c8, // n0x10a4 c0x0000 (---------------)  +   blogspot
+	0x00207444, // n0x10a5 c0x0000 (---------------)  + I bodo
+	0x00241fc4, // n0x10a6 c0x0000 (---------------)  + I bokn
+	0x00215bc5, // n0x10a7 c0x0000 (---------------)  + I bomlo
+	0x0021ca89, // n0x10a8 c0x0000 (---------------)  + I bremanger
+	0x00223b47, // n0x10a9 c0x0000 (---------------)  + I bronnoy
+	0x00223b4b, // n0x10aa c0x0000 (---------------)  + I bronnoysund
+	0x00223e0a, // n0x10ab c0x0000 (---------------)  + I brumunddal
+	0x00226a05, // n0x10ac c0x0000 (---------------)  + I bryne
+	0x33a02842, // n0x10ad c0x00ce (n0x133d-n0x133e)  + I bu
+	0x002446c7, // n0x10ae c0x0000 (---------------)  + I budejju
+	0x33eb71c8, // n0x10af c0x00cf (n0x133e-n0x133f)  o I buskerud
+	0x0020aec7, // n0x10b0 c0x0000 (---------------)  + I bygland
+	0x002b50c5, // n0x10b1 c0x0000 (---------------)  + I bykle
+	0x0025324a, // n0x10b2 c0x0000 (---------------)  + I cahcesuolo
+	0x00000182, // n0x10b3 c0x0000 (---------------)  +   co
+	0x0029c44b, // n0x10b4 c0x0000 (---------------)  + I davvenjarga
+	0x00206f4a, // n0x10b5 c0x0000 (---------------)  + I davvesiida
+	0x00204a46, // n0x10b6 c0x0000 (---------------)  + I deatnu
+	0x00325643, // n0x10b7 c0x0000 (---------------)  + I dep
+	0x0028ef8d, // n0x10b8 c0x0000 (---------------)  + I dielddanuorri
+	0x0034600c, // n0x10b9 c0x0000 (---------------)  + I divtasvuodna
+	0x003452cd, // n0x10ba c0x0000 (---------------)  + I divttasvuotna
+	0x0020b4c5, // n0x10bb c0x0000 (---------------)  + I donna
+	0x00304945, // n0x10bc c0x0000 (---------------)  + I dovre
+	0x00284687, // n0x10bd c0x0000 (---------------)  + I drammen
+	0x0031d349, // n0x10be c0x0000 (---------------)  + I drangedal
+	0x00334806, // n0x10bf c0x0000 (---------------)  + I drobak
+	0x0021e705, // n0x10c0 c0x0000 (---------------)  + I dyroy
+	0x0029d0c8, // n0x10c1 c0x0000 (---------------)  + I egersund
+	0x00279643, // n0x10c2 c0x0000 (---------------)  + I eid
+	0x0030df48, // n0x10c3 c0x0000 (---------------)  + I eidfjord
+	0x00279648, // n0x10c4 c0x0000 (---------------)  + I eidsberg
+	0x002aa787, // n0x10c5 c0x0000 (---------------)  + I eidskog
+	0x002ee208, // n0x10c6 c0x0000 (---------------)  + I eidsvoll
+	0x00253a09, // n0x10c7 c0x0000 (---------------)  + I eigersund
+	0x00224787, // n0x10c8 c0x0000 (---------------)  + I elverum
+	0x0023a707, // n0x10c9 c0x0000 (---------------)  + I enebakk
+	0x0020d5c8, // n0x10ca c0x0000 (---------------)  + I engerdal
+	0x002cee04, // n0x10cb c0x0000 (---------------)  + I etne
+	0x002cee07, // n0x10cc c0x0000 (---------------)  + I etnedal
+	0x0020cf88, // n0x10cd c0x0000 (---------------)  + I evenassi
+	0x0020acc6, // n0x10ce c0x0000 (---------------)  + I evenes
+	0x0031cc0f, // n0x10cf c0x0000 (---------------)  + I evje-og-hornnes
+	0x00217147, // n0x10d0 c0x0000 (---------------)  + I farsund
+	0x0025c8c6, // n0x10d1 c0x0000 (---------------)  + I fauske
+	0x002242c5, // n0x10d2 c0x0000 (---------------)  + I fedje
+	0x002c42c3, // n0x10d3 c0x0000 (---------------)  + I fet
+	0x00312b07, // n0x10d4 c0x0000 (---------------)  + I fetsund
+	0x00324e03, // n0x10d5 c0x0000 (---------------)  + I fhs
+	0x00242f86, // n0x10d6 c0x0000 (---------------)  + I finnoy
+	0x00244206, // n0x10d7 c0x0000 (---------------)  + I fitjar
+	0x00244cc6, // n0x10d8 c0x0000 (---------------)  + I fjaler
+	0x0027ca85, // n0x10d9 c0x0000 (---------------)  + I fjell
+	0x00255043, // n0x10da c0x0000 (---------------)  + I fla
+	0x00255048, // n0x10db c0x0000 (---------------)  + I flakstad
+	0x003231c9, // n0x10dc c0x0000 (---------------)  + I flatanger
+	0x00244f0b, // n0x10dd c0x0000 (---------------)  + I flekkefjord
+	0x002451c8, // n0x10de c0x0000 (---------------)  + I flesberg
+	0x00245cc5, // n0x10df c0x0000 (---------------)  + I flora
+	0x002461c5, // n0x10e0 c0x0000 (---------------)  + I floro
+	0x34317982, // n0x10e1 c0x00d0 (n0x133f-n0x1340)  + I fm
+	0x0020e2c9, // n0x10e2 c0x0000 (---------------)  + I folkebibl
+	0x00246987, // n0x10e3 c0x0000 (---------------)  + I folldal
+	0x00204985, // n0x10e4 c0x0000 (---------------)  + I forde
+	0x0024bd47, // n0x10e5 c0x0000 (---------------)  + I forsand
+	0x0024dfc6, // n0x10e6 c0x0000 (---------------)  + I fosnes
+	0x00313345, // n0x10e7 c0x0000 (---------------)  + I frana
+	0x0024e3cb, // n0x10e8 c0x0000 (---------------)  + I fredrikstad
+	0x0024f984, // n0x10e9 c0x0000 (---------------)  + I frei
+	0x00250885, // n0x10ea c0x0000 (---------------)  + I frogn
+	0x002509c7, // n0x10eb c0x0000 (---------------)  + I froland
+	0x00266ec6, // n0x10ec c0x0000 (---------------)  + I frosta
+	0x00267185, // n0x10ed c0x0000 (---------------)  + I froya
+	0x00270087, // n0x10ee c0x0000 (---------------)  + I fuoisku
+	0x00270447, // n0x10ef c0x0000 (---------------)  + I fuossko
+	0x002cfd04, // n0x10f0 c0x0000 (---------------)  + I fusa
+	0x0027394a, // n0x10f1 c0x0000 (---------------)  + I fylkesbibl
+	0x00273bc8, // n0x10f2 c0x0000 (---------------)  + I fyresdal
+	0x002dad09, // n0x10f3 c0x0000 (---------------)  + I gaivuotna
+	0x0029c685, // n0x10f4 c0x0000 (---------------)  + I galsa
+	0x0021e2c6, // n0x10f5 c0x0000 (---------------)  + I gamvik
+	0x002be94a, // n0x10f6 c0x0000 (---------------)  + I gangaviika
+	0x002bec46, // n0x10f7 c0x0000 (---------------)  + I gaular
+	0x00255507, // n0x10f8 c0x0000 (---------------)  + I gausdal
+	0x003392cd, // n0x10f9 c0x0000 (---------------)  + I giehtavuoatna
+	0x0022d649, // n0x10fa c0x0000 (---------------)  + I gildeskal
+	0x00318305, // n0x10fb c0x0000 (---------------)  + I giske
+	0x00322447, // n0x10fc c0x0000 (---------------)  + I gjemnes
+	0x00322788, // n0x10fd c0x0000 (---------------)  + I gjerdrum
+	0x00332e08, // n0x10fe c0x0000 (---------------)  + I gjerstad
+	0x00334007, // n0x10ff c0x0000 (---------------)  + I gjesdal
+	0x00348046, // n0x1100 c0x0000 (---------------)  + I gjovik
+	0x00222087, // n0x1101 c0x0000 (---------------)  + I gloppen
+	0x00228b03, // n0x1102 c0x0000 (---------------)  + I gol
+	0x002f42c4, // n0x1103 c0x0000 (---------------)  + I gran
+	0x002f7a05, // n0x1104 c0x0000 (---------------)  + I grane
+	0x003110c7, // n0x1105 c0x0000 (---------------)  + I granvin
+	0x0032a449, // n0x1106 c0x0000 (---------------)  + I gratangen
+	0x00264888, // n0x1107 c0x0000 (---------------)  + I grimstad
+	0x0031e5c5, // n0x1108 c0x0000 (---------------)  + I grong
+	0x0024f704, // n0x1109 c0x0000 (---------------)  + I grue
+	0x002eb885, // n0x110a c0x0000 (---------------)  + I gulen
+	0x002521cd, // n0x110b c0x0000 (---------------)  + I guovdageaidnu
+	0x0020aa82, // n0x110c c0x0000 (---------------)  + I ha
+	0x00299f46, // n0x110d c0x0000 (---------------)  + I habmer
+	0x002fb0c6, // n0x110e c0x0000 (---------------)  + I hadsel
+	0x00306f8a, // n0x110f c0x0000 (---------------)  + I hagebostad
+	0x00275cc6, // n0x1110 c0x0000 (---------------)  + I halden
+	0x00275e45, // n0x1111 c0x0000 (---------------)  + I halsa
+	0x002a4d45, // n0x1112 c0x0000 (---------------)  + I hamar
+	0x002a4d47, // n0x1113 c0x0000 (---------------)  + I hamaroy
+	0x0027678c, // n0x1114 c0x0000 (---------------)  + I hammarfeasta
+	0x0031c08a, // n0x1115 c0x0000 (---------------)  + I hammerfest
+	0x00278cc6, // n0x1116 c0x0000 (---------------)  + I hapmir
+	0x00231ec5, // n0x1117 c0x0000 (---------------)  + I haram
+	0x00279586, // n0x1118 c0x0000 (---------------)  + I hareid
+	0x0027a187, // n0x1119 c0x0000 (---------------)  + I harstad
+	0x0027b186, // n0x111a c0x0000 (---------------)  + I hasvik
+	0x0027c98c, // n0x111b c0x0000 (---------------)  + I hattfjelldal
+	0x0020d889, // n0x111c c0x0000 (---------------)  + I haugesund
+	0x34647cc7, // n0x111d c0x00d1 (n0x1340-n0x1343)  o I hedmark
+	0x002099c5, // n0x111e c0x0000 (---------------)  + I hemne
+	0x002099c6, // n0x111f c0x0000 (---------------)  + I hemnes
+	0x0027dc08, // n0x1120 c0x0000 (---------------)  + I hemsedal
+	0x00256985, // n0x1121 c0x0000 (---------------)  + I herad
+	0x0028ca45, // n0x1122 c0x0000 (---------------)  + I hitra
+	0x0028cc88, // n0x1123 c0x0000 (---------------)  + I hjartdal
+	0x0028ce8a, // n0x1124 c0x0000 (---------------)  + I hjelmeland
+	0x34a62e42, // n0x1125 c0x00d2 (n0x1343-n0x1344)  + I hl
+	0x34e88dc2, // n0x1126 c0x00d3 (n0x1344-n0x1345)  + I hm
+	0x002d1705, // n0x1127 c0x0000 (---------------)  + I hobol
+	0x002b7b43, // n0x1128 c0x0000 (---------------)  + I hof
+	0x0031fe48, // n0x1129 c0x0000 (---------------)  + I hokksund
+	0x00230543, // n0x112a c0x0000 (---------------)  + I hol
+	0x0028d104, // n0x112b c0x0000 (---------------)  + I hole
+	0x002db94b, // n0x112c c0x0000 (---------------)  + I holmestrand
+	0x00230548, // n0x112d c0x0000 (---------------)  + I holtalen
+	0x0023ee88, // n0x112e c0x0000 (---------------)  + I honefoss
+	0x353450c9, // n0x112f c0x00d4 (n0x1345-n0x1346)  o I hordaland
+	0x002928c9, // n0x1130 c0x0000 (---------------)  + I hornindal
+	0x00292b06, // n0x1131 c0x0000 (---------------)  + I horten
+	0x00293648, // n0x1132 c0x0000 (---------------)  + I hoyanger
+	0x00293849, // n0x1133 c0x0000 (---------------)  + I hoylandet
+	0x00294b86, // n0x1134 c0x0000 (---------------)  + I hurdal
+	0x00294d05, // n0x1135 c0x0000 (---------------)  + I hurum
+	0x00327f86, // n0x1136 c0x0000 (---------------)  + I hvaler
+	0x002c4409, // n0x1137 c0x0000 (---------------)  + I hyllestad
+	0x0022cd47, // n0x1138 c0x0000 (---------------)  + I ibestad
+	0x00275606, // n0x1139 c0x0000 (---------------)  + I idrett
+	0x002dee87, // n0x113a c0x0000 (---------------)  + I inderoy
+	0x002288c7, // n0x113b c0x0000 (---------------)  + I iveland
+	0x002aec44, // n0x113c c0x0000 (---------------)  + I ivgu
+	0x3561bf49, // n0x113d c0x00d5 (n0x1346-n0x1347)  + I jan-mayen
+	0x0025e3c8, // n0x113e c0x0000 (---------------)  + I jessheim
+	0x00309088, // n0x113f c0x0000 (---------------)  + I jevnaker
+	0x002c6187, // n0x1140 c0x0000 (---------------)  + I jolster
+	0x002ad3c6, // n0x1141 c0x0000 (---------------)  + I jondal
+	0x00246689, // n0x1142 c0x0000 (---------------)  + I jorpeland
+	0x002a5047, // n0x1143 c0x0000 (---------------)  + I kafjord
+	0x002e568a, // n0x1144 c0x0000 (---------------)  + I karasjohka
+	0x002e7488, // n0x1145 c0x0000 (---------------)  + I karasjok
+	0x00228e07, // n0x1146 c0x0000 (---------------)  + I karlsoy
+	0x00343c06, // n0x1147 c0x0000 (---------------)  + I karmoy
+	0x0029264a, // n0x1148 c0x0000 (---------------)  + I kautokeino
+	0x00259888, // n0x1149 c0x0000 (---------------)  + I kirkenes
+	0x0033f385, // n0x114a c0x0000 (---------------)  + I klabu
+	0x00226085, // n0x114b c0x0000 (---------------)  + I klepp
+	0x002c4b87, // n0x114c c0x0000 (---------------)  + I kommune
+	0x002e3709, // n0x114d c0x0000 (---------------)  + I kongsberg
+	0x002e678b, // n0x114e c0x0000 (---------------)  + I kongsvinger
+	0x00296708, // n0x114f c0x0000 (---------------)  + I kopervik
+	0x0020ed09, // n0x1150 c0x0000 (---------------)  + I kraanghke
+	0x0029d8c7, // n0x1151 c0x0000 (---------------)  + I kragero
+	0x0029eb8c, // n0x1152 c0x0000 (---------------)  + I kristiansand
+	0x0029f00c, // n0x1153 c0x0000 (---------------)  + I kristiansund
+	0x0029f30a, // n0x1154 c0x0000 (---------------)  + I krodsherad
+	0x0029f58c, // n0x1155 c0x0000 (---------------)  + I krokstadelva
+	0x002a93c8, // n0x1156 c0x0000 (---------------)  + I kvafjord
+	0x002a95c8, // n0x1157 c0x0000 (---------------)  + I kvalsund
+	0x002a97c4, // n0x1158 c0x0000 (---------------)  + I kvam
+	0x002a9f09, // n0x1159 c0x0000 (---------------)  + I kvanangen
+	0x002aa149, // n0x115a c0x0000 (---------------)  + I kvinesdal
+	0x002aa38a, // n0x115b c0x0000 (---------------)  + I kvinnherad
+	0x002aa609, // n0x115c c0x0000 (---------------)  + I kviteseid
+	0x002aa947, // n0x115d c0x0000 (---------------)  + I kvitsoy
+	0x0020664c, // n0x115e c0x0000 (---------------)  + I laakesvuemie
+	0x00257746, // n0x115f c0x0000 (---------------)  + I lahppi
+	0x002a1e88, // n0x1160 c0x0000 (---------------)  + I langevag
+	0x002bed06, // n0x1161 c0x0000 (---------------)  + I lardal
+	0x0030f8c6, // n0x1162 c0x0000 (---------------)  + I larvik
+	0x00318207, // n0x1163 c0x0000 (---------------)  + I lavagis
+	0x00319208, // n0x1164 c0x0000 (---------------)  + I lavangen
+	0x0030008b, // n0x1165 c0x0000 (---------------)  + I leangaviika
+	0x002b5187, // n0x1166 c0x0000 (---------------)  + I lebesby
+	0x00283c09, // n0x1167 c0x0000 (---------------)  + I leikanger
+	0x002891c9, // n0x1168 c0x0000 (---------------)  + I leirfjord
+	0x00224d87, // n0x1169 c0x0000 (---------------)  + I leirvik
+	0x00228b84, // n0x116a c0x0000 (---------------)  + I leka
+	0x002c4a07, // n0x116b c0x0000 (---------------)  + I leksvik
+	0x002d9286, // n0x116c c0x0000 (---------------)  + I lenvik
+	0x00244d86, // n0x116d c0x0000 (---------------)  + I lerdal
+	0x00225ac5, // n0x116e c0x0000 (---------------)  + I lesja
+	0x002dcac8, // n0x116f c0x0000 (---------------)  + I levanger
+	0x00232004, // n0x1170 c0x0000 (---------------)  + I lier
+	0x00232006, // n0x1171 c0x0000 (---------------)  + I lierne
+	0x0031bf4b, // n0x1172 c0x0000 (---------------)  + I lillehammer
+	0x002b5f49, // n0x1173 c0x0000 (---------------)  + I lillesand
+	0x002297c6, // n0x1174 c0x0000 (---------------)  + I lindas
+	0x00228149, // n0x1175 c0x0000 (---------------)  + I lindesnes
+	0x00215c86, // n0x1176 c0x0000 (---------------)  + I loabat
+	0x0024c008, // n0x1177 c0x0000 (---------------)  + I lodingen
+	0x002ead83, // n0x1178 c0x0000 (---------------)  + I lom
+	0x0021c605, // n0x1179 c0x0000 (---------------)  + I loppa
+	0x002c4689, // n0x117a c0x0000 (---------------)  + I lorenskog
+	0x00334185, // n0x117b c0x0000 (---------------)  + I loten
+	0x002d2bc4, // n0x117c c0x0000 (---------------)  + I lund
+	0x00266106, // n0x117d c0x0000 (---------------)  + I lunner
+	0x00225645, // n0x117e c0x0000 (---------------)  + I luroy
+	0x002327c6, // n0x117f c0x0000 (---------------)  + I luster
+	0x002e6ac7, // n0x1180 c0x0000 (---------------)  + I lyngdal
+	0x002fdd46, // n0x1181 c0x0000 (---------------)  + I lyngen
+	0x00281fcb, // n0x1182 c0x0000 (---------------)  + I malatvuopmi
+	0x0025b747, // n0x1183 c0x0000 (---------------)  + I malselv
+	0x0021a606, // n0x1184 c0x0000 (---------------)  + I malvik
+	0x003179c6, // n0x1185 c0x0000 (---------------)  + I mandal
+	0x00265446, // n0x1186 c0x0000 (---------------)  + I marker
+	0x00250649, // n0x1187 c0x0000 (---------------)  + I marnardal
+	0x0027768a, // n0x1188 c0x0000 (---------------)  + I masfjorden
+	0x0028c4c5, // n0x1189 c0x0000 (---------------)  + I masoy
+	0x002b270d, // n0x118a c0x0000 (---------------)  + I matta-varjjat
+	0x0028cf86, // n0x118b c0x0000 (---------------)  + I meland
+	0x00225506, // n0x118c c0x0000 (---------------)  + I meldal
+	0x0023c486, // n0x118d c0x0000 (---------------)  + I melhus
+	0x0031c685, // n0x118e c0x0000 (---------------)  + I meloy
+	0x0021ae87, // n0x118f c0x0000 (---------------)  + I meraker
+	0x0026eac7, // n0x1190 c0x0000 (---------------)  + I midsund
+	0x0027fc8e, // n0x1191 c0x0000 (---------------)  + I midtre-gauldal
+	0x00232703, // n0x1192 c0x0000 (---------------)  + I mil
+	0x002ad389, // n0x1193 c0x0000 (---------------)  + I mjondalen
+	0x00289dc9, // n0x1194 c0x0000 (---------------)  + I mo-i-rana
+	0x00227dc7, // n0x1195 c0x0000 (---------------)  + I moareke
+	0x00238147, // n0x1196 c0x0000 (---------------)  + I modalen
+	0x0029bc05, // n0x1197 c0x0000 (---------------)  + I modum
+	0x002045c5, // n0x1198 c0x0000 (---------------)  + I molde
+	0x35af054f, // n0x1199 c0x00d6 (n0x1347-n0x1349)  o I more-og-romsdal
+	0x002b3387, // n0x119a c0x0000 (---------------)  + I mosjoen
+	0x002b3548, // n0x119b c0x0000 (---------------)  + I moskenes
+	0x002b4144, // n0x119c c0x0000 (---------------)  + I moss
+	0x002b4446, // n0x119d c0x0000 (---------------)  + I mosvik
+	0x35e41a02, // n0x119e c0x00d7 (n0x1349-n0x134a)  + I mr
+	0x002b8f86, // n0x119f c0x0000 (---------------)  + I muosat
+	0x002bb886, // n0x11a0 c0x0000 (---------------)  + I museum
+	0x0033958e, // n0x11a1 c0x0000 (---------------)  + I naamesjevuemie
+	0x0030dd8a, // n0x11a2 c0x0000 (---------------)  + I namdalseid
+	0x0028f906, // n0x11a3 c0x0000 (---------------)  + I namsos
+	0x0026650a, // n0x11a4 c0x0000 (---------------)  + I namsskogan
+	0x0024d0c9, // n0x11a5 c0x0000 (---------------)  + I nannestad
+	0x0032ac05, // n0x11a6 c0x0000 (---------------)  + I naroy
+	0x00236088, // n0x11a7 c0x0000 (---------------)  + I narviika
+	0x00236946, // n0x11a8 c0x0000 (---------------)  + I narvik
+	0x00334ac8, // n0x11a9 c0x0000 (---------------)  + I naustdal
+	0x00203948, // n0x11aa c0x0000 (---------------)  + I navuotna
+	0x00289acb, // n0x11ab c0x0000 (---------------)  + I nedre-eiker
+	0x0021f545, // n0x11ac c0x0000 (---------------)  + I nesna
+	0x0022ab88, // n0x11ad c0x0000 (---------------)  + I nesodden
+	0x002120cc, // n0x11ae c0x0000 (---------------)  + I nesoddtangen
+	0x0020ad87, // n0x11af c0x0000 (---------------)  + I nesseby
+	0x0031cf06, // n0x11b0 c0x0000 (---------------)  + I nesset
+	0x0025c408, // n0x11b1 c0x0000 (---------------)  + I nissedal
+	0x00208c48, // n0x11b2 c0x0000 (---------------)  + I nittedal
+	0x36242e42, // n0x11b3 c0x00d8 (n0x134a-n0x134b)  + I nl
+	0x00239f4b, // n0x11b4 c0x0000 (---------------)  + I nord-aurdal
+	0x0032ef89, // n0x11b5 c0x0000 (---------------)  + I nord-fron
+	0x002a0a09, // n0x11b6 c0x0000 (---------------)  + I nord-odal
+	0x00227fc7, // n0x11b7 c0x0000 (---------------)  + I norddal
+	0x002f27c8, // n0x11b8 c0x0000 (---------------)  + I nordkapp
+	0x36615448, // n0x11b9 c0x00d9 (n0x134b-n0x134f)  o I nordland
+	0x0031ae0b, // n0x11ba c0x0000 (---------------)  + I nordre-land
+	0x002f9949, // n0x11bb c0x0000 (---------------)  + I nordreisa
+	0x002b7e8d, // n0x11bc c0x0000 (---------------)  + I nore-og-uvdal
+	0x00204108, // n0x11bd c0x0000 (---------------)  + I notodden
+	0x00295848, // n0x11be c0x0000 (---------------)  + I notteroy
+	0x36a075c2, // n0x11bf c0x00da (n0x134f-n0x1350)  + I nt
+	0x002f8144, // n0x11c0 c0x0000 (---------------)  + I odda
+	0x36e0dc42, // n0x11c1 c0x00db (n0x1350-n0x1351)  + I of
+	0x002f2306, // n0x11c2 c0x0000 (---------------)  + I oksnes
+	0x372001c2, // n0x11c3 c0x00dc (n0x1351-n0x1352)  + I ol
+	0x002d2d0a, // n0x11c4 c0x0000 (---------------)  + I omasvuotna
+	0x00219086, // n0x11c5 c0x0000 (---------------)  + I oppdal
+	0x00226808, // n0x11c6 c0x0000 (---------------)  + I oppegard
+	0x00225d08, // n0x11c7 c0x0000 (---------------)  + I orkanger
+	0x00240486, // n0x11c8 c0x0000 (---------------)  + I orkdal
+	0x0025fe06, // n0x11c9 c0x0000 (---------------)  + I orland
+	0x002c8cc6, // n0x11ca c0x0000 (---------------)  + I orskog
+	0x0026ae05, // n0x11cb c0x0000 (---------------)  + I orsta
+	0x0023e344, // n0x11cc c0x0000 (---------------)  + I osen
+	0x3761c584, // n0x11cd c0x00dd (n0x1352-n0x1353)  + I oslo
+	0x00203c86, // n0x11ce c0x0000 (---------------)  + I osoyro
+	0x0022de07, // n0x11cf c0x0000 (---------------)  + I osteroy
+	0x37acd2c7, // n0x11d0 c0x00de (n0x1353-n0x1354)  o I ostfold
+	0x0027c20b, // n0x11d1 c0x0000 (---------------)  + I ostre-toten
+	0x00278689, // n0x11d2 c0x0000 (---------------)  + I overhalla
+	0x0030498a, // n0x11d3 c0x0000 (---------------)  + I ovre-eiker
+	0x002a4e84, // n0x11d4 c0x0000 (---------------)  + I oyer
+	0x002d7b88, // n0x11d5 c0x0000 (---------------)  + I oygarden
+	0x002753cd, // n0x11d6 c0x0000 (---------------)  + I oystre-slidre
+	0x002c5d49, // n0x11d7 c0x0000 (---------------)  + I porsanger
+	0x002c5f88, // n0x11d8 c0x0000 (---------------)  + I porsangu
+	0x002c6349, // n0x11d9 c0x0000 (---------------)  + I porsgrunn
+	0x002c7b04, // n0x11da c0x0000 (---------------)  + I priv
+	0x00254dc4, // n0x11db c0x0000 (---------------)  + I rade
+	0x0026d405, // n0x11dc c0x0000 (---------------)  + I radoy
+	0x0023538b, // n0x11dd c0x0000 (---------------)  + I rahkkeravju
+	0x002304c6, // n0x11de c0x0000 (---------------)  + I raholt
+	0x002a1ac5, // n0x11df c0x0000 (---------------)  + I raisa
+	0x002517c9, // n0x11e0 c0x0000 (---------------)  + I rakkestad
+	0x0021f748, // n0x11e1 c0x0000 (---------------)  + I ralingen
+	0x002898c4, // n0x11e2 c0x0000 (---------------)  + I rana
+	0x00227b49, // n0x11e3 c0x0000 (---------------)  + I randaberg
+	0x00274e85, // n0x11e4 c0x0000 (---------------)  + I rauma
+	0x002d9148, // n0x11e5 c0x0000 (---------------)  + I rendalen
+	0x00244587, // n0x11e6 c0x0000 (---------------)  + I rennebu
+	0x002d7a08, // n0x11e7 c0x0000 (---------------)  + I rennesoy
+	0x00269b46, // n0x11e8 c0x0000 (---------------)  + I rindal
+	0x00219dc7, // n0x11e9 c0x0000 (---------------)  + I ringebu
+	0x00259189, // n0x11ea c0x0000 (---------------)  + I ringerike
+	0x00291209, // n0x11eb c0x0000 (---------------)  + I ringsaker
+	0x002fb345, // n0x11ec c0x0000 (---------------)  + I risor
+	0x00261705, // n0x11ed c0x0000 (---------------)  + I rissa
+	0x37e00082, // n0x11ee c0x00df (n0x1354-n0x1355)  + I rl
+	0x002b2a44, // n0x11ef c0x0000 (---------------)  + I roan
+	0x002a36c5, // n0x11f0 c0x0000 (---------------)  + I rodoy
+	0x002f8d86, // n0x11f1 c0x0000 (---------------)  + I rollag
+	0x002b9945, // n0x11f2 c0x0000 (---------------)  + I romsa
+	0x00252547, // n0x11f3 c0x0000 (---------------)  + I romskog
+	0x0023f585, // n0x11f4 c0x0000 (---------------)  + I roros
+	0x00266f04, // n0x11f5 c0x0000 (---------------)  + I rost
+	0x0022df06, // n0x11f6 c0x0000 (---------------)  + I royken
+	0x0021da87, // n0x11f7 c0x0000 (---------------)  + I royrvik
+	0x00285686, // n0x11f8 c0x0000 (---------------)  + I ruovat
+	0x0023be85, // n0x11f9 c0x0000 (---------------)  + I rygge
+	0x002f33c8, // n0x11fa c0x0000 (---------------)  + I salangen
+	0x003007c5, // n0x11fb c0x0000 (---------------)  + I salat
+	0x0031a287, // n0x11fc c0x0000 (---------------)  + I saltdal
+	0x0032ddc9, // n0x11fd c0x0000 (---------------)  + I samnanger
+	0x0029ed8a, // n0x11fe c0x0000 (---------------)  + I sandefjord
+	0x002759c7, // n0x11ff c0x0000 (---------------)  + I sandnes
+	0x002759cc, // n0x1200 c0x0000 (---------------)  + I sandnessjoen
+	0x002f9f06, // n0x1201 c0x0000 (---------------)  + I sandoy
+	0x00237449, // n0x1202 c0x0000 (---------------)  + I sarpsborg
+	0x0024e105, // n0x1203 c0x0000 (---------------)  + I sauda
+	0x002568c8, // n0x1204 c0x0000 (---------------)  + I sauherad
+	0x00225303, // n0x1205 c0x0000 (---------------)  + I sel
+	0x00332c85, // n0x1206 c0x0000 (---------------)  + I selbu
+	0x002fec45, // n0x1207 c0x0000 (---------------)  + I selje
+	0x0031d1c7, // n0x1208 c0x0000 (---------------)  + I seljord
+	0x38216ac2, // n0x1209 c0x00e0 (n0x1355-n0x1356)  + I sf
+	0x0021d007, // n0x120a c0x0000 (---------------)  + I siellak
+	0x002d0f86, // n0x120b c0x0000 (---------------)  + I sigdal
+	0x0021be86, // n0x120c c0x0000 (---------------)  + I siljan
+	0x002d23c6, // n0x120d c0x0000 (---------------)  + I sirdal
+	0x00208b86, // n0x120e c0x0000 (---------------)  + I skanit
+	0x0030c948, // n0x120f c0x0000 (---------------)  + I skanland
+	0x002ee045, // n0x1210 c0x0000 (---------------)  + I skaun
+	0x0025c987, // n0x1211 c0x0000 (---------------)  + I skedsmo
+	0x0025c98d, // n0x1212 c0x0000 (---------------)  + I skedsmokorset
+	0x002023c3, // n0x1213 c0x0000 (---------------)  + I ski
+	0x002f2d85, // n0x1214 c0x0000 (---------------)  + I skien
+	0x0028dec7, // n0x1215 c0x0000 (---------------)  + I skierva
+	0x002adb48, // n0x1216 c0x0000 (---------------)  + I skiptvet
+	0x0022b005, // n0x1217 c0x0000 (---------------)  + I skjak
+	0x00275248, // n0x1218 c0x0000 (---------------)  + I skjervoy
+	0x00248b86, // n0x1219 c0x0000 (---------------)  + I skodje
+	0x002c9987, // n0x121a c0x0000 (---------------)  + I slattum
+	0x0024fb85, // n0x121b c0x0000 (---------------)  + I smola
+	0x0021f5c6, // n0x121c c0x0000 (---------------)  + I snaase
+	0x0022ee45, // n0x121d c0x0000 (---------------)  + I snasa
+	0x00218b0a, // n0x121e c0x0000 (---------------)  + I snillfjord
+	0x002a8446, // n0x121f c0x0000 (---------------)  + I snoasa
+	0x002727c7, // n0x1220 c0x0000 (---------------)  + I sogndal
+	0x002a3e85, // n0x1221 c0x0000 (---------------)  + I sogne
+	0x002cf087, // n0x1222 c0x0000 (---------------)  + I sokndal
+	0x0029ca84, // n0x1223 c0x0000 (---------------)  + I sola
+	0x002d2b46, // n0x1224 c0x0000 (---------------)  + I solund
+	0x002d3105, // n0x1225 c0x0000 (---------------)  + I somna
+	0x002007cb, // n0x1226 c0x0000 (---------------)  + I sondre-land
+	0x002ddac9, // n0x1227 c0x0000 (---------------)  + I songdalen
+	0x0024a44a, // n0x1228 c0x0000 (---------------)  + I sor-aurdal
+	0x002fb3c8, // n0x1229 c0x0000 (---------------)  + I sor-fron
+	0x002d3948, // n0x122a c0x0000 (---------------)  + I sor-odal
+	0x002d3b4c, // n0x122b c0x0000 (---------------)  + I sor-varanger
+	0x002d3e47, // n0x122c c0x0000 (---------------)  + I sorfold
+	0x002d4008, // n0x122d c0x0000 (---------------)  + I sorreisa
+	0x002d4ec8, // n0x122e c0x0000 (---------------)  + I sortland
+	0x002d50c5, // n0x122f c0x0000 (---------------)  + I sorum
+	0x002d878a, // n0x1230 c0x0000 (---------------)  + I spjelkavik
+	0x002d8e09, // n0x1231 c0x0000 (---------------)  + I spydeberg
+	0x38600502, // n0x1232 c0x00e1 (n0x1356-n0x1357)  + I st
+	0x0020f206, // n0x1233 c0x0000 (---------------)  + I stange
+	0x00289004, // n0x1234 c0x0000 (---------------)  + I stat
+	0x00289009, // n0x1235 c0x0000 (---------------)  + I stathelle
+	0x002ac0c9, // n0x1236 c0x0000 (---------------)  + I stavanger
+	0x00203587, // n0x1237 c0x0000 (---------------)  + I stavern
+	0x00282b47, // n0x1238 c0x0000 (---------------)  + I steigen
+	0x002da4c9, // n0x1239 c0x0000 (---------------)  + I steinkjer
+	0x002db448, // n0x123a c0x0000 (---------------)  + I stjordal
+	0x002db44f, // n0x123b c0x0000 (---------------)  + I stjordalshalsen
+	0x00297346, // n0x123c c0x0000 (---------------)  + I stokke
+	0x002dbc0b, // n0x123d c0x0000 (---------------)  + I stor-elvdal
+	0x002dbec5, // n0x123e c0x0000 (---------------)  + I stord
+	0x002dbec7, // n0x123f c0x0000 (---------------)  + I stordal
+	0x002dc309, // n0x1240 c0x0000 (---------------)  + I storfjord
+	0x00227ac6, // n0x1241 c0x0000 (---------------)  + I strand
+	0x00227ac7, // n0x1242 c0x0000 (---------------)  + I stranda
+	0x0020a745, // n0x1243 c0x0000 (---------------)  + I stryn
+	0x00239084, // n0x1244 c0x0000 (---------------)  + I sula
+	0x002088c6, // n0x1245 c0x0000 (---------------)  + I suldal
+	0x00205144, // n0x1246 c0x0000 (---------------)  + I sund
+	0x002a7d87, // n0x1247 c0x0000 (---------------)  + I sunndal
+	0x002c91c8, // n0x1248 c0x0000 (---------------)  + I surnadal
+	0x38addd08, // n0x1249 c0x00e2 (n0x1357-n0x1358)  + I svalbard
+	0x002de145, // n0x124a c0x0000 (---------------)  + I sveio
+	0x002de287, // n0x124b c0x0000 (---------------)  + I svelvik
+	0x0026c509, // n0x124c c0x0000 (---------------)  + I sykkylven
+	0x0021df04, // n0x124d c0x0000 (---------------)  + I tana
+	0x002de548, // n0x124e c0x0000 (---------------)  + I tananger
+	0x38ea7788, // n0x124f c0x00e3 (n0x1358-n0x135a)  o I telemark
+	0x00251f44, // n0x1250 c0x0000 (---------------)  + I time
+	0x0023b788, // n0x1251 c0x0000 (---------------)  + I tingvoll
+	0x00345944, // n0x1252 c0x0000 (---------------)  + I tinn
+	0x00236e49, // n0x1253 c0x0000 (---------------)  + I tjeldsund
+	0x0023c3c5, // n0x1254 c0x0000 (---------------)  + I tjome
+	0x3923bfc2, // n0x1255 c0x00e4 (n0x135a-n0x135b)  + I tm
+	0x00297385, // n0x1256 c0x0000 (---------------)  + I tokke
+	0x0021e205, // n0x1257 c0x0000 (---------------)  + I tolga
+	0x002fc008, // n0x1258 c0x0000 (---------------)  + I tonsberg
+	0x00249c47, // n0x1259 c0x0000 (---------------)  + I torsken
+	0x3960a782, // n0x125a c0x00e5 (n0x135b-n0x135c)  + I tr
+	0x0028f845, // n0x125b c0x0000 (---------------)  + I trana
+	0x00292f06, // n0x125c c0x0000 (---------------)  + I tranby
+	0x002a9246, // n0x125d c0x0000 (---------------)  + I tranoy
+	0x002b2a08, // n0x125e c0x0000 (---------------)  + I troandin
+	0x002b8888, // n0x125f c0x0000 (---------------)  + I trogstad
+	0x002b9906, // n0x1260 c0x0000 (---------------)  + I tromsa
+	0x002bb5c6, // n0x1261 c0x0000 (---------------)  + I tromso
+	0x0031c489, // n0x1262 c0x0000 (---------------)  + I trondheim
+	0x002c9546, // n0x1263 c0x0000 (---------------)  + I trysil
+	0x0033bf0b, // n0x1264 c0x0000 (---------------)  + I tvedestrand
+	0x00341505, // n0x1265 c0x0000 (---------------)  + I tydal
+	0x00209606, // n0x1266 c0x0000 (---------------)  + I tynset
+	0x0023f208, // n0x1267 c0x0000 (---------------)  + I tysfjord
+	0x002ca3c6, // n0x1268 c0x0000 (---------------)  + I tysnes
+	0x002aca06, // n0x1269 c0x0000 (---------------)  + I tysvar
+	0x002c324a, // n0x126a c0x0000 (---------------)  + I ullensaker
+	0x0032220a, // n0x126b c0x0000 (---------------)  + I ullensvang
+	0x002fa0c5, // n0x126c c0x0000 (---------------)  + I ulvik
+	0x00261207, // n0x126d c0x0000 (---------------)  + I unjarga
+	0x00264bc6, // n0x126e c0x0000 (---------------)  + I utsira
+	0x39a002c2, // n0x126f c0x00e6 (n0x135c-n0x135d)  + I va
+	0x0028e007, // n0x1270 c0x0000 (---------------)  + I vaapste
+	0x00265185, // n0x1271 c0x0000 (---------------)  + I vadso
+	0x002be8c4, // n0x1272 c0x0000 (---------------)  + I vaga
+	0x002be8c5, // n0x1273 c0x0000 (---------------)  + I vagan
+	0x002a1fc6, // n0x1274 c0x0000 (---------------)  + I vagsoy
+	0x0028b987, // n0x1275 c0x0000 (---------------)  + I vaksdal
+	0x0021b5c5, // n0x1276 c0x0000 (---------------)  + I valle
+	0x002ac184, // n0x1277 c0x0000 (---------------)  + I vang
+	0x0021c7c8, // n0x1278 c0x0000 (---------------)  + I vanylven
+	0x002acac5, // n0x1279 c0x0000 (---------------)  + I vardo
+	0x002dcf47, // n0x127a c0x0000 (---------------)  + I varggat
+	0x00300a05, // n0x127b c0x0000 (---------------)  + I varoy
+	0x00218a45, // n0x127c c0x0000 (---------------)  + I vefsn
+	0x002a5cc4, // n0x127d c0x0000 (---------------)  + I vega
+	0x002a5cc9, // n0x127e c0x0000 (---------------)  + I vegarshei
+	0x0025eec8, // n0x127f c0x0000 (---------------)  + I vennesla
+	0x002dd106, // n0x1280 c0x0000 (---------------)  + I verdal
+	0x002790c6, // n0x1281 c0x0000 (---------------)  + I verran
+	0x002d04c6, // n0x1282 c0x0000 (---------------)  + I vestby
+	0x39ed2888, // n0x1283 c0x00e7 (n0x135d-n0x135e)  o I vestfold
+	0x002d9bc7, // n0x1284 c0x0000 (---------------)  + I vestnes
+	0x002df98d, // n0x1285 c0x0000 (---------------)  + I vestre-slidre
+	0x002e014c, // n0x1286 c0x0000 (---------------)  + I vestre-toten
+	0x002e1ac9, // n0x1287 c0x0000 (---------------)  + I vestvagoy
+	0x002e1d09, // n0x1288 c0x0000 (---------------)  + I vevelstad
+	0x3a3099c2, // n0x1289 c0x00e8 (n0x135e-n0x135f)  + I vf
+	0x0033ed43, // n0x128a c0x0000 (---------------)  + I vgs
+	0x0021a6c3, // n0x128b c0x0000 (---------------)  + I vik
+	0x0021db85, // n0x128c c0x0000 (---------------)  + I vikna
+	0x003111ca, // n0x128d c0x0000 (---------------)  + I vindafjord
+	0x002ee646, // n0x128e c0x0000 (---------------)  + I voagat
+	0x0020f045, // n0x128f c0x0000 (---------------)  + I volda
+	0x002e7004, // n0x1290 c0x0000 (---------------)  + I voss
+	0x002e700b, // n0x1291 c0x0000 (---------------)  + I vossevangen
+	0x002d8b0c, // n0x1292 c0x0000 (---------------)  + I xn--andy-ira
+	0x002df68c, // n0x1293 c0x0000 (---------------)  + I xn--asky-ira
+	0x003431d5, // n0x1294 c0x0000 (---------------)  + I xn--aurskog-hland-jnb
+	0x00348e0d, // n0x1295 c0x0000 (---------------)  + I xn--avery-yua
+	0x002e7b8f, // n0x1296 c0x0000 (---------------)  + I xn--bdddj-mrabd
+	0x002e7f52, // n0x1297 c0x0000 (---------------)  + I xn--bearalvhki-y4a
+	0x002e83cf, // n0x1298 c0x0000 (---------------)  + I xn--berlevg-jxa
+	0x002e8792, // n0x1299 c0x0000 (---------------)  + I xn--bhcavuotna-s4a
+	0x002e8c13, // n0x129a c0x0000 (---------------)  + I xn--bhccavuotna-k7a
+	0x002e90cd, // n0x129b c0x0000 (---------------)  + I xn--bidr-5nac
+	0x002e968d, // n0x129c c0x0000 (---------------)  + I xn--bievt-0qa
+	0x002e99ce, // n0x129d c0x0000 (---------------)  + I xn--bjarky-fya
+	0x002ea10e, // n0x129e c0x0000 (---------------)  + I xn--bjddar-pta
+	0x002ea60c, // n0x129f c0x0000 (---------------)  + I xn--blt-elab
+	0x002ea98c, // n0x12a0 c0x0000 (---------------)  + I xn--bmlo-gra
+	0x002eb40b, // n0x12a1 c0x0000 (---------------)  + I xn--bod-2na
+	0x002eb9ce, // n0x12a2 c0x0000 (---------------)  + I xn--brnny-wuac
+	0x002ed5d2, // n0x12a3 c0x0000 (---------------)  + I xn--brnnysund-m8ac
+	0x002ee40c, // n0x12a4 c0x0000 (---------------)  + I xn--brum-voa
+	0x002ee7d0, // n0x12a5 c0x0000 (---------------)  + I xn--btsfjord-9za
+	0x002f3c12, // n0x12a6 c0x0000 (---------------)  + I xn--davvenjrga-y4a
+	0x002f408c, // n0x12a7 c0x0000 (---------------)  + I xn--dnna-gra
+	0x002f480d, // n0x12a8 c0x0000 (---------------)  + I xn--drbak-wua
+	0x002f4b4c, // n0x12a9 c0x0000 (---------------)  + I xn--dyry-ira
+	0x002f4e51, // n0x12aa c0x0000 (---------------)  + I xn--eveni-0qa01ga
+	0x002f528d, // n0x12ab c0x0000 (---------------)  + I xn--finny-yua
+	0x002f6bcd, // n0x12ac c0x0000 (---------------)  + I xn--fjord-lra
+	0x002f6f0a, // n0x12ad c0x0000 (---------------)  + I xn--fl-zia
+	0x002f718c, // n0x12ae c0x0000 (---------------)  + I xn--flor-jra
+	0x002f77cc, // n0x12af c0x0000 (---------------)  + I xn--frde-gra
+	0x002f7b4c, // n0x12b0 c0x0000 (---------------)  + I xn--frna-woa
+	0x002f824c, // n0x12b1 c0x0000 (---------------)  + I xn--frya-hra
+	0x002fac53, // n0x12b2 c0x0000 (---------------)  + I xn--ggaviika-8ya47h
+	0x002fb5d0, // n0x12b3 c0x0000 (---------------)  + I xn--gildeskl-g0a
+	0x002fb9d0, // n0x12b4 c0x0000 (---------------)  + I xn--givuotna-8ya
+	0x002fc20d, // n0x12b5 c0x0000 (---------------)  + I xn--gjvik-wua
+	0x002fc54c, // n0x12b6 c0x0000 (---------------)  + I xn--gls-elac
+	0x002fda89, // n0x12b7 c0x0000 (---------------)  + I xn--h-2fa
+	0x002ff7cd, // n0x12b8 c0x0000 (---------------)  + I xn--hbmer-xqa
+	0x002ffb13, // n0x12b9 c0x0000 (---------------)  + I xn--hcesuolo-7ya35b
+	0x00301811, // n0x12ba c0x0000 (---------------)  + I xn--hgebostad-g3a
+	0x00301c53, // n0x12bb c0x0000 (---------------)  + I xn--hmmrfeasta-s4ac
+	0x003024cf, // n0x12bc c0x0000 (---------------)  + I xn--hnefoss-q1a
+	0x0030288c, // n0x12bd c0x0000 (---------------)  + I xn--hobl-ira
+	0x00302b8f, // n0x12be c0x0000 (---------------)  + I xn--holtlen-hxa
+	0x00302f4d, // n0x12bf c0x0000 (---------------)  + I xn--hpmir-xqa
+	0x0030328f, // n0x12c0 c0x0000 (---------------)  + I xn--hyanger-q1a
+	0x00303650, // n0x12c1 c0x0000 (---------------)  + I xn--hylandet-54a
+	0x00303a4e, // n0x12c2 c0x0000 (---------------)  + I xn--indery-fya
+	0x003051ce, // n0x12c3 c0x0000 (---------------)  + I xn--jlster-bya
+	0x00305d50, // n0x12c4 c0x0000 (---------------)  + I xn--jrpeland-54a
+	0x0030614d, // n0x12c5 c0x0000 (---------------)  + I xn--karmy-yua
+	0x0030648e, // n0x12c6 c0x0000 (---------------)  + I xn--kfjord-iua
+	0x0030680c, // n0x12c7 c0x0000 (---------------)  + I xn--klbu-woa
+	0x00306b13, // n0x12c8 c0x0000 (---------------)  + I xn--koluokta-7ya57h
+	0x0030778e, // n0x12c9 c0x0000 (---------------)  + I xn--krager-gya
+	0x00308010, // n0x12ca c0x0000 (---------------)  + I xn--kranghke-b0a
+	0x00308411, // n0x12cb c0x0000 (---------------)  + I xn--krdsherad-m8a
+	0x0030884f, // n0x12cc c0x0000 (---------------)  + I xn--krehamn-dxa
+	0x00308c13, // n0x12cd c0x0000 (---------------)  + I xn--krjohka-hwab49j
+	0x0030954d, // n0x12ce c0x0000 (---------------)  + I xn--ksnes-uua
+	0x0030988f, // n0x12cf c0x0000 (---------------)  + I xn--kvfjord-nxa
+	0x00309c4e, // n0x12d0 c0x0000 (---------------)  + I xn--kvitsy-fya
+	0x0030a210, // n0x12d1 c0x0000 (---------------)  + I xn--kvnangen-k0a
+	0x0030a609, // n0x12d2 c0x0000 (---------------)  + I xn--l-1fa
+	0x0030ad10, // n0x12d3 c0x0000 (---------------)  + I xn--laheadju-7ya
+	0x0030b30f, // n0x12d4 c0x0000 (---------------)  + I xn--langevg-jxa
+	0x0030b98f, // n0x12d5 c0x0000 (---------------)  + I xn--ldingen-q1a
+	0x0030bd52, // n0x12d6 c0x0000 (---------------)  + I xn--leagaviika-52b
+	0x0030d08e, // n0x12d7 c0x0000 (---------------)  + I xn--lesund-hua
+	0x0030d94d, // n0x12d8 c0x0000 (---------------)  + I xn--lgrd-poac
+	0x0030e14d, // n0x12d9 c0x0000 (---------------)  + I xn--lhppi-xqa
+	0x0030e48d, // n0x12da c0x0000 (---------------)  + I xn--linds-pra
+	0x0030ff4d, // n0x12db c0x0000 (---------------)  + I xn--loabt-0qa
+	0x0031028d, // n0x12dc c0x0000 (---------------)  + I xn--lrdal-sra
+	0x003105d0, // n0x12dd c0x0000 (---------------)  + I xn--lrenskog-54a
+	0x003109cb, // n0x12de c0x0000 (---------------)  + I xn--lt-liac
+	0x00310e8c, // n0x12df c0x0000 (---------------)  + I xn--lten-gra
+	0x0031144c, // n0x12e0 c0x0000 (---------------)  + I xn--lury-ira
+	0x0031174c, // n0x12e1 c0x0000 (---------------)  + I xn--mely-ira
+	0x00311a4e, // n0x12e2 c0x0000 (---------------)  + I xn--merker-kua
+	0x00317210, // n0x12e3 c0x0000 (---------------)  + I xn--mjndalen-64a
+	0x00317b52, // n0x12e4 c0x0000 (---------------)  + I xn--mlatvuopmi-s4a
+	0x00317fcb, // n0x12e5 c0x0000 (---------------)  + I xn--mli-tla
+	0x0031844e, // n0x12e6 c0x0000 (---------------)  + I xn--mlselv-iua
+	0x003187ce, // n0x12e7 c0x0000 (---------------)  + I xn--moreke-jua
+	0x00318b4e, // n0x12e8 c0x0000 (---------------)  + I xn--mosjen-eya
+	0x00318fcb, // n0x12e9 c0x0000 (---------------)  + I xn--mot-tla
+	0x3a719416, // n0x12ea c0x00e9 (n0x135f-n0x1361)  o I xn--mre-og-romsdal-qqb
+	0x0031d80d, // n0x12eb c0x0000 (---------------)  + I xn--msy-ula0h
+	0x0031e0d4, // n0x12ec c0x0000 (---------------)  + I xn--mtta-vrjjat-k7af
+	0x0031e74d, // n0x12ed c0x0000 (---------------)  + I xn--muost-0qa
+	0x0031ef95, // n0x12ee c0x0000 (---------------)  + I xn--nmesjevuemie-tcba
+	0x0032004d, // n0x12ef c0x0000 (---------------)  + I xn--nry-yla5g
+	0x0032038f, // n0x12f0 c0x0000 (---------------)  + I xn--nttery-byae
+	0x00320d8f, // n0x12f1 c0x0000 (---------------)  + I xn--nvuotna-hwa
+	0x0032340f, // n0x12f2 c0x0000 (---------------)  + I xn--oppegrd-ixa
+	0x003237ce, // n0x12f3 c0x0000 (---------------)  + I xn--ostery-fya
+	0x00323d4d, // n0x12f4 c0x0000 (---------------)  + I xn--osyro-wua
+	0x00324a11, // n0x12f5 c0x0000 (---------------)  + I xn--porsgu-sta26f
+	0x00325f4c, // n0x12f6 c0x0000 (---------------)  + I xn--rady-ira
+	0x0032624c, // n0x12f7 c0x0000 (---------------)  + I xn--rdal-poa
+	0x0032654b, // n0x12f8 c0x0000 (---------------)  + I xn--rde-ula
+	0x0032680c, // n0x12f9 c0x0000 (---------------)  + I xn--rdy-0nab
+	0x0032774f, // n0x12fa c0x0000 (---------------)  + I xn--rennesy-v1a
+	0x00327b12, // n0x12fb c0x0000 (---------------)  + I xn--rhkkervju-01af
+	0x0032810d, // n0x12fc c0x0000 (---------------)  + I xn--rholt-mra
+	0x00328b8c, // n0x12fd c0x0000 (---------------)  + I xn--risa-5na
+	0x0032948c, // n0x12fe c0x0000 (---------------)  + I xn--risr-ira
+	0x0032978d, // n0x12ff c0x0000 (---------------)  + I xn--rland-uua
+	0x00329acf, // n0x1300 c0x0000 (---------------)  + I xn--rlingen-mxa
+	0x00329e8e, // n0x1301 c0x0000 (---------------)  + I xn--rmskog-bya
+	0x0032a20c, // n0x1302 c0x0000 (---------------)  + I xn--rros-gra
+	0x0032a68d, // n0x1303 c0x0000 (---------------)  + I xn--rskog-uua
+	0x0032a9cb, // n0x1304 c0x0000 (---------------)  + I xn--rst-0na
+	0x0032ad4c, // n0x1305 c0x0000 (---------------)  + I xn--rsta-fra
+	0x0032b2cd, // n0x1306 c0x0000 (---------------)  + I xn--ryken-vua
+	0x0032b60e, // n0x1307 c0x0000 (---------------)  + I xn--ryrvik-bya
+	0x0032b989, // n0x1308 c0x0000 (---------------)  + I xn--s-1fa
+	0x0032ce53, // n0x1309 c0x0000 (---------------)  + I xn--sandnessjen-ogb
+	0x0032e00d, // n0x130a c0x0000 (---------------)  + I xn--sandy-yua
+	0x0032e34d, // n0x130b c0x0000 (---------------)  + I xn--seral-lra
+	0x0032e68c, // n0x130c c0x0000 (---------------)  + I xn--sgne-gra
+	0x0032e9ce, // n0x130d c0x0000 (---------------)  + I xn--skierv-uta
+	0x0032f1cf, // n0x130e c0x0000 (---------------)  + I xn--skjervy-v1a
+	0x0032f58c, // n0x130f c0x0000 (---------------)  + I xn--skjk-soa
+	0x0032f88d, // n0x1310 c0x0000 (---------------)  + I xn--sknit-yqa
+	0x0032fbcf, // n0x1311 c0x0000 (---------------)  + I xn--sknland-fxa
+	0x0032ff8c, // n0x1312 c0x0000 (---------------)  + I xn--slat-5na
+	0x0033040c, // n0x1313 c0x0000 (---------------)  + I xn--slt-elab
+	0x003307cc, // n0x1314 c0x0000 (---------------)  + I xn--smla-hra
+	0x00330acc, // n0x1315 c0x0000 (---------------)  + I xn--smna-gra
+	0x00330dcd, // n0x1316 c0x0000 (---------------)  + I xn--snase-nra
+	0x00331112, // n0x1317 c0x0000 (---------------)  + I xn--sndre-land-0cb
+	0x003315cc, // n0x1318 c0x0000 (---------------)  + I xn--snes-poa
+	0x003318cc, // n0x1319 c0x0000 (---------------)  + I xn--snsa-roa
+	0x00331bd1, // n0x131a c0x0000 (---------------)  + I xn--sr-aurdal-l8a
+	0x0033200f, // n0x131b c0x0000 (---------------)  + I xn--sr-fron-q1a
+	0x003323cf, // n0x131c c0x0000 (---------------)  + I xn--sr-odal-q1a
+	0x00332793, // n0x131d c0x0000 (---------------)  + I xn--sr-varanger-ggb
+	0x003364ce, // n0x131e c0x0000 (---------------)  + I xn--srfold-bya
+	0x0033684f, // n0x131f c0x0000 (---------------)  + I xn--srreisa-q1a
+	0x00336c0c, // n0x1320 c0x0000 (---------------)  + I xn--srum-gra
+	0x3ab36f0e, // n0x1321 c0x00ea (n0x1361-n0x1362)  o I xn--stfold-9xa
+	0x0033728f, // n0x1322 c0x0000 (---------------)  + I xn--stjrdal-s1a
+	0x00337656, // n0x1323 c0x0000 (---------------)  + I xn--stjrdalshalsen-sqb
+	0x00337dd2, // n0x1324 c0x0000 (---------------)  + I xn--stre-toten-zcb
+	0x0033894c, // n0x1325 c0x0000 (---------------)  + I xn--tjme-hra
+	0x0033a8cf, // n0x1326 c0x0000 (---------------)  + I xn--tnsberg-q1a
+	0x0033ac8d, // n0x1327 c0x0000 (---------------)  + I xn--trany-yua
+	0x0033afcf, // n0x1328 c0x0000 (---------------)  + I xn--trgstad-r1a
+	0x0033b38c, // n0x1329 c0x0000 (---------------)  + I xn--trna-woa
+	0x0033b68d, // n0x132a c0x0000 (---------------)  + I xn--troms-zua
+	0x0033b9cd, // n0x132b c0x0000 (---------------)  + I xn--tysvr-vra
+	0x0033c48e, // n0x132c c0x0000 (---------------)  + I xn--unjrga-rta
+	0x0033c98c, // n0x132d c0x0000 (---------------)  + I xn--vads-jra
+	0x0033cc8c, // n0x132e c0x0000 (---------------)  + I xn--vard-jra
+	0x0033cf90, // n0x132f c0x0000 (---------------)  + I xn--vegrshei-c0a
+	0x0033d391, // n0x1330 c0x0000 (---------------)  + I xn--vestvgy-ixa6o
+	0x0033d7cb, // n0x1331 c0x0000 (---------------)  + I xn--vg-yiab
+	0x0033e94c, // n0x1332 c0x0000 (---------------)  + I xn--vgan-qoa
+	0x0033ec4e, // n0x1333 c0x0000 (---------------)  + I xn--vgsy-qoa0j
+	0x00340491, // n0x1334 c0x0000 (---------------)  + I xn--vre-eiker-k8a
+	0x003408ce, // n0x1335 c0x0000 (---------------)  + I xn--vrggt-xqad
+	0x00340c4d, // n0x1336 c0x0000 (---------------)  + I xn--vry-yla5g
+	0x0034228b, // n0x1337 c0x0000 (---------------)  + I xn--yer-zna
+	0x00342b0f, // n0x1338 c0x0000 (---------------)  + I xn--ygarden-p1a
+	0x003468d4, // n0x1339 c0x0000 (---------------)  + I xn--ystre-slidre-ujb
+	0x00233182, // n0x133a c0x0000 (---------------)  + I gs
+	0x00233182, // n0x133b c0x0000 (---------------)  + I gs
+	0x00209a83, // n0x133c c0x0000 (---------------)  + I nes
+	0x00233182, // n0x133d c0x0000 (---------------)  + I gs
+	0x00209a83, // n0x133e c0x0000 (---------------)  + I nes
+	0x00233182, // n0x133f c0x0000 (---------------)  + I gs
+	0x00203c82, // n0x1340 c0x0000 (---------------)  + I os
+	0x00327fc5, // n0x1341 c0x0000 (---------------)  + I valer
+	0x0034018c, // n0x1342 c0x0000 (---------------)  + I xn--vler-qoa
+	0x00233182, // n0x1343 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1344 c0x0000 (---------------)  + I gs
+	0x00203c82, // n0x1345 c0x0000 (---------------)  + I os
+	0x00233182, // n0x1346 c0x0000 (---------------)  + I gs
+	0x002a6e05, // n0x1347 c0x0000 (---------------)  + I heroy
+	0x0029ed85, // n0x1348 c0x0000 (---------------)  + I sande
+	0x00233182, // n0x1349 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x134a c0x0000 (---------------)  + I gs
+	0x002048c2, // n0x134b c0x0000 (---------------)  + I bo
+	0x002a6e05, // n0x134c c0x0000 (---------------)  + I heroy
+	0x003493c9, // n0x134d c0x0000 (---------------)  + I xn--b-5ga
+	0x0030150c, // n0x134e c0x0000 (---------------)  + I xn--hery-ira
+	0x00233182, // n0x134f c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1350 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1351 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1352 c0x0000 (---------------)  + I gs
+	0x00327fc5, // n0x1353 c0x0000 (---------------)  + I valer
+	0x00233182, // n0x1354 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1355 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1356 c0x0000 (---------------)  + I gs
+	0x00233182, // n0x1357 c0x0000 (---------------)  + I gs
+	0x002048c2, // n0x1358 c0x0000 (---------------)  + I bo
+	0x003493c9, // n0x1359 c0x0000 (---------------)  + I xn--b-5ga
+	0x00233182, // n0x135a c0x0000 (---------------)  + I gs
+	0x00233182, // n0x135b c0x0000 (---------------)  + I gs
+	0x00233182, // n0x135c c0x0000 (---------------)  + I gs
+	0x0029ed85, // n0x135d c0x0000 (---------------)  + I sande
+	0x00233182, // n0x135e c0x0000 (---------------)  + I gs
+	0x0029ed85, // n0x135f c0x0000 (---------------)  + I sande
+	0x0030150c, // n0x1360 c0x0000 (---------------)  + I xn--hery-ira
+	0x0034018c, // n0x1361 c0x0000 (---------------)  + I xn--vler-qoa
+	0x002f0f83, // n0x1362 c0x0000 (---------------)  + I biz
+	0x00204543, // n0x1363 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1364 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1365 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x1366 c0x0000 (---------------)  + I info
+	0x0020e643, // n0x1367 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1368 c0x0000 (---------------)  + I org
+	0x000b4a88, // n0x1369 c0x0000 (---------------)  +   merseine
+	0x00094a84, // n0x136a c0x0000 (---------------)  +   mine
+	0x000c1a08, // n0x136b c0x0000 (---------------)  +   shacknet
+	0x3ba00182, // n0x136c c0x00ee (n0x136d-n0x136e)  o I co
+	0x000330c8, // n0x136d c0x0000 (---------------)  +   blogspot
+	0x0063ed0a, // n0x136e c0x0001 (---------------)  ! I mediaphone
+	0x006042c6, // n0x136f c0x0001 (---------------)  ! I nawras
+	0x006042cd, // n0x1370 c0x0001 (---------------)  ! I nawrastelecom
+	0x00624b8a, // n0x1371 c0x0001 (---------------)  ! I omanmobile
+	0x006859c8, // n0x1372 c0x0001 (---------------)  ! I omanpost
+	0x006c75c7, // n0x1373 c0x0001 (---------------)  ! I omantel
+	0x006f0b8c, // n0x1374 c0x0001 (---------------)  ! I rakpetroleum
+	0x00663e87, // n0x1375 c0x0001 (---------------)  ! I siemens
+	0x00648e08, // n0x1376 c0x0001 (---------------)  ! I songfest
+	0x006b00cc, // n0x1377 c0x0001 (---------------)  ! I statecouncil
+	0x0000ac82, // n0x1378 c0x0000 (---------------)  +   ae
+	0x00147787, // n0x1379 c0x0000 (---------------)  +   blogdns
+	0x000bf348, // n0x137a c0x0000 (---------------)  +   blogsite
+	0x000d1792, // n0x137b c0x0000 (---------------)  +   boldlygoingnowhere
+	0x00039288, // n0x137c c0x0000 (---------------)  +   dnsalias
+	0x00062107, // n0x137d c0x0000 (---------------)  +   dnsdojo
+	0x000074cb, // n0x137e c0x0000 (---------------)  +   doesntexist
+	0x000fc949, // n0x137f c0x0000 (---------------)  +   dontexist
+	0x00039187, // n0x1380 c0x0000 (---------------)  +   doomdns
+	0x00062046, // n0x1381 c0x0000 (---------------)  +   dvrdns
+	0x00010cc8, // n0x1382 c0x0000 (---------------)  +   dynalias
+	0x3c400a46, // n0x1383 c0x00f1 (n0x13ad-n0x13af)  +   dyndns
+	0x00092c0d, // n0x1384 c0x0000 (---------------)  +   endofinternet
+	0x000306d0, // n0x1385 c0x0000 (---------------)  +   endoftheinternet
+	0x00058547, // n0x1386 c0x0000 (---------------)  +   from-me
+	0x0007c089, // n0x1387 c0x0000 (---------------)  +   game-host
+	0x000484c6, // n0x1388 c0x0000 (---------------)  +   gotdns
+	0x0004008a, // n0x1389 c0x0000 (---------------)  +   hobby-site
+	0x00070c87, // n0x138a c0x0000 (---------------)  +   homedns
+	0x000053c7, // n0x138b c0x0000 (---------------)  +   homeftp
+	0x0008d4c9, // n0x138c c0x0000 (---------------)  +   homelinux
+	0x0008eac8, // n0x138d c0x0000 (---------------)  +   homeunix
+	0x0005c0ce, // n0x138e c0x0000 (---------------)  +   is-a-bruinsfan
+	0x00011c0e, // n0x138f c0x0000 (---------------)  +   is-a-candidate
+	0x0001680f, // n0x1390 c0x0000 (---------------)  +   is-a-celticsfan
+	0x00016f49, // n0x1391 c0x0000 (---------------)  +   is-a-chef
+	0x00125849, // n0x1392 c0x0000 (---------------)  +   is-a-geek
+	0x0006238b, // n0x1393 c0x0000 (---------------)  +   is-a-knight
+	0x00073ecf, // n0x1394 c0x0000 (---------------)  +   is-a-linux-user
+	0x0013fe8c, // n0x1395 c0x0000 (---------------)  +   is-a-patsfan
+	0x0009d60b, // n0x1396 c0x0000 (---------------)  +   is-a-soxfan
+	0x000bce48, // n0x1397 c0x0000 (---------------)  +   is-found
+	0x000cd1c7, // n0x1398 c0x0000 (---------------)  +   is-lost
+	0x000ceb88, // n0x1399 c0x0000 (---------------)  +   is-saved
+	0x000dd64b, // n0x139a c0x0000 (---------------)  +   is-very-bad
+	0x000e048c, // n0x139b c0x0000 (---------------)  +   is-very-evil
+	0x000f7ecc, // n0x139c c0x0000 (---------------)  +   is-very-good
+	0x000fd50c, // n0x139d c0x0000 (---------------)  +   is-very-nice
+	0x00103e8d, // n0x139e c0x0000 (---------------)  +   is-very-sweet
+	0x0008bfc8, // n0x139f c0x0000 (---------------)  +   isa-geek
+	0x0002b389, // n0x13a0 c0x0000 (---------------)  +   kicks-ass
+	0x0011eccb, // n0x13a1 c0x0000 (---------------)  +   misconfused
+	0x000c5047, // n0x13a2 c0x0000 (---------------)  +   podzone
+	0x000bf1ca, // n0x13a3 c0x0000 (---------------)  +   readmyblog
+	0x000fb186, // n0x13a4 c0x0000 (---------------)  +   selfip
+	0x0012074d, // n0x13a5 c0x0000 (---------------)  +   sellsyourhome
+	0x000ca508, // n0x13a6 c0x0000 (---------------)  +   servebbs
+	0x000ca6c8, // n0x13a7 c0x0000 (---------------)  +   serveftp
+	0x000b5a89, // n0x13a8 c0x0000 (---------------)  +   servegame
+	0x000dc84c, // n0x13a9 c0x0000 (---------------)  +   stuff-4-sale
+	0x0000a702, // n0x13aa c0x0000 (---------------)  +   us
+	0x0000dfc6, // n0x13ab c0x0000 (---------------)  +   webhop
+	0x00001b82, // n0x13ac c0x0000 (---------------)  +   za
+	0x00000f82, // n0x13ad c0x0000 (---------------)  +   go
+	0x000053c4, // n0x13ae c0x0000 (---------------)  +   home
+	0x00204883, // n0x13af c0x0000 (---------------)  + I abo
+	0x00201602, // n0x13b0 c0x0000 (---------------)  + I ac
+	0x00204543, // n0x13b1 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x13b2 c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x13b3 c0x0000 (---------------)  + I gob
+	0x00202983, // n0x13b4 c0x0000 (---------------)  + I ing
+	0x0023ed03, // n0x13b5 c0x0000 (---------------)  + I med
+	0x0020e643, // n0x13b6 c0x0000 (---------------)  + I net
+	0x0020b903, // n0x13b7 c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x13b8 c0x0000 (---------------)  + I org
+	0x002d2543, // n0x13b9 c0x0000 (---------------)  + I sld
+	0x00204543, // n0x13ba c0x0000 (---------------)  + I com
+	0x002ce043, // n0x13bb c0x0000 (---------------)  + I edu
+	0x002073c3, // n0x13bc c0x0000 (---------------)  + I gob
+	0x00232703, // n0x13bd c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x13be c0x0000 (---------------)  + I net
+	0x0020b903, // n0x13bf c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x13c0 c0x0000 (---------------)  + I org
+	0x00204543, // n0x13c1 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x13c2 c0x0000 (---------------)  + I edu
+	0x002375c3, // n0x13c3 c0x0000 (---------------)  + I org
+	0x00204543, // n0x13c4 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x13c5 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x13c6 c0x0000 (---------------)  + I gov
+	0x00200101, // n0x13c7 c0x0000 (---------------)  + I i
+	0x00232703, // n0x13c8 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x13c9 c0x0000 (---------------)  + I net
+	0x00201943, // n0x13ca c0x0000 (---------------)  + I ngo
+	0x002375c3, // n0x13cb c0x0000 (---------------)  + I org
+	0x002f0f83, // n0x13cc c0x0000 (---------------)  + I biz
+	0x00204543, // n0x13cd c0x0000 (---------------)  + I com
+	0x002ce043, // n0x13ce c0x0000 (---------------)  + I edu
+	0x00271dc3, // n0x13cf c0x0000 (---------------)  + I fam
+	0x002073c3, // n0x13d0 c0x0000 (---------------)  + I gob
+	0x002c3f83, // n0x13d1 c0x0000 (---------------)  + I gok
+	0x0025f843, // n0x13d2 c0x0000 (---------------)  + I gon
+	0x00203e83, // n0x13d3 c0x0000 (---------------)  + I gop
+	0x002134c3, // n0x13d4 c0x0000 (---------------)  + I gos
+	0x0025bdc3, // n0x13d5 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x13d6 c0x0000 (---------------)  + I info
+	0x0020e643, // n0x13d7 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x13d8 c0x0000 (---------------)  + I org
+	0x0020dfc3, // n0x13d9 c0x0000 (---------------)  + I web
+	0x002345c5, // n0x13da c0x0000 (---------------)  + I 6bone
+	0x0022f504, // n0x13db c0x0000 (---------------)  + I agro
+	0x0024ff03, // n0x13dc c0x0000 (---------------)  + I aid
+	0x00210b03, // n0x13dd c0x0000 (---------------)  + I art
+	0x00285783, // n0x13de c0x0000 (---------------)  + I atm
+	0x00290508, // n0x13df c0x0000 (---------------)  + I augustow
+	0x00228704, // n0x13e0 c0x0000 (---------------)  + I auto
+	0x002515ca, // n0x13e1 c0x0000 (---------------)  + I babia-gora
+	0x00284446, // n0x13e2 c0x0000 (---------------)  + I bedzin
+	0x00202347, // n0x13e3 c0x0000 (---------------)  + I beskidy
+	0x00220a8a, // n0x13e4 c0x0000 (---------------)  + I bialowieza
+	0x00297209, // n0x13e5 c0x0000 (---------------)  + I bialystok
+	0x00204f07, // n0x13e6 c0x0000 (---------------)  + I bielawa
+	0x00206a8a, // n0x13e7 c0x0000 (---------------)  + I bieszczady
+	0x002f0f83, // n0x13e8 c0x0000 (---------------)  + I biz
+	0x00346ecb, // n0x13e9 c0x0000 (---------------)  + I boleslawiec
+	0x002b52c9, // n0x13ea c0x0000 (---------------)  + I bydgoszcz
+	0x002fa305, // n0x13eb c0x0000 (---------------)  + I bytom
+	0x002b8dc7, // n0x13ec c0x0000 (---------------)  + I cieszyn
+	0x00000182, // n0x13ed c0x0000 (---------------)  +   co
+	0x00204543, // n0x13ee c0x0000 (---------------)  + I com
+	0x00344a07, // n0x13ef c0x0000 (---------------)  + I czeladz
+	0x00200445, // n0x13f0 c0x0000 (---------------)  + I czest
+	0x00228a49, // n0x13f1 c0x0000 (---------------)  + I dlugoleka
+	0x002ce043, // n0x13f2 c0x0000 (---------------)  + I edu
+	0x0021f346, // n0x13f3 c0x0000 (---------------)  + I elblag
+	0x002d8843, // n0x13f4 c0x0000 (---------------)  + I elk
+	0x002d1003, // n0x13f5 c0x0000 (---------------)  + I gda
+	0x002e6646, // n0x13f6 c0x0000 (---------------)  + I gdansk
+	0x00229286, // n0x13f7 c0x0000 (---------------)  + I gdynia
+	0x00204d47, // n0x13f8 c0x0000 (---------------)  + I gliwice
+	0x00221dc6, // n0x13f9 c0x0000 (---------------)  + I glogow
+	0x002261c5, // n0x13fa c0x0000 (---------------)  + I gmina
+	0x00230207, // n0x13fb c0x0000 (---------------)  + I gniezno
+	0x002b6207, // n0x13fc c0x0000 (---------------)  + I gorlice
+	0x3e25bdc3, // n0x13fd c0x00f8 (n0x1485-n0x148e)  + I gov
+	0x002eabc7, // n0x13fe c0x0000 (---------------)  + I grajewo
+	0x0024fb43, // n0x13ff c0x0000 (---------------)  + I gsm
+	0x0022f945, // n0x1400 c0x0000 (---------------)  + I ilawa
+	0x00206344, // n0x1401 c0x0000 (---------------)  + I info
+	0x0026de43, // n0x1402 c0x0000 (---------------)  + I irc
+	0x00307e08, // n0x1403 c0x0000 (---------------)  + I jaworzno
+	0x0022438c, // n0x1404 c0x0000 (---------------)  + I jelenia-gora
+	0x00296145, // n0x1405 c0x0000 (---------------)  + I jgora
+	0x002a0786, // n0x1406 c0x0000 (---------------)  + I kalisz
+	0x003448c7, // n0x1407 c0x0000 (---------------)  + I karpacz
+	0x00240987, // n0x1408 c0x0000 (---------------)  + I kartuzy
+	0x002fa1c7, // n0x1409 c0x0000 (---------------)  + I kaszuby
+	0x0024a788, // n0x140a c0x0000 (---------------)  + I katowice
+	0x002a794f, // n0x140b c0x0000 (---------------)  + I kazimierz-dolny
+	0x00227f05, // n0x140c c0x0000 (---------------)  + I kepno
+	0x0020b707, // n0x140d c0x0000 (---------------)  + I ketrzyn
+	0x002d5687, // n0x140e c0x0000 (---------------)  + I klodzko
+	0x0028d24a, // n0x140f c0x0000 (---------------)  + I kobierzyce
+	0x0029cf09, // n0x1410 c0x0000 (---------------)  + I kolobrzeg
+	0x002e7645, // n0x1411 c0x0000 (---------------)  + I konin
+	0x002ecb8a, // n0x1412 c0x0000 (---------------)  + I konskowola
+	0x0029e586, // n0x1413 c0x0000 (---------------)  + I krakow
+	0x002a8185, // n0x1414 c0x0000 (---------------)  + I kutno
+	0x0029cc44, // n0x1415 c0x0000 (---------------)  + I lapy
+	0x002403c6, // n0x1416 c0x0000 (---------------)  + I lebork
+	0x0023f747, // n0x1417 c0x0000 (---------------)  + I legnica
+	0x00231907, // n0x1418 c0x0000 (---------------)  + I lezajsk
+	0x0022db08, // n0x1419 c0x0000 (---------------)  + I limanowa
+	0x0030fb85, // n0x141a c0x0000 (---------------)  + I lomza
+	0x00200346, // n0x141b c0x0000 (---------------)  + I lowicz
+	0x002619c5, // n0x141c c0x0000 (---------------)  + I lubin
+	0x00224045, // n0x141d c0x0000 (---------------)  + I lukow
+	0x0020b204, // n0x141e c0x0000 (---------------)  + I mail
+	0x00225c07, // n0x141f c0x0000 (---------------)  + I malbork
+	0x0030c78a, // n0x1420 c0x0000 (---------------)  + I malopolska
+	0x002232c8, // n0x1421 c0x0000 (---------------)  + I mazowsze
+	0x002d6746, // n0x1422 c0x0000 (---------------)  + I mazury
+	0x002f0e45, // n0x1423 c0x0000 (---------------)  + I mbone
+	0x0023ed03, // n0x1424 c0x0000 (---------------)  + I med
+	0x0023ed05, // n0x1425 c0x0000 (---------------)  + I media
+	0x002ed2c6, // n0x1426 c0x0000 (---------------)  + I miasta
+	0x00206886, // n0x1427 c0x0000 (---------------)  + I mielec
+	0x00339846, // n0x1428 c0x0000 (---------------)  + I mielno
+	0x00232703, // n0x1429 c0x0000 (---------------)  + I mil
+	0x00328387, // n0x142a c0x0000 (---------------)  + I mragowo
+	0x002d5605, // n0x142b c0x0000 (---------------)  + I naklo
+	0x0020e643, // n0x142c c0x0000 (---------------)  + I net
+	0x00201943, // n0x142d c0x0000 (---------------)  + I ngo
+	0x0020a14d, // n0x142e c0x0000 (---------------)  + I nieruchomosci
+	0x0020b903, // n0x142f c0x0000 (---------------)  + I nom
+	0x0022dc08, // n0x1430 c0x0000 (---------------)  + I nowaruda
+	0x002c41c4, // n0x1431 c0x0000 (---------------)  + I nysa
+	0x0026b0c5, // n0x1432 c0x0000 (---------------)  + I olawa
+	0x0028d146, // n0x1433 c0x0000 (---------------)  + I olecko
+	0x00270f06, // n0x1434 c0x0000 (---------------)  + I olkusz
+	0x00209507, // n0x1435 c0x0000 (---------------)  + I olsztyn
+	0x0020e0c7, // n0x1436 c0x0000 (---------------)  + I opoczno
+	0x002c1005, // n0x1437 c0x0000 (---------------)  + I opole
+	0x002375c3, // n0x1438 c0x0000 (---------------)  + I org
+	0x0021ea07, // n0x1439 c0x0000 (---------------)  + I ostroda
+	0x0025cfc9, // n0x143a c0x0000 (---------------)  + I ostroleka
+	0x00286309, // n0x143b c0x0000 (---------------)  + I ostrowiec
+	0x00290e4a, // n0x143c c0x0000 (---------------)  + I ostrowwlkp
+	0x002ccf82, // n0x143d c0x0000 (---------------)  + I pc
+	0x0022f904, // n0x143e c0x0000 (---------------)  + I pila
+	0x002c1f84, // n0x143f c0x0000 (---------------)  + I pisz
+	0x002c48c7, // n0x1440 c0x0000 (---------------)  + I podhale
+	0x002c4d48, // n0x1441 c0x0000 (---------------)  + I podlasie
+	0x0031ca09, // n0x1442 c0x0000 (---------------)  + I polkowice
+	0x002f2c49, // n0x1443 c0x0000 (---------------)  + I pomorskie
+	0x002c5847, // n0x1444 c0x0000 (---------------)  + I pomorze
+	0x0033e186, // n0x1445 c0x0000 (---------------)  + I powiat
+	0x002c6606, // n0x1446 c0x0000 (---------------)  + I poznan
+	0x002c7b04, // n0x1447 c0x0000 (---------------)  + I priv
+	0x002c7c8a, // n0x1448 c0x0000 (---------------)  + I prochowice
+	0x002c8988, // n0x1449 c0x0000 (---------------)  + I pruszkow
+	0x002c8b89, // n0x144a c0x0000 (---------------)  + I przeworsk
+	0x0027b5c6, // n0x144b c0x0000 (---------------)  + I pulawy
+	0x0029a3c5, // n0x144c c0x0000 (---------------)  + I radom
+	0x00223188, // n0x144d c0x0000 (---------------)  + I rawa-maz
+	0x002aff8a, // n0x144e c0x0000 (---------------)  + I realestate
+	0x00231b03, // n0x144f c0x0000 (---------------)  + I rel
+	0x002536c6, // n0x1450 c0x0000 (---------------)  + I rybnik
+	0x002c5947, // n0x1451 c0x0000 (---------------)  + I rzeszow
+	0x002f2245, // n0x1452 c0x0000 (---------------)  + I sanok
+	0x002c4085, // n0x1453 c0x0000 (---------------)  + I sejny
+	0x00334f43, // n0x1454 c0x0000 (---------------)  + I sex
+	0x00219004, // n0x1455 c0x0000 (---------------)  + I shop
+	0x002c4e87, // n0x1456 c0x0000 (---------------)  + I siedlce
+	0x00226045, // n0x1457 c0x0000 (---------------)  + I sklep
+	0x00270547, // n0x1458 c0x0000 (---------------)  + I skoczow
+	0x0025f005, // n0x1459 c0x0000 (---------------)  + I slask
+	0x002d26c6, // n0x145a c0x0000 (---------------)  + I slupsk
+	0x002d3605, // n0x145b c0x0000 (---------------)  + I sopot
+	0x00260dc3, // n0x145c c0x0000 (---------------)  + I sos
+	0x0028f9c9, // n0x145d c0x0000 (---------------)  + I sosnowiec
+	0x0026ae8c, // n0x145e c0x0000 (---------------)  + I stalowa-wola
+	0x0029904c, // n0x145f c0x0000 (---------------)  + I starachowice
+	0x00266f88, // n0x1460 c0x0000 (---------------)  + I stargard
+	0x002d9e87, // n0x1461 c0x0000 (---------------)  + I suwalki
+	0x002de948, // n0x1462 c0x0000 (---------------)  + I swidnica
+	0x002dec8a, // n0x1463 c0x0000 (---------------)  + I swiebodzin
+	0x002df04b, // n0x1464 c0x0000 (---------------)  + I swinoujscie
+	0x002b5408, // n0x1465 c0x0000 (---------------)  + I szczecin
+	0x002a0888, // n0x1466 c0x0000 (---------------)  + I szczytno
+	0x0022a5c6, // n0x1467 c0x0000 (---------------)  + I szkola
+	0x0033e2c5, // n0x1468 c0x0000 (---------------)  + I targi
+	0x002011ca, // n0x1469 c0x0000 (---------------)  + I tarnobrzeg
+	0x00233285, // n0x146a c0x0000 (---------------)  + I tgory
+	0x0023bfc2, // n0x146b c0x0000 (---------------)  + I tm
+	0x002ac607, // n0x146c c0x0000 (---------------)  + I tourism
+	0x002c1bc6, // n0x146d c0x0000 (---------------)  + I travel
+	0x0023ad45, // n0x146e c0x0000 (---------------)  + I turek
+	0x002d6489, // n0x146f c0x0000 (---------------)  + I turystyka
+	0x002c4345, // n0x1470 c0x0000 (---------------)  + I tychy
+	0x0027d946, // n0x1471 c0x0000 (---------------)  + I usenet
+	0x0030ee45, // n0x1472 c0x0000 (---------------)  + I ustka
+	0x0024ed09, // n0x1473 c0x0000 (---------------)  + I walbrzych
+	0x00233b06, // n0x1474 c0x0000 (---------------)  + I warmia
+	0x002b76c8, // n0x1475 c0x0000 (---------------)  + I warszawa
+	0x0028ff43, // n0x1476 c0x0000 (---------------)  + I waw
+	0x00236606, // n0x1477 c0x0000 (---------------)  + I wegrow
+	0x00266046, // n0x1478 c0x0000 (---------------)  + I wielun
+	0x0028ffc5, // n0x1479 c0x0000 (---------------)  + I wlocl
+	0x0028ffc9, // n0x147a c0x0000 (---------------)  + I wloclawek
+	0x00267c09, // n0x147b c0x0000 (---------------)  + I wodzislaw
+	0x002ead07, // n0x147c c0x0000 (---------------)  + I wolomin
+	0x00240c04, // n0x147d c0x0000 (---------------)  + I wroc
+	0x00240c07, // n0x147e c0x0000 (---------------)  + I wroclaw
+	0x002f2b49, // n0x147f c0x0000 (---------------)  + I zachpomor
+	0x00220c85, // n0x1480 c0x0000 (---------------)  + I zagan
+	0x0023e448, // n0x1481 c0x0000 (---------------)  + I zakopane
+	0x00347285, // n0x1482 c0x0000 (---------------)  + I zarow
+	0x00344b85, // n0x1483 c0x0000 (---------------)  + I zgora
+	0x0020e709, // n0x1484 c0x0000 (---------------)  + I zgorzelec
+	0x002015c2, // n0x1485 c0x0000 (---------------)  + I pa
+	0x00201c02, // n0x1486 c0x0000 (---------------)  + I po
+	0x002007c2, // n0x1487 c0x0000 (---------------)  + I so
+	0x002b3d42, // n0x1488 c0x0000 (---------------)  + I sr
+	0x00267a49, // n0x1489 c0x0000 (---------------)  + I starostwo
+	0x0020d902, // n0x148a c0x0000 (---------------)  + I ug
+	0x0020c782, // n0x148b c0x0000 (---------------)  + I um
+	0x0033e144, // n0x148c c0x0000 (---------------)  + I upow
+	0x0023fe42, // n0x148d c0x0000 (---------------)  + I uw
+	0x00200182, // n0x148e c0x0000 (---------------)  + I co
+	0x002ce043, // n0x148f c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1490 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x1491 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1492 c0x0000 (---------------)  + I org
+	0x00201602, // n0x1493 c0x0000 (---------------)  + I ac
+	0x002f0f83, // n0x1494 c0x0000 (---------------)  + I biz
+	0x00204543, // n0x1495 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1496 c0x0000 (---------------)  + I edu
+	0x002004c3, // n0x1497 c0x0000 (---------------)  + I est
+	0x0025bdc3, // n0x1498 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x1499 c0x0000 (---------------)  + I info
+	0x00267d04, // n0x149a c0x0000 (---------------)  + I isla
+	0x00230d84, // n0x149b c0x0000 (---------------)  + I name
+	0x0020e643, // n0x149c c0x0000 (---------------)  + I net
+	0x002375c3, // n0x149d c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x149e c0x0000 (---------------)  + I pro
+	0x002c8184, // n0x149f c0x0000 (---------------)  + I prof
+	0x0028d8c3, // n0x14a0 c0x0000 (---------------)  + I aca
+	0x00209c43, // n0x14a1 c0x0000 (---------------)  + I bar
+	0x0021ab03, // n0x14a2 c0x0000 (---------------)  + I cpa
+	0x0020d5c3, // n0x14a3 c0x0000 (---------------)  + I eng
+	0x00277cc3, // n0x14a4 c0x0000 (---------------)  + I jur
+	0x00204fc3, // n0x14a5 c0x0000 (---------------)  + I law
+	0x0023ed03, // n0x14a6 c0x0000 (---------------)  + I med
+	0x00204543, // n0x14a7 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x14a8 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x14a9 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x14aa c0x0000 (---------------)  + I net
+	0x002375c3, // n0x14ab c0x0000 (---------------)  + I org
+	0x002c4643, // n0x14ac c0x0000 (---------------)  + I plo
+	0x002e47c3, // n0x14ad c0x0000 (---------------)  + I sec
+	0x000330c8, // n0x14ae c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x14af c0x0000 (---------------)  + I com
+	0x002ce043, // n0x14b0 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x14b1 c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x14b2 c0x0000 (---------------)  + I int
+	0x0020e643, // n0x14b3 c0x0000 (---------------)  + I net
+	0x00258d84, // n0x14b4 c0x0000 (---------------)  + I nome
+	0x002375c3, // n0x14b5 c0x0000 (---------------)  + I org
+	0x00298844, // n0x14b6 c0x0000 (---------------)  + I publ
+	0x00290445, // n0x14b7 c0x0000 (---------------)  + I belau
+	0x00200182, // n0x14b8 c0x0000 (---------------)  + I co
+	0x00208d42, // n0x14b9 c0x0000 (---------------)  + I ed
+	0x00200f82, // n0x14ba c0x0000 (---------------)  + I go
+	0x00205c82, // n0x14bb c0x0000 (---------------)  + I ne
+	0x00201c42, // n0x14bc c0x0000 (---------------)  + I or
+	0x00204543, // n0x14bd c0x0000 (---------------)  + I com
+	0x0023d144, // n0x14be c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x14bf c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x14c0 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x14c1 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x14c2 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x14c3 c0x0000 (---------------)  + I org
+	0x00204543, // n0x14c4 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x14c5 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x14c6 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x14c7 c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x14c8 c0x0000 (---------------)  + I name
+	0x0020e643, // n0x14c9 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x14ca c0x0000 (---------------)  + I org
+	0x00244943, // n0x14cb c0x0000 (---------------)  + I sch
+	0x00208704, // n0x14cc c0x0000 (---------------)  + I asso
+	0x000330c8, // n0x14cd c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x14ce c0x0000 (---------------)  + I com
+	0x0020b903, // n0x14cf c0x0000 (---------------)  + I nom
+	0x00235e04, // n0x14d0 c0x0000 (---------------)  + I arts
+	0x000330c8, // n0x14d1 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x14d2 c0x0000 (---------------)  + I com
+	0x002432c4, // n0x14d3 c0x0000 (---------------)  + I firm
+	0x00206344, // n0x14d4 c0x0000 (---------------)  + I info
+	0x0020b903, // n0x14d5 c0x0000 (---------------)  + I nom
+	0x002075c2, // n0x14d6 c0x0000 (---------------)  + I nt
+	0x002375c3, // n0x14d7 c0x0000 (---------------)  + I org
+	0x002adec3, // n0x14d8 c0x0000 (---------------)  + I rec
+	0x002dc085, // n0x14d9 c0x0000 (---------------)  + I store
+	0x0023bfc2, // n0x14da c0x0000 (---------------)  + I tm
+	0x00240d83, // n0x14db c0x0000 (---------------)  + I www
+	0x00201602, // n0x14dc c0x0000 (---------------)  + I ac
+	0x00200182, // n0x14dd c0x0000 (---------------)  + I co
+	0x002ce043, // n0x14de c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x14df c0x0000 (---------------)  + I gov
+	0x00200102, // n0x14e0 c0x0000 (---------------)  + I in
+	0x002375c3, // n0x14e1 c0x0000 (---------------)  + I org
+	0x00201602, // n0x14e2 c0x0000 (---------------)  + I ac
+	0x00206c47, // n0x14e3 c0x0000 (---------------)  + I adygeya
+	0x002dd4c5, // n0x14e4 c0x0000 (---------------)  + I altai
+	0x00277184, // n0x14e5 c0x0000 (---------------)  + I amur
+	0x002ada46, // n0x14e6 c0x0000 (---------------)  + I amursk
+	0x0022adcb, // n0x14e7 c0x0000 (---------------)  + I arkhangelsk
+	0x0024c809, // n0x14e8 c0x0000 (---------------)  + I astrakhan
+	0x002a06c6, // n0x14e9 c0x0000 (---------------)  + I baikal
+	0x00337b89, // n0x14ea c0x0000 (---------------)  + I bashkiria
+	0x002a3588, // n0x14eb c0x0000 (---------------)  + I belgorod
+	0x00210a03, // n0x14ec c0x0000 (---------------)  + I bir
+	0x00225f07, // n0x14ed c0x0000 (---------------)  + I bryansk
+	0x00257408, // n0x14ee c0x0000 (---------------)  + I buryatia
+	0x00331503, // n0x14ef c0x0000 (---------------)  + I cbg
+	0x00248944, // n0x14f0 c0x0000 (---------------)  + I chel
+	0x0024894b, // n0x14f1 c0x0000 (---------------)  + I chelyabinsk
+	0x0028fbc5, // n0x14f2 c0x0000 (---------------)  + I chita
+	0x003384c8, // n0x14f3 c0x0000 (---------------)  + I chukotka
+	0x00310c49, // n0x14f4 c0x0000 (---------------)  + I chuvashia
+	0x00236583, // n0x14f5 c0x0000 (---------------)  + I cmw
+	0x00204543, // n0x14f6 c0x0000 (---------------)  + I com
+	0x0020f108, // n0x14f7 c0x0000 (---------------)  + I dagestan
+	0x0024ea47, // n0x14f8 c0x0000 (---------------)  + I dudinka
+	0x003466c6, // n0x14f9 c0x0000 (---------------)  + I e-burg
+	0x002ce043, // n0x14fa c0x0000 (---------------)  + I edu
+	0x0030a7c7, // n0x14fb c0x0000 (---------------)  + I fareast
+	0x0025bdc3, // n0x14fc c0x0000 (---------------)  + I gov
+	0x00325dc6, // n0x14fd c0x0000 (---------------)  + I grozny
+	0x0020ca03, // n0x14fe c0x0000 (---------------)  + I int
+	0x00278dc7, // n0x14ff c0x0000 (---------------)  + I irkutsk
+	0x00260407, // n0x1500 c0x0000 (---------------)  + I ivanovo
+	0x002ae987, // n0x1501 c0x0000 (---------------)  + I izhevsk
+	0x00225b85, // n0x1502 c0x0000 (---------------)  + I jamal
+	0x00212a43, // n0x1503 c0x0000 (---------------)  + I jar
+	0x002a1c4b, // n0x1504 c0x0000 (---------------)  + I joshkar-ola
+	0x00236a88, // n0x1505 c0x0000 (---------------)  + I k-uralsk
+	0x0022d7c8, // n0x1506 c0x0000 (---------------)  + I kalmykia
+	0x00228c06, // n0x1507 c0x0000 (---------------)  + I kaluga
+	0x002f5b89, // n0x1508 c0x0000 (---------------)  + I kamchatka
+	0x00231a87, // n0x1509 c0x0000 (---------------)  + I karelia
+	0x002e4b05, // n0x150a c0x0000 (---------------)  + I kazan
+	0x00324ec4, // n0x150b c0x0000 (---------------)  + I kchr
+	0x0020eec8, // n0x150c c0x0000 (---------------)  + I kemerovo
+	0x00247e4a, // n0x150d c0x0000 (---------------)  + I khabarovsk
+	0x00248089, // n0x150e c0x0000 (---------------)  + I khakassia
+	0x002d0443, // n0x150f c0x0000 (---------------)  + I khv
+	0x0026d245, // n0x1510 c0x0000 (---------------)  + I kirov
+	0x00295ac3, // n0x1511 c0x0000 (---------------)  + I kms
+	0x002ccb06, // n0x1512 c0x0000 (---------------)  + I koenig
+	0x002b9344, // n0x1513 c0x0000 (---------------)  + I komi
+	0x00299d48, // n0x1514 c0x0000 (---------------)  + I kostroma
+	0x0029e70b, // n0x1515 c0x0000 (---------------)  + I krasnoyarsk
+	0x00342145, // n0x1516 c0x0000 (---------------)  + I kuban
+	0x002a3306, // n0x1517 c0x0000 (---------------)  + I kurgan
+	0x002a6845, // n0x1518 c0x0000 (---------------)  + I kursk
+	0x002a7208, // n0x1519 c0x0000 (---------------)  + I kustanai
+	0x002a82c7, // n0x151a c0x0000 (---------------)  + I kuzbass
+	0x0031a407, // n0x151b c0x0000 (---------------)  + I lipetsk
+	0x00339f87, // n0x151c c0x0000 (---------------)  + I magadan
+	0x00239c48, // n0x151d c0x0000 (---------------)  + I magnitka
+	0x0021f204, // n0x151e c0x0000 (---------------)  + I mari
+	0x0021f207, // n0x151f c0x0000 (---------------)  + I mari-el
+	0x00316646, // n0x1520 c0x0000 (---------------)  + I marine
+	0x00232703, // n0x1521 c0x0000 (---------------)  + I mil
+	0x002b1708, // n0x1522 c0x0000 (---------------)  + I mordovia
+	0x002b3cc6, // n0x1523 c0x0000 (---------------)  + I mosreg
+	0x002525c3, // n0x1524 c0x0000 (---------------)  + I msk
+	0x002b9188, // n0x1525 c0x0000 (---------------)  + I murmansk
+	0x002bc1c5, // n0x1526 c0x0000 (---------------)  + I mytis
+	0x002d31c8, // n0x1527 c0x0000 (---------------)  + I nakhodka
+	0x002e2c87, // n0x1528 c0x0000 (---------------)  + I nalchik
+	0x0020e643, // n0x1529 c0x0000 (---------------)  + I net
+	0x0033f843, // n0x152a c0x0000 (---------------)  + I nkz
+	0x00278604, // n0x152b c0x0000 (---------------)  + I nnov
+	0x00344747, // n0x152c c0x0000 (---------------)  + I norilsk
+	0x00217e43, // n0x152d c0x0000 (---------------)  + I nov
+	0x002604cb, // n0x152e c0x0000 (---------------)  + I novosibirsk
+	0x0020bec3, // n0x152f c0x0000 (---------------)  + I nsk
+	0x00252584, // n0x1530 c0x0000 (---------------)  + I omsk
+	0x002dc108, // n0x1531 c0x0000 (---------------)  + I orenburg
+	0x002375c3, // n0x1532 c0x0000 (---------------)  + I org
+	0x00296ac5, // n0x1533 c0x0000 (---------------)  + I oryol
+	0x0023f645, // n0x1534 c0x0000 (---------------)  + I oskol
+	0x00203f06, // n0x1535 c0x0000 (---------------)  + I palana
+	0x00222185, // n0x1536 c0x0000 (---------------)  + I penza
+	0x002bc584, // n0x1537 c0x0000 (---------------)  + I perm
+	0x00205d02, // n0x1538 c0x0000 (---------------)  + I pp
+	0x002d2785, // n0x1539 c0x0000 (---------------)  + I pskov
+	0x002c93c3, // n0x153a c0x0000 (---------------)  + I ptz
+	0x0029ccca, // n0x153b c0x0000 (---------------)  + I pyatigorsk
+	0x0021e683, // n0x153c c0x0000 (---------------)  + I rnd
+	0x00275089, // n0x153d c0x0000 (---------------)  + I rubtsovsk
+	0x0021ef06, // n0x153e c0x0000 (---------------)  + I ryazan
+	0x00292408, // n0x153f c0x0000 (---------------)  + I sakhalin
+	0x0027a846, // n0x1540 c0x0000 (---------------)  + I samara
+	0x002f94c7, // n0x1541 c0x0000 (---------------)  + I saratov
+	0x002d1108, // n0x1542 c0x0000 (---------------)  + I simbirsk
+	0x0020bd88, // n0x1543 c0x0000 (---------------)  + I smolensk
+	0x002d2a83, // n0x1544 c0x0000 (---------------)  + I snz
+	0x002d68c3, // n0x1545 c0x0000 (---------------)  + I spb
+	0x0031c889, // n0x1546 c0x0000 (---------------)  + I stavropol
+	0x002e1b43, // n0x1547 c0x0000 (---------------)  + I stv
+	0x002ad746, // n0x1548 c0x0000 (---------------)  + I surgut
+	0x0031b386, // n0x1549 c0x0000 (---------------)  + I syzran
+	0x003008c6, // n0x154a c0x0000 (---------------)  + I tambov
+	0x0021ff89, // n0x154b c0x0000 (---------------)  + I tatarstan
+	0x00232f04, // n0x154c c0x0000 (---------------)  + I test
+	0x00224b43, // n0x154d c0x0000 (---------------)  + I tom
+	0x0033f285, // n0x154e c0x0000 (---------------)  + I tomsk
+	0x00235e89, // n0x154f c0x0000 (---------------)  + I tsaritsyn
+	0x0024a703, // n0x1550 c0x0000 (---------------)  + I tsk
+	0x002d3704, // n0x1551 c0x0000 (---------------)  + I tula
+	0x002dcec4, // n0x1552 c0x0000 (---------------)  + I tuva
+	0x002dd0c4, // n0x1553 c0x0000 (---------------)  + I tver
+	0x0020c706, // n0x1554 c0x0000 (---------------)  + I tyumen
+	0x00231343, // n0x1555 c0x0000 (---------------)  + I udm
+	0x00231348, // n0x1556 c0x0000 (---------------)  + I udmurtia
+	0x0024c448, // n0x1557 c0x0000 (---------------)  + I ulan-ude
+	0x0032cb86, // n0x1558 c0x0000 (---------------)  + I vdonsk
+	0x002e490b, // n0x1559 c0x0000 (---------------)  + I vladikavkaz
+	0x002e4c48, // n0x155a c0x0000 (---------------)  + I vladimir
+	0x002e52cb, // n0x155b c0x0000 (---------------)  + I vladivostok
+	0x002e5e49, // n0x155c c0x0000 (---------------)  + I volgograd
+	0x002e6547, // n0x155d c0x0000 (---------------)  + I vologda
+	0x002e6c88, // n0x155e c0x0000 (---------------)  + I voronezh
+	0x002e72c3, // n0x155f c0x0000 (---------------)  + I vrn
+	0x002e7386, // n0x1560 c0x0000 (---------------)  + I vyatka
+	0x00228587, // n0x1561 c0x0000 (---------------)  + I yakutia
+	0x00281f45, // n0x1562 c0x0000 (---------------)  + I yamal
+	0x002e9cc9, // n0x1563 c0x0000 (---------------)  + I yaroslavl
+	0x00228f8d, // n0x1564 c0x0000 (---------------)  + I yekaterinburg
+	0x00292251, // n0x1565 c0x0000 (---------------)  + I yuzhno-sakhalinsk
+	0x00232985, // n0x1566 c0x0000 (---------------)  + I zgrad
+	0x00201602, // n0x1567 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x1568 c0x0000 (---------------)  + I co
+	0x00204543, // n0x1569 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x156a c0x0000 (---------------)  + I edu
+	0x00201984, // n0x156b c0x0000 (---------------)  + I gouv
+	0x0025bdc3, // n0x156c c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x156d c0x0000 (---------------)  + I int
+	0x00232703, // n0x156e c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x156f c0x0000 (---------------)  + I net
+	0x00204543, // n0x1570 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1571 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1572 c0x0000 (---------------)  + I gov
+	0x0023ed03, // n0x1573 c0x0000 (---------------)  + I med
+	0x0020e643, // n0x1574 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1575 c0x0000 (---------------)  + I org
+	0x00298843, // n0x1576 c0x0000 (---------------)  + I pub
+	0x00244943, // n0x1577 c0x0000 (---------------)  + I sch
+	0x00204543, // n0x1578 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1579 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x157a c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x157b c0x0000 (---------------)  + I net
+	0x002375c3, // n0x157c c0x0000 (---------------)  + I org
+	0x00204543, // n0x157d c0x0000 (---------------)  + I com
+	0x002ce043, // n0x157e c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x157f c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x1580 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1581 c0x0000 (---------------)  + I org
+	0x00204543, // n0x1582 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x1583 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1584 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x1585 c0x0000 (---------------)  + I info
+	0x0023ed03, // n0x1586 c0x0000 (---------------)  + I med
+	0x0020e643, // n0x1587 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1588 c0x0000 (---------------)  + I org
+	0x002820c2, // n0x1589 c0x0000 (---------------)  + I tv
+	0x00200281, // n0x158a c0x0000 (---------------)  + I a
+	0x00201602, // n0x158b c0x0000 (---------------)  + I ac
+	0x00200001, // n0x158c c0x0000 (---------------)  + I b
+	0x002e7c82, // n0x158d c0x0000 (---------------)  + I bd
+	0x000330c8, // n0x158e c0x0000 (---------------)  +   blogspot
+	0x0021b345, // n0x158f c0x0000 (---------------)  + I brand
+	0x00200181, // n0x1590 c0x0000 (---------------)  + I c
+	0x00200881, // n0x1591 c0x0000 (---------------)  + I d
+	0x00200041, // n0x1592 c0x0000 (---------------)  + I e
+	0x00200c01, // n0x1593 c0x0000 (---------------)  + I f
+	0x00324e02, // n0x1594 c0x0000 (---------------)  + I fh
+	0x00324e04, // n0x1595 c0x0000 (---------------)  + I fhsk
+	0x00327f43, // n0x1596 c0x0000 (---------------)  + I fhv
+	0x00200f81, // n0x1597 c0x0000 (---------------)  + I g
+	0x00201681, // n0x1598 c0x0000 (---------------)  + I h
+	0x00200101, // n0x1599 c0x0000 (---------------)  + I i
+	0x00201801, // n0x159a c0x0000 (---------------)  + I k
+	0x002b4587, // n0x159b c0x0000 (---------------)  + I komforb
+	0x002c270f, // n0x159c c0x0000 (---------------)  + I kommunalforbund
+	0x002d89c6, // n0x159d c0x0000 (---------------)  + I komvux
+	0x002000c1, // n0x159e c0x0000 (---------------)  + I l
+	0x0024fd86, // n0x159f c0x0000 (---------------)  + I lanbib
+	0x00200701, // n0x15a0 c0x0000 (---------------)  + I m
+	0x00200141, // n0x15a1 c0x0000 (---------------)  + I n
+	0x0031b58e, // n0x15a2 c0x0000 (---------------)  + I naturbruksgymn
+	0x002001c1, // n0x15a3 c0x0000 (---------------)  + I o
+	0x002375c3, // n0x15a4 c0x0000 (---------------)  + I org
+	0x00201481, // n0x15a5 c0x0000 (---------------)  + I p
+	0x002bcd45, // n0x15a6 c0x0000 (---------------)  + I parti
+	0x00205d02, // n0x15a7 c0x0000 (---------------)  + I pp
+	0x00334e45, // n0x15a8 c0x0000 (---------------)  + I press
+	0x00200081, // n0x15a9 c0x0000 (---------------)  + I r
+	0x00200501, // n0x15aa c0x0000 (---------------)  + I s
+	0x0023f004, // n0x15ab c0x0000 (---------------)  + I sshn
+	0x00200541, // n0x15ac c0x0000 (---------------)  + I t
+	0x0023bfc2, // n0x15ad c0x0000 (---------------)  + I tm
+	0x00201a01, // n0x15ae c0x0000 (---------------)  + I u
+	0x002003c1, // n0x15af c0x0000 (---------------)  + I w
+	0x00204941, // n0x15b0 c0x0000 (---------------)  + I x
+	0x00200a81, // n0x15b1 c0x0000 (---------------)  + I y
+	0x00200481, // n0x15b2 c0x0000 (---------------)  + I z
+	0x000330c8, // n0x15b3 c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x15b4 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15b5 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x15b6 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x15b7 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15b8 c0x0000 (---------------)  + I org
+	0x00213143, // n0x15b9 c0x0000 (---------------)  + I per
+	0x00204543, // n0x15ba c0x0000 (---------------)  + I com
+	0x0025bdc3, // n0x15bb c0x0000 (---------------)  + I gov
+	0x00232703, // n0x15bc c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x15bd c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15be c0x0000 (---------------)  + I org
+	0x000330c8, // n0x15bf c0x0000 (---------------)  +   blogspot
+	0x00204543, // n0x15c0 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15c1 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x15c2 c0x0000 (---------------)  + I gov
+	0x0020e643, // n0x15c3 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15c4 c0x0000 (---------------)  + I org
+	0x00210b03, // n0x15c5 c0x0000 (---------------)  + I art
+	0x00204543, // n0x15c6 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15c7 c0x0000 (---------------)  + I edu
+	0x00201984, // n0x15c8 c0x0000 (---------------)  + I gouv
+	0x002375c3, // n0x15c9 c0x0000 (---------------)  + I org
+	0x00295d85, // n0x15ca c0x0000 (---------------)  + I perso
+	0x0020c504, // n0x15cb c0x0000 (---------------)  + I univ
+	0x00204543, // n0x15cc c0x0000 (---------------)  + I com
+	0x0020e643, // n0x15cd c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15ce c0x0000 (---------------)  + I org
+	0x00200182, // n0x15cf c0x0000 (---------------)  + I co
+	0x00204543, // n0x15d0 c0x0000 (---------------)  + I com
+	0x00238fc9, // n0x15d1 c0x0000 (---------------)  + I consulado
+	0x002ce043, // n0x15d2 c0x0000 (---------------)  + I edu
+	0x00220549, // n0x15d3 c0x0000 (---------------)  + I embaixada
+	0x0025bdc3, // n0x15d4 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x15d5 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x15d6 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15d7 c0x0000 (---------------)  + I org
+	0x002c6c88, // n0x15d8 c0x0000 (---------------)  + I principe
+	0x002253c7, // n0x15d9 c0x0000 (---------------)  + I saotome
+	0x002dc085, // n0x15da c0x0000 (---------------)  + I store
+	0x0025bdc3, // n0x15db c0x0000 (---------------)  + I gov
+	0x00204543, // n0x15dc c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15dd c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x15de c0x0000 (---------------)  + I gov
+	0x00232703, // n0x15df c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x15e0 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x15e1 c0x0000 (---------------)  + I org
+	0x00201602, // n0x15e2 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x15e3 c0x0000 (---------------)  + I co
+	0x002375c3, // n0x15e4 c0x0000 (---------------)  + I org
+	0x000330c8, // n0x15e5 c0x0000 (---------------)  +   blogspot
+	0x00201602, // n0x15e6 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x15e7 c0x0000 (---------------)  + I co
+	0x00200f82, // n0x15e8 c0x0000 (---------------)  + I go
+	0x00200102, // n0x15e9 c0x0000 (---------------)  + I in
+	0x00206882, // n0x15ea c0x0000 (---------------)  + I mi
+	0x0020e643, // n0x15eb c0x0000 (---------------)  + I net
+	0x00201c42, // n0x15ec c0x0000 (---------------)  + I or
+	0x00201602, // n0x15ed c0x0000 (---------------)  + I ac
+	0x002f0f83, // n0x15ee c0x0000 (---------------)  + I biz
+	0x00200182, // n0x15ef c0x0000 (---------------)  + I co
+	0x00204543, // n0x15f0 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15f1 c0x0000 (---------------)  + I edu
+	0x00200f82, // n0x15f2 c0x0000 (---------------)  + I go
+	0x0025bdc3, // n0x15f3 c0x0000 (---------------)  + I gov
+	0x0020ca03, // n0x15f4 c0x0000 (---------------)  + I int
+	0x00232703, // n0x15f5 c0x0000 (---------------)  + I mil
+	0x00230d84, // n0x15f6 c0x0000 (---------------)  + I name
+	0x0020e643, // n0x15f7 c0x0000 (---------------)  + I net
+	0x002180c3, // n0x15f8 c0x0000 (---------------)  + I nic
+	0x002375c3, // n0x15f9 c0x0000 (---------------)  + I org
+	0x00232f04, // n0x15fa c0x0000 (---------------)  + I test
+	0x0020dfc3, // n0x15fb c0x0000 (---------------)  + I web
+	0x0025bdc3, // n0x15fc c0x0000 (---------------)  + I gov
+	0x00200182, // n0x15fd c0x0000 (---------------)  + I co
+	0x00204543, // n0x15fe c0x0000 (---------------)  + I com
+	0x002ce043, // n0x15ff c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1600 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x1601 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x1602 c0x0000 (---------------)  + I net
+	0x0020b903, // n0x1603 c0x0000 (---------------)  + I nom
+	0x002375c3, // n0x1604 c0x0000 (---------------)  + I org
+	0x002363c7, // n0x1605 c0x0000 (---------------)  + I agrinet
+	0x00204543, // n0x1606 c0x0000 (---------------)  + I com
+	0x002feb07, // n0x1607 c0x0000 (---------------)  + I defense
+	0x002ced06, // n0x1608 c0x0000 (---------------)  + I edunet
+	0x0020be83, // n0x1609 c0x0000 (---------------)  + I ens
+	0x00242903, // n0x160a c0x0000 (---------------)  + I fin
+	0x0025bdc3, // n0x160b c0x0000 (---------------)  + I gov
+	0x00201f03, // n0x160c c0x0000 (---------------)  + I ind
+	0x00206344, // n0x160d c0x0000 (---------------)  + I info
+	0x00275f84, // n0x160e c0x0000 (---------------)  + I intl
+	0x002ac786, // n0x160f c0x0000 (---------------)  + I mincom
+	0x00202c43, // n0x1610 c0x0000 (---------------)  + I nat
+	0x0020e643, // n0x1611 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1612 c0x0000 (---------------)  + I org
+	0x00295d85, // n0x1613 c0x0000 (---------------)  + I perso
+	0x00201104, // n0x1614 c0x0000 (---------------)  + I rnrt
+	0x002aed83, // n0x1615 c0x0000 (---------------)  + I rns
+	0x00279943, // n0x1616 c0x0000 (---------------)  + I rnu
+	0x002ac607, // n0x1617 c0x0000 (---------------)  + I tourism
+	0x00244505, // n0x1618 c0x0000 (---------------)  + I turen
+	0x00204543, // n0x1619 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x161a c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x161b c0x0000 (---------------)  + I gov
+	0x00232703, // n0x161c c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x161d c0x0000 (---------------)  + I net
+	0x002375c3, // n0x161e c0x0000 (---------------)  + I org
+	0x47600142, // n0x161f c0x011d (n0x1621-n0x1622)  o I nc
+	0x006180c3, // n0x1620 c0x0001 (---------------)  ! I nic
+	0x0025bdc3, // n0x1621 c0x0000 (---------------)  + I gov
+	0x0022efc4, // n0x1622 c0x0000 (---------------)  + I aero
+	0x002f0f83, // n0x1623 c0x0000 (---------------)  + I biz
+	0x00200182, // n0x1624 c0x0000 (---------------)  + I co
+	0x00204543, // n0x1625 c0x0000 (---------------)  + I com
+	0x0023d144, // n0x1626 c0x0000 (---------------)  + I coop
+	0x002ce043, // n0x1627 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1628 c0x0000 (---------------)  + I gov
+	0x00206344, // n0x1629 c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x162a c0x0000 (---------------)  + I int
+	0x0033a5c4, // n0x162b c0x0000 (---------------)  + I jobs
+	0x00224c84, // n0x162c c0x0000 (---------------)  + I mobi
+	0x002bb886, // n0x162d c0x0000 (---------------)  + I museum
+	0x00230d84, // n0x162e c0x0000 (---------------)  + I name
+	0x0020e643, // n0x162f c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1630 c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x1631 c0x0000 (---------------)  + I pro
+	0x002c1bc6, // n0x1632 c0x0000 (---------------)  + I travel
+	0x00046c4b, // n0x1633 c0x0000 (---------------)  +   better-than
+	0x00000a46, // n0x1634 c0x0000 (---------------)  +   dyndns
+	0x0000de0a, // n0x1635 c0x0000 (---------------)  +   on-the-web
+	0x001284ca, // n0x1636 c0x0000 (---------------)  +   worse-than
+	0x000330c8, // n0x1637 c0x0000 (---------------)  +   blogspot
+	0x00261984, // n0x1638 c0x0000 (---------------)  + I club
+	0x00204543, // n0x1639 c0x0000 (---------------)  + I com
+	0x002f0f44, // n0x163a c0x0000 (---------------)  + I ebiz
+	0x002ce043, // n0x163b c0x0000 (---------------)  + I edu
+	0x0027c084, // n0x163c c0x0000 (---------------)  + I game
+	0x0025bdc3, // n0x163d c0x0000 (---------------)  + I gov
+	0x00262003, // n0x163e c0x0000 (---------------)  + I idv
+	0x00232703, // n0x163f c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x1640 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x1641 c0x0000 (---------------)  + I org
+	0x002f018b, // n0x1642 c0x0000 (---------------)  + I xn--czrw28b
+	0x0033bd0a, // n0x1643 c0x0000 (---------------)  + I xn--uc0atv
+	0x003488cc, // n0x1644 c0x0000 (---------------)  + I xn--zf0ao64a
+	0x00201602, // n0x1645 c0x0000 (---------------)  + I ac
+	0x00200182, // n0x1646 c0x0000 (---------------)  + I co
+	0x00200f82, // n0x1647 c0x0000 (---------------)  + I go
+	0x00293085, // n0x1648 c0x0000 (---------------)  + I hotel
+	0x00206344, // n0x1649 c0x0000 (---------------)  + I info
+	0x00205442, // n0x164a c0x0000 (---------------)  + I me
+	0x00232703, // n0x164b c0x0000 (---------------)  + I mil
+	0x00224c84, // n0x164c c0x0000 (---------------)  + I mobi
+	0x00205c82, // n0x164d c0x0000 (---------------)  + I ne
+	0x00201c42, // n0x164e c0x0000 (---------------)  + I or
+	0x00203082, // n0x164f c0x0000 (---------------)  + I sc
+	0x002820c2, // n0x1650 c0x0000 (---------------)  + I tv
+	0x002a2709, // n0x1651 c0x0000 (---------------)  + I cherkassy
+	0x00254588, // n0x1652 c0x0000 (---------------)  + I cherkasy
+	0x0025bc49, // n0x1653 c0x0000 (---------------)  + I chernigov
+	0x00260249, // n0x1654 c0x0000 (---------------)  + I chernihiv
+	0x00263c8a, // n0x1655 c0x0000 (---------------)  + I chernivtsi
+	0x0026c30a, // n0x1656 c0x0000 (---------------)  + I chernovtsy
+	0x00222f02, // n0x1657 c0x0000 (---------------)  + I ck
+	0x00236dc2, // n0x1658 c0x0000 (---------------)  + I cn
+	0x00200182, // n0x1659 c0x0000 (---------------)  + I co
+	0x00204543, // n0x165a c0x0000 (---------------)  + I com
+	0x00213e82, // n0x165b c0x0000 (---------------)  + I cr
+	0x00240e46, // n0x165c c0x0000 (---------------)  + I crimea
+	0x0030b802, // n0x165d c0x0000 (---------------)  + I cv
+	0x00200b02, // n0x165e c0x0000 (---------------)  + I dn
+	0x003438ce, // n0x165f c0x0000 (---------------)  + I dnepropetrovsk
+	0x0030cb0e, // n0x1660 c0x0000 (---------------)  + I dnipropetrovsk
+	0x0026c187, // n0x1661 c0x0000 (---------------)  + I dominic
+	0x002af187, // n0x1662 c0x0000 (---------------)  + I donetsk
+	0x002c2a82, // n0x1663 c0x0000 (---------------)  + I dp
+	0x002ce043, // n0x1664 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x1665 c0x0000 (---------------)  + I gov
+	0x00207242, // n0x1666 c0x0000 (---------------)  + I if
+	0x00200102, // n0x1667 c0x0000 (---------------)  + I in
+	0x0028db8f, // n0x1668 c0x0000 (---------------)  + I ivano-frankivsk
+	0x0022ae42, // n0x1669 c0x0000 (---------------)  + I kh
+	0x002aeb07, // n0x166a c0x0000 (---------------)  + I kharkiv
+	0x00278f47, // n0x166b c0x0000 (---------------)  + I kharkov
+	0x0027b2c7, // n0x166c c0x0000 (---------------)  + I kherson
+	0x0028c18c, // n0x166d c0x0000 (---------------)  + I khmelnitskiy
+	0x0028e34c, // n0x166e c0x0000 (---------------)  + I khmelnytskyi
+	0x0020cf04, // n0x166f c0x0000 (---------------)  + I kiev
+	0x0026d24a, // n0x1670 c0x0000 (---------------)  + I kirovograd
+	0x00295ac2, // n0x1671 c0x0000 (---------------)  + I km
+	0x0020ed02, // n0x1672 c0x0000 (---------------)  + I kr
+	0x0029f984, // n0x1673 c0x0000 (---------------)  + I krym
+	0x00218fc2, // n0x1674 c0x0000 (---------------)  + I ks
+	0x0022da02, // n0x1675 c0x0000 (---------------)  + I kv
+	0x0028e584, // n0x1676 c0x0000 (---------------)  + I kyiv
+	0x002181c2, // n0x1677 c0x0000 (---------------)  + I lg
+	0x00214fc2, // n0x1678 c0x0000 (---------------)  + I lt
+	0x00228c87, // n0x1679 c0x0000 (---------------)  + I lugansk
+	0x0024a685, // n0x167a c0x0000 (---------------)  + I lutsk
+	0x00208a02, // n0x167b c0x0000 (---------------)  + I lv
+	0x0032cac4, // n0x167c c0x0000 (---------------)  + I lviv
+	0x00317702, // n0x167d c0x0000 (---------------)  + I mk
+	0x0028da08, // n0x167e c0x0000 (---------------)  + I mykolaiv
+	0x0020e643, // n0x167f c0x0000 (---------------)  + I net
+	0x0020ab48, // n0x1680 c0x0000 (---------------)  + I nikolaev
+	0x002041c2, // n0x1681 c0x0000 (---------------)  + I od
+	0x002baf45, // n0x1682 c0x0000 (---------------)  + I odesa
+	0x0031fc46, // n0x1683 c0x0000 (---------------)  + I odessa
+	0x002375c3, // n0x1684 c0x0000 (---------------)  + I org
+	0x00202202, // n0x1685 c0x0000 (---------------)  + I pl
+	0x002c5207, // n0x1686 c0x0000 (---------------)  + I poltava
+	0x00205d02, // n0x1687 c0x0000 (---------------)  + I pp
+	0x002c7b45, // n0x1688 c0x0000 (---------------)  + I rivne
+	0x00335c05, // n0x1689 c0x0000 (---------------)  + I rovno
+	0x00214d02, // n0x168a c0x0000 (---------------)  + I rv
+	0x00233082, // n0x168b c0x0000 (---------------)  + I sb
+	0x002ec6ca, // n0x168c c0x0000 (---------------)  + I sebastopol
+	0x002c0e8a, // n0x168d c0x0000 (---------------)  + I sevastopol
+	0x0020bd82, // n0x168e c0x0000 (---------------)  + I sm
+	0x0029b084, // n0x168f c0x0000 (---------------)  + I sumy
+	0x00204442, // n0x1690 c0x0000 (---------------)  + I te
+	0x0022f7c8, // n0x1691 c0x0000 (---------------)  + I ternopil
+	0x00213f02, // n0x1692 c0x0000 (---------------)  + I uz
+	0x00213f08, // n0x1693 c0x0000 (---------------)  + I uzhgorod
+	0x002e26c7, // n0x1694 c0x0000 (---------------)  + I vinnica
+	0x002e3949, // n0x1695 c0x0000 (---------------)  + I vinnytsia
+	0x0020ab02, // n0x1696 c0x0000 (---------------)  + I vn
+	0x002e6a45, // n0x1697 c0x0000 (---------------)  + I volyn
+	0x002dd485, // n0x1698 c0x0000 (---------------)  + I yalta
+	0x00201b8b, // n0x1699 c0x0000 (---------------)  + I zaporizhzhe
+	0x0030fc4c, // n0x169a c0x0000 (---------------)  + I zaporizhzhia
+	0x002e6e08, // n0x169b c0x0000 (---------------)  + I zhitomir
+	0x00252f08, // n0x169c c0x0000 (---------------)  + I zhytomyr
+	0x002c2042, // n0x169d c0x0000 (---------------)  + I zp
+	0x002095c2, // n0x169e c0x0000 (---------------)  + I zt
+	0x00201602, // n0x169f c0x0000 (---------------)  + I ac
+	0x00200182, // n0x16a0 c0x0000 (---------------)  + I co
+	0x00204543, // n0x16a1 c0x0000 (---------------)  + I com
+	0x00200f82, // n0x16a2 c0x0000 (---------------)  + I go
+	0x00205c82, // n0x16a3 c0x0000 (---------------)  + I ne
+	0x00201c42, // n0x16a4 c0x0000 (---------------)  + I or
+	0x002375c3, // n0x16a5 c0x0000 (---------------)  + I org
+	0x00203082, // n0x16a6 c0x0000 (---------------)  + I sc
+	0x0060e482, // n0x16a7 c0x0001 (---------------)  ! I bl
+	0x0061ebcf, // n0x16a8 c0x0001 (---------------)  ! I british-library
+	0x49600182, // n0x16a9 c0x0125 (n0x16b2-n0x16b3)  o I co
+	0x00671083, // n0x16aa c0x0001 (---------------)  ! I jet
+	0x00638143, // n0x16ab c0x0001 (---------------)  ! I mod
+	0x00602c59, // n0x16ac c0x0001 (---------------)  ! I national-library-scotland
+	0x00624743, // n0x16ad c0x0001 (---------------)  ! I nel
+	0x006180c3, // n0x16ae c0x0001 (---------------)  ! I nic
+	0x006f9443, // n0x16af c0x0001 (---------------)  ! I nls
+	0x006ca88a, // n0x16b0 c0x0001 (---------------)  ! I parliament
+	0x01644943, // n0x16b1 c0x0005 (---------------)* o I sch
+	0x000330c8, // n0x16b2 c0x0000 (---------------)  +   blogspot
+	0x49e017c2, // n0x16b3 c0x0127 (n0x16f2-n0x16f5)  + I ak
+	0x4a200302, // n0x16b4 c0x0128 (n0x16f5-n0x16f8)  + I al
+	0x4a601202, // n0x16b5 c0x0129 (n0x16f8-n0x16fb)  + I ar
+	0x4aa00d42, // n0x16b6 c0x012a (n0x16fb-n0x16fe)  + I as
+	0x4ae07182, // n0x16b7 c0x012b (n0x16fe-n0x1701)  + I az
+	0x4b208582, // n0x16b8 c0x012c (n0x1701-n0x1704)  + I ca
+	0x4b600182, // n0x16b9 c0x012d (n0x1704-n0x1707)  + I co
+	0x4ba22942, // n0x16ba c0x012e (n0x1707-n0x170a)  + I ct
+	0x4be21b02, // n0x16bb c0x012f (n0x170a-n0x170d)  + I dc
+	0x4c2027c2, // n0x16bc c0x0130 (n0x170d-n0x1710)  + I de
+	0x002dea03, // n0x16bd c0x0000 (---------------)  + I dni
+	0x00215f83, // n0x16be c0x0000 (---------------)  + I fed
+	0x4c644f02, // n0x16bf c0x0131 (n0x1710-n0x1713)  + I fl
+	0x4ca01702, // n0x16c0 c0x0132 (n0x1713-n0x1716)  + I ga
+	0x4ce01e42, // n0x16c1 c0x0133 (n0x1716-n0x1719)  + I gu
+	0x4d201682, // n0x16c2 c0x0134 (n0x1719-n0x171b)  + I hi
+	0x4d601502, // n0x16c3 c0x0135 (n0x171b-n0x171e)  + I ia
+	0x4da01842, // n0x16c4 c0x0136 (n0x171e-n0x1721)  + I id
+	0x4de028c2, // n0x16c5 c0x0137 (n0x1721-n0x1724)  + I il
+	0x4e200102, // n0x16c6 c0x0138 (n0x1724-n0x1727)  + I in
+	0x000b5005, // n0x16c7 c0x0000 (---------------)  +   is-by
+	0x00233503, // n0x16c8 c0x0000 (---------------)  + I isa
+	0x00201804, // n0x16c9 c0x0000 (---------------)  + I kids
+	0x4e618fc2, // n0x16ca c0x0139 (n0x1727-n0x172a)  + I ks
+	0x4ea19fc2, // n0x16cb c0x013a (n0x172a-n0x172d)  + I ky
+	0x4ee00642, // n0x16cc c0x013b (n0x172d-n0x1730)  + I la
+	0x000a440b, // n0x16cd c0x0000 (---------------)  +   land-4-sale
+	0x4f200702, // n0x16ce c0x013c (n0x1730-n0x1733)  + I ma
+	0x4fa14a82, // n0x16cf c0x013e (n0x1736-n0x1739)  + I md
+	0x4fe05442, // n0x16d0 c0x013f (n0x1739-n0x173c)  + I me
+	0x50206882, // n0x16d1 c0x0140 (n0x173c-n0x173f)  + I mi
+	0x50609a42, // n0x16d2 c0x0141 (n0x173f-n0x1742)  + I mn
+	0x50a045c2, // n0x16d3 c0x0142 (n0x1742-n0x1745)  + I mo
+	0x50e525c2, // n0x16d4 c0x0143 (n0x1745-n0x1748)  + I ms
+	0x5125af82, // n0x16d5 c0x0144 (n0x1748-n0x174b)  + I mt
+	0x51600142, // n0x16d6 c0x0145 (n0x174b-n0x174e)  + I nc
+	0x51a00842, // n0x16d7 c0x0146 (n0x174e-n0x1751)  + I nd
+	0x51e05c82, // n0x16d8 c0x0147 (n0x1751-n0x1754)  + I ne
+	0x5220aa42, // n0x16d9 c0x0148 (n0x1754-n0x1757)  + I nh
+	0x52603342, // n0x16da c0x0149 (n0x1757-n0x175a)  + I nj
+	0x52a02042, // n0x16db c0x014a (n0x175a-n0x175d)  + I nm
+	0x0022ee03, // n0x16dc c0x0000 (---------------)  + I nsn
+	0x52e3c2c2, // n0x16dd c0x014b (n0x175d-n0x1760)  + I nv
+	0x53219c42, // n0x16de c0x014c (n0x1760-n0x1763)  + I ny
+	0x53605942, // n0x16df c0x014d (n0x1763-n0x1766)  + I oh
+	0x53a0d3c2, // n0x16e0 c0x014e (n0x1766-n0x1769)  + I ok
+	0x53e01c42, // n0x16e1 c0x014f (n0x1769-n0x176c)  + I or
+	0x542015c2, // n0x16e2 c0x0150 (n0x176c-n0x176f)  + I pa
+	0x54661502, // n0x16e3 c0x0151 (n0x176f-n0x1772)  + I pr
+	0x54a01c82, // n0x16e4 c0x0152 (n0x1772-n0x1775)  + I ri
+	0x54e03082, // n0x16e5 c0x0153 (n0x1775-n0x1778)  + I sc
+	0x5523c5c2, // n0x16e6 c0x0154 (n0x1778-n0x177b)  + I sd
+	0x000dc84c, // n0x16e7 c0x0000 (---------------)  +   stuff-4-sale
+	0x55603a82, // n0x16e8 c0x0155 (n0x177b-n0x177e)  + I tn
+	0x55a48682, // n0x16e9 c0x0156 (n0x177e-n0x1781)  + I tx
+	0x55e0fe82, // n0x16ea c0x0157 (n0x1781-n0x1784)  + I ut
+	0x562002c2, // n0x16eb c0x0158 (n0x1784-n0x1787)  + I va
+	0x56601a42, // n0x16ec c0x0159 (n0x1787-n0x178a)  + I vi
+	0x56a63e02, // n0x16ed c0x015a (n0x178a-n0x178d)  + I vt
+	0x56e05042, // n0x16ee c0x015b (n0x178d-n0x1790)  + I wa
+	0x572003c2, // n0x16ef c0x015c (n0x1790-n0x1793)  + I wi
+	0x576663c2, // n0x16f0 c0x015d (n0x1793-n0x1796)  + I wv
+	0x57a3e642, // n0x16f1 c0x015e (n0x1796-n0x1799)  + I wy
+	0x002055c2, // n0x16f2 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x16f3 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x16f4 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x16f5 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x16f6 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x16f7 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x16f8 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x16f9 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x16fa c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x16fb c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x16fc c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x16fd c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x16fe c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x16ff c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1700 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1701 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1702 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1703 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1704 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1705 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1706 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1707 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1708 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1709 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x170a c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x170b c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x170c c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x170d c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x170e c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x170f c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1710 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1711 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1712 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1713 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1714 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1715 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1716 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1717 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1718 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1719 c0x0000 (---------------)  + I cc
+	0x00202e83, // n0x171a c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x171b c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x171c c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x171d c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x171e c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x171f c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1720 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1721 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1722 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1723 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1724 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1725 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1726 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1727 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1728 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1729 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x172a c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x172b c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x172c c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x172d c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x172e c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x172f c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1730 c0x0000 (---------------)  + I cc
+	0x4f636c43, // n0x1731 c0x013d (n0x1733-n0x1736)  + I k12
+	0x00202e83, // n0x1732 c0x0000 (---------------)  + I lib
+	0x002fe7c4, // n0x1733 c0x0000 (---------------)  + I chtr
+	0x00320ac6, // n0x1734 c0x0000 (---------------)  + I paroch
+	0x002c94c3, // n0x1735 c0x0000 (---------------)  + I pvt
+	0x002055c2, // n0x1736 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1737 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1738 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1739 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x173a c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x173b c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x173c c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x173d c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x173e c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x173f c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1740 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1741 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1742 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1743 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1744 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1745 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1746 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1747 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1748 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1749 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x174a c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x174b c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x174c c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x174d c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x174e c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x174f c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1750 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1751 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1752 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1753 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1754 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1755 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1756 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1757 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1758 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1759 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x175a c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x175b c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x175c c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x175d c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x175e c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x175f c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1760 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1761 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1762 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1763 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1764 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1765 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1766 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1767 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1768 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1769 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x176a c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x176b c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x176c c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x176d c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x176e c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x176f c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1770 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1771 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1772 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1773 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1774 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1775 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1776 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1777 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1778 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1779 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x177a c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x177b c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x177c c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x177d c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x177e c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x177f c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1780 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1781 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1782 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1783 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1784 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1785 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1786 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1787 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1788 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1789 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x178a c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x178b c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x178c c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x178d c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x178e c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x178f c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1790 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1791 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1792 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1793 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1794 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1795 c0x0000 (---------------)  + I lib
+	0x002055c2, // n0x1796 c0x0000 (---------------)  + I cc
+	0x00236c43, // n0x1797 c0x0000 (---------------)  + I k12
+	0x00202e83, // n0x1798 c0x0000 (---------------)  + I lib
+	0x00204543, // n0x1799 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x179a c0x0000 (---------------)  + I edu
+	0x00229f83, // n0x179b c0x0000 (---------------)  + I gub
+	0x00232703, // n0x179c c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x179d c0x0000 (---------------)  + I net
+	0x002375c3, // n0x179e c0x0000 (---------------)  + I org
+	0x00200182, // n0x179f c0x0000 (---------------)  + I co
+	0x00204543, // n0x17a0 c0x0000 (---------------)  + I com
+	0x0020e643, // n0x17a1 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17a2 c0x0000 (---------------)  + I org
+	0x00204543, // n0x17a3 c0x0000 (---------------)  + I com
+	0x002ce043, // n0x17a4 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x17a5 c0x0000 (---------------)  + I gov
+	0x00232703, // n0x17a6 c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x17a7 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17a8 c0x0000 (---------------)  + I org
+	0x00200182, // n0x17a9 c0x0000 (---------------)  + I co
+	0x00204543, // n0x17aa c0x0000 (---------------)  + I com
+	0x002d86c3, // n0x17ab c0x0000 (---------------)  + I e12
+	0x002ce043, // n0x17ac c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x17ad c0x0000 (---------------)  + I gov
+	0x00206344, // n0x17ae c0x0000 (---------------)  + I info
+	0x00232703, // n0x17af c0x0000 (---------------)  + I mil
+	0x0020e643, // n0x17b0 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17b1 c0x0000 (---------------)  + I org
+	0x0020dfc3, // n0x17b2 c0x0000 (---------------)  + I web
+	0x00200182, // n0x17b3 c0x0000 (---------------)  + I co
+	0x00204543, // n0x17b4 c0x0000 (---------------)  + I com
+	0x00236c43, // n0x17b5 c0x0000 (---------------)  + I k12
+	0x0020e643, // n0x17b6 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17b7 c0x0000 (---------------)  + I org
+	0x00201602, // n0x17b8 c0x0000 (---------------)  + I ac
+	0x002f0f83, // n0x17b9 c0x0000 (---------------)  + I biz
+	0x00204543, // n0x17ba c0x0000 (---------------)  + I com
+	0x002ce043, // n0x17bb c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x17bc c0x0000 (---------------)  + I gov
+	0x00246406, // n0x17bd c0x0000 (---------------)  + I health
+	0x00206344, // n0x17be c0x0000 (---------------)  + I info
+	0x0020ca03, // n0x17bf c0x0000 (---------------)  + I int
+	0x00230d84, // n0x17c0 c0x0000 (---------------)  + I name
+	0x0020e643, // n0x17c1 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17c2 c0x0000 (---------------)  + I org
+	0x002c7c83, // n0x17c3 c0x0000 (---------------)  + I pro
+	0x00204543, // n0x17c4 c0x0000 (---------------)  + I com
+	0x00000a46, // n0x17c5 c0x0000 (---------------)  +   dyndns
+	0x002ce043, // n0x17c6 c0x0000 (---------------)  + I edu
+	0x0025bdc3, // n0x17c7 c0x0000 (---------------)  + I gov
+	0x0009b106, // n0x17c8 c0x0000 (---------------)  +   mypets
+	0x0020e643, // n0x17c9 c0x0000 (---------------)  + I net
+	0x002375c3, // n0x17ca c0x0000 (---------------)  + I org
 }
 
 // children is the list of nodes' children, the parent's wildcard bit and the
@@ -186,20 +6484,356 @@ var children = [...]uint32{
 	0x40000000, // c0x0003 (---------------)* +
 	0x50000000, // c0x0004 (---------------)* !
 	0x60000000, // c0x0005 (---------------)* o
-	0x0004c00d, // c0x0006 (n0x000d-n0x0013)  +
-	0x60074013, // c0x0007 (n0x0013-n0x001d)* o
-	0x2007801d, // c0x0008 (n0x001d-n0x001e)  o
-	0x2009001e, // c0x0009 (n0x001e-n0x0024)  o
-	0x20094024, // c0x000a (n0x0024-n0x0025)  o
-	0x000a0025, // c0x000b (n0x0025-n0x0028)  +
-	0x600a4028, // c0x000c (n0x0028-n0x0029)* o
-	0x00120029, // c0x000d (n0x0029-n0x0048)  +
-	0x60148048, // c0x000e (n0x0048-n0x0052)* o
-	0x2014c052, // c0x000f (n0x0052-n0x0053)  o
-	0x00154053, // c0x0010 (n0x0053-n0x0055)  +
-	0x0018c055, // c0x0011 (n0x0055-n0x0063)  +
-	0x601b8063, // c0x0012 (n0x0063-n0x006e)* o
-	0x201bc06e, // c0x0013 (n0x006e-n0x006f)  o
-	0x201c006f, // c0x0014 (n0x006f-n0x0070)  o
-	0x001cc070, // c0x0015 (n0x0070-n0x0073)  +
+	0x004e8134, // c0x0006 (n0x0134-n0x013a)  +
+	0x004ec13a, // c0x0007 (n0x013a-n0x013b)  +
+	0x0050813b, // c0x0008 (n0x013b-n0x0142)  +
+	0x0066c142, // c0x0009 (n0x0142-n0x019b)  +
+	0x0068019b, // c0x000a (n0x019b-n0x01a0)  +
+	0x006941a0, // c0x000b (n0x01a0-n0x01a5)  +
+	0x006a41a5, // c0x000c (n0x01a5-n0x01a9)  +
+	0x006bc1a9, // c0x000d (n0x01a9-n0x01af)  +
+	0x006cc1af, // c0x000e (n0x01af-n0x01b3)  +
+	0x006e41b3, // c0x000f (n0x01b3-n0x01b9)  +
+	0x6070c1b9, // c0x0010 (n0x01b9-n0x01c3)* o
+	0x207101c3, // c0x0011 (n0x01c3-n0x01c4)  o
+	0x207281c4, // c0x0012 (n0x01c4-n0x01ca)  o
+	0x0072c1ca, // c0x0013 (n0x01ca-n0x01cb)  +
+	0x007481cb, // c0x0014 (n0x01cb-n0x01d2)  +
+	0x0074c1d2, // c0x0015 (n0x01d2-n0x01d3)  +
+	0x207941d3, // c0x0016 (n0x01d3-n0x01e5)  o
+	0x007981e5, // c0x0017 (n0x01e5-n0x01e6)  +
+	0x007b81e6, // c0x0018 (n0x01e6-n0x01ee)  +
+	0x007d41ee, // c0x0019 (n0x01ee-n0x01f5)  +
+	0x007d81f5, // c0x001a (n0x01f5-n0x01f6)  +
+	0x008081f6, // c0x001b (n0x01f6-n0x0202)  +
+	0x00830202, // c0x001c (n0x0202-n0x020c)  +
+	0x0085020c, // c0x001d (n0x020c-n0x0214)  +
+	0x00858214, // c0x001e (n0x0214-n0x0216)  +
+	0x0085c216, // c0x001f (n0x0216-n0x0217)  +
+	0x008ec217, // c0x0020 (n0x0217-n0x023b)  +
+	0x0090023b, // c0x0021 (n0x023b-n0x0240)  +
+	0x00914240, // c0x0022 (n0x0240-n0x0245)  +
+	0x00930245, // c0x0023 (n0x0245-n0x024c)  +
+	0x0094024c, // c0x0024 (n0x024c-n0x0250)  +
+	0x00954250, // c0x0025 (n0x0250-n0x0255)  +
+	0x00978255, // c0x0026 (n0x0255-n0x025e)  +
+	0x00a8c25e, // c0x0027 (n0x025e-n0x02a3)  +
+	0x00a902a3, // c0x0028 (n0x02a3-n0x02a4)  +
+	0x00aa42a4, // c0x0029 (n0x02a4-n0x02a9)  +
+	0x00ab82a9, // c0x002a (n0x02a9-n0x02ae)  +
+	0x00ac02ae, // c0x002b (n0x02ae-n0x02b0)  +
+	0x00ad02b0, // c0x002c (n0x02b0-n0x02b4)  +
+	0x00ae42b4, // c0x002d (n0x02b4-n0x02b9)  +
+	0x00b282b9, // c0x002e (n0x02b9-n0x02ca)  +
+	0x00b382ca, // c0x002f (n0x02ca-n0x02ce)  +
+	0x00b3c2ce, // c0x0030 (n0x02ce-n0x02cf)  +
+	0x00b402cf, // c0x0031 (n0x02cf-n0x02d0)  +
+	0x00b442d0, // c0x0032 (n0x02d0-n0x02d1)  +
+	0x00b802d1, // c0x0033 (n0x02d1-n0x02e0)  +
+	0x60b842e0, // c0x0034 (n0x02e0-n0x02e1)* o
+	0x00b942e1, // c0x0035 (n0x02e1-n0x02e5)  +
+	0x00b982e5, // c0x0036 (n0x02e5-n0x02e6)  +
+	0x00c482e6, // c0x0037 (n0x02e6-n0x0312)  +
+	0x00c7c312, // c0x0038 (n0x0312-n0x031f)  +
+	0x00f4431f, // c0x0039 (n0x031f-n0x03d1)  +
+	0x00f603d1, // c0x003a (n0x03d1-n0x03d8)  +
+	0x00f783d8, // c0x003b (n0x03d8-n0x03de)  +
+	0x00f7c3de, // c0x003c (n0x03de-n0x03df)  +
+	0x00f843df, // c0x003d (n0x03df-n0x03e1)  +
+	0x00f883e1, // c0x003e (n0x03e1-n0x03e2)  +
+	0x00fa83e2, // c0x003f (n0x03e2-n0x03ea)  +
+	0x00fac3ea, // c0x0040 (n0x03ea-n0x03eb)  +
+	0x00fc03eb, // c0x0041 (n0x03eb-n0x03f0)  +
+	0x00fe83f0, // c0x0042 (n0x03f0-n0x03fa)  +
+	0x010083fa, // c0x0043 (n0x03fa-n0x0402)  +
+	0x01038402, // c0x0044 (n0x0402-n0x040e)  +
+	0x0106040e, // c0x0045 (n0x040e-n0x0418)  +
+	0x01084418, // c0x0046 (n0x0418-n0x0421)  +
+	0x01098421, // c0x0047 (n0x0421-n0x0426)  +
+	0x0109c426, // c0x0048 (n0x0426-n0x0427)  +
+	0x010a8427, // c0x0049 (n0x0427-n0x042a)  +
+	0x0110842a, // c0x004a (n0x042a-n0x0442)  +
+	0x01124442, // c0x004b (n0x0442-n0x0449)  +
+	0x01138449, // c0x004c (n0x0449-n0x044e)  +
+	0x0114c44e, // c0x004d (n0x044e-n0x0453)  +
+	0x01164453, // c0x004e (n0x0453-n0x0459)  +
+	0x2117c459, // c0x004f (n0x0459-n0x045f)  o
+	0x0119445f, // c0x0050 (n0x045f-n0x0465)  +
+	0x011ac465, // c0x0051 (n0x0465-n0x046b)  +
+	0x011c846b, // c0x0052 (n0x046b-n0x0472)  +
+	0x011d4472, // c0x0053 (n0x0472-n0x0475)  +
+	0x0122c475, // c0x0054 (n0x0475-n0x048b)  +
+	0x0124448b, // c0x0055 (n0x048b-n0x0491)  +
+	0x01254491, // c0x0056 (n0x0491-n0x0495)  +
+	0x01298495, // c0x0057 (n0x0495-n0x04a6)  +
+	0x013184a6, // c0x0058 (n0x04a6-n0x04c6)  +
+	0x013404c6, // c0x0059 (n0x04c6-n0x04d0)  +
+	0x013484d0, // c0x005a (n0x04d0-n0x04d2)  +
+	0x6134c4d2, // c0x005b (n0x04d2-n0x04d3)* o
+	0x213504d3, // c0x005c (n0x04d3-n0x04d4)  o
+	0x013684d4, // c0x005d (n0x04d4-n0x04da)  +
+	0x013704da, // c0x005e (n0x04da-n0x04dc)  +
+	0x013a44dc, // c0x005f (n0x04dc-n0x04e9)  +
+	0x013cc4e9, // c0x0060 (n0x04e9-n0x04f3)  +
+	0x013d04f3, // c0x0061 (n0x04f3-n0x04f4)  +
+	0x013d44f4, // c0x0062 (n0x04f4-n0x04f5)  +
+	0x013ec4f5, // c0x0063 (n0x04f5-n0x04fb)  +
+	0x014104fb, // c0x0064 (n0x04fb-n0x0504)  +
+	0x01428504, // c0x0065 (n0x0504-n0x050a)  +
+	0x0188050a, // c0x0066 (n0x050a-n0x0620)  +
+	0x01894620, // c0x0067 (n0x0620-n0x0625)  +
+	0x018b4625, // c0x0068 (n0x0625-n0x062d)  +
+	0x019b462d, // c0x0069 (n0x062d-n0x066d)  +
+	0x01a8866d, // c0x006a (n0x066d-n0x06a2)  +
+	0x01af86a2, // c0x006b (n0x06a2-n0x06be)  +
+	0x01b506be, // c0x006c (n0x06be-n0x06d4)  +
+	0x01c386d4, // c0x006d (n0x06d4-n0x070e)  +
+	0x01c9070e, // c0x006e (n0x070e-n0x0724)  +
+	0x01ccc724, // c0x006f (n0x0724-n0x0733)  +
+	0x01dc8733, // c0x0070 (n0x0733-n0x0772)  +
+	0x01e94772, // c0x0071 (n0x0772-n0x07a5)  +
+	0x01f2c7a5, // c0x0072 (n0x07a5-n0x07cb)  +
+	0x01fbc7cb, // c0x0073 (n0x07cb-n0x07ef)  +
+	0x020207ef, // c0x0074 (n0x07ef-n0x0808)  +
+	0x02258808, // c0x0075 (n0x0808-n0x0896)  +
+	0x02310896, // c0x0076 (n0x0896-n0x08c4)  +
+	0x023dc8c4, // c0x0077 (n0x08c4-n0x08f7)  +
+	0x024288f7, // c0x0078 (n0x08f7-n0x090a)  +
+	0x024b490a, // c0x0079 (n0x090a-n0x092d)  +
+	0x024f092d, // c0x007a (n0x092d-n0x093c)  +
+	0x0254093c, // c0x007b (n0x093c-n0x0950)  +
+	0x025b8950, // c0x007c (n0x0950-n0x096e)  +
+	0x625bc96e, // c0x007d (n0x096e-n0x096f)* o
+	0x625c096f, // c0x007e (n0x096f-n0x0970)* o
+	0x625c4970, // c0x007f (n0x0970-n0x0971)* o
+	0x02640971, // c0x0080 (n0x0971-n0x0990)  +
+	0x026a8990, // c0x0081 (n0x0990-n0x09aa)  +
+	0x027249aa, // c0x0082 (n0x09aa-n0x09c9)  +
+	0x0279c9c9, // c0x0083 (n0x09c9-n0x09e7)  +
+	0x028209e7, // c0x0084 (n0x09e7-n0x0a08)  +
+	0x0288ca08, // c0x0085 (n0x0a08-n0x0a23)  +
+	0x029b8a23, // c0x0086 (n0x0a23-n0x0a6e)  +
+	0x02a10a6e, // c0x0087 (n0x0a6e-n0x0a84)  +
+	0x62a14a84, // c0x0088 (n0x0a84-n0x0a85)* o
+	0x02aaca85, // c0x0089 (n0x0a85-n0x0aab)  +
+	0x02b34aab, // c0x008a (n0x0aab-n0x0acd)  +
+	0x02b80acd, // c0x008b (n0x0acd-n0x0ae0)  +
+	0x02be8ae0, // c0x008c (n0x0ae0-n0x0afa)  +
+	0x02c90afa, // c0x008d (n0x0afa-n0x0b24)  +
+	0x02d58b24, // c0x008e (n0x0b24-n0x0b56)  +
+	0x02dc0b56, // c0x008f (n0x0b56-n0x0b70)  +
+	0x02ed4b70, // c0x0090 (n0x0b70-n0x0bb5)  +
+	0x62ed8bb5, // c0x0091 (n0x0bb5-n0x0bb6)* o
+	0x62edcbb6, // c0x0092 (n0x0bb6-n0x0bb7)* o
+	0x02f38bb7, // c0x0093 (n0x0bb7-n0x0bce)  +
+	0x02f94bce, // c0x0094 (n0x0bce-n0x0be5)  +
+	0x03024be5, // c0x0095 (n0x0be5-n0x0c09)  +
+	0x030a0c09, // c0x0096 (n0x0c09-n0x0c28)  +
+	0x030e4c28, // c0x0097 (n0x0c28-n0x0c39)  +
+	0x031c8c39, // c0x0098 (n0x0c39-n0x0c72)  +
+	0x031fcc72, // c0x0099 (n0x0c72-n0x0c7f)  +
+	0x0325cc7f, // c0x009a (n0x0c7f-n0x0c97)  +
+	0x032d0c97, // c0x009b (n0x0c97-n0x0cb4)  +
+	0x03358cb4, // c0x009c (n0x0cb4-n0x0cd6)  +
+	0x03398cd6, // c0x009d (n0x0cd6-n0x0ce6)  +
+	0x03408ce6, // c0x009e (n0x0ce6-n0x0d02)  +
+	0x6340cd02, // c0x009f (n0x0d02-n0x0d03)* o
+	0x03424d03, // c0x00a0 (n0x0d03-n0x0d09)  +
+	0x03440d09, // c0x00a1 (n0x0d09-n0x0d10)  +
+	0x03484d10, // c0x00a2 (n0x0d10-n0x0d21)  +
+	0x03494d21, // c0x00a3 (n0x0d21-n0x0d25)  +
+	0x234acd25, // c0x00a4 (n0x0d25-n0x0d2b)  o
+	0x03524d2b, // c0x00a5 (n0x0d2b-n0x0d49)  +
+	0x03538d49, // c0x00a6 (n0x0d49-n0x0d4e)  +
+	0x03550d4e, // c0x00a7 (n0x0d4e-n0x0d54)  +
+	0x03574d54, // c0x00a8 (n0x0d54-n0x0d5d)  +
+	0x23588d5d, // c0x00a9 (n0x0d5d-n0x0d62)  o
+	0x035a0d62, // c0x00aa (n0x0d62-n0x0d68)  +
+	0x035d8d68, // c0x00ab (n0x0d68-n0x0d76)  +
+	0x235ecd76, // c0x00ac (n0x0d76-n0x0d7b)  o
+	0x035f4d7b, // c0x00ad (n0x0d7b-n0x0d7d)  +
+	0x035f8d7d, // c0x00ae (n0x0d7d-n0x0d7e)  +
+	0x0361cd7e, // c0x00af (n0x0d7e-n0x0d87)  +
+	0x03640d87, // c0x00b0 (n0x0d87-n0x0d90)  +
+	0x03658d90, // c0x00b1 (n0x0d90-n0x0d96)  +
+	0x03660d96, // c0x00b2 (n0x0d96-n0x0d98)  +
+	0x03680d98, // c0x00b3 (n0x0d98-n0x0da0)  +
+	0x036a0da0, // c0x00b4 (n0x0da0-n0x0da8)  +
+	0x036bcda8, // c0x00b5 (n0x0da8-n0x0daf)  +
+	0x036d8daf, // c0x00b6 (n0x0daf-n0x0db6)  +
+	0x036e4db6, // c0x00b7 (n0x0db6-n0x0db9)  +
+	0x036f8db9, // c0x00b8 (n0x0db9-n0x0dbe)  +
+	0x03700dbe, // c0x00b9 (n0x0dbe-n0x0dc0)  +
+	0x0371cdc0, // c0x00ba (n0x0dc0-n0x0dc7)  +
+	0x03facdc7, // c0x00bb (n0x0dc7-n0x0feb)  +
+	0x03fe4feb, // c0x00bc (n0x0feb-n0x0ff9)  +
+	0x04010ff9, // c0x00bd (n0x0ff9-n0x1004)  +
+	0x04029004, // c0x00be (n0x1004-n0x100a)  +
+	0x0404500a, // c0x00bf (n0x100a-n0x1011)  +
+	0x64049011, // c0x00c0 (n0x1011-n0x1012)* o
+	0x0408d012, // c0x00c1 (n0x1012-n0x1023)  +
+	0x04095023, // c0x00c2 (n0x1023-n0x1025)  +
+	0x24099025, // c0x00c3 (n0x1025-n0x1026)  o
+	0x2409d026, // c0x00c4 (n0x1026-n0x1027)  o
+	0x040a1027, // c0x00c5 (n0x1027-n0x1028)  +
+	0x04145028, // c0x00c6 (n0x1028-n0x1051)  +
+	0x0416d051, // c0x00c7 (n0x1051-n0x105b)  +
+	0x2418505b, // c0x00c8 (n0x105b-n0x1061)  o
+	0x04191061, // c0x00c9 (n0x1061-n0x1064)  +
+	0x04ce9064, // c0x00ca (n0x1064-n0x133a)  +
+	0x04ced33a, // c0x00cb (n0x133a-n0x133b)  +
+	0x04cf133b, // c0x00cc (n0x133b-n0x133c)  +
+	0x24cf533c, // c0x00cd (n0x133c-n0x133d)  o
+	0x04cf933d, // c0x00ce (n0x133d-n0x133e)  +
+	0x24cfd33e, // c0x00cf (n0x133e-n0x133f)  o
+	0x04d0133f, // c0x00d0 (n0x133f-n0x1340)  +
+	0x24d0d340, // c0x00d1 (n0x1340-n0x1343)  o
+	0x04d11343, // c0x00d2 (n0x1343-n0x1344)  +
+	0x04d15344, // c0x00d3 (n0x1344-n0x1345)  +
+	0x24d19345, // c0x00d4 (n0x1345-n0x1346)  o
+	0x04d1d346, // c0x00d5 (n0x1346-n0x1347)  +
+	0x24d25347, // c0x00d6 (n0x1347-n0x1349)  o
+	0x04d29349, // c0x00d7 (n0x1349-n0x134a)  +
+	0x04d2d34a, // c0x00d8 (n0x134a-n0x134b)  +
+	0x24d3d34b, // c0x00d9 (n0x134b-n0x134f)  o
+	0x04d4134f, // c0x00da (n0x134f-n0x1350)  +
+	0x04d45350, // c0x00db (n0x1350-n0x1351)  +
+	0x04d49351, // c0x00dc (n0x1351-n0x1352)  +
+	0x04d4d352, // c0x00dd (n0x1352-n0x1353)  +
+	0x24d51353, // c0x00de (n0x1353-n0x1354)  o
+	0x04d55354, // c0x00df (n0x1354-n0x1355)  +
+	0x04d59355, // c0x00e0 (n0x1355-n0x1356)  +
+	0x04d5d356, // c0x00e1 (n0x1356-n0x1357)  +
+	0x04d61357, // c0x00e2 (n0x1357-n0x1358)  +
+	0x24d69358, // c0x00e3 (n0x1358-n0x135a)  o
+	0x04d6d35a, // c0x00e4 (n0x135a-n0x135b)  +
+	0x04d7135b, // c0x00e5 (n0x135b-n0x135c)  +
+	0x04d7535c, // c0x00e6 (n0x135c-n0x135d)  +
+	0x24d7935d, // c0x00e7 (n0x135d-n0x135e)  o
+	0x04d7d35e, // c0x00e8 (n0x135e-n0x135f)  +
+	0x24d8535f, // c0x00e9 (n0x135f-n0x1361)  o
+	0x24d89361, // c0x00ea (n0x1361-n0x1362)  o
+	0x04da5362, // c0x00eb (n0x1362-n0x1369)  +
+	0x04db1369, // c0x00ec (n0x1369-n0x136c)  +
+	0x64db536c, // c0x00ed (n0x136c-n0x136d)* o
+	0x24db936d, // c0x00ee (n0x136d-n0x136e)  o
+	0x64de136e, // c0x00ef (n0x136e-n0x1378)* o
+	0x04eb5378, // c0x00f0 (n0x1378-n0x13ad)  +
+	0x04ebd3ad, // c0x00f1 (n0x13ad-n0x13af)  +
+	0x04ee93af, // c0x00f2 (n0x13af-n0x13ba)  +
+	0x04f053ba, // c0x00f3 (n0x13ba-n0x13c1)  +
+	0x04f113c1, // c0x00f4 (n0x13c1-n0x13c4)  +
+	0x04f313c4, // c0x00f5 (n0x13c4-n0x13cc)  +
+	0x04f693cc, // c0x00f6 (n0x13cc-n0x13da)  +
+	0x052153da, // c0x00f7 (n0x13da-n0x1485)  +
+	0x05239485, // c0x00f8 (n0x1485-n0x148e)  +
+	0x0524d48e, // c0x00f9 (n0x148e-n0x1493)  +
+	0x05281493, // c0x00fa (n0x1493-n0x14a0)  +
+	0x0529d4a0, // c0x00fb (n0x14a0-n0x14a7)  +
+	0x052b94a7, // c0x00fc (n0x14a7-n0x14ae)  +
+	0x052dd4ae, // c0x00fd (n0x14ae-n0x14b7)  +
+	0x052f54b7, // c0x00fe (n0x14b7-n0x14bd)  +
+	0x053114bd, // c0x00ff (n0x14bd-n0x14c4)  +
+	0x053314c4, // c0x0100 (n0x14c4-n0x14cc)  +
+	0x053414cc, // c0x0101 (n0x14cc-n0x14d0)  +
+	0x053714d0, // c0x0102 (n0x14d0-n0x14dc)  +
+	0x053894dc, // c0x0103 (n0x14dc-n0x14e2)  +
+	0x0559d4e2, // c0x0104 (n0x14e2-n0x1567)  +
+	0x055c1567, // c0x0105 (n0x1567-n0x1570)  +
+	0x055e1570, // c0x0106 (n0x1570-n0x1578)  +
+	0x055f5578, // c0x0107 (n0x1578-n0x157d)  +
+	0x0560957d, // c0x0108 (n0x157d-n0x1582)  +
+	0x05629582, // c0x0109 (n0x1582-n0x158a)  +
+	0x056cd58a, // c0x010a (n0x158a-n0x15b3)  +
+	0x056e95b3, // c0x010b (n0x15b3-n0x15ba)  +
+	0x056fd5ba, // c0x010c (n0x15ba-n0x15bf)  +
+	0x057015bf, // c0x010d (n0x15bf-n0x15c0)  +
+	0x057155c0, // c0x010e (n0x15c0-n0x15c5)  +
+	0x057315c5, // c0x010f (n0x15c5-n0x15cc)  +
+	0x0573d5cc, // c0x0110 (n0x15cc-n0x15cf)  +
+	0x0576d5cf, // c0x0111 (n0x15cf-n0x15db)  +
+	0x057715db, // c0x0112 (n0x15db-n0x15dc)  +
+	0x057895dc, // c0x0113 (n0x15dc-n0x15e2)  +
+	0x057955e2, // c0x0114 (n0x15e2-n0x15e5)  +
+	0x057995e5, // c0x0115 (n0x15e5-n0x15e6)  +
+	0x057b55e6, // c0x0116 (n0x15e6-n0x15ed)  +
+	0x057f15ed, // c0x0117 (n0x15ed-n0x15fc)  +
+	0x057f55fc, // c0x0118 (n0x15fc-n0x15fd)  +
+	0x058155fd, // c0x0119 (n0x15fd-n0x1605)  +
+	0x05865605, // c0x011a (n0x1605-n0x1619)  +
+	0x0587d619, // c0x011b (n0x1619-n0x161f)  +
+	0x6588561f, // c0x011c (n0x161f-n0x1621)* o
+	0x25889621, // c0x011d (n0x1621-n0x1622)  o
+	0x058cd622, // c0x011e (n0x1622-n0x1633)  +
+	0x058dd633, // c0x011f (n0x1633-n0x1637)  +
+	0x05915637, // c0x0120 (n0x1637-n0x1645)  +
+	0x25945645, // c0x0121 (n0x1645-n0x1651)  o
+	0x05a7d651, // c0x0122 (n0x1651-n0x169f)  +
+	0x05a9d69f, // c0x0123 (n0x169f-n0x16a7)  +
+	0x65ac96a7, // c0x0124 (n0x16a7-n0x16b2)* o
+	0x25acd6b2, // c0x0125 (n0x16b2-n0x16b3)  o
+	0x05bc96b3, // c0x0126 (n0x16b3-n0x16f2)  +
+	0x05bd56f2, // c0x0127 (n0x16f2-n0x16f5)  +
+	0x05be16f5, // c0x0128 (n0x16f5-n0x16f8)  +
+	0x05bed6f8, // c0x0129 (n0x16f8-n0x16fb)  +
+	0x05bf96fb, // c0x012a (n0x16fb-n0x16fe)  +
+	0x05c056fe, // c0x012b (n0x16fe-n0x1701)  +
+	0x05c11701, // c0x012c (n0x1701-n0x1704)  +
+	0x05c1d704, // c0x012d (n0x1704-n0x1707)  +
+	0x05c29707, // c0x012e (n0x1707-n0x170a)  +
+	0x05c3570a, // c0x012f (n0x170a-n0x170d)  +
+	0x05c4170d, // c0x0130 (n0x170d-n0x1710)  +
+	0x05c4d710, // c0x0131 (n0x1710-n0x1713)  +
+	0x05c59713, // c0x0132 (n0x1713-n0x1716)  +
+	0x05c65716, // c0x0133 (n0x1716-n0x1719)  +
+	0x05c6d719, // c0x0134 (n0x1719-n0x171b)  +
+	0x05c7971b, // c0x0135 (n0x171b-n0x171e)  +
+	0x05c8571e, // c0x0136 (n0x171e-n0x1721)  +
+	0x05c91721, // c0x0137 (n0x1721-n0x1724)  +
+	0x05c9d724, // c0x0138 (n0x1724-n0x1727)  +
+	0x05ca9727, // c0x0139 (n0x1727-n0x172a)  +
+	0x05cb572a, // c0x013a (n0x172a-n0x172d)  +
+	0x05cc172d, // c0x013b (n0x172d-n0x1730)  +
+	0x05ccd730, // c0x013c (n0x1730-n0x1733)  +
+	0x05cd9733, // c0x013d (n0x1733-n0x1736)  +
+	0x05ce5736, // c0x013e (n0x1736-n0x1739)  +
+	0x05cf1739, // c0x013f (n0x1739-n0x173c)  +
+	0x05cfd73c, // c0x0140 (n0x173c-n0x173f)  +
+	0x05d0973f, // c0x0141 (n0x173f-n0x1742)  +
+	0x05d15742, // c0x0142 (n0x1742-n0x1745)  +
+	0x05d21745, // c0x0143 (n0x1745-n0x1748)  +
+	0x05d2d748, // c0x0144 (n0x1748-n0x174b)  +
+	0x05d3974b, // c0x0145 (n0x174b-n0x174e)  +
+	0x05d4574e, // c0x0146 (n0x174e-n0x1751)  +
+	0x05d51751, // c0x0147 (n0x1751-n0x1754)  +
+	0x05d5d754, // c0x0148 (n0x1754-n0x1757)  +
+	0x05d69757, // c0x0149 (n0x1757-n0x175a)  +
+	0x05d7575a, // c0x014a (n0x175a-n0x175d)  +
+	0x05d8175d, // c0x014b (n0x175d-n0x1760)  +
+	0x05d8d760, // c0x014c (n0x1760-n0x1763)  +
+	0x05d99763, // c0x014d (n0x1763-n0x1766)  +
+	0x05da5766, // c0x014e (n0x1766-n0x1769)  +
+	0x05db1769, // c0x014f (n0x1769-n0x176c)  +
+	0x05dbd76c, // c0x0150 (n0x176c-n0x176f)  +
+	0x05dc976f, // c0x0151 (n0x176f-n0x1772)  +
+	0x05dd5772, // c0x0152 (n0x1772-n0x1775)  +
+	0x05de1775, // c0x0153 (n0x1775-n0x1778)  +
+	0x05ded778, // c0x0154 (n0x1778-n0x177b)  +
+	0x05df977b, // c0x0155 (n0x177b-n0x177e)  +
+	0x05e0577e, // c0x0156 (n0x177e-n0x1781)  +
+	0x05e11781, // c0x0157 (n0x1781-n0x1784)  +
+	0x05e1d784, // c0x0158 (n0x1784-n0x1787)  +
+	0x05e29787, // c0x0159 (n0x1787-n0x178a)  +
+	0x05e3578a, // c0x015a (n0x178a-n0x178d)  +
+	0x05e4178d, // c0x015b (n0x178d-n0x1790)  +
+	0x05e4d790, // c0x015c (n0x1790-n0x1793)  +
+	0x05e59793, // c0x015d (n0x1793-n0x1796)  +
+	0x05e65796, // c0x015e (n0x1796-n0x1799)  +
+	0x05e7d799, // c0x015f (n0x1799-n0x179f)  +
+	0x05e8d79f, // c0x0160 (n0x179f-n0x17a3)  +
+	0x05ea57a3, // c0x0161 (n0x17a3-n0x17a9)  +
+	0x05ecd7a9, // c0x0162 (n0x17a9-n0x17b3)  +
+	0x05ee17b3, // c0x0163 (n0x17b3-n0x17b8)  +
+	0x05f117b8, // c0x0164 (n0x17b8-n0x17c4)  +
+	0x05f2d7c4, // c0x0165 (n0x17c4-n0x17cb)  +
 }
