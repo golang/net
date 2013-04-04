@@ -39,8 +39,7 @@ var multicastSockoptTests = []multicastSockoptTest{
 
 func TestUDPMulticastSockopt(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 
 	for _, tt := range multicastSockoptTests {
@@ -57,12 +56,10 @@ func TestUDPMulticastSockopt(t *testing.T) {
 
 func TestIPMulticastSockopt(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	for _, tt := range multicastSockoptTests {

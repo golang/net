@@ -36,8 +36,7 @@ func TestReadWriteUnicastIPPayloadUDP(t *testing.T) {
 
 func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -79,8 +78,7 @@ func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 
 func TestReadWriteUnicastIPDatagram(t *testing.T) {
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")

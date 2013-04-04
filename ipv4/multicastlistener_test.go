@@ -23,8 +23,7 @@ var udpMultipleGroupListenerTests = []struct {
 
 func TestUDPSingleConnWithMultipleGroupListeners(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 
 	for _, tt := range udpMultipleGroupListenerTests {
@@ -61,8 +60,7 @@ func TestUDPSingleConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPMultipleConnWithMultipleGroupListeners(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 
 	for _, tt := range udpMultipleGroupListenerTests {
@@ -112,12 +110,10 @@ func TestUDPMultipleConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestIPSingleConnWithSingleGroupListener(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	// listen to a wildcard address
@@ -156,8 +152,7 @@ func TestIPSingleConnWithSingleGroupListener(t *testing.T) {
 
 func TestUDPPerInterfaceSingleConnWithSingleGroupListener(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 
 	gaddr := &net.IPAddr{IP: net.IPv4(224, 0, 0, 254)} // see RFC 4727
@@ -197,12 +192,10 @@ func TestUDPPerInterfaceSingleConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPPerInterfaceSingleConnWithSingleGroupListener(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	gaddr := &net.IPAddr{IP: net.IPv4(224, 0, 0, 254)} // see RFC 4727

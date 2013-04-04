@@ -15,8 +15,7 @@ import (
 
 func TestReadWriteMulticastIPPayloadUDP(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 
 	c, err := net.ListenPacket("udp4", "224.0.0.0:1024") // see RFC 4727
@@ -27,8 +26,7 @@ func TestReadWriteMulticastIPPayloadUDP(t *testing.T) {
 
 	ifi := loopbackInterface()
 	if ifi == nil {
-		t.Logf("skipping test; an appropriate interface not found")
-		return
+		t.Skip("an appropriate interface not found")
 	}
 	dst, err := net.ResolveUDPAddr("udp4", "224.0.0.254:1024") // see RFC 4727
 	if err != nil {
@@ -56,12 +54,10 @@ func TestReadWriteMulticastIPPayloadUDP(t *testing.T) {
 
 func TestReadWriteMulticastIPPayloadICMP(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -72,8 +68,7 @@ func TestReadWriteMulticastIPPayloadICMP(t *testing.T) {
 
 	ifi := loopbackInterface()
 	if ifi == nil {
-		t.Logf("skipping test; an appropriate interface not found")
-		return
+		t.Skip("an appropriate interface not found")
 	}
 	dst, err := net.ResolveIPAddr("ip4", "224.0.0.254") // see RFC 4727
 	if err != nil {
@@ -115,12 +110,10 @@ func TestReadWriteMulticastIPPayloadICMP(t *testing.T) {
 
 func TestReadWriteMulticastIPDatagram(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -131,8 +124,7 @@ func TestReadWriteMulticastIPDatagram(t *testing.T) {
 
 	ifi := loopbackInterface()
 	if ifi == nil {
-		t.Logf("skipping test; an appropriate interface not found")
-		return
+		t.Skip("an appropriate interface not found")
 	}
 	dst, err := net.ResolveIPAddr("ip4", "224.0.0.254") // see RFC 4727
 	if err != nil {

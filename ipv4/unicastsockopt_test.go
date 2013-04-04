@@ -88,8 +88,7 @@ func TestUDPUnicastSockopt(t *testing.T) {
 
 func TestIPUnicastSockopt(t *testing.T) {
 	if os.Getuid() != 0 {
-		t.Logf("skipping test; must be root")
-		return
+		t.Skip("must be root")
 	}
 
 	for _, tt := range unicastSockoptTests {
