@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package websocket implements a client and server for the WebSocket protocol.
-// The protocol is defined at http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol
+// Package websocket implements a client and server for the WebSocket protocol
+// as specified in RFC 6455.
 package websocket
 
 import (
