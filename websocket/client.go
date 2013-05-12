@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 )
 
@@ -34,6 +35,7 @@ func NewConfig(server, origin string) (config *Config, err error) {
 	if err != nil {
 		return
 	}
+	config.Header = http.Header(make(map[string][]string))
 	return
 }
 

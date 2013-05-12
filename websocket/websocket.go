@@ -87,6 +87,9 @@ type Config struct {
 	// TLS config for secure WebSocket (wss).
 	TlsConfig *tls.Config
 
+	// Additional header fields to be sent in WebSocket opening handshake.
+	Header http.Header
+
 	handshakeData map[string]string
 }
 

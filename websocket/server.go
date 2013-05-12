@@ -11,8 +11,7 @@ import (
 	"net/http"
 )
 
-func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Request) (conn *Conn, err error) {
-	config := new(Config)
+func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Request, config *Config, handshake func(*Config, *http.Request) error) (conn *Conn, err error) {
 	var hs serverHandshaker = &hybiServerHandshaker{Config: config}
 	code, err := hs.ReadHandshake(buf.Reader, req)
 	if err == ErrBadWebSocketVersion {
@@ -38,8 +37,16 @@ func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Requ
 		buf.Flush()
 		return
 	}
-	config.Protocol = nil
-
+	if handshake != nil {
+		err = handshake(config, req)
+		if err != nil {
+			code = http.StatusForbidden
+			fmt.Fprintf(buf, "HTTP/1.1 %03d %s\r\n", code, http.StatusText(code))
+			buf.WriteString("\r\n")
+			buf.Flush()
+			return
+		}
+	}
 	err = hs.AcceptHandshake(buf.Writer)
 	if err != nil {
 		code = http.StatusBadRequest
@@ -52,11 +59,26 @@ func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Requ
 	return
 }
 
-// Handler is an interface to a WebSocket.
-type Handler func(*Conn)
+// Server represents a server of a WebSocket.
+type Server struct {
+	// Config is a WebSocket configuration for new WebSocket connection.
+	Config
 
-// ServeHTTP implements the http.Handler interface for a Web Socket
-func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Handshake is an optional function in WebSocket handshake.
+	// For example, you can check, or don't check Origin header.
+	// Another example, you can select config.Protocol.
+	Handshake func(*Config, *http.Request) error
+
+	// Handler handles a WebSocket connection.
+	Handler
+}
+
+// ServeHTTP implements the http.Handler interface for a WebSocket
+func (s Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	s.serveWebSocket(w, req)
+}
+
+func (s Server) serveWebSocket(w http.ResponseWriter, req *http.Request) {
 	rwc, buf, err := w.(http.Hijacker).Hijack()
 	if err != nil {
 		panic("Hijack failed: " + err.Error())
@@ -66,12 +88,35 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// the client did not send a handshake that matches with protocol
 	// specification.
 	defer rwc.Close()
-	conn, err := newServerConn(rwc, buf, req)
+	conn, err := newServerConn(rwc, buf, req, &s.Config, s.Handshake)
 	if err != nil {
 		return
 	}
 	if conn == nil {
 		panic("unexpected nil conn")
 	}
-	h(conn)
+	s.Handler(conn)
+}
+
+// Handler is a simple interface to a WebSocket browser client.
+// It checks if Origin header is valid URL by default.
+// You might want to verify websocket.Conn.Config().Origin in the func.
+// If you use Server instead of Handler, you could call websocket.Origin and
+// check the origin in your Handshake func. So, if you want to accept
+// non-browser client, which doesn't send Origin header, you could use Server
+//. that doesn't check origin in its Handshake.
+type Handler func(*Conn)
+
+func checkOrigin(config *Config, req *http.Request) (err error) {
+	config.Origin, err = Origin(config, req)
+	if err == nil && config.Origin == nil {
+		return fmt.Errorf("null origin")
+	}
+	return err
+}
+
+// ServeHTTP implements the http.Handler interface for a WebSocket
+func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	s := Server{Handler: h, Handshake: checkOrigin}
+	s.serveWebSocket(w, req)
 }

@@ -92,6 +92,71 @@ Sec-WebSocket-Protocol: chat
 	}
 }
 
+func TestHybiClientHandshakeWithHeader(t *testing.T) {
+	b := bytes.NewBuffer([]byte{})
+	bw := bufio.NewWriter(b)
+	br := bufio.NewReader(strings.NewReader(`HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+Sec-WebSocket-Protocol: chat
+
+`))
+	var err error
+	config := new(Config)
+	config.Location, err = url.ParseRequestURI("ws://server.example.com/chat")
+	if err != nil {
+		t.Fatal("location url", err)
+	}
+	config.Origin, err = url.ParseRequestURI("http://example.com")
+	if err != nil {
+		t.Fatal("origin url", err)
+	}
+	config.Protocol = append(config.Protocol, "chat")
+	config.Protocol = append(config.Protocol, "superchat")
+	config.Version = ProtocolVersionHybi13
+	config.Header = http.Header(make(map[string][]string))
+	config.Header.Add("User-Agent", "test")
+
+	config.handshakeData = map[string]string{
+		"key": "dGhlIHNhbXBsZSBub25jZQ==",
+	}
+	err = hybiClientHandshake(config, br, bw)
+	if err != nil {
+		t.Errorf("handshake failed: %v", err)
+	}
+	req, err := http.ReadRequest(bufio.NewReader(b))
+	if err != nil {
+		t.Fatalf("read request: %v", err)
+	}
+	if req.Method != "GET" {
+		t.Errorf("request method expected GET, but got %q", req.Method)
+	}
+	if req.URL.Path != "/chat" {
+		t.Errorf("request path expected /chat, but got %q", req.URL.Path)
+	}
+	if req.Proto != "HTTP/1.1" {
+		t.Errorf("request proto expected HTTP/1.1, but got %q", req.Proto)
+	}
+	if req.Host != "server.example.com" {
+		t.Errorf("request Host expected server.example.com, but got %v", req.Host)
+	}
+	var expectedHeader = map[string]string{
+		"Connection":             "Upgrade",
+		"Upgrade":                "websocket",
+		"Sec-Websocket-Key":      config.handshakeData["key"],
+		"Origin":                 config.Origin.String(),
+		"Sec-Websocket-Protocol": "chat, superchat",
+		"Sec-Websocket-Version":  fmt.Sprintf("%d", ProtocolVersionHybi13),
+		"User-Agent":             "test",
+	}
+	for k, v := range expectedHeader {
+		if req.Header.Get(k) != v {
+			t.Errorf(fmt.Sprintf("%s expected %q but got %q", k, v, req.Header.Get(k)))
+		}
+	}
+}
+
 func TestHybiClientHandshakeHybi08(t *testing.T) {
 	b := bytes.NewBuffer([]byte{})
 	bw := bufio.NewWriter(b)

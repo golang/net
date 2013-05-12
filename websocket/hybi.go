@@ -46,6 +46,17 @@ var (
 	ErrBadClosingStatus      = &ProtocolError{"bad closing status"}
 	ErrUnsupportedExtensions = &ProtocolError{"unsupported extensions"}
 	ErrNotImplemented        = &ProtocolError{"not implemented"}
+
+	handshakeHeader = map[string]bool{
+		"Host":                   true,
+		"Upgrade":                true,
+		"Connection":             true,
+		"Sec-Websocket-Key":      true,
+		"Sec-Websocket-Origin":   true,
+		"Sec-Websocket-Version":  true,
+		"Sec-Websocket-Protocol": true,
+		"Sec-Websocket-Accept":   true,
+	}
 )
 
 // A hybiFrameHeader is a frame header as defined in hybi draft.
@@ -408,8 +419,11 @@ func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (er
 	if len(config.Protocol) > 0 {
 		bw.WriteString("Sec-WebSocket-Protocol: " + strings.Join(config.Protocol, ", ") + "\r\n")
 	}
-	// TODO(ukai): send extensions.
-	// TODO(ukai): send cookie if any.
+	// TODO(ukai): send Sec-WebSocket-Extensions.
+	err = config.Header.WriteSubset(bw, handshakeHeader)
+	if err != nil {
+		return err
+	}
 
 	bw.WriteString("\r\n")
 	if err = bw.Flush(); err != nil {
@@ -483,20 +497,13 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 		return http.StatusBadRequest, ErrChallengeResponse
 	}
 	version := req.Header.Get("Sec-Websocket-Version")
-	var origin string
 	switch version {
 	case "13":
 		c.Version = ProtocolVersionHybi13
-		origin = req.Header.Get("Origin")
 	case "8":
 		c.Version = ProtocolVersionHybi08
-		origin = req.Header.Get("Sec-Websocket-Origin")
 	default:
 		return http.StatusBadRequest, ErrBadWebSocketVersion
-	}
-	c.Origin, err = url.ParseRequestURI(origin)
-	if err != nil {
-		return http.StatusForbidden, err
 	}
 	var scheme string
 	if req.TLS != nil {
@@ -520,6 +527,22 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 	return http.StatusSwitchingProtocols, nil
 }
 
+// Origin parses Origin header in "req".
+// If origin is "null", returns (nil, nil).
+func Origin(config *Config, req *http.Request) (*url.URL, error) {
+	var origin string
+	switch config.Version {
+	case ProtocolVersionHybi13:
+		origin = req.Header.Get("Origin")
+	case ProtocolVersionHybi08:
+		origin = req.Header.Get("Sec-Websocket-Origin")
+	}
+	if origin == "null" {
+		return nil, nil
+	}
+	return url.ParseRequestURI(origin)
+}
+
 func (c *hybiServerHandshaker) AcceptHandshake(buf *bufio.Writer) (err error) {
 	if len(c.Protocol) > 0 {
 		if len(c.Protocol) != 1 {
@@ -533,7 +556,13 @@ func (c *hybiServerHandshaker) AcceptHandshake(buf *bufio.Writer) (err error) {
 	if len(c.Protocol) > 0 {
 		buf.WriteString("Sec-WebSocket-Protocol: " + c.Protocol[0] + "\r\n")
 	}
-	// TODO(ukai): support extensions
+	// TODO(ukai): send Sec-WebSocket-Extensions.
+	if c.Header != nil {
+		err := c.Header.WriteSubset(buf, handshakeHeader)
+		if err != nil {
+			return err
+		}
+	}
 	buf.WriteString("\r\n")
 	return buf.Flush()
 }

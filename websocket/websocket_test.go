@@ -44,9 +44,30 @@ func countServer(ws *Conn) {
 	}
 }
 
+func subProtocolHandshake(config *Config, req *http.Request) error {
+	for _, proto := range config.Protocol {
+		if proto == "chat" {
+			config.Protocol = []string{proto}
+			return nil
+		}
+	}
+	return ErrBadWebSocketProtocol
+}
+
+func subProtoServer(ws *Conn) {
+	for _, proto := range ws.Config().Protocol {
+		io.WriteString(ws, proto)
+	}
+}
+
 func startServer() {
 	http.Handle("/echo", Handler(echoServer))
 	http.Handle("/count", Handler(countServer))
+	subproto := Server{
+		Handshake: subProtocolHandshake,
+		Handler:   Handler(subProtoServer),
+	}
+	http.Handle("/subproto", subproto)
 	server := httptest.NewServer(nil)
 	serverAddr = server.Listener.Addr().String()
 	log.Print("Test WebSocket server listening on ", serverAddr)
@@ -177,7 +198,7 @@ func TestWithQuery(t *testing.T) {
 	ws.Close()
 }
 
-func TestWithProtocol(t *testing.T) {
+func testWithProtocol(t *testing.T, subproto []string) (string, error) {
 	once.Do(startServer)
 
 	client, err := net.Dial("tcp", serverAddr)
@@ -185,15 +206,47 @@ func TestWithProtocol(t *testing.T) {
 		t.Fatal("dialing", err)
 	}
 
-	config := newConfig(t, "/echo")
-	config.Protocol = append(config.Protocol, "test")
+	config := newConfig(t, "/subproto")
+	config.Protocol = subproto
 
 	ws, err := NewClient(config, client)
 	if err != nil {
-		t.Errorf("WebSocket handshake: %v", err)
-		return
+		return "", err
+	}
+	msg := make([]byte, 16)
+	n, err := ws.Read(msg)
+	if err != nil {
+		return "", err
 	}
 	ws.Close()
+	return string(msg[:n]), nil
+}
+
+func TestWithProtocol(t *testing.T) {
+	proto, err := testWithProtocol(t, []string{"chat"})
+	if err != nil {
+		t.Errorf("SubProto: unexpected error: %v", err)
+	}
+	if proto != "chat" {
+		t.Errorf("SubProto: expected %q, got %q", "chat", proto)
+	}
+}
+
+func TestWithTwoProtocol(t *testing.T) {
+	proto, err := testWithProtocol(t, []string{"test", "chat"})
+	if err != nil {
+		t.Errorf("SubProto: unexpected error: %v", err)
+	}
+	if proto != "chat" {
+		t.Errorf("SubProto: expected %q, got %q", "chat", proto)
+	}
+}
+
+func TestWithBadProtocol(t *testing.T) {
+	_, err := testWithProtocol(t, []string{"test"})
+	if err != ErrBadStatus {
+		t.Errorf("SubProto: expected %q, got %q", ErrBadStatus)
+	}
 }
 
 func TestHTTP(t *testing.T) {
