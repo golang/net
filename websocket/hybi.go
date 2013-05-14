@@ -516,9 +516,11 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 		return http.StatusBadRequest, err
 	}
 	protocol := strings.TrimSpace(req.Header.Get("Sec-Websocket-Protocol"))
-	protocols := strings.Split(protocol, ",")
-	for i := 0; i < len(protocols); i++ {
-		c.Protocol = append(c.Protocol, strings.TrimSpace(protocols[i]))
+	if protocol != "" {
+		protocols := strings.Split(protocol, ",")
+		for i := 0; i < len(protocols); i++ {
+			c.Protocol = append(c.Protocol, strings.TrimSpace(protocols[i]))
+		}
 	}
 	c.accept, err = getNonceAccept([]byte(key))
 	if err != nil {
@@ -546,6 +548,7 @@ func Origin(config *Config, req *http.Request) (*url.URL, error) {
 func (c *hybiServerHandshaker) AcceptHandshake(buf *bufio.Writer) (err error) {
 	if len(c.Protocol) > 0 {
 		if len(c.Protocol) != 1 {
+			// You need choose a Protocol in Handshake func in Server.
 			return ErrBadWebSocketProtocol
 		}
 	}

@@ -243,10 +243,14 @@ Sec-WebSocket-Version: 13
 	if code != http.StatusSwitchingProtocols {
 		t.Errorf("status expected %q but got %q", http.StatusSwitchingProtocols, code)
 	}
+	expectedProtocols := []string{"chat", "superchat"}
+	if fmt.Sprintf("%v", config.Protocol) != fmt.Sprintf("%v", expectedProtocols) {
+		t.Errorf("protocol expected %q but got %q", expectedProtocols, config.Protocol)
+	}
 	b := bytes.NewBuffer([]byte{})
 	bw := bufio.NewWriter(b)
 
-	config.Protocol = []string{"chat"}
+	config.Protocol = config.Protocol[:1]
 
 	err = handshaker.AcceptHandshake(bw)
 	if err != nil {
@@ -258,6 +262,51 @@ Sec-WebSocket-Version: 13
 		"Connection: Upgrade",
 		"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
 		"Sec-WebSocket-Protocol: chat",
+		"", ""}, "\r\n")
+
+	if b.String() != expectedResponse {
+		t.Errorf("handshake expected %q but got %q", expectedResponse, b.String())
+	}
+}
+
+func TestHybiServerHandshakeNoSubProtocol(t *testing.T) {
+	config := new(Config)
+	handshaker := &hybiServerHandshaker{Config: config}
+	br := bufio.NewReader(strings.NewReader(`GET /chat HTTP/1.1
+Host: server.example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Origin: http://example.com
+Sec-WebSocket-Version: 13
+
+`))
+	req, err := http.ReadRequest(br)
+	if err != nil {
+		t.Fatal("request", err)
+	}
+	code, err := handshaker.ReadHandshake(br, req)
+	if err != nil {
+		t.Errorf("handshake failed: %v", err)
+	}
+	if code != http.StatusSwitchingProtocols {
+		t.Errorf("status expected %q but got %q", http.StatusSwitchingProtocols, code)
+	}
+	if len(config.Protocol) != 0 {
+		t.Errorf("len(config.Protocol) expected 0, but got %q", len(config.Protocol))
+	}
+	b := bytes.NewBuffer([]byte{})
+	bw := bufio.NewWriter(b)
+
+	err = handshaker.AcceptHandshake(bw)
+	if err != nil {
+		t.Errorf("handshake response failed: %v", err)
+	}
+	expectedResponse := strings.Join([]string{
+		"HTTP/1.1 101 Switching Protocols",
+		"Upgrade: websocket",
+		"Connection: Upgrade",
+		"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
 		"", ""}, "\r\n")
 
 	if b.String() != expectedResponse {
