@@ -18,7 +18,7 @@ type rawOpt struct {
 func (o *rawOpt) lock()                     { o.mu.Lock() }
 func (o *rawOpt) unlock()                   { o.mu.Unlock() }
 func (o *rawOpt) set(f ControlFlags)        { o.cflags |= f }
-func (o *rawOpt) clear(f ControlFlags)      { o.cflags ^= f }
+func (o *rawOpt) clear(f ControlFlags)      { o.cflags &^= f }
 func (o *rawOpt) isset(f ControlFlags) bool { return o.cflags&f != 0 }
 
 type ControlFlags uint
