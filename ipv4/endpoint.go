@@ -162,7 +162,7 @@ func (c *RawConn) Close() error {
 	return c.packetHandler.c.Close()
 }
 
-// NewRawConn returns a new RawConn using c as it sunderlying
+// NewRawConn returns a new RawConn using c as its underlying
 // transport.
 func NewRawConn(c net.PacketConn) (*RawConn, error) {
 	r := &RawConn{
