@@ -135,10 +135,10 @@
 //
 // More multicasting
 //
-// An application that uses PacketConn or RawConn might join the
-// multiple group addresses.  For example, a UDP listener with port
-// 1024 might join two different groups across over two different
-// network interfaces by using:
+// An application that uses PacketConn may join multiple group
+// addresses.  For example, a UDP listener with port 1024 might join
+// two different groups across over two different network interfaces
+// by using:
 //
 //	c, err := net.ListenPacket("udp6", "[::]:1024")
 //	if err != nil {
