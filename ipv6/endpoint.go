@@ -72,6 +72,14 @@ func (c *PacketConn) SetControlMessage(cf ControlFlags, on bool) error {
 	return setControlMessage(fd, &c.payloadHandler.rawOpt, cf, on)
 }
 
+// Close closes the endpoint.
+func (c *PacketConn) Close() error {
+	if !c.payloadHandler.ok() {
+		return syscall.EINVAL
+	}
+	return c.payloadHandler.PacketConn.Close()
+}
+
 // NewPacketConn returns a new PacketConn using c as its underlying
 // transport.
 func NewPacketConn(c net.PacketConn) *PacketConn {
