@@ -19,7 +19,7 @@ func (f *rawICMPFilter) set(typ ICMPType, block bool) {
 }
 
 func (f *rawICMPFilter) setAll(block bool) {
-	for i := 0; i < len(f.Data); i++ {
+	for i := range f.Data {
 		if block {
 			f.Data[i] = 1<<32 - 1
 		} else {

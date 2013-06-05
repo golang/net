@@ -21,7 +21,7 @@ func (f *rawICMPFilter) set(typ ICMPType, block bool) {
 }
 
 func (f *rawICMPFilter) setAll(block bool) {
-	for i := 0; i < len(f.Filt); i++ {
+	for i := range f.Filt {
 		if block {
 			f.Filt[i] = 0
 		} else {
