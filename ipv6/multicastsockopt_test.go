@@ -25,6 +25,9 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 	ifi := loopbackInterface()
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)

@@ -52,6 +52,9 @@ func TestSetICMPFilter(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}

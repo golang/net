@@ -19,6 +19,9 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 	ifi := loopbackInterface()
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
@@ -77,6 +80,9 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")

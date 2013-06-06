@@ -12,6 +12,15 @@ import (
 	"testing"
 )
 
+var supportsIPv6 bool
+
+func init() {
+	if ln, err := net.Listen("tcp6", "[::1]:0"); err == nil {
+		ln.Close()
+		supportsIPv6 = true
+	}
+}
+
 var condFatalf = func() func(*testing.T, string, ...interface{}) {
 	// A few APIs are not implemented yet on some platforms.
 	switch runtime.GOOS {
@@ -25,6 +34,9 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
@@ -56,6 +68,9 @@ func TestConnResponderPathMTU(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
 	if err != nil {
@@ -85,6 +100,9 @@ func TestPacketConnChecksum(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")

@@ -24,6 +24,9 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 
 	for _, gaddr := range udpMultipleGroupListenerTests {
 		c, err := net.ListenPacket("udp6", "[::]:0") // wildcard address with non-reusable port
@@ -60,6 +63,9 @@ func TestUDPMultipleConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 
 	for _, gaddr := range udpMultipleGroupListenerTests {
@@ -110,6 +116,9 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 
 	gaddr := &net.IPAddr{IP: net.ParseIP("ff02::114")} // see RFC 4727
 	type ml struct {
@@ -149,6 +158,9 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")

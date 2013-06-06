@@ -17,6 +17,9 @@ func TestConnUnicastSocketOptions(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
+	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
 	if err != nil {
@@ -49,6 +52,9 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if !supportsIPv6 {
+		t.Skip("ipv6 is not supported")
 	}
 
 	for _, tt := range packetConnUnicastSocketOptionTests {
