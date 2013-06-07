@@ -55,7 +55,7 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	if opt.isset(FlagTTL) {
 		b := make([]byte, syscall.CmsgSpace(1))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_RECVTTL
 		cmsg.SetLen(syscall.CmsgLen(1))
 		oob = append(oob, b...)
@@ -63,7 +63,7 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	if opt.isset(FlagDst) {
 		b := make([]byte, syscall.CmsgSpace(net.IPv4len))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_RECVDSTADDR
 		cmsg.SetLen(syscall.CmsgLen(net.IPv4len))
 		oob = append(oob, b...)
@@ -71,7 +71,7 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	if opt.isset(FlagInterface) {
 		b := make([]byte, syscall.CmsgSpace(syscall.SizeofSockaddrDatalink))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_RECVIF
 		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofSockaddrDatalink))
 		oob = append(oob, b...)
@@ -89,7 +89,7 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 	}
 	cm := &ControlMessage{}
 	for _, m := range cmsgs {
-		if m.Header.Level != syscall.IPPROTO_IP {
+		if m.Header.Level != ianaProtocolIP {
 			continue
 		}
 		switch m.Header.Type {

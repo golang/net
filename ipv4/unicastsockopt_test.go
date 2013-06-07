@@ -28,8 +28,8 @@ type unicastSockoptTest struct {
 }
 
 var unicastSockoptTests = []unicastSockoptTest{
-	{ipv4.DSCP_CS0 | ipv4.ECN_NOTECT, 127},
-	{ipv4.DSCP_AF11 | ipv4.ECN_NOTECT, 255},
+	{DiffServCS0 | NotECNTransport, 127},
+	{DiffServAF11 | NotECNTransport, 255},
 }
 
 func TestTCPUnicastSockopt(t *testing.T) {

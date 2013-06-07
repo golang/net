@@ -23,7 +23,7 @@ func ExampleUnicastTCPListener() {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			err := ipv4.NewConn(c).SetTOS(ipv4.DSCP_AF11)
+			err := ipv4.NewConn(c).SetTOS(DiffServAF11)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func ExampleMulticastUDPListener() {
 				continue
 			}
 		}
-		p.SetTOS(ipv4.DSCP_CS7)
+		p.SetTOS(DiffServCS7)
 		p.SetTTL(16)
 		_, err = p.WriteTo(b[:n], nil, src)
 		if err != nil {
@@ -150,7 +150,7 @@ func ExampleIPOSPFListener() {
 	}
 	ifs = append(ifs, en1)
 
-	c, err := net.ListenPacket("ip4:89", "0.0.0.0")
+	c, err := net.ListenPacket("ip4:89", "0.0.0.0") // OSFP for IPv4
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func ExampleIPOSPFListener() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	r.SetTOS(ipv4.DSCP_CS6)
+	r.SetTOS(DiffServCS6)
 
 	parseOSPFHeader := func(b []byte) *OSPFHeader {
 		if len(b) < OSPFHeaderLen {
@@ -235,7 +235,7 @@ func ExampleWriteIPOSPFHello() {
 	}
 	ifs = append(ifs, en1)
 
-	c, err := net.ListenPacket("ip4:89", "0.0.0.0")
+	c, err := net.ListenPacket("ip4:89", "0.0.0.0") // OSPF for IPv4
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func ExampleWriteIPOSPFHello() {
 	iph := &ipv4.Header{}
 	iph.Version = ipv4.Version
 	iph.Len = ipv4.HeaderLen
-	iph.TOS = ipv4.DSCP_CS6
+	iph.TOS = DiffServCS6
 	iph.TotalLen = ipv4.HeaderLen + len(ospf)
 	iph.TTL = 1
 	iph.Protocol = 89

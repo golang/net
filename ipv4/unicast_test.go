@@ -53,7 +53,7 @@ func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 	for i, toggle := range []bool{true, false, true} {
 		wb, err := (&icmpMessage{
-			Type: icmpv4EchoRequest, Code: 0,
+			Type: ipv4.ICMPTypeEcho, Code: 0,
 			Body: &icmpEcho{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
@@ -70,8 +70,8 @@ func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseICMPMessage failed: %v", err)
 		}
-		if m.Type != icmpv4EchoReply || m.Code != 0 {
-			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, icmpv4EchoReply, 0)
+		if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
+			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
 		}
 	}
 }
@@ -98,7 +98,7 @@ func TestReadWriteUnicastIPDatagram(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 	for i, toggle := range []bool{true, false, true} {
 		wb, err := (&icmpMessage{
-			Type: icmpv4EchoRequest, Code: 0,
+			Type: ipv4.ICMPTypeEcho, Code: 0,
 			Body: &icmpEcho{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
@@ -115,8 +115,8 @@ func TestReadWriteUnicastIPDatagram(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseICMPMessage failed: %v", err)
 		}
-		if m.Type != icmpv4EchoReply || m.Code != 0 {
-			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, icmpv4EchoReply, 0)
+		if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
+			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
 		}
 	}
 }

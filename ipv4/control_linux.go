@@ -47,7 +47,7 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	if opt.isset(FlagTTL) {
 		b := make([]byte, syscall.CmsgSpace(1))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_RECVTTL
 		cmsg.SetLen(syscall.CmsgLen(1))
 		oob = append(oob, b...)
@@ -55,7 +55,7 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	if opt.isset(pktinfo) {
 		b := make([]byte, syscall.CmsgSpace(syscall.SizeofInet4Pktinfo))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_PKTINFO
 		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
 		oob = append(oob, b...)
@@ -73,7 +73,7 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 	}
 	cm := &ControlMessage{}
 	for _, m := range cmsgs {
-		if m.Header.Level != syscall.IPPROTO_IP {
+		if m.Header.Level != ianaProtocolIP {
 			continue
 		}
 		switch m.Header.Type {
@@ -105,7 +105,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 	if pion {
 		b := make([]byte, syscall.CmsgSpace(syscall.SizeofInet4Pktinfo))
 		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = syscall.IPPROTO_IP
+		cmsg.Level = ianaProtocolIP
 		cmsg.Type = syscall.IP_PKTINFO
 		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
 		data := b[syscall.CmsgLen(0):]

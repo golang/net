@@ -29,56 +29,11 @@ var (
 //	http://tools.ietf.org/html/rfc1112
 // RFC 1122  Requirements for Internet Hosts
 //	http://tools.ietf.org/html/rfc1122
-// RFC 2474  Definition of the Differentiated Services Field (DS Field) in the IPv4 and IPv6 Headers
-//	http://tools.ietf.org/html/rfc2474
-// RFC 2475  An Architecture for Differentiated Services
-//	http://tools.ietf.org/html/rfc2475
-// RFC 2597  Assured Forwarding PHB Group
-//	http://tools.ietf.org/html/rfc2597
-// RFC 2598  An Expedited Forwarding PHB
-//	http://tools.ietf.org/html/rfc2598
-// RFC 3168  The Addition of Explicit Congestion Notification (ECN) to IP
-//	http://tools.ietf.org/html/rfc3168
-// RFC 3260  New Terminology and Clarifications for Diffserv
-//	http://tools.ietf.org/html/rfc3260
 
 const (
 	Version      = 4  // protocol version
 	HeaderLen    = 20 // header length without extension headers
 	maxHeaderLen = 60 // sensible default, revisit if later RFCs define new usage of version and header length fields
-)
-
-const (
-	// DiffServ class selector codepoints in RFC 2474.
-	DSCP_CS0 = 0x00 // best effort
-	DSCP_CS1 = 0x20 // class 1
-	DSCP_CS2 = 0x40 // class 2
-	DSCP_CS3 = 0x60 // class 3
-	DSCP_CS4 = 0x80 // class 4
-	DSCP_CS5 = 0xa0 // expedited forwarding
-	DSCP_CS6 = 0xc0 // subsume deprecated IP precedence, internet control (routing information update)
-	DSCP_CS7 = 0xe0 // subsume deprecated IP precedence, network control (link, neighbor liveliness check)
-
-	// DiffServ assured forwarding codepoints in RFC 2474, 2475, 2597 and 3260.
-	DSCP_AF11 = 0x28 // class 1 low drop precedence
-	DSCP_AF12 = 0x30 // class 1 medium drop precedence
-	DSCP_AF13 = 0x38 // class 1 high drop precedence
-	DSCP_AF21 = 0x48 // class 2 low drop precedence
-	DSCP_AF22 = 0x50 // class 2 medium drop precedence
-	DSCP_AF23 = 0x58 // class 2 high drop precedence
-	DSCP_AF31 = 0x68 // class 3 low drop precedence
-	DSCP_AF32 = 0x70 // class 3 medium drop precedence
-	DSCP_AF33 = 0x78 // class 3 high drop precedence
-	DSCP_AF41 = 0x88 // class 4 low drop precedence
-	DSCP_AF42 = 0x90 // class 4 medium drop precedence
-	DSCP_AF43 = 0x98 // class 4 high drop precedence
-	DSCP_EF   = 0xb8 // expedited forwarding
-
-	// ECN codepoints in RFC 3168.
-	ECN_NOTECT = 0x00 // not ECN-capable transport
-	ECN_ECT1   = 0x01 // ECN-capable transport, ECT(1)
-	ECN_ECT0   = 0x02 // ECN-capable transport, ECT(0)
-	ECN_CE     = 0x03 // congestion experienced
 )
 
 type headerField int

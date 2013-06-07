@@ -5,22 +5,16 @@
 package ipv4_test
 
 import (
+	"code.google.com/p/go.net/ipv4"
 	"errors"
 	"flag"
 )
 
 var testExternal = flag.Bool("external", true, "allow use of external networks during long test")
 
-const (
-	icmpv4EchoRequest = 8
-	icmpv4EchoReply   = 0
-	icmpv6EchoRequest = 128
-	icmpv6EchoReply   = 129
-)
-
 // icmpMessage represents an ICMP message.
 type icmpMessage struct {
-	Type     int             // type
+	Type     ipv4.ICMPType   // type
 	Code     int             // code
 	Checksum int             // checksum
 	Body     icmpMessageBody // body
@@ -42,10 +36,6 @@ func (m *icmpMessage) Marshal() ([]byte, error) {
 			return nil, err
 		}
 		b = append(b, mb...)
-	}
-	switch m.Type {
-	case icmpv6EchoRequest, icmpv6EchoReply:
-		return b, nil
 	}
 	csumcv := len(b) - 1 // checksum coverage
 	s := uint32(0)
@@ -70,11 +60,11 @@ func parseICMPMessage(b []byte) (*icmpMessage, error) {
 	if msglen < 4 {
 		return nil, errors.New("message too short")
 	}
-	m := &icmpMessage{Type: int(b[0]), Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
+	m := &icmpMessage{Type: ipv4.ICMPType(b[0]), Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
 	if msglen > 4 {
 		var err error
 		switch m.Type {
-		case icmpv4EchoRequest, icmpv4EchoReply, icmpv6EchoRequest, icmpv6EchoReply:
+		case ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply:
 			m.Body, err = parseICMPEcho(b[4:])
 			if err != nil {
 				return nil, err

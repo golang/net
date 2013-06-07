@@ -33,8 +33,8 @@ type multicastSockoptTest struct {
 }
 
 var multicastSockoptTests = []multicastSockoptTest{
-	{ipv4.DSCP_CS0 | ipv4.ECN_NOTECT, 127, 128, false, net.IPv4(224, 0, 0, 249)}, // see RFC 4727
-	{ipv4.DSCP_AF11 | ipv4.ECN_NOTECT, 255, 254, true, net.IPv4(224, 0, 0, 250)}, // see RFC 4727
+	{DiffServCS0 | NotECNTransport, 127, 128, false, net.IPv4(224, 0, 0, 249)}, // see RFC 4727
+	{DiffServAF11 | NotECNTransport, 255, 254, true, net.IPv4(224, 0, 0, 250)}, // see RFC 4727
 }
 
 func TestUDPMulticastSockopt(t *testing.T) {

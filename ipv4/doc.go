@@ -8,9 +8,7 @@
 // The package provides IP-level socket options that allow
 // manipulation of IPv4 facilities.  The IPv4 and basic host
 // requirements for IPv4 are defined in RFC 791, RFC 1112 and RFC
-// 1122.  A series of RFC 2474, RFC 2475, RFC 2597, RFC 2598 and RFC
-// 3168 describe how to use the type-of-service field in a DiffServ,
-// differentiated services environment.
+// 1122.
 //
 //
 // Unicasting
@@ -38,7 +36,7 @@
 // The outgoing packets will be labeled DiffServ assured forwarding
 // class 1 low drop precedence, as known as AF11 packets.
 //
-//			err := ipv4.NewConn(c).SetTOS(ipv4.DSCP_AF11)
+//			err := ipv4.NewConn(c).SetTOS(DiffServAF11)
 //			if err != nil {
 //				// error handling
 //			}
@@ -125,7 +123,7 @@
 //
 // The application can also send both unicast and multicast packets.
 //
-//		p.SetTOS(ipv4.DSCP_CS0)
+//		p.SetTOS(DiffServCS0)
 //		p.SetTTL(16)
 //		_, err = p.WriteTo(data, nil, src)
 //		if err != nil {
