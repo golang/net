@@ -118,7 +118,7 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 
 	if buf[1] == socks5AuthPassword {
 		buf = buf[:0]
-		buf = append(buf, socks5Version)
+		buf = append(buf, 1 /* password protocol version */)
 		buf = append(buf, uint8(len(s.user)))
 		buf = append(buf, s.user...)
 		buf = append(buf, uint8(len(s.password)))
