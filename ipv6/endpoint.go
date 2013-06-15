@@ -7,6 +7,7 @@ package ipv6
 import (
 	"net"
 	"syscall"
+	"time"
 )
 
 // A Conn represents a network endpoint that uses IPv6 transport.
@@ -72,12 +73,39 @@ func (c *PacketConn) SetControlMessage(cf ControlFlags, on bool) error {
 	return setControlMessage(fd, &c.payloadHandler.rawOpt, cf, on)
 }
 
+// SetDeadline sets the read and write deadlines associated with the
+// endpoint.
+func (c *PacketConn) SetDeadline(t time.Time) error {
+	if !c.payloadHandler.ok() {
+		return syscall.EINVAL
+	}
+	return c.payloadHandler.SetDeadline(t)
+}
+
+// SetReadDeadline sets the read deadline associated with the
+// endpoint.
+func (c *PacketConn) SetReadDeadline(t time.Time) error {
+	if !c.payloadHandler.ok() {
+		return syscall.EINVAL
+	}
+	return c.payloadHandler.SetReadDeadline(t)
+}
+
+// SetWriteDeadline sets the write deadline associated with the
+// endpoint.
+func (c *PacketConn) SetWriteDeadline(t time.Time) error {
+	if !c.payloadHandler.ok() {
+		return syscall.EINVAL
+	}
+	return c.payloadHandler.SetWriteDeadline(t)
+}
+
 // Close closes the endpoint.
 func (c *PacketConn) Close() error {
 	if !c.payloadHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.payloadHandler.PacketConn.Close()
+	return c.payloadHandler.Close()
 }
 
 // NewPacketConn returns a new PacketConn using c as its underlying
