@@ -32,16 +32,17 @@ func BenchmarkReadWriteNetUDP(b *testing.B) {
 	}
 	defer c.Close()
 
+	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		benchmarkReadWriteNetUDP(b, c, dst)
+		benchmarkReadWriteNetUDP(b, c, wb, rb, dst)
 	}
 }
 
-func benchmarkReadWriteNetUDP(b *testing.B, c net.PacketConn, dst net.Addr) {
-	if _, err := c.WriteTo([]byte("HELLO-R-U-THERE"), dst); err != nil {
+func benchmarkReadWriteNetUDP(b *testing.B, c net.PacketConn, wb, rb []byte, dst net.Addr) {
+	if _, err := c.WriteTo(wb, dst); err != nil {
 		b.Fatalf("net.PacketConn.WriteTo failed: %v", err)
 	}
-	rb := make([]byte, 128)
 	if _, _, err := c.ReadFrom(rb); err != nil {
 		b.Fatalf("net.PacketConn.ReadFrom failed: %v", err)
 	}
@@ -61,12 +62,14 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 	}
 	ifi := loopbackInterface()
 
+	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		benchmarkReadWriteIPv6UDP(b, p, dst, ifi)
+		benchmarkReadWriteIPv6UDP(b, p, wb, rb, dst, ifi)
 	}
 }
 
-func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, dst net.Addr, ifi *net.Interface) {
+func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, dst net.Addr, ifi *net.Interface) {
 	cm := ipv6.ControlMessage{
 		TrafficClass: DiffServAF11 | CongestionExperienced,
 		HopLimit:     1,
@@ -74,10 +77,9 @@ func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, dst net.Addr, i
 	if ifi != nil {
 		cm.IfIndex = ifi.Index
 	}
-	if _, err := p.WriteTo([]byte("HELLO-R-U-THERE"), &cm, dst); err != nil {
+	if _, err := p.WriteTo(wb, &cm, dst); err != nil {
 		b.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
 	}
-	rb := make([]byte, 128)
 	if _, _, _, err := p.ReadFrom(rb); err != nil {
 		b.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
 	}
