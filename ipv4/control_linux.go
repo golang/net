@@ -5,7 +5,6 @@
 package ipv4
 
 import (
-	"net"
 	"os"
 	"syscall"
 	"unsafe"
@@ -16,8 +15,8 @@ import (
 const pktinfo = FlagSrc | FlagDst | FlagInterface
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
-	opt.lock()
-	defer opt.unlock()
+	opt.Lock()
+	defer opt.Unlock()
 	if cf&FlagTTL != 0 {
 		if err := setIPv4ReceiveTTL(fd, on); err != nil {
 			return err
@@ -42,34 +41,42 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 }
 
 func newControlMessage(opt *rawOpt) (oob []byte) {
-	opt.lock()
-	defer opt.unlock()
+	opt.Lock()
+	defer opt.Unlock()
+	l, off := 0, 0
 	if opt.isset(FlagTTL) {
-		b := make([]byte, syscall.CmsgSpace(1))
-		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = ianaProtocolIP
-		cmsg.Type = syscall.IP_RECVTTL
-		cmsg.SetLen(syscall.CmsgLen(1))
-		oob = append(oob, b...)
+		l += syscall.CmsgSpace(1)
 	}
 	if opt.isset(pktinfo) {
-		b := make([]byte, syscall.CmsgSpace(syscall.SizeofInet4Pktinfo))
-		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = ianaProtocolIP
-		cmsg.Type = syscall.IP_PKTINFO
-		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
-		oob = append(oob, b...)
+		l += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
+	}
+	if l > 0 {
+		oob = make([]byte, l)
+		if opt.isset(FlagTTL) {
+			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
+			m.Level = ianaProtocolIP
+			m.Type = syscall.IP_RECVTTL
+			m.SetLen(syscall.CmsgLen(1))
+			off += syscall.CmsgSpace(1)
+		}
+		if opt.isset(pktinfo) {
+			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
+			m.Level = ianaProtocolIP
+			m.Type = syscall.IP_PKTINFO
+			m.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
+			off += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
+		}
 	}
 	return
 }
 
 func parseControlMessage(b []byte) (*ControlMessage, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
 	cmsgs, err := syscall.ParseSocketControlMessage(b)
 	if err != nil {
 		return nil, os.NewSyscallError("parse socket control message", err)
-	}
-	if len(b) == 0 {
-		return nil, nil
 	}
 	cm := &ControlMessage{}
 	for _, m := range cmsgs {
@@ -82,7 +89,7 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 		case syscall.IP_PKTINFO:
 			pi := (*syscall.Inet4Pktinfo)(unsafe.Pointer(&m.Data[0]))
 			cm.IfIndex = int(pi.Ifindex)
-			cm.Dst = net.IPv4(pi.Addr[0], pi.Addr[1], pi.Addr[2], pi.Addr[3])
+			cm.Dst = pi.Addr[:]
 		}
 	}
 	return cm, nil
@@ -92,25 +99,28 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 	if cm == nil {
 		return
 	}
-	pi := &syscall.Inet4Pktinfo{}
+	l, off := 0, 0
 	pion := false
-	if ip := cm.Src.To4(); ip != nil {
-		copy(pi.Spec_dst[:], ip[:net.IPv4len])
+	if cm.Src.To4() != nil || cm.IfIndex != 0 {
 		pion = true
+		l += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
 	}
-	if cm.IfIndex != 0 {
-		pi.Ifindex = int32(cm.IfIndex)
-		pion = true
-	}
-	if pion {
-		b := make([]byte, syscall.CmsgSpace(syscall.SizeofInet4Pktinfo))
-		cmsg := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-		cmsg.Level = ianaProtocolIP
-		cmsg.Type = syscall.IP_PKTINFO
-		cmsg.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
-		data := b[syscall.CmsgLen(0):]
-		copy(data[:syscall.SizeofInet4Pktinfo], (*[syscall.SizeofInet4Pktinfo]byte)(unsafe.Pointer(pi))[:syscall.SizeofInet4Pktinfo])
-		oob = append(oob, b...)
+	if l > 0 {
+		oob = make([]byte, l)
+		if pion {
+			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
+			m.Level = ianaProtocolIP
+			m.Type = syscall.IP_PKTINFO
+			m.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
+			pi := (*syscall.Inet4Pktinfo)(unsafe.Pointer(&oob[off+syscall.CmsgLen(0)]))
+			if ip := cm.Src.To4(); ip != nil {
+				copy(pi.Addr[:], ip)
+			}
+			if cm.IfIndex != 0 {
+				pi.Ifindex = int32(cm.IfIndex)
+			}
+			off += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
+		}
 	}
 	return
 }

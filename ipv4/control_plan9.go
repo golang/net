@@ -4,9 +4,7 @@
 
 package ipv4
 
-import (
-	"syscall"
-)
+import "syscall"
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	// TODO(mikio): Implement this
