@@ -20,11 +20,7 @@ func ipv4TOS(fd int) (int, error) {
 }
 
 func setIPv4TOS(fd int, v int) error {
-	err := syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_TOS, v)
-	if err != nil {
-		return os.NewSyscallError("setsockopt", err)
-	}
-	return nil
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_TOS, v))
 }
 
 func ipv4TTL(fd int) (int, error) {
@@ -36,11 +32,7 @@ func ipv4TTL(fd int) (int, error) {
 }
 
 func setIPv4TTL(fd int, v int) error {
-	err := syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_TTL, v)
-	if err != nil {
-		return os.NewSyscallError("setsockopt", err)
-	}
-	return nil
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_TTL, v))
 }
 
 func ipv4ReceiveTTL(fd int) (bool, error) {
@@ -52,11 +44,7 @@ func ipv4ReceiveTTL(fd int) (bool, error) {
 }
 
 func setIPv4ReceiveTTL(fd int, v bool) error {
-	err := syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_RECVTTL, boolint(v))
-	if err != nil {
-		return os.NewSyscallError("setsockopt", err)
-	}
-	return nil
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_RECVTTL, boolint(v)))
 }
 
 func ipv4HeaderPrepend(fd int) (bool, error) {
@@ -68,9 +56,5 @@ func ipv4HeaderPrepend(fd int) (bool, error) {
 }
 
 func setIPv4HeaderPrepend(fd int, v bool) error {
-	err := syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_HDRINCL, boolint(v))
-	if err != nil {
-		return os.NewSyscallError("setsockopt", err)
-	}
-	return nil
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_HDRINCL, boolint(v)))
 }

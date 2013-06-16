@@ -18,9 +18,5 @@ func ipv4SendSourceAddress(fd int) (bool, error) {
 }
 
 func setIPv4SendSourceAddress(fd int, v bool) error {
-	err := syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_SENDSRCADDR, boolint(v))
-	if err != nil {
-		return os.NewSyscallError("setsockopt", err)
-	}
-	return nil
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, syscall.IP_SENDSRCADDR, boolint(v)))
 }

@@ -4,9 +4,7 @@
 
 package ipv4
 
-import (
-	"syscall"
-)
+import "syscall"
 
 func ipv4HeaderPrepend(fd int) (bool, error) {
 	// TODO(mikio): Implement this
