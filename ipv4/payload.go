@@ -11,11 +11,11 @@ import (
 
 // A payloadHandler represents the IPv4 datagram payload handler.
 type payloadHandler struct {
-	c net.PacketConn
+	net.PacketConn
 	rawOpt
 }
 
-func (c *payloadHandler) ok() bool { return c != nil && c.c != nil }
+func (c *payloadHandler) ok() bool { return c != nil && c.PacketConn != nil }
 
 // ReadFrom reads a payload of the received IPv4 datagram, from the
 // endpoint c, copying the payload into b.  It returns the number of
@@ -27,14 +27,14 @@ func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.
 	}
 	oob := newControlMessage(&c.rawOpt)
 	var oobn int
-	switch rd := c.c.(type) {
+	switch c := c.PacketConn.(type) {
 	case *net.UDPConn:
-		if n, oobn, _, src, err = rd.ReadMsgUDP(b, oob); err != nil {
+		if n, oobn, _, src, err = c.ReadMsgUDP(b, oob); err != nil {
 			return 0, nil, nil, err
 		}
 	case *net.IPConn:
 		nb := make([]byte, maxHeaderLen+len(b))
-		if n, oobn, _, src, err = rd.ReadMsgIP(nb, oob); err != nil {
+		if n, oobn, _, src, err = c.ReadMsgIP(nb, oob); err != nil {
 			return 0, nil, nil, err
 		}
 		hdrlen := int(nb[0]&0x0f) << 2
@@ -66,11 +66,11 @@ func (c *payloadHandler) WriteTo(b []byte, cm *ControlMessage, dst net.Addr) (n 
 	if dst == nil {
 		return 0, errMissingAddress
 	}
-	switch wr := c.c.(type) {
+	switch c := c.PacketConn.(type) {
 	case *net.UDPConn:
-		n, _, err = wr.WriteMsgUDP(b, oob, dst.(*net.UDPAddr))
+		n, _, err = c.WriteMsgUDP(b, oob, dst.(*net.UDPAddr))
 	case *net.IPConn:
-		n, _, err = wr.WriteMsgIP(b, oob, dst.(*net.IPAddr))
+		n, _, err = c.WriteMsgIP(b, oob, dst.(*net.IPAddr))
 	default:
 		return 0, errInvalidConnType
 	}

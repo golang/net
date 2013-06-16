@@ -18,15 +18,15 @@ type Conn struct {
 }
 
 type genericOpt struct {
-	c net.Conn
+	net.Conn
 }
 
-func (c *genericOpt) ok() bool { return c != nil && c.c != nil }
+func (c *genericOpt) ok() bool { return c != nil && c.Conn != nil }
 
 // NewConn returns a new Conn.
 func NewConn(c net.Conn) *Conn {
 	return &Conn{
-		genericOpt: genericOpt{c},
+		genericOpt: genericOpt{Conn: c},
 	}
 }
 
@@ -42,10 +42,10 @@ type PacketConn struct {
 }
 
 type dgramOpt struct {
-	c net.PacketConn
+	net.PacketConn
 }
 
-func (c *dgramOpt) ok() bool { return c != nil && c.c != nil }
+func (c *dgramOpt) ok() bool { return c != nil && c.PacketConn != nil }
 
 // SetControlMessage sets the per packet IP-level socket options.
 func (c *PacketConn) SetControlMessage(cf ControlFlags, on bool) error {
@@ -65,7 +65,7 @@ func (c *PacketConn) SetDeadline(t time.Time) error {
 	if !c.payloadHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.payloadHandler.c.SetDeadline(t)
+	return c.payloadHandler.PacketConn.SetDeadline(t)
 }
 
 // SetReadDeadline sets the read deadline associated with the
@@ -74,7 +74,7 @@ func (c *PacketConn) SetReadDeadline(t time.Time) error {
 	if !c.payloadHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.payloadHandler.c.SetReadDeadline(t)
+	return c.payloadHandler.PacketConn.SetReadDeadline(t)
 }
 
 // SetWriteDeadline sets the write deadline associated with the
@@ -83,7 +83,7 @@ func (c *PacketConn) SetWriteDeadline(t time.Time) error {
 	if !c.payloadHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.payloadHandler.c.SetWriteDeadline(t)
+	return c.payloadHandler.PacketConn.SetWriteDeadline(t)
 }
 
 // Close closes the endpoint.
@@ -91,16 +91,16 @@ func (c *PacketConn) Close() error {
 	if !c.payloadHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.payloadHandler.c.Close()
+	return c.payloadHandler.PacketConn.Close()
 }
 
 // NewPacketConn returns a new PacketConn using c as its underlying
 // transport.
 func NewPacketConn(c net.PacketConn) *PacketConn {
 	return &PacketConn{
-		genericOpt:     genericOpt{c.(net.Conn)},
-		dgramOpt:       dgramOpt{c},
-		payloadHandler: payloadHandler{c: c},
+		genericOpt:     genericOpt{Conn: c.(net.Conn)},
+		dgramOpt:       dgramOpt{PacketConn: c},
+		payloadHandler: payloadHandler{PacketConn: c},
 	}
 }
 
@@ -166,8 +166,8 @@ func (c *RawConn) Close() error {
 // transport.
 func NewRawConn(c net.PacketConn) (*RawConn, error) {
 	r := &RawConn{
-		genericOpt:    genericOpt{c.(net.Conn)},
-		dgramOpt:      dgramOpt{c},
+		genericOpt:    genericOpt{Conn: c.(net.Conn)},
+		dgramOpt:      dgramOpt{PacketConn: c},
 		packetHandler: packetHandler{c: c.(*net.IPConn)},
 	}
 	fd, err := r.packetHandler.sysfd()

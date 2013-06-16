@@ -4,9 +4,7 @@
 
 package ipv4
 
-import (
-	"syscall"
-)
+import "syscall"
 
 func (c *genericOpt) sysfd() (int, error) {
 	// TODO(mikio): Implement this

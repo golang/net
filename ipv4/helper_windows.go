@@ -11,7 +11,7 @@ import (
 )
 
 func (c *genericOpt) sysfd() (syscall.Handle, error) {
-	switch p := c.c.(type) {
+	switch p := c.Conn.(type) {
 	case *net.TCPConn, *net.UDPConn, *net.IPConn:
 		return sysfd(p)
 	}
@@ -19,7 +19,7 @@ func (c *genericOpt) sysfd() (syscall.Handle, error) {
 }
 
 func (c *dgramOpt) sysfd() (syscall.Handle, error) {
-	switch p := c.c.(type) {
+	switch p := c.PacketConn.(type) {
 	case *net.UDPConn, *net.IPConn:
 		return sysfd(p.(net.Conn))
 	}
@@ -27,7 +27,7 @@ func (c *dgramOpt) sysfd() (syscall.Handle, error) {
 }
 
 func (c *payloadHandler) sysfd() (syscall.Handle, error) {
-	return sysfd(c.c.(net.Conn))
+	return sysfd(c.PacketConn.(net.Conn))
 }
 
 func (c *packetHandler) sysfd() (syscall.Handle, error) {
