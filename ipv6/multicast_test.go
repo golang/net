@@ -15,6 +15,7 @@ import (
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
 	case "freebsd": // due to a bug on loopback marking
+		// See http://www.freebsd.org/cgi/query-pr.cgi?pr=180065.
 		t.Skipf("not supported on %q", runtime.GOOS)
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
