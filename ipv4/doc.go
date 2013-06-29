@@ -36,12 +36,10 @@
 // The outgoing packets will be labeled DiffServ assured forwarding
 // class 1 low drop precedence, as known as AF11 packets.
 //
-//			err := ipv4.NewConn(c).SetTOS(DiffServAF11)
-//			if err != nil {
+//			if err := ipv4.NewConn(c).SetTOS(DiffServAF11); err != nil {
 //				// error handling
 //			}
-//			_, err = c.Write(data)
-//			if err != nil {
+//			if _, err := c.Write(data); err != nil {
 //				// error handling
 //			}
 //		}(c)
@@ -54,7 +52,7 @@
 // net.IPconn which are created as network connections that use the
 // IPv4 transport.  A few network facilities must be prepared before
 // you begin multicasting, at a minimum joining network interfaces and
-// group addresses.
+// multicast groups.
 //
 //	en0, err := net.InterfaceByName("en0")
 //	if err != nil {
@@ -75,19 +73,17 @@
 //	}
 //	defer c.Close()
 //
-// Second, the application joins groups, starts listening to the
-// group addresses on the specified network interfaces.  Note that
-// the service port for transport layer protocol does not matter with
-// this operation as joining groups affects only network and link
-// layer protocols, such as IPv4 and Ethernet.
+// Second, the application joins multicast groups, starts listening to
+// the groups on the specified network interfaces.  Note that the
+// service port for transport layer protocol does not matter with this
+// operation as joining groups affects only network and link layer
+// protocols, such as IPv4 and Ethernet.
 //
 //	p := ipv4.NewPacketConn(c)
-//	err = p.JoinGroup(en0, &net.UDPAddr{IP: group})
-//	if err != nil {
+//	if err := p.JoinGroup(en0, &net.UDPAddr{IP: group}); err != nil {
 //		// error handling
 //	}
-//	err = p.JoinGroup(en1, &net.UDPAddr{IP: group})
-//	if err != nil {
+//	if err := p.JoinGroup(en1, &net.UDPAddr{IP: group}); err != nil {
 //		// error handling
 //	}
 //
@@ -97,8 +93,7 @@
 // SetControlMessage of ipv4.PacketConn is used to enable control
 // message transmissons.
 //
-//	err = p.SetControlMessage(ipv4.FlagDst, true)
-//	if err != nil {
+//	if err := p.SetControlMessage(ipv4.FlagDst, true); err != nil {
 //		// error handling
 //	}
 //
@@ -125,19 +120,16 @@
 //
 //		p.SetTOS(DiffServCS0)
 //		p.SetTTL(16)
-//		_, err = p.WriteTo(data, nil, src)
-//		if err != nil {
+//		if _, err := p.WriteTo(data, nil, src); err != nil {
 //			// error handling
 //		}
 //		dst := &net.UDPAddr{IP: group, Port: 1024}
 //		for _, ifi := range []*net.Interface{en0, en1} {
-//			err := p.SetMulticastInterface(ifi)
-//			if err != nil {
+//			if err := p.SetMulticastInterface(ifi); err != nil {
 //				// error handling
 //			}
 //			p.SetMulticastTTL(2)
-//			_, err = p.WriteTo(data, nil, dst)
-//			if err != nil {
+//			if _, err := p.WriteTo(data, nil, dst); err != nil {
 //				// error handling
 //			}
 //		}
@@ -146,10 +138,10 @@
 //
 // More multicasting
 //
-// An application that uses PacketConn or RawConn might join the
-// multiple group addresses.  For example, a UDP listener with port
-// 1024 might join two different groups across over two different
-// network interfaces by using:
+// An application that uses PacketConn or RawConn may join multiple
+// multicast groups.  For example, a UDP listener with port 1024 might
+// join two different groups across over two different network
+// interfaces by using:
 //
 //	c, err := net.ListenPacket("udp4", "0.0.0.0:1024")
 //	if err != nil {
@@ -157,21 +149,18 @@
 //	}
 //	defer c.Close()
 //	p := ipv4.NewPacketConn(c)
-//	err = p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)})
-//	if err != nil {
+//	if err := p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)}); err != nil {
 //		// error handling
 //	}
-//	err = p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 249)})
-//	if err != nil {
+//	if err := p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 249)}); err != nil {
 //		// error handling
 //	}
-//	err = p.JoinGroup(en1, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 249)})
-//	if err != nil {
+//	if err := p.JoinGroup(en1, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 249)}); err != nil {
 //		// error handling
 //	}
 //
 // It is possible for multiple UDP listeners that listen on the same
-// UDP port to join the same group address.  The net package will
+// UDP port to join the same multicast group.  The net package will
 // provide a socket that listens to a wildcard address with reusable
 // UDP port when an appropriate multicast address prefix is passed to
 // the net.ListenPacket or net.ListenUDP.
@@ -187,25 +176,21 @@
 //	}
 //	defer c2.Close()
 //	p1 := ipv4.NewPacketConn(c1)
-//	err = p1.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)})
-//	if err != nil {
+//	if err := p1.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)}); err != nil {
 //		// error handling
 //	}
 //	p2 := ipv4.NewPacketConn(c2)
-//	err = p2.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)})
-//	if err != nil {
+//	if err := p2.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)}); err != nil {
 //		// error handling
 //	}
 //
 // Also it is possible for the application to leave or rejoin a
 // multicast group on the network interface.
 //
-//	err = p.LeaveGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)})
-//	if err != nil {
+//	if err := p.LeaveGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 248)}); err != nil {
 //		// error handling
 //	}
-//	err = p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 250)})
-//	if err != nil {
+//	if err := p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 250)}); err != nil {
 //		// error handling
 //	}
 package ipv4
