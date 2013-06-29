@@ -28,7 +28,7 @@ var registries = []struct {
 	parse func(io.Writer, io.Reader) error
 }{
 	{
-		"http://www.iana.org/assignments/icmpv6-parameters",
+		"http://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xml",
 		parseICMPv6Parameters,
 	},
 	{
@@ -73,7 +73,7 @@ func parseICMPv6Parameters(w io.Writer, r io.Reader) error {
 	if err := dec.Decode(&icp); err != nil {
 		return err
 	}
-	prs := icp.escape(1)
+	prs := icp.escape()
 	fmt.Fprintf(w, "// %s, Updated: %s\n", icp.Title, icp.Updated)
 	fmt.Fprintf(w, "const (\n")
 	for _, pr := range prs {
@@ -119,7 +119,17 @@ type canonICMPv6ParamRecord struct {
 	Value    int
 }
 
-func (icp *icmpv6Parameters) escape(id int) []canonICMPv6ParamRecord {
+func (icp *icmpv6Parameters) escape() []canonICMPv6ParamRecord {
+	id := -1
+	for i, r := range icp.Registries {
+		if strings.Contains(r.Title, "Type") || strings.Contains(r.Title, "type") {
+			id = i
+			break
+		}
+	}
+	if id < 0 {
+		return nil
+	}
 	prs := make([]canonICMPv6ParamRecord, len(icp.Registries[id].Records))
 	sr := strings.NewReplacer(
 		"Messages", "",
