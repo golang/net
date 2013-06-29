@@ -51,7 +51,7 @@
 // net.IPconn which are created as network connections that use the
 // IPv6 transport.  A few network facilities must be prepared before
 // you begin multicasting, at a minimum joining network interfaces and
-// group addresses.
+// multicast groups.
 //
 //	en0, err := net.InterfaceByName("en0")
 //	if err != nil {
@@ -72,11 +72,11 @@
 //	}
 //	defer c.Close()
 //
-// Second, the application joins groups, starts listening to the
-// group addresses on the specified network interfaces.  Note that
-// the service port for transport layer protocol does not matter with
-// this operation as joining groups affects only network and link
-// layer protocols, such as IPv6 and Ethernet.
+// Second, the application joins multicast groups, starts listening to
+// the groups on the specified network interfaces.  Note that the
+// service port for transport layer protocol does not matter with this
+// operation as joining groups affects only network and link layer
+// protocols, such as IPv6 and Ethernet.
 //
 //	p := ipv6.NewPacketConn(c)
 //	if err := p.JoinGroup(en0, &net.UDPAddr{IP: group}); err != nil {
@@ -135,10 +135,10 @@
 //
 // More multicasting
 //
-// An application that uses PacketConn may join multiple group
-// addresses.  For example, a UDP listener with port 1024 might join
-// two different groups across over two different network interfaces
-// by using:
+// An application that uses PacketConn may join multiple multicast
+// groups.  For example, a UDP listener with port 1024 might join two
+// different groups across over two different network interfaces by
+// using:
 //
 //	c, err := net.ListenPacket("udp6", "[::]:1024")
 //	if err != nil {
@@ -157,7 +157,7 @@
 //	}
 //
 // It is possible for multiple UDP listeners that listen on the same
-// UDP port to join the same group address.  The net package will
+// UDP port to join the same multicast group.  The net package will
 // provide a socket that listens to a wildcard address with reusable
 // UDP port when an appropriate multicast address prefix is passed to
 // the net.ListenPacket or net.ListenUDP.
