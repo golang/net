@@ -6,7 +6,10 @@
 // common ones in the net package.
 package netutil
 
-import "net"
+import (
+	"net"
+	"sync"
+)
 
 // LimitListener returns a Listener that accepts at most n simultaneous
 // connections from the provided Listener.
@@ -29,16 +32,19 @@ func (l *limitListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &limitListenerConn{c, l.ch}, nil
+	return &limitListenerConn{Conn: c, ch: l.ch}, nil
 }
 
 type limitListenerConn struct {
 	net.Conn
-	ch chan<- struct{}
+	ch    chan<- struct{}
+	close sync.Once
 }
 
 func (l *limitListenerConn) Close() error {
 	err := l.Conn.Close()
-	l.ch <- struct{}{}
+	l.close.Do(func() {
+		l.ch <- struct{}{}
+	})
 	return err
 }
