@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
@@ -106,6 +107,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	}
 
 	p := ipv6.NewPacketConn(c)
+	defer p.Close()
 	cm := ipv6.ControlMessage{
 		TrafficClass: DiffServAF11 | CongestionExperienced,
 	}
@@ -120,10 +122,16 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
+		if err := p.SetWriteDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
+		}
 		if _, err := p.WriteTo([]byte("HELLO-R-U-THERE"), &cm, dst); err != nil {
 			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
 		}
 		b := make([]byte, 128)
+		if err := p.SetReadDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
+		}
 		if _, cm, _, err := p.ReadFrom(b); err != nil {
 			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
 		} else {
@@ -157,6 +165,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 	pshicmp := ipv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP, ianaProtocolIPv6ICMP)
 	p := ipv6.NewPacketConn(c)
+	defer p.Close()
 	cm := ipv6.ControlMessage{TrafficClass: DiffServAF11 | CongestionExperienced}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagInterface | ipv6.FlagPathMTU
 	ifi := loopbackInterface()
@@ -198,10 +207,16 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
+		if err := p.SetWriteDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
+		}
 		if _, err := p.WriteTo(wb, &cm, dst); err != nil {
 			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
 		}
 		b := make([]byte, 128)
+		if err := p.SetReadDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
+		}
 		if n, cm, _, err := p.ReadFrom(b); err != nil {
 			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
 		} else {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
@@ -44,14 +45,21 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	}
 
 	p := ipv6.NewPacketConn(c)
+	defer p.Close()
 	if err := p.JoinGroup(ifi, dst); err != nil {
 		t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
 	}
 	if err := p.SetMulticastInterface(ifi); err != nil {
 		t.Fatalf("ipv6.PacketConn.SetMulticastInterface failed: %v", err)
 	}
+	if _, err := p.MulticastInterface(); err != nil {
+		t.Fatalf("ipv6.PacketConn.MulticastInterface failed: %v", err)
+	}
 	if err := p.SetMulticastLoopback(true); err != nil {
 		t.Fatalf("ipv6.PacketConn.SetMulticastLoopback failed: %v", err)
+	}
+	if _, err := p.MulticastLoopback(); err != nil {
+		t.Fatalf("ipv6.PacketConn.MulticastLoopback failed: %v", err)
 	}
 
 	cm := ipv6.ControlMessage{
@@ -63,6 +71,9 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+		}
+		if err := p.SetDeadline(time.Now().Add(time.Millisecond * 200)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
 		}
 		cm.HopLimit = i + 1
 		if _, err := p.WriteTo([]byte("HELLO-R-U-THERE"), &cm, dst); err != nil {
@@ -106,14 +117,21 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 
 	pshicmp := ipv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP, ianaProtocolIPv6ICMP)
 	p := ipv6.NewPacketConn(c)
+	defer p.Close()
 	if err := p.JoinGroup(ifi, dst); err != nil {
 		t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
 	}
 	if err := p.SetMulticastInterface(ifi); err != nil {
 		t.Fatalf("ipv6.PacketConn.SetMulticastInterface failed: %v", err)
 	}
+	if _, err := p.MulticastInterface(); err != nil {
+		t.Fatalf("ipv6.PacketConn.MulticastInterface failed: %v", err)
+	}
 	if err := p.SetMulticastLoopback(true); err != nil {
 		t.Fatalf("ipv6.PacketConn.SetMulticastLoopback failed: %v", err)
+	}
+	if _, err := p.MulticastLoopback(); err != nil {
+		t.Fatalf("ipv6.PacketConn.MulticastLoopback failed: %v", err)
 	}
 
 	cm := ipv6.ControlMessage{
@@ -154,6 +172,9 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+		}
+		if err := p.SetDeadline(time.Now().Add(time.Millisecond * 200)); err != nil {
+			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
 		}
 		cm.HopLimit = i + 1
 		if _, err := p.WriteTo(wb, &cm, dst); err != nil {
