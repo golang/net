@@ -155,6 +155,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		t.Fatalf("net.ResolveIPAddr failed: %v", err)
 	}
 
+	pshicmp := ipv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP, ianaProtocolIPv6ICMP)
 	p := ipv6.NewPacketConn(c)
 	cm := ipv6.ControlMessage{TrafficClass: DiffServAF11 | CongestionExperienced}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagInterface | ipv6.FlagPathMTU
@@ -170,14 +171,26 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		t.Fatalf("ipv6.PacketConn.SetICMPFilter failed: %v", err)
 	}
 
+	var psh []byte
 	for i, toggle := range []bool{true, false, true} {
+		if toggle {
+			psh = nil
+			if err := p.SetChecksum(true, 2); err != nil {
+				t.Fatalf("ipv6.PacketConn.SetChecksum failed: %v", err)
+			}
+		} else {
+			psh = pshicmp
+			// Some platforms never allow to disable the
+			// kernel checksum processing.
+			p.SetChecksum(false, -1)
+		}
 		wb, err := (&icmpMessage{
 			Type: ipv6.ICMPTypeEchoRequest, Code: 0,
 			Body: &icmpEcho{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(psh)
 		if err != nil {
 			t.Fatalf("icmpMessage.Marshal failed: %v", err)
 		}
