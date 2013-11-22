@@ -55,7 +55,7 @@ func main() {
 	fmt.Println(")")
 	fmt.Println()
 
-	fmt.Println("var encodings = map[string]encoding.Encoding{")
+	fmt.Println("var encodings = map[string]struct{e encoding.Encoding; name string} {")
 	for _, g := range groups {
 		for _, e := range g.Encodings {
 			goName, ok := miscNames[e.Name]
@@ -72,7 +72,7 @@ func main() {
 			}
 
 			for _, label := range e.Labels {
-				fmt.Printf("%q: %s,\n", label, goName)
+				fmt.Printf("%q: {%s, %q},\n", label, goName, e.Name)
 			}
 		}
 	}
@@ -85,7 +85,7 @@ var prefixes = map[string]string{
 }
 
 var miscNames = map[string]string{
-	"utf-8":          "utf8Encoding{}",
+	"utf-8":          "encoding.Nop",
 	"ibm866":         "charmap.CodePage866",
 	"iso-8859-8-i":   "charmap.ISO8859_8",
 	"koi8-r":         "charmap.KOI8R",
@@ -100,7 +100,7 @@ var miscNames = map[string]string{
 	"iso-2022-jp":    "japanese.ISO2022JP",
 	"shift_jis":      "japanese.ShiftJIS",
 	"euc-kr":         "korean.EUCKR",
-	"replacement":    "replacementEncoding{}",
+	"replacement":    "encoding.Replacement",
 	"utf-16be":       "unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM)",
 	"utf-16le":       "unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)",
 	"x-user-defined": "charmap.XUserDefined",

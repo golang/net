@@ -62,19 +62,16 @@ var testCases = []struct {
 
 func TestDecode(t *testing.T) {
 	for _, tc := range testCases {
-		e := Encoding(tc.otherEncoding)
+		e, _ := Lookup(tc.otherEncoding)
 		if e == nil {
 			t.Errorf("%s: not found", tc.otherEncoding)
 			continue
 		}
-
 		s, err := transformString(e.NewDecoder(), tc.other)
-
 		if err != nil {
 			t.Errorf("%s: decode %q: %v", tc.otherEncoding, tc.other, err)
 			continue
 		}
-
 		if s != tc.utf8 {
 			t.Errorf("%s: got %q, want %q", tc.otherEncoding, s, tc.utf8)
 		}
@@ -83,21 +80,33 @@ func TestDecode(t *testing.T) {
 
 func TestEncode(t *testing.T) {
 	for _, tc := range testCases {
-		e := Encoding(tc.otherEncoding)
+		e, _ := Lookup(tc.otherEncoding)
 		if e == nil {
 			t.Errorf("%s: not found", tc.otherEncoding)
 			continue
 		}
-
 		s, err := transformString(e.NewEncoder(), tc.utf8)
-
 		if err != nil {
 			t.Errorf("%s: encode %q: %s", tc.otherEncoding, tc.utf8, err)
 			continue
 		}
-
 		if s != tc.other {
 			t.Errorf("%s: got %q, want %q", tc.otherEncoding, s, tc.other)
+		}
+	}
+}
+
+// TestNames verifies that you can pass an encoding's name to Lookup and get
+// the same encoding back (except for "replacement").
+func TestNames(t *testing.T) {
+	for _, e := range encodings {
+		if e.name == "replacement" {
+			continue
+		}
+		_, got := Lookup(e.name)
+		if got != e.name {
+			t.Errorf("got %q, want %q", got, e.name)
+			continue
 		}
 	}
 }
