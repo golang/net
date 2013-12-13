@@ -110,3 +110,56 @@ func TestNames(t *testing.T) {
 		}
 	}
 }
+
+var sniffTestCases = []struct {
+	filename, declared, want string
+}{
+	{"HTTP-charset.html", "text/html; charset=iso-8859-15", "iso-8859-15"},
+	{"UTF-16LE-BOM.html", "", "utf-16le"},
+	{"UTF-16BE-BOM.html", "", "utf-16be"},
+	{"meta-content-attribute.html", "text/html", "iso-8859-15"},
+	{"meta-charset-attribute.html", "text/html", "iso-8859-15"},
+	{"No-encoding-declaration.html", "text/html", "utf-8"},
+	{"HTTP-vs-UTF-8-BOM.html", "text/html; charset=iso-8859-15", "utf-8"},
+	{"HTTP-vs-meta-content.html", "text/html; charset=iso-8859-15", "iso-8859-15"},
+	{"HTTP-vs-meta-charset.html", "text/html; charset=iso-8859-15", "iso-8859-15"},
+	{"UTF-8-BOM-vs-meta-content.html", "text/html", "utf-8"},
+	{"UTF-8-BOM-vs-meta-charset.html", "text/html", "utf-8"},
+}
+
+func TestSniff(t *testing.T) {
+	for _, tc := range sniffTestCases {
+		content, err := ioutil.ReadFile("testdata/" + tc.filename)
+		if err != nil {
+			t.Errorf("%s: error reading file: %v", tc.filename, err)
+			continue
+		}
+
+		_, name, _ := DetermineEncoding(content, tc.declared)
+		if name != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.filename, name, tc.want)
+			continue
+		}
+	}
+}
+
+var metaTestCases = []struct {
+	meta, want string
+}{
+	{"", ""},
+	{"text/html", ""},
+	{"text/html; charset utf-8", ""},
+	{"text/html; charset=latin-2", "latin-2"},
+	{"text/html; charset; charset = utf-8", "utf-8"},
+	{`charset="big5"`, "big5"},
+	{"charset='shift_jis'", "shift_jis"},
+}
+
+func TestFromMeta(t *testing.T) {
+	for _, tc := range metaTestCases {
+		got := fromMetaElement(tc.meta)
+		if got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.meta, got, tc.want)
+		}
+	}
+}
