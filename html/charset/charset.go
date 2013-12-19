@@ -6,6 +6,7 @@ package charset
 
 import (
 	"bytes"
+	"io"
 	"mime"
 	"strings"
 	"unicode/utf8"
@@ -13,6 +14,7 @@ import (
 	"code.google.com/p/go.net/html"
 	"code.google.com/p/go.text/encoding"
 	"code.google.com/p/go.text/encoding/charmap"
+	"code.google.com/p/go.text/transform"
 )
 
 // Lookup returns the encoding with the specified label, and its canonical
@@ -81,6 +83,27 @@ func DetermineEncoding(content []byte, contentType string) (e encoding.Encoding,
 
 	// TODO: change default depending on user's locale?
 	return charmap.Windows1252, "windows-1252", false
+}
+
+// NewReader returns an io.Reader that converts the content of r to UTF-8.
+// It calls DetermineEncoding to find out what r's encoding is.
+func NewReader(r io.Reader, contentType string) (io.Reader, error) {
+	preview := make([]byte, 1024)
+	n, err := io.ReadFull(r, preview)
+	switch {
+	case err == io.ErrUnexpectedEOF:
+		preview = preview[:n]
+		r = bytes.NewReader(preview)
+	case err != nil:
+		return nil, err
+	default:
+		r = io.MultiReader(bytes.NewReader(preview), r)
+	}
+
+	if e, _, _ := DetermineEncoding(preview, contentType); e != encoding.Nop {
+		r = transform.NewReader(r, e.NewDecoder())
+	}
+	return r, nil
 }
 
 func prescan(content []byte) (e encoding.Encoding, name string) {

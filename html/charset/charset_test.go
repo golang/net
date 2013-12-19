@@ -1,6 +1,7 @@
 package charset
 
 import (
+	"bytes"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -138,6 +139,40 @@ func TestSniff(t *testing.T) {
 		_, name, _ := DetermineEncoding(content, tc.declared)
 		if name != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.filename, name, tc.want)
+			continue
+		}
+	}
+}
+
+func TestReader(t *testing.T) {
+	for _, tc := range sniffTestCases {
+		content, err := ioutil.ReadFile("testdata/" + tc.filename)
+		if err != nil {
+			t.Errorf("%s: error reading file: %v", tc.filename, err)
+			continue
+		}
+
+		r, err := NewReader(bytes.NewReader(content), tc.declared)
+		if err != nil {
+			t.Errorf("%s: error creating reader: %v", tc.filename, err)
+			continue
+		}
+
+		got, err := ioutil.ReadAll(r)
+		if err != nil {
+			t.Errorf("%s: error reading from charset.NewReader: %v", tc.filename, err)
+			continue
+		}
+
+		e, _ := Lookup(tc.want)
+		want, err := ioutil.ReadAll(transform.NewReader(bytes.NewReader(content), e.NewDecoder()))
+		if err != nil {
+			t.Errorf("%s: error decoding with hard-coded charset name: %v", tc.filename, err)
+			continue
+		}
+
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s: got %q, want %q", tc.filename, got, want)
 			continue
 		}
 	}
