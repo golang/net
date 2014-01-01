@@ -53,7 +53,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
-		if err := p.SetWriteDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
 		}
 		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
@@ -62,7 +62,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
 		}
 		rb := make([]byte, 128)
-		if err := p.SetReadDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
 		}
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
@@ -146,7 +146,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
-		if err := p.SetWriteDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
 		}
 		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
@@ -155,7 +155,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
 		}
 		rb := make([]byte, 128)
-		if err := p.SetReadDeadline(time.Now().Add(time.Millisecond * 100)); err != nil {
+		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
 		}
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {

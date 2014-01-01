@@ -75,7 +75,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
-		if err := p.SetDeadline(time.Now().Add(time.Millisecond * 200)); err != nil {
+		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
 		}
 		cm.HopLimit = i + 1
@@ -181,7 +181,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
-		if err := p.SetDeadline(time.Now().Add(time.Millisecond * 200)); err != nil {
+		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
 		}
 		cm.HopLimit = i + 1
