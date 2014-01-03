@@ -6,6 +6,7 @@ package html
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -32,6 +33,9 @@ const (
 	// A DoctypeToken looks like <!DOCTYPE x>
 	DoctypeToken
 )
+
+// ErrBufferExceeded means that the buffering limit was exceeded.
+var ErrBufferExceeded = errors.New("max buffer exceeded")
 
 // String returns a string representation of the TokenType.
 func (t TokenType) String() string {
@@ -142,6 +146,8 @@ type Tokenizer struct {
 	// buf[raw.end:] is buffered input that will yield future tokens.
 	raw span
 	buf []byte
+	// maxBuf limits the data buffered in buf. A value of 0 means unlimited.
+	maxBuf int
 	// buf[data.start:data.end] holds the raw bytes of the current token's data:
 	// a text token's text, a tag token's tag name, etc.
 	data span
@@ -273,6 +279,10 @@ func (z *Tokenizer) readByte() byte {
 	}
 	x := z.buf[z.raw.end]
 	z.raw.end++
+	if z.maxBuf > 0 && z.raw.end-z.raw.start >= z.maxBuf {
+		z.err = ErrBufferExceeded
+		return 0
+	}
 	return x
 }
 
@@ -1165,6 +1175,12 @@ func (z *Tokenizer) Token() Token {
 		}
 	}
 	return t
+}
+
+// SetMaxBuf sets a limit on the amount of data buffered during tokenization.
+// A value of 0 means unlimited.
+func (z *Tokenizer) SetMaxBuf(n int) {
+	z.maxBuf = n
 }
 
 // NewTokenizer returns a new HTML Tokenizer for the given Reader.
