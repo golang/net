@@ -490,7 +490,6 @@ func TestMaxBufferReconstruction(t *testing.T) {
 	// reconstructing the original input.
 tests:
 	for _, test := range tokenTests {
-	buffer:
 		for maxBuf := 1; ; maxBuf++ {
 			r := strings.NewReader(test.html)
 			z := NewTokenizer(r)
@@ -500,19 +499,14 @@ tests:
 				tt := z.Next()
 				tokenized.Write(z.Raw())
 				if tt == ErrorToken {
-					if z.Err() == ErrBufferExceeded {
-						continue buffer
-					}
-					// EOF is expected, and indicates that we found the max maxBuf that
-					// generates ErrBufferExceeded, so continue to the next test.
-					if err := z.Err(); err != io.EOF {
+					if err := z.Err(); err != io.EOF && err != ErrBufferExceeded {
 						t.Errorf("%s: unexpected error: %v", test.desc, err)
 					}
 					break
 				}
 			}
-			// Anything tokenizing along with input left in the reader.
-			assembled, err := ioutil.ReadAll(io.MultiReader(&tokenized, r))
+			// Anything tokenized along with untokenized input or data left in the reader.
+			assembled, err := ioutil.ReadAll(io.MultiReader(&tokenized, bytes.NewReader(z.Buffered()), r))
 			if err != nil {
 				t.Errorf("%s: ReadAll: %v", test.desc, err)
 				continue tests
@@ -521,7 +515,11 @@ tests:
 				t.Errorf("%s: reassembled html:\n got: %q\nwant: %q", test.desc, got, want)
 				continue tests
 			}
-			break
+			// EOF indicates that we completed tokenization and hence found the max
+			// maxBuf that generates ErrBufferExceeded, so continue to the next test.
+			if z.Err() == io.EOF {
+				break
+			}
 		} // buffer sizes
 	} // tests
 }

@@ -286,6 +286,11 @@ func (z *Tokenizer) readByte() byte {
 	return x
 }
 
+// Buffered returns a slice containing data buffered but not yet tokenized.
+func (z *Tokenizer) Buffered() []byte {
+	return z.buf[z.raw.end:]
+}
+
 // readAtLeastOneByte wraps an io.Reader so that reading cannot return (0, nil).
 // It returns io.ErrNoProgress if the underlying r.Read method returns (0, nil)
 // too many times in succession.
