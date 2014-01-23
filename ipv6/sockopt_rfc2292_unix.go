@@ -12,11 +12,11 @@ import (
 )
 
 func ipv6ReceiveTrafficClass(fd int) (bool, error) {
-	return false, errNotSupported
+	return false, errOpNoSupport
 }
 
 func setIPv6ReceiveTrafficClass(fd int, v bool) error {
-	return errNotSupported
+	return errOpNoSupport
 }
 
 func ipv6ReceiveHopLimit(fd int) (bool, error) {
@@ -48,15 +48,15 @@ func setIPv6ReceivePacketInfo(fd int, v bool) error {
 }
 
 func ipv6PathMTU(fd int) (int, error) {
-	return 0, errNotSupported
+	return 0, errOpNoSupport
 }
 
 func ipv6ReceivePathMTU(fd int) (bool, error) {
-	return false, errNotSupported
+	return false, errOpNoSupport
 }
 
 func setIPv6ReceivePathMTU(fd int, v bool) error {
-	return errNotSupported
+	return errOpNoSupport
 }
 
 func ipv6ICMPFilter(fd int) (*ICMPFilter, error) {

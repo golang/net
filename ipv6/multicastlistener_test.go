@@ -21,7 +21,7 @@ var udpMultipleGroupListenerTests = []net.Addr{
 
 func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -61,7 +61,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -113,7 +113,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -156,7 +156,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -198,7 +198,7 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "darwin", "plan9", "windows":
+	case "darwin", "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {

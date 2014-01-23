@@ -34,7 +34,7 @@ func TestICMPString(t *testing.T) {
 
 func TestICMPFilter(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 
@@ -67,7 +67,7 @@ func TestICMPFilter(t *testing.T) {
 
 func TestSetICMPFilter(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {

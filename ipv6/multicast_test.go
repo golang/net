@@ -19,7 +19,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	case "freebsd": // due to a bug on loopback marking
 		// See http://www.freebsd.org/cgi/query-pr.cgi?pr=180065.
 		t.Skipf("not supported on %q", runtime.GOOS)
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -97,7 +97,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "dragonfly", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
