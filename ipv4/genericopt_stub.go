@@ -2,28 +2,26 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package ipv4
+// +build dragonfly plan9 solaris
 
-import (
-	"syscall"
-)
+package ipv4
 
 func (c *genericOpt) TOS() (int, error) {
 	// TODO(mikio): Implement this
-	return 0, syscall.EPLAN9
+	return 0, errOpNoSupport
 }
 
 func (c *genericOpt) SetTOS(tos int) error {
 	// TODO(mikio): Implement this
-	return syscall.EPLAN9
+	return errOpNoSupport
 }
 
 func (c *genericOpt) TTL() (int, error) {
 	// TODO(mikio): Implement this
-	return 0, syscall.EPLAN9
+	return 0, errOpNoSupport
 }
 
 func (c *genericOpt) SetTTL(ttl int) error {
 	// TODO(mikio): Implement this
-	return syscall.EPLAN9
+	return errOpNoSupport
 }

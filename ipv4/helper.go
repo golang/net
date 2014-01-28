@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	errOpNoSupport              = errors.New("operation not supported")
 	errNoSuchInterface          = errors.New("no such interface")
 	errNoSuchMulticastInterface = errors.New("no such multicast interface")
 )

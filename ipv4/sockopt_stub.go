@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package ipv4
+// +build dragonfly plan9 solaris
 
-import "syscall"
+package ipv4
 
 func ipv4HeaderPrepend(fd int) (bool, error) {
 	// TODO(mikio): Implement this
-	return false, syscall.EPLAN9
+	return false, errOpNoSupport
 }
 
 func setIPv4HeaderPrepend(fd int, v bool) error {
 	// TODO(mikio): Implement this
-	return syscall.EPLAN9
+	return errOpNoSupport
 }
