@@ -121,6 +121,9 @@ func (h *Header) Marshal() ([]byte, error) {
 	return b, nil
 }
 
+// See http://www.freebsd.org/doc/en/books/porters-handbook/freebsd-versions.html.
+var freebsdVersion uint32
+
 // ParseHeader parses b as an IPv4 header.
 func ParseHeader(b []byte) (*Header, error) {
 	if len(b) < HeaderLen {
@@ -139,7 +142,9 @@ func ParseHeader(b []byte) (*Header, error) {
 		h.FragOff = int(b[posFragOff])<<8 | int(b[posFragOff+1])
 	} else {
 		h.TotalLen = int(*(*uint16)(unsafe.Pointer(&b[posTotalLen : posTotalLen+1][0])))
-		h.TotalLen += hdrlen
+		if runtime.GOOS != "freebsd" || freebsdVersion < 1000000 {
+			h.TotalLen += hdrlen
+		}
 		h.FragOff = int(*(*uint16)(unsafe.Pointer(&b[posFragOff : posFragOff+1][0])))
 	}
 	h.Flags = HeaderFlags(h.FragOff&0xe000) >> 13

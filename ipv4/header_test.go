@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package ipv4_test
+package ipv4
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"reflect"
 	"runtime"
@@ -14,28 +13,35 @@ import (
 )
 
 var (
-	wireHeaderFromKernel = [ipv4.HeaderLen]byte{
+	wireHeaderFromKernel = [HeaderLen]byte{
 		0x45, 0x01, 0xbe, 0xef,
 		0xca, 0xfe, 0x45, 0xdc,
 		0xff, 0x01, 0xde, 0xad,
 		172, 16, 254, 254,
 		192, 168, 0, 1,
 	}
-	wireHeaderToKernel = [ipv4.HeaderLen]byte{
+	wireHeaderToKernel = [HeaderLen]byte{
 		0x45, 0x01, 0xbe, 0xef,
 		0xca, 0xfe, 0x45, 0xdc,
 		0xff, 0x01, 0xde, 0xad,
 		172, 16, 254, 254,
 		192, 168, 0, 1,
 	}
-	wireHeaderFromTradBSDKernel = [ipv4.HeaderLen]byte{
+	wireHeaderFromTradBSDKernel = [HeaderLen]byte{
 		0x45, 0x01, 0xdb, 0xbe,
 		0xca, 0xfe, 0xdc, 0x45,
 		0xff, 0x01, 0xde, 0xad,
 		172, 16, 254, 254,
 		192, 168, 0, 1,
 	}
-	wireHeaderToTradBSDKernel = [ipv4.HeaderLen]byte{
+	wireHeaderFromFreeBSD10Kernel = [HeaderLen]byte{
+		0x45, 0x01, 0xef, 0xbe,
+		0xca, 0xfe, 0xdc, 0x45,
+		0xff, 0x01, 0xde, 0xad,
+		172, 16, 254, 254,
+		192, 168, 0, 1,
+	}
+	wireHeaderToTradBSDKernel = [HeaderLen]byte{
 		0x45, 0x01, 0xef, 0xbe,
 		0xca, 0xfe, 0xdc, 0x45,
 		0xff, 0x01, 0xde, 0xad,
@@ -45,13 +51,13 @@ var (
 	// TODO(mikio): Add platform dependent wire header formats when
 	// we support new platforms.
 
-	testHeader = &ipv4.Header{
-		Version:  ipv4.Version,
-		Len:      ipv4.HeaderLen,
+	testHeader = &Header{
+		Version:  Version,
+		Len:      HeaderLen,
 		TOS:      1,
 		TotalLen: 0xbeef,
 		ID:       0xcafe,
-		Flags:    ipv4.DontFragment,
+		Flags:    DontFragment,
 		FragOff:  1500,
 		TTL:      255,
 		Protocol: 1,
@@ -67,10 +73,9 @@ func TestMarshalHeader(t *testing.T) {
 		t.Fatalf("ipv4.Header.Marshal failed: %v", err)
 	}
 	var wh []byte
-	switch runtime.GOOS {
-	case "linux", "openbsd":
+	if supportsNewIPInput {
 		wh = wireHeaderToKernel[:]
-	default:
+	} else {
 		wh = wireHeaderToTradBSDKernel[:]
 	}
 	if !bytes.Equal(b, wh) {
@@ -80,13 +85,16 @@ func TestMarshalHeader(t *testing.T) {
 
 func TestParseHeader(t *testing.T) {
 	var wh []byte
-	switch runtime.GOOS {
-	case "linux", "openbsd":
+	if supportsNewIPInput {
 		wh = wireHeaderFromKernel[:]
-	default:
-		wh = wireHeaderFromTradBSDKernel[:]
+	} else {
+		if runtime.GOOS == "freebsd" && freebsdVersion >= 1000000 {
+			wh = wireHeaderFromFreeBSD10Kernel[:]
+		} else {
+			wh = wireHeaderFromTradBSDKernel[:]
+		}
 	}
-	h, err := ipv4.ParseHeader(wh)
+	h, err := ParseHeader(wh)
 	if err != nil {
 		t.Fatalf("ipv4.ParseHeader failed: %v", err)
 	}
