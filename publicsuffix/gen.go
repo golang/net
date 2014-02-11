@@ -28,6 +28,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -70,6 +71,11 @@ var (
 	labelsList    = []string{}
 	labelsMap     = map[string]bool{}
 	rules         = []string{}
+
+	// validSuffix is used to check that the entries in the public suffix list
+	// are in canonical form (after Punycode encoding). Specifically, capital
+	// letters are not allowed.
+	validSuffix = regexp.MustCompile(`^[a-z0-9_\!\*\-\.]+$`)
 
 	crush  = flag.Bool("crush", true, "make the generated node text as small as possible")
 	subset = flag.Bool("subset", false, "generate only a subset of the full table, for debugging")
@@ -139,6 +145,9 @@ func main1() error {
 		s, err = idna.ToASCII(s)
 		if err != nil {
 			return err
+		}
+		if !validSuffix.MatchString(s) {
+			return fmt.Errorf("bad publicsuffix.org list data: %q", s)
 		}
 
 		if *subset {
