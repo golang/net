@@ -47,6 +47,28 @@ const (
 	childrenBitsLo       = 14
 )
 
+var (
+	maxChildren   int
+	maxTextOffset int
+	maxTextLength int
+	maxHi         uint32
+	maxLo         uint32
+)
+
+func max(a, b int) int {
+	if a < b {
+		return b
+	}
+	return a
+}
+
+func u32max(a, b uint32) uint32 {
+	if a < b {
+		return b
+	}
+	return a
+}
+
 const (
 	nodeTypeNormal     = 0
 	nodeTypeException  = 1
@@ -212,6 +234,14 @@ func main1() error {
 		return err
 	}
 
+	if *v {
+		fmt.Fprintf(os.Stderr, "max children %d (capacity %d)\n", maxChildren, 1<<nodesBitsChildren-1)
+		fmt.Fprintf(os.Stderr, "max text offset %d (capacity %d)\n", maxTextOffset, 1<<nodesBitsTextOffset-1)
+		fmt.Fprintf(os.Stderr, "max text length %d (capacity %d)\n", maxTextLength, 1<<nodesBitsTextLength-1)
+		fmt.Fprintf(os.Stderr, "max hi %d (capacity %d)\n", maxHi, 1<<childrenBitsHi-1)
+		fmt.Fprintf(os.Stderr, "max lo %d (capacity %d)\n", maxLo, 1<<childrenBitsLo-1)
+	}
+
 	b, err := format.Source(buf.Bytes())
 	if err != nil {
 		return err
@@ -277,6 +307,7 @@ const numTLD = %d
 		if offset < 0 {
 			return fmt.Errorf("internal error: could not find %q in text %q", label, text)
 		}
+		maxTextOffset, maxTextLength = max(maxTextOffset, offset), max(maxTextLength, length)
 		if offset >= 1<<nodesBitsTextOffset || length >= 1<<nodesBitsTextLength {
 			return fmt.Errorf("text offset/length is too large: %d/%d", offset, length)
 		}
@@ -433,12 +464,14 @@ func assignIndexes(w io.Writer, n *node) error {
 		}
 
 		// Assign childrenIndex.
+		maxChildren = max(maxChildren, len(childrenEncoding))
 		if len(childrenEncoding) >= 1<<nodesBitsChildren {
 			return fmt.Errorf("children table is too large")
 		}
 		n.childrenIndex = len(childrenEncoding)
 		lo := uint32(n.firstChild)
 		hi := lo + uint32(len(n.children))
+		maxLo, maxHi = u32max(maxLo, lo), u32max(maxHi, hi)
 		if lo >= 1<<childrenBitsLo || hi >= 1<<childrenBitsHi {
 			return fmt.Errorf("children lo/hi is too large: %d/%d", lo, hi)
 		}
