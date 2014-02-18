@@ -391,6 +391,16 @@ var eTLDPlusOneTestCases = []struct {
 	{"k12.ak.us", ""},
 	{"test.k12.ak.us", "test.k12.ak.us"},
 	{"www.test.k12.ak.us", "test.k12.ak.us"},
+	// Punycoded IDN labels
+	{"xn--85x722f.com.cn", "xn--85x722f.com.cn"},
+	{"xn--85x722f.xn--55qx5d.cn", "xn--85x722f.xn--55qx5d.cn"},
+	{"www.xn--85x722f.xn--55qx5d.cn", "xn--85x722f.xn--55qx5d.cn"},
+	{"shishi.xn--55qx5d.cn", "shishi.xn--55qx5d.cn"},
+	{"xn--55qx5d.cn", ""},
+	{"xn--85x722f.xn--fiqs8s", "xn--85x722f.xn--fiqs8s"},
+	{"www.xn--85x722f.xn--fiqs8s", "xn--85x722f.xn--fiqs8s"},
+	{"shishi.xn--fiqs8s", "shishi.xn--fiqs8s"},
+	{"xn--fiqs8s", ""},
 }
 
 func TestEffectiveTLDPlusOne(t *testing.T) {
