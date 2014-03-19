@@ -45,7 +45,8 @@ func TestLimitListener(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r, err := http.Get("http://" + l.Addr().String())
+			c := http.Client{Timeout: 3 * time.Second}
+			r, err := c.Get("http://" + l.Addr().String())
 			if err != nil {
 				t.Logf("Get: %v", err)
 				atomic.AddInt32(&failed, 1)
@@ -60,6 +61,6 @@ func TestLimitListener(t *testing.T) {
 	// We expect some Gets to fail as the kernel's accept queue is filled,
 	// but most should succeed.
 	if failed >= num/2 {
-		t.Errorf("too many Gets failed")
+		t.Errorf("too many Gets failed: %v", failed)
 	}
 }
