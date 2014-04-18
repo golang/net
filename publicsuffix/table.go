@@ -7376,3 +7376,9 @@ var children = [...]uint32{
 	0x066d19a8, // c0x016e (n0x19a8-n0x19b4)  +
 	0x066ed9b4, // c0x016f (n0x19b4-n0x19bb)  +
 }
+
+// max children 367 (capacity 511)
+// max text offset 23226 (capacity 32767)
+// max text length 36 (capacity 63)
+// max hi 6587 (capacity 16383)
+// max lo 6580 (capacity 16383)

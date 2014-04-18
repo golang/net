@@ -234,14 +234,6 @@ func main1() error {
 		return err
 	}
 
-	if *v {
-		fmt.Fprintf(os.Stderr, "max children %d (capacity %d)\n", maxChildren, 1<<nodesBitsChildren-1)
-		fmt.Fprintf(os.Stderr, "max text offset %d (capacity %d)\n", maxTextOffset, 1<<nodesBitsTextOffset-1)
-		fmt.Fprintf(os.Stderr, "max text length %d (capacity %d)\n", maxTextLength, 1<<nodesBitsTextLength-1)
-		fmt.Fprintf(os.Stderr, "max hi %d (capacity %d)\n", maxHi, 1<<childrenBitsHi-1)
-		fmt.Fprintf(os.Stderr, "max lo %d (capacity %d)\n", maxLo, 1<<childrenBitsLo-1)
-	}
-
 	b, err := format.Source(buf.Bytes())
 	if err != nil {
 		return err
@@ -378,7 +370,12 @@ var children=[...]uint32{
 		fmt.Fprintf(w, "0x%08x, // c0x%04x (%s)%s %s\n",
 			c, i, s, wildcardStr(wildcard), nodeTypeStr(nodeType))
 	}
-	fmt.Fprintf(w, "}\n")
+	fmt.Fprintf(w, "}\n\n")
+	fmt.Fprintf(w, "// max children %d (capacity %d)\n", maxChildren, 1<<nodesBitsChildren-1)
+	fmt.Fprintf(w, "// max text offset %d (capacity %d)\n", maxTextOffset, 1<<nodesBitsTextOffset-1)
+	fmt.Fprintf(w, "// max text length %d (capacity %d)\n", maxTextLength, 1<<nodesBitsTextLength-1)
+	fmt.Fprintf(w, "// max hi %d (capacity %d)\n", maxHi, 1<<childrenBitsHi-1)
+	fmt.Fprintf(w, "// max lo %d (capacity %d)\n", maxLo, 1<<childrenBitsLo-1)
 	return nil
 }
 
