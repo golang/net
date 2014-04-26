@@ -149,6 +149,9 @@ func (s *socks5) Dial(network, addr string) (net.Conn, error) {
 		}
 		buf = append(buf, ip...)
 	} else {
+		if len(host) > 255 {
+			return nil, errors.New("proxy: destination hostname too long: " + host)
+		}
 		buf = append(buf, socks5Domain)
 		buf = append(buf, byte(len(host)))
 		buf = append(buf, host...)
