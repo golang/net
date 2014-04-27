@@ -22,7 +22,7 @@ var packetConnMulticastSocketOptionTests = []struct {
 
 func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "dragonfly", "plan9", "solaris", "windows":
+	case "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
