@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin freebsd linux netbsd openbsd
-
 package ipv4_test
 
 import (
 	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
@@ -57,6 +57,7 @@ func BenchmarkReadWriteIPv4UDP(b *testing.B) {
 	defer c.Close()
 
 	p := ipv4.NewPacketConn(c)
+	defer p.Close()
 	cf := ipv4.FlagTTL | ipv4.FlagInterface
 	if err := p.SetControlMessage(cf, true); err != nil {
 		b.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
@@ -83,7 +84,16 @@ func benchmarkReadWriteIPv4UDP(b *testing.B, p *ipv4.PacketConn, wb, rb []byte, 
 	}
 }
 
-func TestReadWriteUnicastIPPayloadUDP(t *testing.T) {
+func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9", "windows":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
+	}
+
 	c, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.ListenPacket failed: %v", err)
@@ -95,18 +105,43 @@ func TestReadWriteUnicastIPPayloadUDP(t *testing.T) {
 		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
 	}
 	p := ipv4.NewPacketConn(c)
+	defer p.Close()
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
-		writeThenReadPayload(t, i, p, []byte("HELLO-R-U-THERE"), dst)
+		p.SetTTL(i + 1)
+		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.PacketConn.SetWriteDeadline failed: %v", err)
+		}
+		if _, err := p.WriteTo([]byte("HELLO-R-U-THERE"), nil, dst); err != nil {
+			t.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
+		}
+		rb := make([]byte, 128)
+		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.PacketConn.SetReadDeadline failed: %v", err)
+		}
+		if _, cm, _, err := p.ReadFrom(rb); err != nil {
+			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
+		} else {
+			t.Logf("rcvd cmsg: %v", cm)
+		}
 	}
 }
 
-func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
+func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9", "windows":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -120,7 +155,9 @@ func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 		t.Fatalf("ResolveIPAddr failed: %v", err)
 	}
 	p := ipv4.NewPacketConn(c)
+	defer p.Close()
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+
 	for i, toggle := range []bool{true, false, true} {
 		wb, err := (&icmpMessage{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
@@ -135,20 +172,48 @@ func TestReadWriteUnicastIPPayloadICMP(t *testing.T) {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
-		rb := writeThenReadPayload(t, i, p, wb, dst)
-		m, err := parseICMPMessage(rb)
-		if err != nil {
-			t.Fatalf("parseICMPMessage failed: %v", err)
+		p.SetTTL(i + 1)
+		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.PacketConn.SetWriteDeadline failed: %v", err)
 		}
-		if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
-			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+		if _, err := p.WriteTo(wb, nil, dst); err != nil {
+			t.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
+		}
+		b := make([]byte, 128)
+	loop:
+		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.PacketConn.SetReadDeadline failed: %v", err)
+		}
+		if n, cm, _, err := p.ReadFrom(b); err != nil {
+			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
+		} else {
+			t.Logf("rcvd cmsg: %v", cm)
+			m, err := parseICMPMessage(b[:n])
+			if err != nil {
+				t.Fatalf("parseICMPMessage failed: %v", err)
+			}
+			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
+				// On Linux we must handle own sent packets.
+				goto loop
+			}
+			if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
+				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+			}
 		}
 	}
 }
 
-func TestReadWriteUnicastIPDatagram(t *testing.T) {
+func TestRawConnReadWriteUnicastICMP(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9", "windows":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -165,7 +230,9 @@ func TestReadWriteUnicastIPDatagram(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ipv4.NewRawConn failed: %v", err)
 	}
+	defer r.Close()
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+
 	for i, toggle := range []bool{true, false, true} {
 		wb, err := (&icmpMessage{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
@@ -177,16 +244,44 @@ func TestReadWriteUnicastIPDatagram(t *testing.T) {
 		if err != nil {
 			t.Fatalf("icmpMessage.Marshal failed: %v", err)
 		}
+		wh := &ipv4.Header{
+			Version:  ipv4.Version,
+			Len:      ipv4.HeaderLen,
+			TOS:      i + 1,
+			TotalLen: ipv4.HeaderLen + len(wb),
+			TTL:      i + 1,
+			Protocol: 1,
+			Dst:      dst.IP,
+		}
 		if err := r.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv4.RawConn.SetControlMessage failed: %v", err)
 		}
-		rb := writeThenReadDatagram(t, i, r, wb, nil, dst)
-		m, err := parseICMPMessage(rb)
-		if err != nil {
-			t.Fatalf("parseICMPMessage failed: %v", err)
+		if err := r.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.RawConn.SetWriteDeadline failed: %v", err)
 		}
-		if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
-			t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+		if err := r.WriteTo(wh, wb, nil); err != nil {
+			t.Fatalf("ipv4.RawConn.WriteTo failed: %v", err)
+		}
+		rb := make([]byte, ipv4.HeaderLen+128)
+	loop:
+		if err := r.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatalf("ipv4.RawConn.SetReadDeadline failed: %v", err)
+		}
+		if _, b, cm, err := r.ReadFrom(rb); err != nil {
+			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
+		} else {
+			t.Logf("rcvd cmsg: %v", cm)
+			m, err := parseICMPMessage(b)
+			if err != nil {
+				t.Fatalf("parseICMPMessage failed: %v", err)
+			}
+			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
+				// On Linux we must handle own sent packets.
+				goto loop
+			}
+			if m.Type != ipv4.ICMPTypeEchoReply || m.Code != 0 {
+				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+			}
 		}
 	}
 }

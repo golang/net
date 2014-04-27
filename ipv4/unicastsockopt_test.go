@@ -2,144 +2,134 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin freebsd linux netbsd openbsd windows
-
 package ipv4_test
 
 import (
 	"code.google.com/p/go.net/ipv4"
-	"errors"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 )
 
-type testUnicastConn interface {
+func TestConnUnicastSocketOptions(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
+	}
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	done := make(chan bool)
+	go acceptor(t, ln, done)
+
+	c, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("net.Dial failed: %v", err)
+	}
+	defer c.Close()
+
+	testUnicastSocketOptions(t, ipv4.NewConn(c))
+
+	<-done
+}
+
+var packetConnUnicastSocketOptionTests = []struct {
+	net, proto, addr string
+}{
+	{"udp4", "", "127.0.0.1:0"},
+	{"ip4", ":icmp", "127.0.0.1"},
+}
+
+func TestPacketConnUnicastSocketOptions(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
+	}
+
+	for _, tt := range packetConnUnicastSocketOptionTests {
+		if tt.net == "ip4" && os.Getuid() != 0 {
+			t.Skip("must be root")
+		}
+		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
+		if err != nil {
+			t.Fatalf("net.ListenPacket(%q, %q) failed: %v", tt.net+tt.proto, tt.addr, err)
+		}
+		defer c.Close()
+
+		testUnicastSocketOptions(t, ipv4.NewPacketConn(c))
+	}
+}
+
+func TestRawConnUnicastSocketOptions(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("not supported on %q", runtime.GOOS)
+	}
+	if os.Getuid() != 0 {
+		t.Skip("must be root")
+	}
+	ifi := loopbackInterface()
+	if ifi == nil {
+		t.Skipf("not available on %q", runtime.GOOS)
+	}
+
+	c, err := net.ListenPacket("ip4:icmp", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("net.ListenPacket failed: %v", err)
+	}
+	defer c.Close()
+
+	r, err := ipv4.NewRawConn(c)
+	if err != nil {
+		t.Fatalf("ipv4.NewRawConn failed: %v", err)
+	}
+
+	testUnicastSocketOptions(t, r)
+}
+
+type testIPv4UnicastConn interface {
 	TOS() (int, error)
 	SetTOS(int) error
 	TTL() (int, error)
 	SetTTL(int) error
 }
 
-type unicastSockoptTest struct {
-	tos int
-	ttl int
-}
-
-var unicastSockoptTests = []unicastSockoptTest{
-	{DiffServCS0 | NotECNTransport, 127},
-	{DiffServAF11 | NotECNTransport, 255},
-}
-
-func TestTCPUnicastSockopt(t *testing.T) {
-	for _, tt := range unicastSockoptTests {
-		listener := make(chan net.Listener)
-		go tcpListener(t, "127.0.0.1:0", listener)
-		ln := <-listener
-		if ln == nil {
-			return
-		}
-		defer ln.Close()
-		c, err := net.Dial("tcp4", ln.Addr().String())
-		if err != nil {
-			t.Errorf("net.Dial failed: %v", err)
-			return
-		}
-		defer c.Close()
-
-		cc := ipv4.NewConn(c)
-		if err := testUnicastSockopt(t, tt, cc); err != nil {
-			break
-		}
-	}
-}
-
-func tcpListener(t *testing.T, addr string, listener chan<- net.Listener) {
-	ln, err := net.Listen("tcp4", addr)
-	if err != nil {
-		t.Errorf("net.Listen failed: %v", err)
-		listener <- nil
-		return
-	}
-	listener <- ln
-	c, err := ln.Accept()
-	if err != nil {
-		return
-	}
-	c.Close()
-}
-
-func TestUDPUnicastSockopt(t *testing.T) {
-	for _, tt := range unicastSockoptTests {
-		c, err := net.ListenPacket("udp4", "127.0.0.1:0")
-		if err != nil {
-			t.Errorf("net.ListenPacket failed: %v", err)
-			return
-		}
-		defer c.Close()
-
-		p := ipv4.NewPacketConn(c)
-		if err := testUnicastSockopt(t, tt, p); err != nil {
-			break
-		}
-	}
-}
-
-func TestIPUnicastSockopt(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
-	}
-
-	for _, tt := range unicastSockoptTests {
-		c, err := net.ListenPacket("ip4:icmp", "127.0.0.1")
-		if err != nil {
-			t.Errorf("net.ListenPacket failed: %v", err)
-			return
-		}
-		defer c.Close()
-
-		r, err := ipv4.NewRawConn(c)
-		if err != nil {
-			t.Errorf("ipv4.NewRawConn failed: %v", err)
-			return
-		}
-		if err := testUnicastSockopt(t, tt, r); err != nil {
-			break
-		}
-	}
-}
-
-func testUnicastSockopt(t *testing.T, tt unicastSockoptTest, c testUnicastConn) error {
+func testUnicastSocketOptions(t *testing.T, c testIPv4UnicastConn) {
+	tos := DiffServCS0 | NotECNTransport
 	switch runtime.GOOS {
 	case "windows":
 		// IP_TOS option is supported on Windows 8 and beyond.
-		t.Logf("skipping IP_TOS test on %q", runtime.GOOS)
-	default:
-		if err := c.SetTOS(tt.tos); err != nil {
-			t.Errorf("ipv4.Conn.SetTOS failed: %v", err)
-			return err
-		}
-		if v, err := c.TOS(); err != nil {
-			t.Errorf("ipv4.Conn.TOS failed: %v", err)
-			return err
-		} else if v != tt.tos {
-			t.Errorf("Got unexpected TOS value %v; expected %v", v, tt.tos)
-			return errors.New("Got unexpected TOS value")
-		}
+		t.Skipf("skipping IP_TOS test on %q", runtime.GOOS)
 	}
 
-	if err := c.SetTTL(tt.ttl); err != nil {
-		t.Errorf("ipv4.Conn.SetTTL failed: %v", err)
-		return err
+	if err := c.SetTOS(tos); err != nil {
+		t.Fatalf("ipv4.Conn.SetTOS failed: %v", err)
+	}
+	if v, err := c.TOS(); err != nil {
+		t.Fatalf("ipv4.Conn.TOS failed: %v", err)
+	} else if v != tos {
+		t.Fatalf("got unexpected TOS value %v; expected %v", v, tos)
+	}
+	const ttl = 255
+	if err := c.SetTTL(ttl); err != nil {
+		t.Fatalf("ipv4.Conn.SetTTL failed: %v", err)
 	}
 	if v, err := c.TTL(); err != nil {
-		t.Errorf("ipv4.Conn.TTL failed: %v", err)
-		return err
-	} else if v != tt.ttl {
-		t.Errorf("Got unexpected TTL value %v; expected %v", v, tt.ttl)
-		return errors.New("Got unexpected TTL value")
+		t.Fatalf("ipv4.Conn.TTL failed: %v", err)
+	} else if v != ttl {
+		t.Fatalf("got unexpected TTL value %v; expected %v", v, ttl)
 	}
-
-	return nil
 }
