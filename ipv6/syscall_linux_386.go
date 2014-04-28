@@ -27,15 +27,15 @@ const (
 
 var socketcall func(call int, a0, a1, a2, a3, a4, a5 uintptr) (int, syscall.Errno)
 
-func getsockopt(fd int, level int, name int, v uintptr, l *sysSockoptLen) error {
+func getsockopt(fd int, level int, name int, v unsafe.Pointer, l *sysSockoptLen) error {
 	if _, errno := socketcall(_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(unsafe.Pointer(l)), 0); errno != 0 {
 		return error(errno)
 	}
 	return nil
 }
 
-func setsockopt(fd int, level int, name int, v uintptr, l uintptr) error {
-	if _, errno := socketcall(_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), v, l, 0); errno != 0 {
+func setsockopt(fd int, level int, name int, v unsafe.Pointer, l uintptr) error {
+	if _, errno := socketcall(_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(l), 0); errno != 0 {
 		return error(errno)
 	}
 	return nil
