@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.2 go1.3
+// +build go1.2
 
 package ipv6
 
