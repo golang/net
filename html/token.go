@@ -1195,7 +1195,7 @@ func NewTokenizer(r io.Reader) *Tokenizer {
 }
 
 // NewTokenizerFragment returns a new HTML Tokenizer for the given Reader, for
-// tokenizing an exisitng element's InnerHTML fragment. contextTag is that
+// tokenizing an existing element's InnerHTML fragment. contextTag is that
 // element's tag, such as "div" or "iframe".
 //
 // For example, how the InnerHTML "a<b" is tokenized depends on whether it is

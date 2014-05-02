@@ -28,7 +28,7 @@ var (
 // RFC 3542  Advanced Sockets Application Program Interface (API) for IPv6
 //	http://tools.ietf.org/html/rfc3542
 //
-// Note that RFC 3542 obsoltes RFC 2292 but OS X Snow Leopard and the
+// Note that RFC 3542 obsoletes RFC 2292 but OS X Snow Leopard and the
 // former still support RFC 2292 only.  Please be aware that almost
 // all protocol implementations prohibit using a combination of RFC
 // 2292 and RFC 3542 for some practical reasons.
@@ -42,7 +42,7 @@ func (c *rawOpt) set(f ControlFlags)        { c.cflags |= f }
 func (c *rawOpt) clear(f ControlFlags)      { c.cflags &^= f }
 func (c *rawOpt) isset(f ControlFlags) bool { return c.cflags&f != 0 }
 
-// A ControlFlags reprensents per packet basis IP-level socket option
+// A ControlFlags represents per packet basis IP-level socket option
 // control flags.
 type ControlFlags uint
 

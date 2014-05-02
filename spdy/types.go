@@ -255,7 +255,7 @@ type Framer struct {
 	headerDecompressor        io.ReadCloser
 }
 
-// NewFramer allocates a new Framer for a given SPDY connection, repesented by
+// NewFramer allocates a new Framer for a given SPDY connection, represented by
 // a io.Writer and io.Reader. Note that Framer will read and write individual fields
 // from/to the Reader and Writer, so the caller should pass in an appropriately
 // buffered implementation to optimize performance.

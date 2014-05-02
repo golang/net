@@ -4,7 +4,7 @@
 
 // +build ignore
 
-// This program generates internet protocol constatns and tables by
+// This program generates internet protocol constants and tables by
 // reading IANA protocol registries.
 //
 // Usage of this program:
