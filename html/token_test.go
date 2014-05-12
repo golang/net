@@ -105,6 +105,11 @@ var tokenTests = []tokenTest{
 		"if x<0 and y < 0 then x*y>0",
 		"if x&lt;0 and y &lt; 0 then x*y&gt;0",
 	},
+	{
+		"not a tag #11",
+		"<<p>",
+		"&lt;$<p>",
+	},
 	// EOF in a tag name.
 	{
 		"tag name eof #0",

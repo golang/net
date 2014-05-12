@@ -1002,6 +1002,8 @@ loop:
 			// "<!DOCTYPE declarations>" and "<?xml processing instructions?>".
 			tokenType = CommentToken
 		default:
+			// Reconsume the current character.
+			z.raw.end--
 			continue
 		}
 
