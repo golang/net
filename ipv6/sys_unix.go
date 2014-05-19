@@ -8,6 +8,16 @@ package ipv6
 
 import "syscall"
 
+// RFC 3493 options
+const (
+	sysSockoptUnicastHopLimit    = syscall.IPV6_UNICAST_HOPS
+	sysSockoptMulticastHopLimit  = syscall.IPV6_MULTICAST_HOPS
+	sysSockoptMulticastInterface = syscall.IPV6_MULTICAST_IF
+	sysSockoptMulticastLoopback  = syscall.IPV6_MULTICAST_LOOP
+	sysSockoptJoinGroup          = syscall.IPV6_JOIN_GROUP
+	sysSockoptLeaveGroup         = syscall.IPV6_LEAVE_GROUP
+)
+
 const sysSizeofMTUInfo = 0x20
 
 type sysMTUInfo struct {

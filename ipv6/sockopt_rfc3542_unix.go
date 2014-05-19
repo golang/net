@@ -8,49 +8,44 @@ package ipv6
 
 import (
 	"os"
+	"syscall"
 	"unsafe"
 )
 
 func ipv6ReceiveTrafficClass(fd int) (bool, error) {
-	var v int32
-	l := sysSockoptLen(4)
-	if err := getsockopt(fd, ianaProtocolIPv6, sysSockoptReceiveTrafficClass, unsafe.Pointer(&v), &l); err != nil {
+	v, err := syscall.GetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceiveTrafficClass)
+	if err != nil {
 		return false, os.NewSyscallError("getsockopt", err)
 	}
 	return v == 1, nil
 }
 
 func setIPv6ReceiveTrafficClass(fd int, v bool) error {
-	vv := int32(boolint(v))
-	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIPv6, sysSockoptReceiveTrafficClass, unsafe.Pointer(&vv), 4))
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceiveTrafficClass, boolint(v)))
 }
 
 func ipv6ReceiveHopLimit(fd int) (bool, error) {
-	var v int32
-	l := sysSockoptLen(4)
-	if err := getsockopt(fd, ianaProtocolIPv6, sysSockoptReceiveHopLimit, unsafe.Pointer(&v), &l); err != nil {
+	v, err := syscall.GetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceiveHopLimit)
+	if err != nil {
 		return false, os.NewSyscallError("getsockopt", err)
 	}
 	return v == 1, nil
 }
 
 func setIPv6ReceiveHopLimit(fd int, v bool) error {
-	vv := int32(boolint(v))
-	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIPv6, sysSockoptReceiveHopLimit, unsafe.Pointer(&vv), 4))
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceiveHopLimit, boolint(v)))
 }
 
 func ipv6ReceivePacketInfo(fd int) (bool, error) {
-	var v int32
-	l := sysSockoptLen(4)
-	if err := getsockopt(fd, ianaProtocolIPv6, sysSockoptReceivePacketInfo, unsafe.Pointer(&v), &l); err != nil {
+	v, err := syscall.GetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceivePacketInfo)
+	if err != nil {
 		return false, os.NewSyscallError("getsockopt", err)
 	}
 	return v == 1, nil
 }
 
 func setIPv6ReceivePacketInfo(fd int, v bool) error {
-	vv := int32(boolint(v))
-	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIPv6, sysSockoptReceivePacketInfo, unsafe.Pointer(&vv), 4))
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceivePacketInfo, boolint(v)))
 }
 
 func ipv6PathMTU(fd int) (int, error) {
@@ -63,17 +58,15 @@ func ipv6PathMTU(fd int) (int, error) {
 }
 
 func ipv6ReceivePathMTU(fd int) (bool, error) {
-	var v int32
-	l := sysSockoptLen(4)
-	if err := getsockopt(fd, ianaProtocolIPv6, sysSockoptReceivePathMTU, unsafe.Pointer(&v), &l); err != nil {
+	v, err := syscall.GetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceivePathMTU)
+	if err != nil {
 		return false, os.NewSyscallError("getsockopt", err)
 	}
 	return v == 1, nil
 }
 
 func setIPv6ReceivePathMTU(fd int, v bool) error {
-	vv := int32(boolint(v))
-	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIPv6, sysSockoptReceivePathMTU, unsafe.Pointer(&vv), 4))
+	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIPv6, sysSockoptReceivePathMTU, boolint(v)))
 }
 
 func ipv6ICMPFilter(fd int) (*ICMPFilter, error) {

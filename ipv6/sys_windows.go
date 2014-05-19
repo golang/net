@@ -12,18 +12,18 @@ import (
 // RFC 3493 options
 const (
 	// See ws2tcpip.h.
-	sysSockoptUnicastHopLimit    = 0x4
-	sysSockoptMulticastHopLimit  = 0xa
-	sysSockoptMulticastInterface = 0x9
-	sysSockoptMulticastLoopback  = 0xb
-	sysSockoptJoinGroup          = 0xc
-	sysSockoptLeaveGroup         = 0xd
+	sysSockoptUnicastHopLimit    = syscall.IPV6_UNICAST_HOPS
+	sysSockoptMulticastHopLimit  = syscall.IPV6_MULTICAST_HOPS
+	sysSockoptMulticastInterface = syscall.IPV6_MULTICAST_IF
+	sysSockoptMulticastLoopback  = syscall.IPV6_MULTICAST_LOOP
+	sysSockoptJoinGroup          = syscall.IPV6_JOIN_GROUP
+	sysSockoptLeaveGroup         = syscall.IPV6_LEAVE_GROUP
 )
 
 // RFC 3542 options
 const (
 	// See ws2tcpip.h.
-	sysSockoptPacketInfo = 0x13
+	sysSockoptPacketInfo = 0x13 // IPV6_PKTINFO
 )
 
 func setSockaddr(sa *syscall.RawSockaddrInet6, ip net.IP, ifindex int) {

@@ -12,38 +12,27 @@ import (
 // RFC 2292 options
 const (
 	// See /usr/include/netinet6/in6.h.
-	sysSockopt2292HopLimit   = 0x14
-	sysSockopt2292PacketInfo = 0x13
-	sysSockopt2292NextHop    = 0x15
-)
-
-// RFC 3493 options
-const (
-	// See /usr/include/netinet6/in6.h.
-	sysSockoptUnicastHopLimit    = 0x4
-	sysSockoptMulticastHopLimit  = 0xa
-	sysSockoptMulticastInterface = 0x9
-	sysSockoptMulticastLoopback  = 0xb
-	sysSockoptJoinGroup          = 0xc
-	sysSockoptLeaveGroup         = 0xd
+	sysSockopt2292HopLimit   = syscall.IPV6_2292HOPLIMIT
+	sysSockopt2292PacketInfo = syscall.IPV6_2292PKTINFO
+	sysSockopt2292NextHop    = syscall.IPV6_2292NEXTHOP
 )
 
 // RFC 3542 options
 const (
 	// See /usr/include/netinet6/in6.h.
-	sysSockoptReceiveTrafficClass = 0x23
-	sysSockoptTrafficClass        = 0x24
-	sysSockoptReceiveHopLimit     = 0x25
-	sysSockoptHopLimit            = 0x2f
-	sysSockoptReceivePacketInfo   = 0x3d
-	sysSockoptPacketInfo          = 0x2e
-	sysSockoptReceivePathMTU      = 0x2b
-	sysSockoptPathMTU             = 0x2c
-	sysSockoptNextHop             = 0x30
-	sysSockoptChecksum            = 0x1a
+	sysSockoptReceiveTrafficClass = 0x23 // IPV6_RECVTCLASS
+	sysSockoptTrafficClass        = 0x24 // IPV6_TCLASS
+	sysSockoptReceiveHopLimit     = 0x25 // IPV6_RECVHOPLIMIT
+	sysSockoptHopLimit            = 0x2f // IPV6_HOPLIMIT
+	sysSockoptReceivePacketInfo   = 0x3d // IPV6_RECVPKTINFO
+	sysSockoptPacketInfo          = 0x2e // IPV6_PKTINFO
+	sysSockoptReceivePathMTU      = 0x2b // IPV6_RECVPATHMTU
+	sysSockoptPathMTU             = 0x2c // IPV6_PATHMTU
+	sysSockoptNextHop             = 0x30 // IPV6_NEXTHOP
+	sysSockoptChecksum            = 0x1a // IPV6_CHECKSUM
 
 	// See /usr/include/netinet6/in6.h.
-	sysSockoptICMPFilter = 0x12
+	sysSockoptICMPFilter = 0x12 // ICMP6_FILTER
 )
 
 func setSockaddr(sa *syscall.RawSockaddrInet6, ip net.IP, ifindex int) {
