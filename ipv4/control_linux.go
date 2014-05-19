@@ -5,14 +5,9 @@
 package ipv4
 
 import (
-	"os"
 	"syscall"
 	"unsafe"
 )
-
-// Linux provides a convenient path control option IP_PKTINFO that
-// contains IP_SENDSRCADDR, IP_RECVDSTADDR, IP_RECVIF and IP_SENDIF.
-const pktinfo = FlagSrc | FlagDst | FlagInterface
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
@@ -27,100 +22,63 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 			opt.clear(FlagTTL)
 		}
 	}
-	if cf&pktinfo != 0 {
+	if cf&(FlagSrc|FlagDst|FlagInterface) != 0 {
 		if err := setIPv4PacketInfo(fd, on); err != nil {
 			return err
 		}
 		if on {
-			opt.set(cf & pktinfo)
+			opt.set(cf & (FlagSrc | FlagDst | FlagInterface))
 		} else {
-			opt.clear(cf & pktinfo)
+			opt.clear(cf & (FlagSrc | FlagDst | FlagInterface))
 		}
 	}
 	return nil
 }
 
-func newControlMessage(opt *rawOpt) (oob []byte) {
-	opt.Lock()
-	defer opt.Unlock()
-	l, off := 0, 0
+func (opt *rawOpt) oobLen() (l int) {
 	if opt.isset(FlagTTL) {
 		l += syscall.CmsgSpace(1)
 	}
-	if opt.isset(pktinfo) {
-		l += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
-	}
-	if l > 0 {
-		oob = make([]byte, l)
-		if opt.isset(FlagTTL) {
-			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
-			m.Level = ianaProtocolIP
-			m.Type = syscall.IP_RECVTTL
-			m.SetLen(syscall.CmsgLen(1))
-			off += syscall.CmsgSpace(1)
-		}
-		if opt.isset(pktinfo) {
-			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
-			m.Level = ianaProtocolIP
-			m.Type = syscall.IP_PKTINFO
-			m.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
-			off += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
-		}
+	if opt.isset(FlagSrc | FlagDst | FlagInterface) {
+		l += syscall.CmsgSpace(sysSizeofPacketInfo)
 	}
 	return
 }
 
-func parseControlMessage(b []byte) (*ControlMessage, error) {
-	if len(b) == 0 {
-		return nil, nil
+func (opt *rawOpt) marshalControlMessage() (oob []byte) {
+	var off int
+	oob = make([]byte, opt.oobLen())
+	if opt.isset(FlagTTL) {
+		m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
+		m.Level = ianaProtocolIP
+		m.Type = sysSockoptReceiveTTL
+		m.SetLen(syscall.CmsgLen(1))
+		off += syscall.CmsgSpace(1)
 	}
-	cmsgs, err := syscall.ParseSocketControlMessage(b)
-	if err != nil {
-		return nil, os.NewSyscallError("parse socket control message", err)
+	if opt.isset(FlagSrc | FlagDst | FlagInterface) {
+		m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[0]))
+		m.Level = ianaProtocolIP
+		m.Type = sysSockoptPacketInfo
+		m.SetLen(syscall.CmsgLen(sysSizeofPacketInfo))
+		off += syscall.CmsgSpace(sysSizeofPacketInfo)
 	}
-	cm := &ControlMessage{}
-	for _, m := range cmsgs {
-		if m.Header.Level != ianaProtocolIP {
-			continue
-		}
-		switch m.Header.Type {
-		case syscall.IP_TTL:
-			cm.TTL = int(*(*byte)(unsafe.Pointer(&m.Data[:1][0])))
-		case syscall.IP_PKTINFO:
-			pi := (*syscall.Inet4Pktinfo)(unsafe.Pointer(&m.Data[0]))
-			cm.IfIndex = int(pi.Ifindex)
-			cm.Dst = pi.Addr[:]
-		}
-	}
-	return cm, nil
+	return
 }
 
-func marshalControlMessage(cm *ControlMessage) (oob []byte) {
-	if cm == nil {
-		return
-	}
-	l, off := 0, 0
-	pion := false
+func (cm *ControlMessage) oobLen() (l int) {
 	if cm.Src.To4() != nil || cm.IfIndex != 0 {
-		pion = true
-		l += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
-	}
-	if l > 0 {
-		oob = make([]byte, l)
-		if pion {
-			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
-			m.Level = ianaProtocolIP
-			m.Type = syscall.IP_PKTINFO
-			m.SetLen(syscall.CmsgLen(syscall.SizeofInet4Pktinfo))
-			pi := (*syscall.Inet4Pktinfo)(unsafe.Pointer(&oob[off+syscall.CmsgLen(0)]))
-			if ip := cm.Src.To4(); ip != nil {
-				copy(pi.Addr[:], ip)
-			}
-			if cm.IfIndex != 0 {
-				pi.Ifindex = int32(cm.IfIndex)
-			}
-			off += syscall.CmsgSpace(syscall.SizeofInet4Pktinfo)
-		}
+		l += syscall.CmsgSpace(sysSizeofPacketInfo)
 	}
 	return
+}
+
+func (cm *ControlMessage) parseControlMessage(m *syscall.SocketControlMessage) {
+	switch m.Header.Type {
+	case sysSockoptTTL:
+		cm.TTL = int(*(*byte)(unsafe.Pointer(&m.Data[:1][0])))
+	case sysSockoptPacketInfo:
+		pi := (*sysPacketInfo)(unsafe.Pointer(&m.Data[0]))
+		cm.IfIndex = int(pi.IfIndex)
+		cm.Dst = pi.IP[:]
+	}
 }
