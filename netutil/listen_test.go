@@ -10,6 +10,7 @@
 package netutil
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -67,5 +68,36 @@ func TestLimitListener(t *testing.T) {
 	// but most should succeed.
 	if failed >= num/2 {
 		t.Errorf("too many Gets failed: %v", failed)
+	}
+}
+
+type errorListener struct {
+	net.Listener
+}
+
+func (errorListener) Accept() (net.Conn, error) {
+	return nil, errFake
+}
+
+var errFake = errors.New("fake error from errorListener")
+
+// This used to hang.
+func TestLimitListenerError(t *testing.T) {
+	donec := make(chan bool, 1)
+	go func() {
+		const n = 2
+		ll := LimitListener(errorListener{}, n)
+		for i := 0; i < n+1; i++ {
+			_, err := ll.Accept()
+			if err != errFake {
+				t.Fatalf("Accept error = %v; want errFake", err)
+			}
+		}
+		donec <- true
+	}()
+	select {
+	case <-donec:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout. deadlock?")
 	}
 }
