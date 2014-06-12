@@ -1618,7 +1618,7 @@ func inSelectIM(p *parser) bool {
 			}
 		}
 	case CommentToken:
-		p.doc.AppendChild(&Node{
+		p.addChild(&Node{
 			Type: CommentNode,
 			Data: p.tok.Data,
 		})
