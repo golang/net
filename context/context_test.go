@@ -310,12 +310,12 @@ func TestAllocs(t *testing.T) {
 			gccgoLimit: 3,
 		},
 		{
-			desc: "WithTimeout(bg, 1*time.Nanosecond)",
+			desc: "WithTimeout(bg, 15*time.Millisecond)",
 			f: func() {
-				c, _ := WithTimeout(bg, 1*time.Nanosecond)
+				c, _ := WithTimeout(bg, 15*time.Millisecond)
 				<-c.Done()
 			},
-			limit:      7,
+			limit:      9,
 			gccgoLimit: 13,
 		},
 		{
@@ -345,7 +345,7 @@ func TestAllocs(t *testing.T) {
 			// TOOD(iant): Remove this when gccgo does do escape analysis.
 			limit = test.gccgoLimit
 		}
-		if n := testing.AllocsPerRun(1000, test.f); n > limit {
+		if n := testing.AllocsPerRun(100, test.f); n > limit {
 			t.Errorf("%s allocs = %f want %d", test.desc, n, int(limit))
 		}
 	}
