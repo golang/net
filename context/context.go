@@ -11,81 +11,33 @@
 // Context, optionally replacing it with a modified copy created using
 // WithDeadline, WithTimeout, WithCancel, or WithValue.
 //
-// Functions that require a Context should take it as the first parameter, named ctx:
+// Programs that use Contexts should follow these rules to keep interfaces
+// consistent across packages and enable static analysis tools to check context
+// propagation:
 //
-//   func DoSomething(ctx context.Context, arg Arg) error {
-//     // ... use ctx ...
-//   }
+// Do not store Contexts inside a struct type; instead, pass a Context
+// explicitly to each function that needs it.  The Context should be the first
+// parameter, typically named ctx:
+//
+// 	func DoSomething(ctx context.Context, arg Arg) error {
+// 		// ... use ctx ...
+// 	}
 //
 // Do not pass a nil Context, even if a function permits it.  Pass context.TODO
 // if you are unsure about which Context to use.
 //
-// Future packages will create Contexts from standard request types like
-// *http.Request.
+// Use context Values only for request-scoped data that transits processes and
+// APIs, not for passing optional parameters to functions.
+//
+// The same Context may be passed to functions running in different goroutines;
+// Contexts are safe for simultaneous use by multiple goroutines.
 package context
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 )
-
-// An Key identifies a specific Value in a Context.  Functions that wish to
-// store Values in Context typically allocate a Key in a global variable then
-// use that Key as the argument to context.WithValue and Context.Value.
-//
-// Packages that define a Context Key should provide type-safe accessors for the
-// Values stores using that Key:
-//
-//   // package foo defines a value that's stored in Contexts.
-//   package foo
-//
-//   import "code.google.com/p/go.net/context"
-//
-//   // Foo is the type of value stored in the Contexts.
-//   type Foo struct {...}
-//
-//   // contextKey is the Key for foo.Foo values in Contexts.  It is
-//   // unexported; foo clients use foo.NewContext and foo.FromContext
-//   // instead of using this Key directly.
-//   var contextKey = context.NewKey("import/path/of/foo.Foo")
-//
-//   // NewContext returns a new Context that carries value foo.
-//   func NewContext(ctx context.Context, foo *Foo) context.Context {
-//     return context.WithValue(contextKey, foo)
-//   }
-//
-//   // FromContext returns the Foo value stored in ctx, if any.
-//   func FromContext(ctx context.Context) (*Foo, bool) {
-//     foo, ok := ctx.Value(contextKey).(*Foo)
-//     return foo, ok
-//   }
-type Key struct {
-	name string
-}
-
-var keys = make(map[string]Key)
-
-// NewKey allocates a new Key with the provided name.  The name must be
-// non-empty and globally unique: if NewKey is called multiple times with the
-// same name it panics.  NewKey should only be called during initalization.
-func NewKey(name string) Key {
-	if name == "" {
-		panic("context.NewKey called with an empty name")
-	}
-	if _, ok := keys[name]; ok {
-		panic(fmt.Sprintf("context.NewKey(%q) called multiple times", name))
-	}
-	k := Key{name}
-	keys[name] = k
-	return k
-}
-
-// String returns the Key's name.
-func (k Key) String() string {
-	return k.name
-}
 
 // A Context carries deadlines, and cancellation signals, and other values
 // across API boundaries.
@@ -108,29 +60,71 @@ type Context interface {
 	//
 	// Done is provided for use in select statements:
 	//
-	//   // DoSomething calls DoSomethingSlow and returns as soon as
-	//   // it returns or ctx.Done is closed.
-	//   func DoSomething(ctx context.Context) (Result, error) {
-	//     c := make(chan Result, 1)
-	//     go func() { c <- DoSomethingSlow(ctx) }()
-	//     select {
-	//     case res := <-c:
-	//       return res, nil
-	//     case <-ctx.Done():
-	//       return nil, ctx.Err()
-	//     }
-	//   }
+	// 	// DoSomething calls DoSomethingSlow and returns as soon as
+	// 	// it returns or ctx.Done is closed.
+	// 	func DoSomething(ctx context.Context) (Result, error) {
+	// 		c := make(chan Result, 1)
+	// 		go func() { c <- DoSomethingSlow(ctx) }()
+	// 		select {
+	// 		case res := <-c:
+	// 			return res, nil
+	// 		case <-ctx.Done():
+	// 			return nil, ctx.Err()
+	// 		}
+	// 	}
 	Done() <-chan struct{}
 
 	// Err returns a non-nil error value after Done is closed.  Err returns
 	// Canceled if the context was canceled; Err returns DeadlineExceeded if
 	// the context's deadline passed.  No other values for Err are defined.
+	// After Done is closed, successive calls to Err return the same value.
 	Err() error
 
 	// Value returns the value associated with this context for key, or nil
 	// if no value is associated with key.  Successive calls to Value with
 	// the same key returns the same result.
-	Value(key Key) interface{}
+	//
+	// Use context values only for request-scoped data that transits
+	// processes and APIs, not for passing optional parameters to functions.
+	//
+	// A key identifies a specific value in a Context.  Functions that wish
+	// to store values in Context typically allocate a key in a global
+	// variable then use that key as the argument to context.WithValue and
+	// Context.Value.  A key can be any type that supports equality;
+	// packages should define keys as an unexported type to avoid
+	// collisions.
+	//
+	// Packages that define a Context key should provide type-safe accessors
+	// for the values stores using that key:
+	//
+	// 	// Package user defines a User type that's stored in Contexts.
+	// 	package user
+	//
+	// 	import "code.google.com/p/go.net/context"
+	//
+	// 	// User is the type of value stored in the Contexts.
+	// 	type User struct {...}
+	//
+	// 	// key is an unexported type for keys defined in this package.
+	// 	// This prevents collisions with keys defined in other packages.
+	// 	type key int
+	//
+	// 	// userKey is the key for user.User values in Contexts.  It is
+	// 	// unexported; clients use user.NewContext and user.FromContext
+	// 	// instead of using this key directly.
+	// 	var userKey key = 0
+	//
+	// 	// NewContext returns a new Context that carries value u.
+	// 	func NewContext(ctx context.Context, u *User) context.Context {
+	// 		return context.WithValue(userKey, u)
+	// 	}
+	//
+	// 	// FromContext returns the User value stored in ctx, if any.
+	// 	func FromContext(ctx context.Context) (*User, bool) {
+	// 		u, ok := ctx.Value(userKey).(*User)
+	// 		return u, ok
+	// 	}
+	Value(key interface{}) interface{}
 }
 
 // Canceled is the error returned by Context.Err when the context is canceled.
@@ -147,7 +141,7 @@ type ctx struct {
 	parent Context       // set by newCtx
 	done   chan struct{} // closed by the first cancel call.  nil if uncancelable.
 
-	key Key         // set by WithValue
+	key interface{} // set by WithValue
 	val interface{} // set by WithValue
 
 	deadline    time.Time // set by WithDeadline
@@ -174,7 +168,7 @@ func (c *ctx) Err() error {
 	return c.err
 }
 
-func (c *ctx) Value(key Key) interface{} {
+func (c *ctx) Value(key interface{}) interface{} {
 	if c.key == key {
 		return c.val
 	}
@@ -260,22 +254,23 @@ func WithDeadline(parent Context, deadline time.Time) (Context, CancelFunc) {
 // timer, so code should call cancel as soon as the operations running in this
 // Context complete:
 //
-//   func slowOperationWithTimeout(ctx context.Context) (Result, error) {
-//     ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-//     defer cancel()  // releases resources if slowOperation completes before timeout elapses
-//     return slowOperation(ctx)
-//   }
+// 	func slowOperationWithTimeout(ctx context.Context) (Result, error) {
+// 		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+// 		defer cancel()  // releases resources if slowOperation completes before timeout elapses
+// 		return slowOperation(ctx)
+// 	}
 func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {
 	return WithDeadline(parent, time.Now().Add(timeout))
 }
 
-// WithValue returns a copy of parent in which the value associated with k is v.
+// WithValue returns a copy of parent in which the value associated with key is
+// val.
 //
 // Use context Values only for request-scoped data that transits processes and
 // APIs, not for passing optional parameters to functions.
-func WithValue(parent Context, k Key, v interface{}) Context {
+func WithValue(parent Context, key interface{}, val interface{}) Context {
 	c := newCtx(parent, neverCanceled)
-	c.key, c.val = k, v
+	c.key, c.val = key, val
 	return c
 }
 
