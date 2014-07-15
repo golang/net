@@ -66,6 +66,17 @@ func (cc *clientConn) serve() {
 		return
 	}
 	log.Printf("client %v said hello", cc.c.RemoteAddr())
+	for {
+		fh, err := ReadFrameHeader(cc.c)
+		if err != nil {
+			if err != io.EOF {
+				cc.logf("error reading frame: %v", err)
+			}
+			return
+		}
+		log.Printf("read frame: %v", fh)
+		break
+	}
 }
 
 // ConfigureServer adds HTTP2 support to s as configured by the HTTP/2
