@@ -4,10 +4,22 @@
 package http2
 
 import (
+	"bytes"
 	"crypto/tls"
+	"io"
 	"log"
 	"net/http"
 	"sync"
+)
+
+const (
+	// ClientPreface is the string that must be sent by new
+	// connections from clients.
+	ClientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+)
+
+var (
+	clientPreface = []byte(ClientPreface)
 )
 
 const npnProto = "h2-13"
@@ -20,9 +32,40 @@ type Server struct {
 	mu sync.Mutex
 }
 
-func (srv *Server) handleConn(hs *http.Server, c *tls.Conn, h http.Handler) {
-	defer c.Close()
-	log.Printf("HTTP/2 connection from %v on %p", c.RemoteAddr(), hs)
+func (srv *Server) handleClientConn(hs *http.Server, c *tls.Conn, h http.Handler) {
+	cc := &clientConn{hs, c, h}
+	cc.serve()
+}
+
+type clientConn struct {
+	hs *http.Server
+	c  *tls.Conn
+	h  http.Handler
+}
+
+func (cc *clientConn) logf(format string, args ...interface{}) {
+	if lg := cc.hs.ErrorLog; lg != nil {
+		lg.Printf(format, args...)
+	} else {
+		log.Printf(format, args...)
+	}
+}
+
+func (cc *clientConn) serve() {
+	defer cc.c.Close()
+	log.Printf("HTTP/2 connection from %v on %p", cc.c.RemoteAddr(), cc.hs)
+
+	buf := make([]byte, len(ClientPreface))
+	// TODO: timeout reading from the client
+	if _, err := io.ReadFull(cc.c, buf); err != nil {
+		cc.logf("error reading client preface: %v", err)
+		return
+	}
+	if !bytes.Equal(buf, clientPreface) {
+		cc.logf("bogus greeting from client: %q", buf)
+		return
+	}
+	log.Printf("client %v said hello", cc.c.RemoteAddr())
 }
 
 // ConfigureServer adds HTTP2 support to s as configured by the HTTP/2
@@ -51,6 +94,6 @@ func ConfigureServer(s *http.Server, conf *Server) {
 		s.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
 	}
 	s.TLSNextProto[npnProto] = func(hs *http.Server, c *tls.Conn, h http.Handler) {
-		conf.handleConn(hs, c, h)
+		conf.handleClientConn(hs, c, h)
 	}
 }
