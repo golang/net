@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -66,6 +67,9 @@ func (cc *clientConn) serve() {
 		return
 	}
 	log.Printf("client %v said hello", cc.c.RemoteAddr())
+	var frameReader = io.LimitedReader{
+		R: cc.c,
+	}
 	for {
 		fh, err := ReadFrameHeader(cc.c)
 		if err != nil {
@@ -74,7 +78,8 @@ func (cc *clientConn) serve() {
 			}
 			return
 		}
-		f, err := typeFrameParser(fh.Type)(fh, cc.c)
+		frameReader.N = int64(fh.Length)
+		f, err := typeFrameParser(fh.Type)(fh, &frameReader)
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
 				log.Printf("Disconnection; connection error: %v", err)
@@ -86,7 +91,11 @@ func (cc *clientConn) serve() {
 			log.Printf("Disconnection to other error: %v", err)
 			return
 		}
-		log.Printf("read frame: %#v", f)
+		if n, _ := io.Copy(ioutil.Discard, &frameReader); n > 0 {
+			log.Printf("Frame reader for %s failed to read %d bytes", fh.Type, n)
+			return
+		}
+		log.Printf("got frame: %#v", f)
 	}
 }
 

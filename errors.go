@@ -56,3 +56,11 @@ var _ Error = ConnectionError(0)
 func (e ConnectionError) IsStreamError() bool     { return false }
 func (e ConnectionError) IsConnectionError() bool { return true }
 func (e ConnectionError) Error() string           { return fmt.Sprintf("connection error: %s", ErrCode(e)) }
+
+type StreamError uint32
+
+var _ Error = StreamError(0)
+
+func (e StreamError) IsStreamError() bool     { return true }
+func (e StreamError) IsConnectionError() bool { return false }
+func (e StreamError) Error() string           { return fmt.Sprintf("stream error: stream ID = %d", uint32(e)) }
