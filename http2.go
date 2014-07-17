@@ -74,8 +74,19 @@ func (cc *clientConn) serve() {
 			}
 			return
 		}
-		log.Printf("read frame: %v", fh)
-		break
+		f, err := typeFrameParser(fh.Type)(fh, cc.c)
+		if h2e, ok := err.(Error); ok {
+			if h2e.IsConnectionError() {
+				log.Printf("Disconnection; connection error: %v", err)
+				return
+			}
+			// TODO: stream errors, etc
+		}
+		if err != nil {
+			log.Printf("Disconnection to other error: %v", err)
+			return
+		}
+		log.Printf("read frame: %#v", f)
 	}
 }
 
