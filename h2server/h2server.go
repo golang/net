@@ -1,3 +1,8 @@
+// Copyright 2014 The Go Authors.
+// See https://code.google.com/p/go/source/browse/CONTRIBUTORS
+// Licensed under the same terms as Go itself:
+// https://code.google.com/p/go/source/browse/LICENSE
+
 package main
 
 import (
