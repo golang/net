@@ -7,6 +7,8 @@ package hpack
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/hex"
 	"regexp"
 	"strconv"
 	"strings"
@@ -125,5 +127,38 @@ func TestHeaderTableAt(t *testing.T) {
 	}
 	if got, want := ht.at(62), (HeaderField{"www-authenticate", ""}); got != want {
 		t.Errorf("at(62) = %q; want %q", got, want)
+	}
+}
+
+func TestHuffmanDecode(t *testing.T) {
+	tests := []struct {
+		inHex, want string
+	}{
+		{"f1e3 c2e5 f23a 6ba0 ab90 f4ff", "www.example.com"},
+		{"a8eb 1064 9cbf", "no-cache"},
+		{"25a8 49e9 5ba9 7d7f", "custom-key"},
+		{"25a8 49e9 5bb8 e8b4 bf", "custom-value"},
+		{"6402", "302"},
+		{"aec3 771a 4b", "private"},
+		{"d07a be94 1054 d444 a820 0595 040b 8166 e082 a62d 1bff", "Mon, 21 Oct 2013 20:13:21 GMT"},
+		{"9d29 ad17 1863 c78f 0b97 c8e9 ae82 ae43 d3", "https://www.example.com"},
+		{"9bd9 ab", "gzip"},
+		{"94e7 821d d7f2 e6c7 b335 dfdf cd5b 3960 d5af 2708 7f36 72c1 ab27 0fb5 291f 9587 3160 65c0 03ed 4ee5 b106 3d50 07",
+			"foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"},
+	}
+	for i, tt := range tests {
+		var buf bytes.Buffer
+		in, err := hex.DecodeString(strings.Replace(tt.inHex, " ", "", -1))
+		if err != nil {
+			t.Errorf("%d. hex input error: %v", i, err)
+			continue
+		}
+		if _, err := HuffmanDecode(&buf, in); err != nil {
+			t.Errorf("%d. decode error: %v", i, err)
+			continue
+		}
+		if got := buf.String(); tt.want != got {
+			t.Errorf("%d. decode = %q; want %q", i, got, tt.want)
+		}
 	}
 }
