@@ -13,11 +13,10 @@ package main
 //	go run gen.go -version "xxx" -test >table_test.go
 //
 // The version is derived from information found at
-// http://mxr.mozilla.org/mozilla-central/source/netwerk/dns/effective_tld_names.dat
-// which is linked from http://publicsuffix.org/list/.
+// https://hg.mozilla.org/mozilla-central/log/tip/netwerk/dns/effective_tld_names.dat
 //
 // To fetch a particular hg revision, such as 05b11a8d1ace, pass
-// -url "http://hg.mozilla.org/mozilla-central/raw-file/05b11a8d1ace/netwerk/dns/effective_tld_names.dat"
+// -url "https://hg.mozilla.org/mozilla-central/raw-file/05b11a8d1ace/netwerk/dns/effective_tld_names.dat"
 
 import (
 	"bufio"
@@ -102,7 +101,7 @@ var (
 	crush  = flag.Bool("crush", true, "make the generated node text as small as possible")
 	subset = flag.Bool("subset", false, "generate only a subset of the full table, for debugging")
 	url    = flag.String("url",
-		"http://mxr.mozilla.org/mozilla-central/source/netwerk/dns/effective_tld_names.dat?raw=1",
+		"https://publicsuffix.org/list/effective_tld_names.dat",
 		"URL of the publicsuffix.org list. If empty, stdin is read instead")
 	v       = flag.Bool("v", false, "verbose output (to stderr)")
 	version = flag.String("version", "", "the effective_tld_names.dat version")

@@ -103,6 +103,7 @@ var publicSuffixTestCases = []struct {
 	// com.ar
 	// edu.ar
 	// gob.ar
+	// gov.ar
 	// int.ar
 	// mil.ar
 	// net.ar
@@ -123,6 +124,7 @@ var publicSuffixTestCases = []struct {
 	{"zblogspot.com.ar", "com.ar"},
 
 	// The .arpa rules are:
+	// arpa
 	// e164.arpa
 	// in-addr.arpa
 	// ip6.arpa
@@ -183,24 +185,25 @@ var publicSuffixTestCases = []struct {
 	{"xn--kpry57d.tw", "tw"},
 
 	// The .uk rules are:
-	// *.uk
+	// uk
+	// ac.uk
+	// co.uk
+	// gov.uk
+	// ltd.uk
+	// me.uk
+	// net.uk
+	// nhs.uk
+	// org.uk
+	// plc.uk
+	// police.uk
 	// *.sch.uk
-	// !bl.uk
-	// !british-library.uk
-	// !jet.uk
-	// !mod.uk
-	// !national-library-scotland.uk
-	// !nel.uk
-	// !nic.uk
-	// !nls.uk
-	// !parliament.uk
 	// blogspot.co.uk
 	{"uk", "uk"},
-	{"aaa.uk", "aaa.uk"},
-	{"www.aaa.uk", "aaa.uk"},
+	{"aaa.uk", "uk"},
+	{"www.aaa.uk", "uk"},
 	{"mod.uk", "uk"},
 	{"www.mod.uk", "uk"},
-	{"sch.uk", "sch.uk"},
+	{"sch.uk", "uk"},
 	{"mod.sch.uk", "mod.sch.uk"},
 	{"www.sch.uk", "www.sch.uk"},
 	{"blogspot.co.uk", "blogspot.co.uk"},
