@@ -137,6 +137,11 @@ var DeadlineExceeded = errors.New("context deadline exceeded")
 // A ctx is a Context that automatically propagates cancellation signals to
 // other ctxs (those created using this ctx as their parent).  A ctx also
 // manages its own deadline timer.
+//
+// TODO(sameer): split this into separate concrete types for WithValue,
+// WithCancel, and WithTimeout/Deadline.  This reduces the size of the structs;
+// for example, we don't need a timer field when creating a Context using
+// WithValue.
 type ctx struct {
 	parent Context       // set by newCtx
 	done   chan struct{} // closed by the first cancel call.  nil if uncancelable.
@@ -181,20 +186,19 @@ func (c *ctx) Value(key interface{}) interface{} {
 // The background context for this process.
 var background = newCtx(nil, neverCanceled)
 
-// Background returns an ambient background context, which is never nil. This
-// context represents the intrinsic state of the application at startup time,
-// independent of any incoming request state.
-//
-// The Background context is typically only used by the main function and tests.
+// Background returns a non-nil, empty Context. It is never canceled, has no
+// values, and has no deadline.  It is typically used by the main function,
+// initialization, and tests, and as the top-level Context for incoming
+// requests.
 func Background() Context {
 	return background
 }
 
-// TODO returns an ambient background context, which is never nil.  Code should
-// use context.TODO when it's unclear which Context to use or it's is not yet
-// available (because the surrounding function has not yet been extended to
-// accept a Context parameter).  TODO is recognized by static analysis tools
-// that determine whether Contexts are propagated correctly in a program.
+// TODO returns a non-nil, empty Context.  Code should use context.TODO when
+// it's unclear which Context to use or it's is not yet available (because the
+// surrounding function has not yet been extended to accept a Context
+// parameter).  TODO is recognized by static analysis tools that determine
+// whether Contexts are propagated correctly in a program.
 func TODO() Context {
 	return Background()
 }
@@ -223,7 +227,7 @@ func withCancel(parent Context) (*ctx, CancelFunc) {
 // cancel function is called, or when the parent context's Done channel is
 // closed, whichever happens first.
 //
-// Cancelling this context releases resources associated with the deadline
+// Canceling this context releases resources associated with the deadline
 // timer, so code should call cancel as soon as the operations running in this
 // Context complete.
 func WithDeadline(parent Context, deadline time.Time) (Context, CancelFunc) {
@@ -250,7 +254,7 @@ func WithDeadline(parent Context, deadline time.Time) (Context, CancelFunc) {
 
 // WithTimeout returns WithDeadline(parent, time.Now().Add(timeout)).
 //
-// Cancelling this context releases resources associated with the deadline
+// Canceling this context releases resources associated with the deadline
 // timer, so code should call cancel as soon as the operations running in this
 // Context complete:
 //
