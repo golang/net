@@ -183,8 +183,38 @@ func (c *ctx) Value(key interface{}) interface{} {
 	return nil
 }
 
-// The background context for this process.
-var background = newCtx(nil, neverCanceled)
+type emptyCtx int
+
+func (emptyCtx) Deadline() (deadline time.Time, ok bool) {
+	return
+}
+
+func (emptyCtx) Done() <-chan struct{} {
+	return nil
+}
+
+func (emptyCtx) Err() error {
+	return nil
+}
+
+func (emptyCtx) Value(key interface{}) interface{} {
+	return nil
+}
+
+func (n emptyCtx) String() string {
+	switch n {
+	case background:
+		return "context.Background"
+	case todo:
+		return "context.TODO"
+	}
+	return "unknown empty Context"
+}
+
+const (
+	background emptyCtx = 1
+	todo       emptyCtx = 2
+)
 
 // Background returns a non-nil, empty Context. It is never canceled, has no
 // values, and has no deadline.  It is typically used by the main function,
@@ -200,7 +230,7 @@ func Background() Context {
 // parameter).  TODO is recognized by static analysis tools that determine
 // whether Contexts are propagated correctly in a program.
 func TODO() Context {
-	return Background()
+	return todo
 }
 
 // A CancelFunc tells an operation to abandon its work.

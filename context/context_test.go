@@ -6,6 +6,7 @@ package context
 
 import (
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sync"
 	"testing"
@@ -27,6 +28,24 @@ func TestBackground(t *testing.T) {
 	case x := <-c.Done():
 		t.Errorf("<-c.Done() == %v want nothing (it should block)", x)
 	default:
+	}
+	if s := fmt.Sprint(c); s != "context.Background" {
+		t.Errorf(`Background.String = %q want "context.Background"`, s)
+	}
+}
+
+func TestTODO(t *testing.T) {
+	c := TODO()
+	if c == nil {
+		t.Fatalf("TODO returned nil")
+	}
+	select {
+	case x := <-c.Done():
+		t.Errorf("<-c.Done() == %v want nothing (it should block)", x)
+	default:
+	}
+	if s := fmt.Sprint(c); s != "context.TODO" {
+		t.Errorf(`TODO.String = %q want "context.TODO"`, s)
 	}
 }
 
@@ -427,5 +446,81 @@ func TestInterlockedCancels(t *testing.T) {
 		buf := make([]byte, 10<<10)
 		n := runtime.Stack(buf, true)
 		t.Fatalf("timed out waiting for child.Done(); stacks:\n%s", buf[:n])
+	}
+}
+
+func TestLayersCancel(t *testing.T) {
+	testLayers(t, time.Now().UnixNano(), false)
+}
+
+func TestLayersTimeout(t *testing.T) {
+	testLayers(t, time.Now().UnixNano(), true)
+}
+
+func testLayers(t *testing.T, seed int64, testTimeout bool) {
+	rand.Seed(seed)
+	errorf := func(format string, a ...interface{}) {
+		t.Errorf(fmt.Sprintf("seed=%d: %s", seed, format), a...)
+	}
+	const (
+		timeout   = 200 * time.Millisecond
+		minLayers = 30
+	)
+	type value int
+	var (
+		vals      []*value
+		cancels   []CancelFunc
+		numTimers int
+		ctx       = Background()
+	)
+	for i := 0; i < minLayers || numTimers == 0 || len(cancels) == 0 || len(vals) == 0; i++ {
+		switch rand.Intn(3) {
+		case 0:
+			v := new(value)
+			t.Logf("WithValue(%p, %p)", v, v)
+			ctx = WithValue(ctx, v, v)
+			vals = append(vals, v)
+		case 1:
+			var cancel CancelFunc
+			t.Logf("WithCancel")
+			ctx, cancel = WithCancel(ctx)
+			cancels = append(cancels, cancel)
+		case 2:
+			var cancel CancelFunc
+			t.Logf("WithTimeout")
+			ctx, cancel = WithTimeout(ctx, timeout)
+			cancels = append(cancels, cancel)
+			numTimers++
+		}
+	}
+	checkValues := func(when string) {
+		for _, key := range vals {
+			if val := ctx.Value(key).(*value); key != val {
+				errorf("%s: ctx.Value(%p) = %p want %p", when, key, val, key)
+			}
+		}
+	}
+	select {
+	case <-ctx.Done():
+		errorf("ctx should not be canceled yet")
+	default:
+	}
+	checkValues("before cancel")
+	if testTimeout {
+		select {
+		case <-ctx.Done():
+		case <-time.After(timeout + timeout/10):
+			errorf("ctx should have timed out")
+		}
+		checkValues("after timeout")
+	} else {
+		cancel := cancels[rand.Intn(len(cancels))]
+		cancel()
+		select {
+		case <-ctx.Done():
+		default:
+			errorf("ctx should be canceled")
+		}
+		checkValues("after cancel")
 	}
 }
