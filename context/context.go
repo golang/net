@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package context defines the Context type, which carries deadlines, cancellation
-// signals, and other request-scoped values across API boundaries and between
-// processes.
+// Package context defines the Context type, which carries deadlines,
+// cancelation signals, and other request-scoped values across API boundaries
+// and between processes.
 //
-// Incoming requests to a server establish a Context, and outgoing calls to servers
-// should accept a Context.  The chain of function calls between must propagate the
-// Context, optionally replacing it with a modified copy created using
-// WithDeadline, WithTimeout, WithCancel, or WithValue.
+// Incoming requests to a server should create a Context, and outgoing calls to
+// servers should accept a Context.  The chain of function calls between must
+// propagate the Context, optionally replacing it with a modified copy created
+// using WithDeadline, WithTimeout, WithCancel, or WithValue.
 //
 // Programs that use Contexts should follow these rules to keep interfaces
 // consistent across packages and enable static analysis tools to check context
@@ -31,6 +31,9 @@
 //
 // The same Context may be passed to functions running in different goroutines;
 // Contexts are safe for simultaneous use by multiple goroutines.
+//
+// See http://blog.golang.org/context for example code for a server that uses
+// Contexts.
 package context
 
 import (
@@ -39,8 +42,8 @@ import (
 	"time"
 )
 
-// A Context carries deadlines, and cancellation signals, and other values
-// across API boundaries.
+// A Context carries a deadline, a cancelation signal, and other values across
+// API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
 type Context interface {
@@ -51,7 +54,7 @@ type Context interface {
 
 	// Done returns a channel that's closed when work done on behalf of this
 	// context should be canceled.  Done may return nil if this context can
-	// never become done.  Successive calls to Done return the same value.
+	// never be canceled.  Successive calls to Done return the same value.
 	//
 	// WithCancel arranges for Done to be closed when cancel is called;
 	// WithDeadline arranges for Done to be closed when the deadline
@@ -72,11 +75,14 @@ type Context interface {
 	// 			return nil, ctx.Err()
 	// 		}
 	// 	}
+	//
+	// See http://blog.golang.org/pipelines for more examples of how to use
+	// a Done channel for cancelation.
 	Done() <-chan struct{}
 
 	// Err returns a non-nil error value after Done is closed.  Err returns
-	// Canceled if the context was canceled; Err returns DeadlineExceeded if
-	// the context's deadline passed.  No other values for Err are defined.
+	// Canceled if the context was canceled or DeadlineExceeded if the
+	// context's deadline passed.  No other values for Err are defined.
 	// After Done is closed, successive calls to Err return the same value.
 	Err() error
 
@@ -85,7 +91,8 @@ type Context interface {
 	// the same key returns the same result.
 	//
 	// Use context values only for request-scoped data that transits
-	// processes and APIs, not for passing optional parameters to functions.
+	// processes and API boundaries, not for passing optional parameters to
+	// functions.
 	//
 	// A key identifies a specific value in a Context.  Functions that wish
 	// to store values in Context typically allocate a key in a global
@@ -134,55 +141,7 @@ var Canceled = errors.New("context canceled")
 // deadline passes.
 var DeadlineExceeded = errors.New("context deadline exceeded")
 
-// A ctx is a Context that automatically propagates cancellation signals to
-// other ctxs (those created using this ctx as their parent).  A ctx also
-// manages its own deadline timer.
-//
-// TODO(sameer): split this into separate concrete types for WithValue,
-// WithCancel, and WithTimeout/Deadline.  This reduces the size of the structs;
-// for example, we don't need a timer field when creating a Context using
-// WithValue.
-type ctx struct {
-	parent Context       // set by newCtx
-	done   chan struct{} // closed by the first cancel call.  nil if uncancelable.
-
-	key interface{} // set by WithValue
-	val interface{} // set by WithValue
-
-	deadline    time.Time // set by WithDeadline
-	deadlineSet bool      // set by WithDeadline
-
-	// parent.mu ACQUIRED_BEFORE mu: mu must not be held when acquiring parent.mu.
-	mu       sync.RWMutex
-	children map[*ctx]bool // set to nil by the first cancel call
-	err      error         // set to non-nil by the first cancel call
-	timer    *time.Timer   // set by WithDeadline, read by cancel
-}
-
-func (c *ctx) Deadline() (deadline time.Time, ok bool) {
-	return c.deadline, c.deadlineSet
-}
-
-func (c *ctx) Done() <-chan struct{} {
-	return c.done // may be nil
-}
-
-func (c *ctx) Err() error {
-	c.mu.RLock() // c.err is under mu
-	defer c.mu.RUnlock()
-	return c.err
-}
-
-func (c *ctx) Value(key interface{}) interface{} {
-	if c.key == key {
-		return c.val
-	}
-	if c.parent != nil {
-		return c.parent.Value(key)
-	}
-	return nil
-}
-
+// An emptyCtx is never canceled, has no values, and has no deadline.
 type emptyCtx int
 
 func (emptyCtx) Deadline() (deadline time.Time, ok bool) {
@@ -235,19 +194,130 @@ func TODO() Context {
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.
-// After the first, subsequent calls to a CancelFunc do nothing.
+// After the first call, subsequent calls to a CancelFunc do nothing.
 type CancelFunc func()
 
 // WithCancel returns a copy of parent with a new Done channel. The returned
 // context's Done channel is closed when the returned cancel function is called
 // or when the parent context's Done channel is closed, whichever happens first.
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
-	return withCancel(parent)
+	c := newCancelCtx(parent)
+	propagateCancel(parent, &c)
+	return &c, func() { c.cancel(true, Canceled) }
 }
 
-func withCancel(parent Context) (*ctx, CancelFunc) {
-	c := newCtx(parent, maybeCanceled)
-	return c, func() { c.cancel(true, Canceled) }
+// newCancelCtx returns an initialized cancelCtx.
+func newCancelCtx(parent Context) cancelCtx {
+	return cancelCtx{
+		Context: parent,
+		done:    make(chan struct{}),
+	}
+}
+
+// propagateCancel arranges for child to be canceled when parent is.
+func propagateCancel(parent Context, child canceler) {
+	if parent.Done() == nil {
+		return // parent is never canceled
+	}
+	if p, ok := parentCancelCtx(parent); ok {
+		p.mu.Lock()
+		if p.err != nil {
+			// parent has already been canceled
+			child.cancel(false, p.err)
+		} else {
+			if p.children == nil {
+				p.children = make(map[canceler]bool)
+			}
+			p.children[child] = true
+		}
+		p.mu.Unlock()
+	} else {
+		go func() {
+			select {
+			case <-parent.Done():
+				child.cancel(false, parent.Err())
+			case <-child.Done():
+			}
+		}()
+	}
+}
+
+// parentCancelCtx follows a chain of parent references until it finds a
+// *cancelCtx.  This function understands how each of the concrete types in this
+// package represents its parent.
+func parentCancelCtx(parent Context) (*cancelCtx, bool) {
+	for {
+		switch c := parent.(type) {
+		case *cancelCtx:
+			return c, true
+		case *timerCtx:
+			return &c.cancelCtx, true
+		case *valueCtx:
+			return parentCancelCtx(c.Context)
+		default:
+			return nil, false
+		}
+	}
+}
+
+// A canceler is a context type that can be canceled directly.  The
+// implementations are *cancelCtx and *timerCtx.
+type canceler interface {
+	cancel(removeFromParent bool, err error)
+	Done() <-chan struct{}
+}
+
+// A cancelCtx can be canceled.  When canceled, it also cancels any children
+// that implement canceler.
+type cancelCtx struct {
+	Context
+
+	done chan struct{} // closed by the first cancel call.
+
+	mu       sync.Mutex
+	children map[canceler]bool // set to nil by the first cancel call
+	err      error             // set to non-nil by the first cancel call
+}
+
+func (c *cancelCtx) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *cancelCtx) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+// cancel closes c.done, cancels each of c's children, and, if
+// removeFromParent is true, removes c from its parent's children.
+func (c *cancelCtx) cancel(removeFromParent bool, err error) {
+	if err == nil {
+		panic("context: internal error: missing cancel error")
+	}
+	c.mu.Lock()
+	if c.err != nil {
+		c.mu.Unlock()
+		return // already canceled
+	}
+	c.err = err
+	close(c.done)
+	for child := range c.children {
+		// NOTE: acquiring the child's lock while holding parent's lock.
+		child.cancel(false, err)
+	}
+	c.children = nil
+	c.mu.Unlock()
+
+	if removeFromParent {
+		if p, ok := parentCancelCtx(c.Context); ok {
+			p.mu.Lock()
+			if p.children != nil {
+				delete(p.children, c)
+			}
+			p.mu.Unlock()
+		}
+	}
 }
 
 // WithDeadline returns a copy of the parent context with the deadline adjusted
@@ -261,25 +331,52 @@ func withCancel(parent Context) (*ctx, CancelFunc) {
 // timer, so code should call cancel as soon as the operations running in this
 // Context complete.
 func WithDeadline(parent Context, deadline time.Time) (Context, CancelFunc) {
-	c, cancel := withCancel(parent)
-	if cur, ok := c.Deadline(); ok && cur.Before(deadline) {
+	if cur, ok := parent.Deadline(); ok && cur.Before(deadline) {
 		// The current deadline is already sooner than the new one.
-		return c, cancel
+		return WithCancel(parent)
 	}
-	c.deadline, c.deadlineSet = deadline, true
+	c := &timerCtx{
+		cancelCtx: newCancelCtx(parent),
+		deadline:  deadline,
+	}
+	propagateCancel(parent, c)
 	d := deadline.Sub(time.Now())
 	if d <= 0 {
-		// TODO(sameer): pass removeFromParent=true here?
 		c.cancel(false, DeadlineExceeded) // deadline has already passed
-		return c, cancel
+		return c, func() { c.cancel(true, Canceled) }
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.timer = time.AfterFunc(d, func() {
-		// TODO(sameer): pass removeFromParent=true here?
-		c.cancel(false, DeadlineExceeded)
-	})
-	return c, cancel
+	if c.err == nil {
+		c.timer = time.AfterFunc(d, func() {
+			c.cancel(true, DeadlineExceeded)
+		})
+	}
+	return c, func() { c.cancel(true, Canceled) }
+}
+
+// A timerCtx carries a timer and a deadline.  It embeds a cancelCtx to
+// implement Done and Err.  It implements cancel by stopping its timer then
+// delegating to cancelCtx.cancel.
+type timerCtx struct {
+	cancelCtx
+	timer *time.Timer // Under cancelCtx.mu.
+
+	deadline time.Time
+}
+
+func (c *timerCtx) Deadline() (deadline time.Time, ok bool) {
+	return c.deadline, true
+}
+
+func (c *timerCtx) cancel(removeFromParent bool, err error) {
+	c.cancelCtx.cancel(removeFromParent, err)
+	c.mu.Lock()
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	c.mu.Unlock()
 }
 
 // WithTimeout returns WithDeadline(parent, time.Now().Add(timeout)).
@@ -303,84 +400,19 @@ func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {
 // Use context Values only for request-scoped data that transits processes and
 // APIs, not for passing optional parameters to functions.
 func WithValue(parent Context, key interface{}, val interface{}) Context {
-	c := newCtx(parent, neverCanceled)
-	c.key, c.val = key, val
-	return c
+	return &valueCtx{parent, key, val}
 }
 
-const maybeCanceled = true
-const neverCanceled = false
-
-func newCtx(parent Context, childMayCancel bool) *ctx {
-	c := &ctx{parent: parent}
-	parentMayCancel := parent != nil && parent.Done() != nil
-	if childMayCancel || parentMayCancel {
-		c.done = make(chan struct{})
-	}
-	if parent != nil {
-		c.deadline, c.deadlineSet = parent.Deadline()
-	}
-	if parentMayCancel {
-		if p, ok := parent.(*ctx); ok {
-			// Arrange for the new ctx to be canceled when the parent is.
-			p.mu.Lock()
-			if p.err != nil {
-				// parent has already been canceled
-				c.cancel(false, p.err)
-			} else {
-				if p.children == nil {
-					p.children = make(map[*ctx]bool)
-				}
-				p.children[c] = true
-			}
-			p.mu.Unlock()
-		} else {
-			// Cancel the new ctx when context.Done is closed.
-			go func() {
-				select {
-				case <-parent.Done():
-					c.cancel(false, parent.Err())
-				case <-c.done:
-				}
-			}()
-		}
-	}
-	return c
+// A valueCtx carries a key-value pair.  It implements Value for that key and
+// delegates all other calls to the embedded Context.
+type valueCtx struct {
+	Context
+	key, val interface{}
 }
 
-// cancel closes c.done, cancels each of this ctx's children, and, if
-// removeFromParent is true, removes this ctx from its parent's children.
-// cancel stops c.timer, if it is running.
-func (c *ctx) cancel(removeFromParent bool, err error) {
-	if err == nil {
-		panic("context: internal error: missing cancel error")
+func (c *valueCtx) Value(key interface{}) interface{} {
+	if c.key == key {
+		return c.val
 	}
-	c.mu.Lock()
-	if c.done == nil {
-		panic("context: internal error: missing done channel")
-	}
-	if c.err != nil {
-		c.mu.Unlock()
-		return // already canceled
-	}
-	if c.timer != nil {
-		c.timer.Stop()
-		c.timer = nil
-	}
-	close(c.done)
-	c.err = err
-	for child := range c.children {
-		// NOTE: acquiring the child's lock while holding parent's lock.
-		child.cancel(false, err)
-	}
-	c.children = nil
-	c.mu.Unlock()
-
-	if p, ok := c.parent.(*ctx); ok && p != nil && removeFromParent {
-		p.mu.Lock()
-		if p.children != nil {
-			delete(p.children, c)
-		}
-		p.mu.Unlock()
-	}
+	return c.Context.Value(key)
 }
