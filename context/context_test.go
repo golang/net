@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,8 +31,8 @@ func TestBackground(t *testing.T) {
 		t.Errorf("<-c.Done() == %v want nothing (it should block)", x)
 	default:
 	}
-	if s := fmt.Sprint(c); s != "context.Background" {
-		t.Errorf(`Background.String = %q want "context.Background"`, s)
+	if got, want := fmt.Sprint(c), "context.Background"; got != want {
+		t.Errorf("Background().String() = %q want %q", got, want)
 	}
 }
 
@@ -45,13 +46,18 @@ func TestTODO(t *testing.T) {
 		t.Errorf("<-c.Done() == %v want nothing (it should block)", x)
 	default:
 	}
-	if s := fmt.Sprint(c); s != "context.TODO" {
-		t.Errorf(`TODO.String = %q want "context.TODO"`, s)
+	if got, want := fmt.Sprint(c), "context.TODO"; got != want {
+		t.Errorf("TODO().String() = %q want %q", got, want)
 	}
 }
 
 func TestWithCancel(t *testing.T) {
 	c1, cancel := WithCancel(Background())
+
+	if got, want := fmt.Sprint(c1), "context.Background.WithCancel"; got != want {
+		t.Errorf("c1.String() = %q want %q", got, want)
+	}
+
 	o := otherContext{c1}
 	c2, _ := WithCancel(o)
 	contexts := []Context{c1, o, c2}
@@ -72,7 +78,7 @@ func TestWithCancel(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(100 * time.Millisecond) // let cancellation propagate
+	time.Sleep(100 * time.Millisecond) // let cancelation propagate
 
 	for i, c := range contexts {
 		select {
@@ -236,6 +242,9 @@ func testDeadline(c Context, wait time.Duration, t *testing.T) {
 
 func TestDeadline(t *testing.T) {
 	c, _ := WithDeadline(Background(), time.Now().Add(100*time.Millisecond))
+	if got, prefix := fmt.Sprint(c), "context.Background.WithDeadline("; !strings.HasPrefix(got, prefix) {
+		t.Errorf("c.String() = %q want prefix %q", got, prefix)
+	}
 	testDeadline(c, 200*time.Millisecond, t)
 
 	c, _ = WithDeadline(Background(), time.Now().Add(100*time.Millisecond))
@@ -250,6 +259,9 @@ func TestDeadline(t *testing.T) {
 
 func TestTimeout(t *testing.T) {
 	c, _ := WithTimeout(Background(), 100*time.Millisecond)
+	if got, prefix := fmt.Sprint(c), "context.Background.WithDeadline("; !strings.HasPrefix(got, prefix) {
+		t.Errorf("c.String() = %q want prefix %q", got, prefix)
+	}
 	testDeadline(c, 200*time.Millisecond, t)
 
 	c, _ = WithTimeout(Background(), 100*time.Millisecond)
@@ -262,12 +274,12 @@ func TestTimeout(t *testing.T) {
 	testDeadline(c, 200*time.Millisecond, t)
 }
 
-func TestCancelledTimeout(t *testing.T) {
+func TestCanceledTimeout(t *testing.T) {
 	c, _ := WithTimeout(Background(), 200*time.Millisecond)
 	o := otherContext{c}
 	c, cancel := WithTimeout(o, 400*time.Millisecond)
 	cancel()
-	time.Sleep(100 * time.Millisecond) // let cancellation propagate
+	time.Sleep(100 * time.Millisecond) // let cancelation propagate
 	select {
 	case <-c.Done():
 	default:
@@ -303,6 +315,10 @@ func TestValues(t *testing.T) {
 
 	c1 := WithValue(Background(), k1, "c1k1")
 	check(c1, "c1", "c1k1", "", "")
+
+	if got, want := fmt.Sprint(c1), `context.Background.WithValue(1, "c1k1")`; got != want {
+		t.Errorf("c.String() = %q want %q", got, want)
+	}
 
 	c2 := WithValue(c1, k2, "c2k2")
 	check(c2, "c2", "c1k1", "c2k2", "")
@@ -487,17 +503,14 @@ func testLayers(t *testing.T, seed int64, testTimeout bool) {
 		switch rand.Intn(3) {
 		case 0:
 			v := new(value)
-			t.Logf("WithValue(%p, %p)", v, v)
 			ctx = WithValue(ctx, v, v)
 			vals = append(vals, v)
 		case 1:
 			var cancel CancelFunc
-			t.Logf("WithCancel")
 			ctx, cancel = WithCancel(ctx)
 			cancels = append(cancels, cancel)
 		case 2:
 			var cancel CancelFunc
-			t.Logf("WithTimeout")
 			ctx, cancel = WithTimeout(ctx, timeout)
 			cancels = append(cancels, cancel)
 			numTimers++
@@ -515,6 +528,10 @@ func testLayers(t *testing.T, seed int64, testTimeout bool) {
 		errorf("ctx should not be canceled yet")
 	default:
 	}
+	if s, prefix := fmt.Sprint(ctx), "context.Background."; !strings.HasPrefix(s, prefix) {
+		t.Errorf("ctx.String() = %q want prefix %q", s, prefix)
+	}
+	t.Log(ctx)
 	checkValues("before cancel")
 	if testTimeout {
 		select {

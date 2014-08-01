@@ -38,6 +38,7 @@ package context
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -289,6 +290,10 @@ func (c *cancelCtx) Err() error {
 	return c.err
 }
 
+func (c *cancelCtx) String() string {
+	return fmt.Sprintf("%v.WithCancel", c.Context)
+}
+
 // cancel closes c.done, cancels each of c's children, and, if
 // removeFromParent is true, removes c from its parent's children.
 func (c *cancelCtx) cancel(removeFromParent bool, err error) {
@@ -369,6 +374,10 @@ func (c *timerCtx) Deadline() (deadline time.Time, ok bool) {
 	return c.deadline, true
 }
 
+func (c *timerCtx) String() string {
+	return fmt.Sprintf("%v.WithDeadline(%s [%s])", c.cancelCtx.Context, c.deadline, c.deadline.Sub(time.Now()))
+}
+
 func (c *timerCtx) cancel(removeFromParent bool, err error) {
 	c.cancelCtx.cancel(removeFromParent, err)
 	c.mu.Lock()
@@ -408,6 +417,10 @@ func WithValue(parent Context, key interface{}, val interface{}) Context {
 type valueCtx struct {
 	Context
 	key, val interface{}
+}
+
+func (c *valueCtx) String() string {
+	return fmt.Sprintf("%v.WithValue(%#v, %#v)", c.Context, c.key, c.val)
 }
 
 func (c *valueCtx) Value(key interface{}) interface{} {
