@@ -254,7 +254,7 @@ func parentCancelCtx(parent Context) (*cancelCtx, bool) {
 		case *timerCtx:
 			return &c.cancelCtx, true
 		case *valueCtx:
-			return parentCancelCtx(c.Context)
+			parent = c.Context
 		default:
 			return nil, false
 		}
