@@ -6,7 +6,7 @@
 // Package hpack implements HPACK, a compression format for
 // efficiently representing HTTP header fields in the context of HTTP/2.
 //
-// See http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-08
+// See http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09
 package hpack
 
 import "fmt"
@@ -17,52 +17,83 @@ type HeaderField struct {
 	Name, Value string
 }
 
+func (hf *HeaderField) size() uint32 {
+	// http://http2.github.io/http2-spec/compression.html#rfc.section.4.1
+	// "The size of the dynamic table is the sum of the size of
+	// its entries.  The size of an entry is the sum of its name's
+	// length in octets (as defined in Section 5.2), its value's
+	// length in octets (see Section 5.2), plus 32.  The size of
+	// an entry is calculated using the length of the name and
+	// value without any Huffman encoding applied."
+
+	// This can overflow if somebody makes a large HeaderField
+	// Name and/or Value by hand, but we don't care, because that
+	// won't happen on the wire because the encoding doesn't allow
+	// it.
+	return uint32(len(hf.Name) + len(hf.Value) + 32)
+}
+
 // A Decoder is the decoding context for incremental processing of
 // header blocks.
 type Decoder struct {
-	dt     dynamicTable
-	refSet struct{} // TODO
-	Emit   func(f HeaderField, sensitive bool)
-
-	// TODO: max table size http://http2.github.io/http2-spec/compression.html#maximum.table.size
-	//
+	dynTab dynamicTable
+	emit   func(f HeaderField, sensitive bool)
 }
 
-type dynamicTable []HeaderField
+func NewDecoder(maxSize uint32, emitFunc func(f HeaderField, sensitive bool)) *Decoder {
+	d := &Decoder{
+		emit: emitFunc,
+	}
+	d.dynTab.setMaxSize(maxSize)
+	return d
+}
+
+// TODO: add method *Decoder.Reset(maxSize, emitFunc) to let callers re-use Decoders and their
+// underlying buffers for garbage reasons.
+
+func (d *Decoder) SetMaxDynamicTableSize(v uint32) {
+	d.dynTab.setMaxSize(v)
+}
+
+type dynamicTable struct {
+	s       []HeaderField
+	size    uint32
+	maxSize uint32
+}
+
+func (dt *dynamicTable) setMaxSize(v uint32) {
+	// TODO: evictions
+	dt.maxSize = v
+}
 
 // TODO: change dynamicTable to be a struct with a slice and a size int field,
 // per http://http2.github.io/http2-spec/compression.html#rfc.section.4.1:
 //
-// "The size of the dynamic table is the sum of the size of its
-// entries.  The size of an entry is the sum of its name's length in
-// octets (as defined in Section 5.2), its value's length in octets
-// (see Section 5.2), plus 32.  The size of an entry is calculated
-// using the length of the name and value without any Huffman encoding
-// applied.  "
 //
 // Then make add increment the size. maybe the max size should move from Decoder to
 // dynamicTable and add should return an ok bool if there was enough space.
 //
 // Later we'll need a remove operation on dynamicTable.
 
-func (s *dynamicTable) add(f HeaderField) {
-	*s = append(*s, f)
+func (dt *dynamicTable) add(f HeaderField) {
+	dt.s = append(dt.s, f)
+	dt.size += f.size()
+	for dt.size > dt.maxSize {
+		// TODO: evict
+		break
+	}
 }
 
-func (s *dynamicTable) at(i int) HeaderField {
+func (dt *dynamicTable) at(i int) HeaderField {
 	if i < 1 {
 		panic(fmt.Sprintf("header table index %d too small", i))
 	}
-	dt := *s
-	max := len(dt) + len(staticTable)
+	max := len(dt.s) + len(staticTable)
 	if i > max {
 		panic(fmt.Sprintf("header table index %d too large (max = %d)", i, max))
 	}
-	if i <= len(dt) {
-		return dt[i-1]
+	if i <= len(staticTable) {
+		return staticTable[i-1]
 	}
-	return staticTable[i-len(dt)-1]
+	return dt.s[i-len(staticTable)-1]
 }
-
-// TODO: new methods on dynamicTable for changing table max table size & eviction:
-// http://http2.github.io/http2-spec/compression.html#rfc.section.4.2
