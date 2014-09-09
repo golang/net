@@ -119,8 +119,15 @@ func TestHeaderTableAt(t *testing.T) {
 		t.Errorf("at(2) = %q; want %q", got, want)
 	}
 	dt.add(HeaderField{"foo", "bar"})
-	if got, want := dt.at(len(staticTable)+1), (HeaderField{"foo", "bar"}); got != want {
-		t.Errorf("at(1) = %q; want %q", got, want)
+	dt.add(HeaderField{"blake", "miz"})
+	if got, want := dt.at(len(staticTable)+1), (HeaderField{"blake", "miz"}); got != want {
+		t.Errorf("at(dyn 1) = %q; want %q", got, want)
+	}
+	if got, want := dt.at(len(staticTable)+2), (HeaderField{"foo", "bar"}); got != want {
+		t.Errorf("at(dyn 2) = %q; want %q", got, want)
+	}
+	if got, want := dt.at(3), (HeaderField{":method", "POST"}); got != want {
+		t.Errorf("at(3) = %q; want %q", got, want)
 	}
 }
 

@@ -56,6 +56,10 @@ func (d *Decoder) SetMaxDynamicTableSize(v uint32) {
 }
 
 type dynamicTable struct {
+	// s is the FIFO described at
+	// http://http2.github.io/http2-spec/compression.html#rfc.section.2.3.2
+	// The newest (low index) is append at the end, and items are
+	// evicted from the front.
 	s       []HeaderField
 	size    uint32
 	maxSize uint32
@@ -95,5 +99,5 @@ func (dt *dynamicTable) at(i int) HeaderField {
 	if i <= len(staticTable) {
 		return staticTable[i-1]
 	}
-	return dt.s[i-len(staticTable)-1]
+	return dt.s[len(dt.s)-(i-len(staticTable))]
 }
