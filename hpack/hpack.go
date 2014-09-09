@@ -66,8 +66,8 @@ type dynamicTable struct {
 }
 
 func (dt *dynamicTable) setMaxSize(v uint32) {
-	// TODO: evictions
 	dt.maxSize = v
+	dt.evict()
 }
 
 // TODO: change dynamicTable to be a struct with a slice and a size int field,
@@ -82,9 +82,21 @@ func (dt *dynamicTable) setMaxSize(v uint32) {
 func (dt *dynamicTable) add(f HeaderField) {
 	dt.s = append(dt.s, f)
 	dt.size += f.size()
+	dt.evict()
+}
+
+// If we're too big, evict old stuff (front of the slice)
+func (dt *dynamicTable) evict() {
+	base := dt.s // keep base pointer of slice
 	for dt.size > dt.maxSize {
-		// TODO: evict
-		break
+		dt.size -= dt.s[0].size()
+		dt.s = dt.s[1:]
+	}
+
+	// Shift slice contents down if we evicted things.
+	if len(dt.s) != len(base) {
+		copy(base, dt.s)
+		dt.s = base[:len(dt.s)]
 	}
 }
 
