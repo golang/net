@@ -20,28 +20,28 @@ type HeaderField struct {
 // A Decoder is the decoding context for incremental processing of
 // header blocks.
 type Decoder struct {
-	ht     headerTable
+	dt     dynamicTable
 	refSet struct{} // TODO
 	Emit   func(f HeaderField, sensitive bool)
 }
 
-type headerTable []HeaderField
+type dynamicTable []HeaderField
 
-func (s *headerTable) add(f HeaderField) {
+func (s *dynamicTable) add(f HeaderField) {
 	*s = append(*s, f)
 }
 
-func (s *headerTable) at(i int) HeaderField {
+func (s *dynamicTable) at(i int) HeaderField {
 	if i < 1 {
 		panic(fmt.Sprintf("header table index %d too small", i))
 	}
-	ht := *s
-	max := len(ht) + len(staticTable)
+	dt := *s
+	max := len(dt) + len(staticTable)
 	if i > max {
 		panic(fmt.Sprintf("header table index %d too large (max = %d)", i, max))
 	}
-	if i <= len(ht) {
-		return ht[i-1]
+	if i <= len(dt) {
+		return dt[i-1]
 	}
-	return staticTable[i-len(ht)-1]
+	return staticTable[i-len(dt)-1]
 }
