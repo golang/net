@@ -9,6 +9,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,49 +115,72 @@ func TestStaticTable(t *testing.T) {
 	}
 }
 
+func (d *Decoder) mustAt(idx int) HeaderField {
+	if hf, ok := d.at(idx); !ok {
+		panic(fmt.Sprintf("bogus index %d", idx))
+	} else {
+		return hf
+	}
+}
+
 func TestDynamicTableAt(t *testing.T) {
-	var dt dynamicTable
-	dt.setMaxSize(4 << 10)
-	if got, want := dt.at(2), (HeaderField{":method", "GET"}); got != want {
+	d := NewDecoder(4096, nil)
+	at := d.mustAt
+	if got, want := at(2), (HeaderField{":method", "GET"}); got != want {
 		t.Errorf("at(2) = %q; want %q", got, want)
 	}
-	dt.add(HeaderField{"foo", "bar"})
-	dt.add(HeaderField{"blake", "miz"})
-	if got, want := dt.at(len(staticTable)+1), (HeaderField{"blake", "miz"}); got != want {
+	d.dynTab.add(HeaderField{"foo", "bar"})
+	d.dynTab.add(HeaderField{"blake", "miz"})
+	if got, want := at(len(staticTable)+1), (HeaderField{"blake", "miz"}); got != want {
 		t.Errorf("at(dyn 1) = %q; want %q", got, want)
 	}
-	if got, want := dt.at(len(staticTable)+2), (HeaderField{"foo", "bar"}); got != want {
+	if got, want := at(len(staticTable)+2), (HeaderField{"foo", "bar"}); got != want {
 		t.Errorf("at(dyn 2) = %q; want %q", got, want)
 	}
-	if got, want := dt.at(3), (HeaderField{":method", "POST"}); got != want {
+	if got, want := at(3), (HeaderField{":method", "POST"}); got != want {
 		t.Errorf("at(3) = %q; want %q", got, want)
 	}
 }
 
 func TestDynamicTableSizeEvict(t *testing.T) {
-	var dt dynamicTable
-	dt.setMaxSize(4 << 10)
-	if want := uint32(0); dt.size != want {
-		t.Fatalf("size = %d; want %d", dt.size, want)
+	d := NewDecoder(4096, nil)
+	if want := uint32(0); d.dynTab.size != want {
+		t.Fatalf("size = %d; want %d", d.dynTab.size, want)
 	}
-	dt.add(HeaderField{"blake", "eats pizza"})
-	if want := uint32(15 + 32); dt.size != want {
-		t.Fatalf("after pizza, size = %d; want %d", dt.size, want)
+	add := d.dynTab.add
+	add(HeaderField{"blake", "eats pizza"})
+	if want := uint32(15 + 32); d.dynTab.size != want {
+		t.Fatalf("after pizza, size = %d; want %d", d.dynTab.size, want)
 	}
-	dt.add(HeaderField{"foo", "bar"})
-	if want := uint32(15 + 32 + 6 + 32); dt.size != want {
-		t.Fatalf("after foo bar, size = %d; want %d", dt.size, want)
+	add(HeaderField{"foo", "bar"})
+	if want := uint32(15 + 32 + 6 + 32); d.dynTab.size != want {
+		t.Fatalf("after foo bar, size = %d; want %d", d.dynTab.size, want)
 	}
-	dt.setMaxSize(15 + 32 + 1 /* slop */)
-	if want := uint32(6 + 32); dt.size != want {
-		t.Fatalf("after setMaxSize, size = %d; want %d", dt.size, want)
+	d.dynTab.setMaxSize(15 + 32 + 1 /* slop */)
+	if want := uint32(6 + 32); d.dynTab.size != want {
+		t.Fatalf("after setMaxSize, size = %d; want %d", d.dynTab.size, want)
 	}
-	if got, want := dt.at(len(staticTable)+1), (HeaderField{"foo", "bar"}); got != want {
+	if got, want := d.mustAt(len(staticTable)+1), (HeaderField{"foo", "bar"}); got != want {
 		t.Errorf("at(dyn 1) = %q; want %q", got, want)
 	}
-	dt.add(HeaderField{"long", strings.Repeat("x", 500)})
-	if want := uint32(0); dt.size != want {
-		t.Fatalf("after big one, size = %d; want %d", dt.size, want)
+	add(HeaderField{"long", strings.Repeat("x", 500)})
+	if want := uint32(0); d.dynTab.size != want {
+		t.Fatalf("after big one, size = %d; want %d", d.dynTab.size, want)
+	}
+}
+
+func TestDecoderDecode(t *testing.T) {
+	d := NewDecoder(4096, nil)
+
+	// Indexed Header Field
+	// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
+	hf, err := d.Decode([]byte("\x82"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []HeaderField{{":method", "GET"}}
+	if !reflect.DeepEqual(hf, want) {
+		t.Errorf("Got %v; want %v", hf, want)
 	}
 }
 
