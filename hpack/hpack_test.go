@@ -211,19 +211,26 @@ func TestDecoderDecode(t *testing.T) {
 		if !reflect.DeepEqual(hf, tt.want) {
 			t.Errorf("%s: Got %v; want %v", tt.name, hf, tt.want)
 		}
-		gotDynTab := make([]HeaderField, len(d.dynTab.ents))
-		for i := range gotDynTab {
-			gotDynTab[i] = d.dynTab.ents[len(d.dynTab.ents)-1-i]
-		}
+		gotDynTab := d.dynTab.reverseCopy()
 		if !reflect.DeepEqual(gotDynTab, tt.wantDynTab) {
 			t.Errorf("%s: dynamic table after = %v; want %v", tt.name, gotDynTab, tt.wantDynTab)
 		}
 	}
 }
 
+func (dt *dynamicTable) reverseCopy() (hf []HeaderField) {
+	hf = make([]HeaderField, len(dt.ents))
+	for i := range hf {
+		hf[i] = dt.ents[len(dt.ents)-1-i]
+	}
+	return
+}
+
 type encAndWant struct {
-	enc  []byte
-	want []HeaderField
+	enc         []byte
+	want        []HeaderField
+	wantDynTab  []HeaderField
+	wantDynSize uint32
 }
 
 // C.3 Request Examples without Huffman Coding
@@ -237,6 +244,10 @@ func TestDecodeC3_NoHuffman(t *testing.T) {
 				pair(":path", "/"),
 				pair(":authority", "www.example.com"),
 			},
+			[]HeaderField{
+				pair(":authority", "www.example.com"),
+			},
+			57,
 		},
 		{dehex("8286 84be 5808 6e6f 2d63 6163 6865"),
 			[]HeaderField{
@@ -246,6 +257,11 @@ func TestDecodeC3_NoHuffman(t *testing.T) {
 				pair(":authority", "www.example.com"),
 				pair("cache-control", "no-cache"),
 			},
+			[]HeaderField{
+				pair("cache-control", "no-cache"),
+				pair(":authority", "www.example.com"),
+			},
+			110,
 		},
 		{dehex("8287 85bf 400a 6375 7374 6f6d 2d6b 6579 0c63 7573 746f 6d2d 7661 6c75 65"),
 			[]HeaderField{
@@ -255,6 +271,12 @@ func TestDecodeC3_NoHuffman(t *testing.T) {
 				pair(":authority", "www.example.com"),
 				pair("custom-key", "custom-value"),
 			},
+			[]HeaderField{
+				pair("custom-key", "custom-value"),
+				pair("cache-control", "no-cache"),
+				pair(":authority", "www.example.com"),
+			},
+			164,
 		},
 	})
 }
@@ -270,6 +292,10 @@ func TestDecodeC4_Huffman(t *testing.T) {
 				pair(":path", "/"),
 				pair(":authority", "www.example.com"),
 			},
+			[]HeaderField{
+				pair(":authority", "www.example.com"),
+			},
+			57,
 		},
 		{dehex("8286 84be 5886 a8eb 1064 9cbf"),
 			[]HeaderField{
@@ -279,6 +305,11 @@ func TestDecodeC4_Huffman(t *testing.T) {
 				pair(":authority", "www.example.com"),
 				pair("cache-control", "no-cache"),
 			},
+			[]HeaderField{
+				pair("cache-control", "no-cache"),
+				pair(":authority", "www.example.com"),
+			},
+			110,
 		},
 		{dehex("8287 85bf 4088 25a8 49e9 5ba9 7d7f 8925 a849 e95b b8e8 b4bf"),
 			[]HeaderField{
@@ -288,6 +319,12 @@ func TestDecodeC4_Huffman(t *testing.T) {
 				pair(":authority", "www.example.com"),
 				pair("custom-key", "custom-value"),
 			},
+			[]HeaderField{
+				pair("custom-key", "custom-value"),
+				pair("cache-control", "no-cache"),
+				pair(":authority", "www.example.com"),
+			},
+			164,
 		},
 	})
 }
@@ -300,7 +337,14 @@ func testDecodeSeries(t *testing.T, steps []encAndWant) {
 			t.Fatalf("Error at step index %d: %v", i, err)
 		}
 		if !reflect.DeepEqual(hf, step.want) {
-			t.Fatalf("Error at step index %d: Got %v; want %v", i, hf, step.want)
+			t.Fatalf("At step index %d: Got headers %v; want %v", i, hf, step.want)
+		}
+		gotDynTab := d.dynTab.reverseCopy()
+		if !reflect.DeepEqual(gotDynTab, step.wantDynTab) {
+			t.Errorf("After step index %d, dynamic table = %v; want %v", i, gotDynTab, step.wantDynTab)
+		}
+		if d.dynTab.size != step.wantDynSize {
+			t.Errorf("After step index %d, dynamic table size = %v; want %v", i, d.dynTab.size, step.wantDynSize)
 		}
 	}
 }
