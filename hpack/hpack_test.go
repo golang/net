@@ -221,6 +221,57 @@ func TestDecoderDecode(t *testing.T) {
 	}
 }
 
+type encAndWant struct {
+	enc  []byte
+	want []HeaderField
+}
+
+// C.3 Request Examples without Huffman Coding
+// http://http2.github.io/http2-spec/compression.html#rfc.section.C.3
+func TestDecodeC3_NoHuffman(t *testing.T) {
+	testDecodeSeries(t, []encAndWant{
+		{dehex("8286 8441 0f77 7777 2e65 7861 6d70 6c65 2e63 6f6d"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "http"),
+				pair(":path", "/"),
+				pair(":authority", "www.example.com"),
+			},
+		},
+		{dehex("8286 84be 5808 6e6f 2d63 6163 6865"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "http"),
+				pair(":path", "/"),
+				pair(":authority", "www.example.com"),
+				pair("cache-control", "no-cache"),
+			},
+		},
+		{dehex("8287 85bf 400a 6375 7374 6f6d 2d6b 6579 0c63 7573 746f 6d2d 7661 6c75 65"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "https"),
+				pair(":path", "/index.html"),
+				pair(":authority", "www.example.com"),
+				pair("custom-key", "custom-value"),
+			},
+		},
+	})
+}
+
+func testDecodeSeries(t *testing.T, steps []encAndWant) {
+	d := NewDecoder(4096, nil)
+	for i, step := range steps {
+		hf, err := d.DecodeFull(step.enc)
+		if err != nil {
+			t.Fatalf("Error at step index %d: %v", i, err)
+		}
+		if !reflect.DeepEqual(hf, step.want) {
+			t.Fatalf("Error at step index %d: Got %v; want %v", i, hf, step.want)
+		}
+	}
+}
+
 func TestHuffmanDecode(t *testing.T) {
 	tests := []struct {
 		inHex, want string
