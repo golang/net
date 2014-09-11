@@ -36,6 +36,10 @@ func (e InvalidIndexError) Error() string {
 // treated as opaque sequences of octets.
 type HeaderField struct {
 	Name, Value string
+
+	// Sensitive means that this header field should never be
+	// indexed.
+	Sensitive bool
 }
 
 func (hf *HeaderField) size() uint32 {
@@ -58,7 +62,7 @@ func (hf *HeaderField) size() uint32 {
 // header blocks.
 type Decoder struct {
 	dynTab dynamicTable
-	emit   func(f HeaderField, sensitive bool)
+	emit   func(f HeaderField)
 
 	// buf is the unparsed buffer. It's only written to
 	// saveBuf if it was truncated in the middle of a header
@@ -68,7 +72,7 @@ type Decoder struct {
 	saveBuf bytes.Buffer
 }
 
-func NewDecoder(maxSize uint32, emitFunc func(f HeaderField, sensitive bool)) *Decoder {
+func NewDecoder(maxSize uint32, emitFunc func(f HeaderField)) *Decoder {
 	d := &Decoder{
 		emit: emitFunc,
 	}
@@ -163,9 +167,7 @@ func (d *Decoder) DecodeFull(p []byte) ([]HeaderField, error) {
 	var hf []HeaderField
 	saveFunc := d.emit
 	defer func() { d.emit = saveFunc }()
-	d.emit = func(f HeaderField, sensitive bool) {
-		hf = append(hf, f)
-	}
+	d.emit = func(f HeaderField) { hf = append(hf, f) }
 	if _, err := d.Write(p); err != nil {
 		return nil, err
 	}
@@ -278,7 +280,7 @@ func (d *Decoder) parseFieldIndexed() error {
 	if !ok {
 		return DecodingError{InvalidIndexError(idx)}
 	}
-	d.emit(hf, false)
+	d.emit(HeaderField{Name: hf.Name, Value: hf.Value})
 	d.buf = buf
 	return nil
 }
@@ -312,7 +314,8 @@ func (d *Decoder) parseFieldLiteral(n uint8, it indexType) error {
 	if it.indexed() {
 		d.dynTab.add(hf)
 	}
-	d.emit(hf, it.sensitive())
+	hf.Sensitive = it.sensitive()
+	d.emit(hf)
 	return nil
 }
 

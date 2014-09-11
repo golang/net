@@ -126,18 +126,18 @@ func (d *Decoder) mustAt(idx int) HeaderField {
 func TestDynamicTableAt(t *testing.T) {
 	d := NewDecoder(4096, nil)
 	at := d.mustAt
-	if got, want := at(2), (HeaderField{":method", "GET"}); got != want {
+	if got, want := at(2), (pair(":method", "GET")); got != want {
 		t.Errorf("at(2) = %q; want %q", got, want)
 	}
-	d.dynTab.add(HeaderField{"foo", "bar"})
-	d.dynTab.add(HeaderField{"blake", "miz"})
-	if got, want := at(len(staticTable)+1), (HeaderField{"blake", "miz"}); got != want {
+	d.dynTab.add(pair("foo", "bar"))
+	d.dynTab.add(pair("blake", "miz"))
+	if got, want := at(len(staticTable)+1), (pair("blake", "miz")); got != want {
 		t.Errorf("at(dyn 1) = %q; want %q", got, want)
 	}
-	if got, want := at(len(staticTable)+2), (HeaderField{"foo", "bar"}); got != want {
+	if got, want := at(len(staticTable)+2), (pair("foo", "bar")); got != want {
 		t.Errorf("at(dyn 2) = %q; want %q", got, want)
 	}
-	if got, want := at(3), (HeaderField{":method", "POST"}); got != want {
+	if got, want := at(3), (pair(":method", "POST")); got != want {
 		t.Errorf("at(3) = %q; want %q", got, want)
 	}
 }
@@ -148,11 +148,11 @@ func TestDynamicTableSizeEvict(t *testing.T) {
 		t.Fatalf("size = %d; want %d", d.dynTab.size, want)
 	}
 	add := d.dynTab.add
-	add(HeaderField{"blake", "eats pizza"})
+	add(pair("blake", "eats pizza"))
 	if want := uint32(15 + 32); d.dynTab.size != want {
 		t.Fatalf("after pizza, size = %d; want %d", d.dynTab.size, want)
 	}
-	add(HeaderField{"foo", "bar"})
+	add(pair("foo", "bar"))
 	if want := uint32(15 + 32 + 6 + 32); d.dynTab.size != want {
 		t.Fatalf("after foo bar, size = %d; want %d", d.dynTab.size, want)
 	}
@@ -160,37 +160,46 @@ func TestDynamicTableSizeEvict(t *testing.T) {
 	if want := uint32(6 + 32); d.dynTab.size != want {
 		t.Fatalf("after setMaxSize, size = %d; want %d", d.dynTab.size, want)
 	}
-	if got, want := d.mustAt(len(staticTable)+1), (HeaderField{"foo", "bar"}); got != want {
+	if got, want := d.mustAt(len(staticTable)+1), (pair("foo", "bar")); got != want {
 		t.Errorf("at(dyn 1) = %q; want %q", got, want)
 	}
-	add(HeaderField{"long", strings.Repeat("x", 500)})
+	add(pair("long", strings.Repeat("x", 500)))
 	if want := uint32(0); d.dynTab.size != want {
 		t.Fatalf("after big one, size = %d; want %d", d.dynTab.size, want)
 	}
 }
 
 func TestDecoderDecode(t *testing.T) {
-	// TODO: also test state of dynamic table after all these.
 	tests := []struct {
-		name string
-		in   []byte
-		want []HeaderField
+		name       string
+		in         []byte
+		want       []HeaderField
+		wantDynTab []HeaderField // newest entry first
 	}{
 		// C.2.1 Literal Header Field with Indexing
 		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.1
 		{"C.2.1", dehex("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572"),
-			[]HeaderField{{"custom-key", "custom-header"}}},
+			[]HeaderField{pair("custom-key", "custom-header")},
+			[]HeaderField{pair("custom-key", "custom-header")},
+		},
 
+		// C.2.2 Literal Header Field without Indexing
+		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.2
 		{"C.2.2", dehex("040c 2f73 616d 706c 652f 7061 7468"),
-			[]HeaderField{{":path", "/sample/path"}}},
+			[]HeaderField{pair(":path", "/sample/path")},
+			[]HeaderField{}},
 
-		// TODO: test callback happens with sensitive
+		// C.2.3 Literal Header Field never Indexed
+		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.3
 		{"C.2.3", dehex("1008 7061 7373 776f 7264 0673 6563 7265 74"),
-			[]HeaderField{{"password", "secret"}}},
+			[]HeaderField{{"password", "secret", true}},
+			[]HeaderField{}},
 
-		// Indexed Header Field
+		// C.2.4 Indexed Header Field
 		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
-		{"C.2.4", []byte("\x82"), []HeaderField{{":method", "GET"}}},
+		{"C.2.4", []byte("\x82"),
+			[]HeaderField{pair(":method", "GET")},
+			[]HeaderField{}},
 	}
 	for _, tt := range tests {
 		d := NewDecoder(4096, nil)
@@ -201,6 +210,13 @@ func TestDecoderDecode(t *testing.T) {
 		}
 		if !reflect.DeepEqual(hf, tt.want) {
 			t.Errorf("%s: Got %v; want %v", tt.name, hf, tt.want)
+		}
+		gotDynTab := make([]HeaderField, len(d.dynTab.ents))
+		for i := range gotDynTab {
+			gotDynTab[i] = d.dynTab.ents[len(d.dynTab.ents)-1-i]
+		}
+		if !reflect.DeepEqual(gotDynTab, tt.wantDynTab) {
+			t.Errorf("%s: dynamic table after = %v; want %v", tt.name, gotDynTab, tt.wantDynTab)
 		}
 	}
 }
