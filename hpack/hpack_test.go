@@ -170,17 +170,25 @@ func TestDynamicTableSizeEvict(t *testing.T) {
 }
 
 func TestDecoderDecode(t *testing.T) {
-	d := NewDecoder(4096, nil)
-
-	// Indexed Header Field
-	// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
-	hf, err := d.Decode([]byte("\x82"))
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name string
+		in   []byte
+		want []HeaderField
+	}{
+		// Indexed Header Field
+		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
+		{"C.2.4", []byte("\x82"), []HeaderField{{":method", "GET"}}},
 	}
-	want := []HeaderField{{":method", "GET"}}
-	if !reflect.DeepEqual(hf, want) {
-		t.Errorf("Got %v; want %v", hf, want)
+	for _, tt := range tests {
+		d := NewDecoder(4096, nil)
+		hf, err := d.Decode(tt.in)
+		if err != nil {
+			t.Errorf("%s: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(hf, tt.want) {
+			t.Errorf("%s: Got %v; want %v", tt.name, hf, tt.want)
+		}
 	}
 }
 
