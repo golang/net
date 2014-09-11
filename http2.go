@@ -5,7 +5,7 @@
 
 // Package http2 implements the HTTP/2 protocol.
 //
-// It currently targets draft-13. See http://http2.github.io/
+// It currently targets draft-14. See http://http2.github.io/
 package http2
 
 import (

@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-const frameHeaderLen = 8
+const frameHeaderLen = 9
 
 type FrameType uint8
 
@@ -104,13 +104,13 @@ func (f Flags) Has(v Flags) bool {
 	return (f & v) == v
 }
 
-// A FrameHeader is the 8 byte header of all HTTP/2 frames.
+// A FrameHeader is the 9 byte header of all HTTP/2 frames.
 //
 // See http://http2.github.io/http2-spec/#FrameHeader
 type FrameHeader struct {
 	Type     FrameType
 	Flags    Flags
-	Length   uint16
+	Length   uint32 // actually a uint24 max; default is uint16 max
 	StreamID uint32
 }
 
@@ -133,10 +133,10 @@ func ReadFrameHeader(r io.Reader) (FrameHeader, error) {
 		return FrameHeader{}, err
 	}
 	return FrameHeader{
-		Length:   (uint16(buf[0])<<8 + uint16(buf[1])) & (1<<14 - 1),
-		Flags:    Flags(buf[3]),
-		Type:     FrameType(buf[2]),
-		StreamID: binary.BigEndian.Uint32(buf[4:]) & (1<<31 - 1),
+		Length:   (uint32(buf[0])<<16 | uint32(buf[1])<<7 | uint32(buf[2])),
+		Type:     FrameType(buf[3]),
+		Flags:    Flags(buf[4]),
+		StreamID: binary.BigEndian.Uint32(buf[5:]) & (1<<31 - 1),
 	}, nil
 }
 
