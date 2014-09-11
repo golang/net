@@ -259,6 +259,39 @@ func TestDecodeC3_NoHuffman(t *testing.T) {
 	})
 }
 
+// C.4 Request Examples with Huffman Coding
+// http://http2.github.io/http2-spec/compression.html#rfc.section.C.4
+func TestDecodeC4_Huffman(t *testing.T) {
+	testDecodeSeries(t, []encAndWant{
+		{dehex("8286 8441 8cf1 e3c2 e5f2 3a6b a0ab 90f4 ff"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "http"),
+				pair(":path", "/"),
+				pair(":authority", "www.example.com"),
+			},
+		},
+		{dehex("8286 84be 5886 a8eb 1064 9cbf"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "http"),
+				pair(":path", "/"),
+				pair(":authority", "www.example.com"),
+				pair("cache-control", "no-cache"),
+			},
+		},
+		{dehex("8287 85bf 4088 25a8 49e9 5ba9 7d7f 8925 a849 e95b b8e8 b4bf"),
+			[]HeaderField{
+				pair(":method", "GET"),
+				pair(":scheme", "https"),
+				pair(":path", "/index.html"),
+				pair(":authority", "www.example.com"),
+				pair("custom-key", "custom-value"),
+			},
+		},
+	})
+}
+
 func testDecodeSeries(t *testing.T, steps []encAndWant) {
 	d := NewDecoder(4096, nil)
 	for i, step := range steps {
