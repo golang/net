@@ -116,7 +116,7 @@ func TestStaticTable(t *testing.T) {
 }
 
 func (d *Decoder) mustAt(idx int) HeaderField {
-	if hf, ok := d.at(idx); !ok {
+	if hf, ok := d.at(uint64(idx)); !ok {
 		panic(fmt.Sprintf("bogus index %d", idx))
 	} else {
 		return hf
@@ -170,18 +170,31 @@ func TestDynamicTableSizeEvict(t *testing.T) {
 }
 
 func TestDecoderDecode(t *testing.T) {
+	// TODO: also test state of dynamic table after all these.
 	tests := []struct {
 		name string
 		in   []byte
 		want []HeaderField
 	}{
+		// C.2.1 Literal Header Field with Indexing
+		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.1
+		{"C.2.1", dehex("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572"),
+			[]HeaderField{{"custom-key", "custom-header"}}},
+
+		{"C.2.2", dehex("040c 2f73 616d 706c 652f 7061 7468"),
+			[]HeaderField{{":path", "/sample/path"}}},
+
+		// TODO: test callback happens with sensitive
+		{"C.2.3", dehex("1008 7061 7373 776f 7264 0673 6563 7265 74"),
+			[]HeaderField{{"password", "secret"}}},
+
 		// Indexed Header Field
 		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
 		{"C.2.4", []byte("\x82"), []HeaderField{{":method", "GET"}}},
 	}
 	for _, tt := range tests {
 		d := NewDecoder(4096, nil)
-		hf, err := d.Decode(tt.in)
+		hf, err := d.DecodeFull(tt.in)
 		if err != nil {
 			t.Errorf("%s: %v", tt.name, err)
 			continue
@@ -247,14 +260,14 @@ func TestReadVarInt(t *testing.T) {
 		{8, []byte{254}, res{254, 1, nil}},
 
 		// Doesn't fit in a byte:
-		{1, []byte{1}, res{0, 0, nil}},
-		{2, []byte{3}, res{0, 0, nil}},
-		{3, []byte{7}, res{0, 0, nil}},
-		{4, []byte{15}, res{0, 0, nil}},
-		{5, []byte{31}, res{0, 0, nil}},
-		{6, []byte{63}, res{0, 0, nil}},
-		{7, []byte{127}, res{0, 0, nil}},
-		{8, []byte{255}, res{0, 0, nil}},
+		{1, []byte{1}, res{0, 0, errNeedMore}},
+		{2, []byte{3}, res{0, 0, errNeedMore}},
+		{3, []byte{7}, res{0, 0, errNeedMore}},
+		{4, []byte{15}, res{0, 0, errNeedMore}},
+		{5, []byte{31}, res{0, 0, errNeedMore}},
+		{6, []byte{63}, res{0, 0, errNeedMore}},
+		{7, []byte{127}, res{0, 0, errNeedMore}},
+		{8, []byte{255}, res{0, 0, errNeedMore}},
 
 		// Ignoring top bits:
 		{5, []byte{255, 154, 10}, res{1337, 3, nil}}, // high dummy three bits: 111
@@ -265,16 +278,26 @@ func TestReadVarInt(t *testing.T) {
 		{5, []byte{191, 154, 10, 2}, res{1337, 3, nil}}, // extra byte
 
 		// Short a byte:
-		{5, []byte{191, 154}, res{0, 0, nil}},
+		{5, []byte{191, 154}, res{0, 0, errNeedMore}},
 
 		// integer overflow:
 		{1, []byte{255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128}, res{0, 0, errVarintOverflow}},
 	}
 	for _, tt := range tests {
-		i, consumed, err := readVarInt(tt.n, tt.p)
+		i, remain, err := readVarInt(tt.n, tt.p)
+		consumed := len(tt.p) - len(remain)
 		got := res{i, consumed, err}
 		if got != tt.want {
 			t.Errorf("readVarInt(%d, %v ~ %x) = %+v; want %+v", tt.n, tt.p, tt.p, got, tt.want)
 		}
 	}
+}
+
+func dehex(s string) []byte {
+	s = strings.Replace(s, " ", "", -1)
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
