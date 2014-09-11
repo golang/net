@@ -12,6 +12,7 @@ package hpack
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 // A DecodingError is something the spec defines as a decoding error.
@@ -120,18 +121,21 @@ func (dt *dynamicTable) evict() {
 	}
 }
 
+func (d *Decoder) maxTableIndex() int {
+	return len(d.dynTab.ents) + len(staticTable)
+}
+
 func (d *Decoder) at(i int) (hf HeaderField, ok bool) {
 	if i < 1 {
 		return
 	}
-	dents := d.dynTab.ents
-	max := len(dents) + len(staticTable)
-	if i > max {
+	if i > d.maxTableIndex() {
 		return
 	}
 	if i <= len(staticTable) {
 		return staticTable[i-1], true
 	}
+	dents := d.dynTab.ents
 	return dents[len(dents)-(i-len(staticTable))], true
 }
 
@@ -154,16 +158,26 @@ func (d *Decoder) Decode(p []byte) ([]HeaderField, error) {
 		case p[0]&(1<<7) != 0:
 			// Indexed representation.
 			// http://http2.github.io/http2-spec/compression.html#rfc.section.6.1
-			idx := p[0] & ((1 << 7) - 1)
-			if idx == 127 {
-				panic("TODO: varuint decoding")
+			idx, size, err := readVarInt(7, p)
+			if err != nil {
+				return nil, err
+			}
+			if size == 0 {
+				// TODO: will later stop processing
+				// here and wait for more (buffering
+				// what we've got), but this is the
+				// all-at-once Decode debug version.
+				return nil, io.ErrUnexpectedEOF
+			}
+			if idx > uint64(d.maxTableIndex()) {
+				return nil, DecodingError{InvalidIndexError(idx)}
 			}
 			hf, ok := d.at(int(idx))
 			if !ok {
 				return nil, DecodingError{InvalidIndexError(idx)}
 			}
 			d.emit(hf, false /* TODO: sensitive ? */)
-			p = p[1:]
+			p = p[size:]
 		default:
 			panic("TODO")
 		}
