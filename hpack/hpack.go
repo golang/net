@@ -9,7 +9,10 @@
 // See http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09
 package hpack
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // A DecodingError is something the spec defines as a decoding error.
 type DecodingError struct {
@@ -166,4 +169,51 @@ func (d *Decoder) Decode(p []byte) ([]HeaderField, error) {
 		}
 	}
 	return hf, nil
+}
+
+var errVarintOverflow = DecodingError{errors.New("varint integer overflow")}
+
+// readVarInt reads an unsigned variable length integer off the
+// beginning of p. n is the parameter as described in
+// http://http2.github.io/http2-spec/compression.html#rfc.section.5.1.
+//
+// n must always be between 1 and 8.
+//
+// The returned consumed parameter is the number of bytes that were
+// consumed from the beginning of p. It is zero if the end of the
+// integer's representation wasn't included in p. (In this case,
+// callers should wait for more data to arrive and try again with a
+// larger p buffer).
+func readVarInt(n byte, p []byte) (i uint64, consumed int, err error) {
+	if n < 1 || n > 8 {
+		panic("bad n")
+	}
+	if len(p) == 0 {
+		return
+	}
+	i = uint64(p[0])
+	if n < 8 {
+		i &= (1 << uint64(n)) - 1
+	}
+	if i < (1<<uint64(n))-1 {
+		return i, 1, nil
+	}
+
+	p = p[1:]
+	consumed++
+	var m uint64
+	for len(p) > 0 {
+		b := p[0]
+		consumed++
+		i += uint64(b&127) << m
+		if b&128 == 0 {
+			return
+		}
+		p = p[1:]
+		m += 7
+		if m >= 63 { // TODO: proper overflow check. making this up.
+			return 0, 0, errVarintOverflow
+		}
+	}
+	return 0, 0, nil
 }

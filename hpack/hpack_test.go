@@ -216,3 +216,57 @@ func TestHuffmanDecode(t *testing.T) {
 		}
 	}
 }
+
+func TestReadVarInt(t *testing.T) {
+	type res struct {
+		i        uint64
+		consumed int
+		err      error
+	}
+	tests := []struct {
+		n    byte
+		p    []byte
+		want res
+	}{
+		// Fits in a byte:
+		{1, []byte{0}, res{0, 1, nil}},
+		{2, []byte{2}, res{2, 1, nil}},
+		{3, []byte{6}, res{6, 1, nil}},
+		{4, []byte{14}, res{14, 1, nil}},
+		{5, []byte{30}, res{30, 1, nil}},
+		{6, []byte{62}, res{62, 1, nil}},
+		{7, []byte{126}, res{126, 1, nil}},
+		{8, []byte{254}, res{254, 1, nil}},
+
+		// Doesn't fit in a byte:
+		{1, []byte{1}, res{0, 0, nil}},
+		{2, []byte{3}, res{0, 0, nil}},
+		{3, []byte{7}, res{0, 0, nil}},
+		{4, []byte{15}, res{0, 0, nil}},
+		{5, []byte{31}, res{0, 0, nil}},
+		{6, []byte{63}, res{0, 0, nil}},
+		{7, []byte{127}, res{0, 0, nil}},
+		{8, []byte{255}, res{0, 0, nil}},
+
+		// Ignoring top bits:
+		{5, []byte{255, 154, 10}, res{1337, 3, nil}}, // high dummy three bits: 111
+		{5, []byte{159, 154, 10}, res{1337, 3, nil}}, // high dummy three bits: 100
+		{5, []byte{191, 154, 10}, res{1337, 3, nil}}, // high dummy three bits: 101
+
+		// Extra byte:
+		{5, []byte{191, 154, 10, 2}, res{1337, 3, nil}}, // extra byte
+
+		// Short a byte:
+		{5, []byte{191, 154}, res{0, 0, nil}},
+
+		// integer overflow:
+		{1, []byte{255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128}, res{0, 0, errVarintOverflow}},
+	}
+	for _, tt := range tests {
+		i, consumed, err := readVarInt(tt.n, tt.p)
+		got := res{i, consumed, err}
+		if got != tt.want {
+			t.Errorf("readVarInt(%d, %v ~ %x) = %+v; want %+v", tt.n, tt.p, tt.p, got, tt.want)
+		}
+	}
+}
