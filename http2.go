@@ -30,7 +30,7 @@ var (
 	clientPreface = []byte(ClientPreface)
 )
 
-const npnProto = "h2-13"
+const npnProto = "h2-14"
 
 // Server is an HTTP2 server.
 type Server struct {
@@ -132,6 +132,11 @@ func ConfigureServer(s *http.Server, conf *Server) {
 		s.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
 	}
 	s.TLSNextProto[npnProto] = func(hs *http.Server, c *tls.Conn, h http.Handler) {
+		if testHookOnConn != nil {
+			testHookOnConn()
+		}
 		conf.handleClientConn(hs, c, h)
 	}
 }
+
+var testHookOnConn func() // for testing

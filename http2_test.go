@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -23,13 +24,23 @@ func TestServer(t *testing.T) {
 		io.WriteString(w, "Hello, test.")
 	}))
 	ConfigureServer(ts.Config, &Server{})
+	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.StartTLS()
 	defer ts.Close()
-	out, err := curl(t, "--http2", "--insecure", "-v", ts.URL).CombinedOutput()
+
+	var gotConn int32
+	testHookOnConn = func() { atomic.StoreInt32(&gotConn, 1) }
+
+	t.Logf("Running curl on %s", ts.URL)
+	out, err := curl(t, "--silent", "--http2", "--insecure", "-v", ts.URL).CombinedOutput()
 	if err != nil {
 		t.Fatalf("Error fetching with curl: %v, %s", err, out)
 	}
 	t.Logf("Got: %s", out)
+
+	if atomic.LoadInt32(&gotConn) == 0 {
+		t.Error("never saw an http2 connection")
+	}
 }
 
 // Verify that curl has http2.
