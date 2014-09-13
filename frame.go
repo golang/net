@@ -277,19 +277,16 @@ func parseHeadersFrame(fh FrameHeader, r io.Reader) (_ Frame, err error) {
 		}
 	}
 	if fh.Flags.Has(FlagHeadersPriority) {
-		notHeaders += 4
+		notHeaders += 5
 		v, err := readUint32(r)
 		if err != nil {
 			return nil, err
 		}
 		hf.StreamDep = v & 0x7fffffff
 		hf.ExclusiveDep = (v != hf.StreamDep) // high bit was set
-	}
-	if fh.Flags.Has(FlagHeadersPriority) {
-		notHeaders += 1
 		hf.Weight, err = readByte(r)
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
 	headerFragLen := int(fh.Length) - notHeaders
