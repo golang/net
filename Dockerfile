@@ -22,6 +22,8 @@ WORKDIR /root
 RUN wget http://curl.haxx.se/download/curl-7.38.0.tar.gz
 RUN tar -zxvf curl-7.38.0.tar.gz
 WORKDIR /root/curl-7.38.0
+ADD testdata/curl-http2-eof.patch /tmp/curl-http2-eof.patch
+RUN patch -p1 < /tmp/curl-http2-eof.patch
 RUN ./configure --with-ssl --with-nghttp2=/usr/local
 RUN make
 RUN make install
