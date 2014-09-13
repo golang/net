@@ -8,13 +8,17 @@
 package http2
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestServer(t *testing.T) {
@@ -31,21 +35,58 @@ func TestServer(t *testing.T) {
 	var gotConn int32
 	testHookOnConn = func() { atomic.StoreInt32(&gotConn, 1) }
 
-	t.Logf("Running curl on %s", ts.URL)
-	out, err := curl(t, "--silent", "--http2", "--insecure", "-v", ts.URL).CombinedOutput()
-	if err != nil {
-		t.Fatalf("Error fetching with curl: %v, %s", err, out)
+	t.Logf("Running test server for curl to hit at: %s", ts.URL)
+	container := curl(t, "--silent", "--http2", "--insecure", "-v", ts.URL)
+	defer kill(container)
+	resc := make(chan interface{}, 1)
+	go func() {
+		res, err := dockerLogs(container)
+		if err != nil {
+			resc <- err
+		} else {
+			resc <- res
+		}
+	}()
+	select {
+	case res := <-resc:
+		if err, ok := res.(error); ok {
+			t.Fatal(err)
+		}
+		t.Logf("Got: %s", res)
+	case <-time.After(3 * time.Second):
+		t.Errorf("timeout waiting for curl")
 	}
-	t.Logf("Got: %s", out)
 
 	if atomic.LoadInt32(&gotConn) == 0 {
 		t.Error("never saw an http2 connection")
 	}
 }
 
+func dockerLogs(container string) ([]byte, error) {
+	out, err := exec.Command("docker", "wait", container).CombinedOutput()
+	if err != nil {
+		return out, err
+	}
+	exitStatus, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return out, errors.New("unexpected exit status from docker wait")
+	}
+	out, err = exec.Command("docker", "logs", container).CombinedOutput()
+	exec.Command("docker", "rm", container).Run()
+	if err == nil && exitStatus != 0 {
+		err = fmt.Errorf("exit status %d", exitStatus)
+	}
+	return out, err
+}
+
+func kill(container string) {
+	exec.Command("docker", "kill", container).Run()
+	exec.Command("docker", "rm", container).Run()
+}
+
 // Verify that curl has http2.
 func requireCurl(t *testing.T) {
-	out, err := curl(t, "--version").CombinedOutput()
+	out, err := dockerLogs(curl(t, "--version"))
 	if err != nil {
 		t.Skipf("failed to determine curl features; skipping test")
 	}
@@ -54,6 +95,10 @@ func requireCurl(t *testing.T) {
 	}
 }
 
-func curl(t *testing.T, args ...string) *exec.Cmd {
-	return exec.Command("docker", append([]string{"run", "--net=host", "gohttp2/curl"}, args...)...)
+func curl(t *testing.T, args ...string) (container string) {
+	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "gohttp2/curl"}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to run curl in docker: %v, %s", err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
