@@ -16,7 +16,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 )
 
 const (
@@ -35,20 +34,23 @@ const npnProto = "h2-14"
 type Server struct {
 	// MaxStreams optionally ...
 	MaxStreams int
-
-	mu sync.Mutex
 }
 
 func (srv *Server) handleClientConn(hs *http.Server, c *tls.Conn, h http.Handler) {
-	cc := &clientConn{hs, c, h, NewFramer(c, c)}
+	cc := &clientConn{
+		hs:      hs,
+		conn:    c,
+		handler: h,
+		framer:  NewFramer(c, c),
+	}
 	cc.serve()
 }
 
 type clientConn struct {
-	hs *http.Server
-	c  *tls.Conn
-	h  http.Handler
-	fr *Framer
+	hs      *http.Server
+	conn    *tls.Conn
+	handler http.Handler
+	framer  *Framer
 }
 
 func (cc *clientConn) logf(format string, args ...interface{}) {
@@ -60,12 +62,12 @@ func (cc *clientConn) logf(format string, args ...interface{}) {
 }
 
 func (cc *clientConn) serve() {
-	defer cc.c.Close()
-	log.Printf("HTTP/2 connection from %v on %p", cc.c.RemoteAddr(), cc.hs)
+	defer cc.conn.Close()
+	log.Printf("HTTP/2 connection from %v on %p", cc.conn.RemoteAddr(), cc.hs)
 
 	buf := make([]byte, len(ClientPreface))
 	// TODO: timeout reading from the client
-	if _, err := io.ReadFull(cc.c, buf); err != nil {
+	if _, err := io.ReadFull(cc.conn, buf); err != nil {
 		cc.logf("error reading client preface: %v", err)
 		return
 	}
@@ -73,10 +75,10 @@ func (cc *clientConn) serve() {
 		cc.logf("bogus greeting from client: %q", buf)
 		return
 	}
-	log.Printf("client %v said hello", cc.c.RemoteAddr())
+	log.Printf("client %v said hello", cc.conn.RemoteAddr())
 	for {
 
-		f, err := cc.fr.ReadFrame()
+		f, err := cc.framer.ReadFrame()
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
 				log.Printf("Disconnection; connection error: %v", err)
