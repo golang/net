@@ -101,7 +101,7 @@ func (cc *clientConn) serve() {
 // ConfigureServer adds HTTP2 support to s as configured by the HTTP/2
 // server configuration in conf. The configuration may be nil.
 //
-// ConfigureServer must be called before s beings serving.
+// ConfigureServer must be called before s begins serving.
 func ConfigureServer(s *http.Server, conf *Server) {
 	if conf == nil {
 		conf = new(Server)
