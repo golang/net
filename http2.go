@@ -63,11 +63,12 @@ type serverConn struct {
 
 	hpackDecoder *hpack.Decoder
 
-	// midHeaderStreamID is non-zero if we're in the middle
+	// curHeaderStreamID is non-zero if we're in the middle
 	// of parsing headers that span multiple frames.
-	midHeaderStreamID uint32
+	curHeaderStreamID uint32
 
-	streams map[uint32]*stream
+	maxStreamID uint32 // max ever seen
+	streams     map[uint32]*stream
 }
 
 type streamState int
@@ -93,21 +94,6 @@ func (sc *serverConn) logf(format string, args ...interface{}) {
 	}
 }
 
-func (sc *serverConn) frameAcceptable(f Frame) error {
-	if hf, ok := f.(*HeadersFrame); ok && hf.Header().StreamID%2 != 1 {
-		// TODO: all of http://http2.github.io/http2-spec/#rfc.section.5.1.1
-
-	}
-	if s := sc.midHeaderStreamID; s != 0 {
-		if cf, ok := f.(*ContinuationFrame); !ok {
-			return ConnectionError(ErrCodeProtocol)
-		} else if cf.Header().StreamID != s {
-			return ConnectionError(ErrCodeProtocol)
-		}
-	}
-	return nil
-}
-
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	log.Printf("Header field: +%v", f)
 }
@@ -131,7 +117,8 @@ func (sc *serverConn) serve() {
 
 		f, err := sc.framer.ReadFrame()
 		if err == nil {
-			err = sc.frameAcceptable(f)
+			log.Printf("got %v: %#v", f.Header(), f)
+			err = sc.processFrame(f)
 		}
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
@@ -144,27 +131,77 @@ func (sc *serverConn) serve() {
 			sc.logf("Disconnection due to other error: %v", err)
 			return
 		}
+	}
+}
 
-		log.Printf("got %v: %#v", f.Header(), f)
-		switch f := f.(type) {
-		case *SettingsFrame:
-			f.ForeachSetting(func(s SettingID, v uint32) {
-				log.Printf("  setting %s = %v", s, v)
-			})
-		case *HeadersFrame:
-			sc.hpackDecoder.Write(f.HeaderBlockFragment())
-			if f.HeadersEnded() {
-				sc.midHeaderStreamID = 0
-				// TODO: transition state
-			}
-		case *ContinuationFrame:
-			sc.hpackDecoder.Write(f.HeaderBlockFragment())
-			if f.HeadersEnded() {
-				sc.midHeaderStreamID = 0
-				// TODO: transition state
-			}
+func (sc *serverConn) processFrame(f Frame) error {
+	if s := sc.curHeaderStreamID; s != 0 {
+		if cf, ok := f.(*ContinuationFrame); !ok {
+			return ConnectionError(ErrCodeProtocol)
+		} else if cf.Header().StreamID != s {
+			return ConnectionError(ErrCodeProtocol)
 		}
 	}
+
+	switch f := f.(type) {
+	case *SettingsFrame:
+		return sc.processSettings(f)
+	case *HeadersFrame:
+		return sc.processHeaders(f)
+	case *ContinuationFrame:
+		return sc.processContinuation(f)
+	default:
+		log.Printf("Ignoring unknown %v", f.Header)
+		return nil
+	}
+}
+
+func (sc *serverConn) processSettings(f *SettingsFrame) error {
+	f.ForeachSetting(func(s SettingID, v uint32) {
+		log.Printf("  setting %s = %v", s, v)
+	})
+	return nil
+}
+
+func (sc *serverConn) processHeaders(f *HeadersFrame) error {
+	id := f.Header().StreamID
+
+	// http://http2.github.io/http2-spec/#rfc.section.5.1.1
+	if id%2 != 1 || id <= sc.maxStreamID {
+		// Streams initiated by a client MUST use odd-numbered
+		// stream identifiers. [...] The identifier of a newly
+		// established stream MUST be numerically greater than all
+		// streams that the initiating endpoint has opened or
+		// reserved. [...]  An endpoint that receives an unexpected
+		// stream identifier MUST respond with a connection error
+		// (Section 5.4.1) of type PROTOCOL_ERROR.
+		return ConnectionError(ErrCodeProtocol)
+	}
+	if id > sc.maxStreamID {
+		sc.maxStreamID = id
+	}
+
+	sc.curHeaderStreamID = id
+	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
+}
+
+func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
+	if _, err := sc.hpackDecoder.Write(frag); err != nil {
+		// TODO: convert to stream error I assume?
+	}
+	if end {
+		if err := sc.hpackDecoder.Close(); err != nil {
+			// TODO: convert to stream error I assume?
+			return err
+		}
+		sc.curHeaderStreamID = 0
+		// TODO: transition state
+	}
+	return nil
+}
+
+func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
+	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
 // ConfigureServer adds HTTP2 support to s as configured by the HTTP/2
