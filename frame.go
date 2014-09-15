@@ -14,9 +14,10 @@ import (
 
 const frameHeaderLen = 9
 
+// A FrameType is a registered frame type as defined in
+// http://http2.github.io/http2-spec/#rfc.section.11.2
 type FrameType uint8
 
-// Defined in http://http2.github.io/http2-spec/#rfc.section.11.2
 const (
 	FrameData         FrameType = 0x0
 	FrameHeaders      FrameType = 0x1
@@ -50,6 +51,15 @@ func (t FrameType) String() string {
 	return fmt.Sprintf("UNKNOWN_FRAME_TYPE_%d", uint8(t))
 }
 
+// Flags is a bitmask of HTTP/2 flags.
+// The meaning of flags varies depending on the frame type.
+type Flags uint8
+
+// Has reports whether f contains all (0 or more) flags in v.
+func (f Flags) Has(v Flags) bool {
+	return (f & v) == v
+}
+
 // Frame-specific FrameHeader flag bits.
 const (
 	// Settings Frame
@@ -63,6 +73,8 @@ const (
 	FlagHeadersPriority   Flags = 0x20
 )
 
+// A SettingID is an HTTP/2 setting as defined in
+// http://http2.github.io/http2-spec/#iana-settings
 type SettingID uint16
 
 const (
@@ -90,28 +102,22 @@ func (s SettingID) String() string {
 	return fmt.Sprintf("UNKNOWN_SETTING_%d", uint8(s))
 }
 
-// a frameParser parses a frame. The parser can assume that the Reader will
-// not read past the length of a frame (e.g. it acts like an io.LimitReader
-// bounded by the FrameHeader.Length)
-type frameParser func(FrameHeader, []byte) (Frame, error)
+// a frameParser parses a frame given its FrameHeader and payload
+// bytes. The length of payload will always equal fh.Length (which
+// might be 0).
+type frameParser func(fh FrameHeader, payload []byte) (Frame, error)
 
-var FrameParsers = map[FrameType]frameParser{
+var frameParsers = map[FrameType]frameParser{
 	FrameSettings:     parseSettingsFrame,
 	FrameWindowUpdate: parseWindowUpdateFrame,
 	FrameHeaders:      parseHeadersFrame,
 }
 
 func typeFrameParser(t FrameType) frameParser {
-	if f, ok := FrameParsers[t]; ok {
+	if f, ok := frameParsers[t]; ok {
 		return f
 	}
 	return parseUnknownFrame
-}
-
-type Flags uint8
-
-func (f Flags) Has(v Flags) bool {
-	return (f & v) == v
 }
 
 // A FrameHeader is the 9 byte header of all HTTP/2 frames.
@@ -126,6 +132,8 @@ type FrameHeader struct {
 	StreamID uint32
 }
 
+// Header returns h. It exists so FrameHeaders can be embedded in other
+// specific frame types and implement the Frame interface.
 func (h FrameHeader) Header() FrameHeader { return h }
 
 func (h FrameHeader) String() string {
@@ -141,7 +149,8 @@ func (h *FrameHeader) checkValid() {
 
 func (h *FrameHeader) invalidate() { h.valid = false }
 
-// frame header bytes
+// frame header bytes.
+// Used only by ReadFrameHeader.
 var fhBytes = sync.Pool{
 	New: func() interface{} {
 		buf := make([]byte, frameHeaderLen)
@@ -149,6 +158,8 @@ var fhBytes = sync.Pool{
 	},
 }
 
+// ReadFrameHeader reads 9 bytes from r and returns a FrameHeader.
+// Most users should use Framer.ReadFrame instead.
 func ReadFrameHeader(r io.Reader) (FrameHeader, error) {
 	bufp := fhBytes.Get().(*[]byte)
 	defer fhBytes.Put(bufp)
@@ -169,8 +180,17 @@ func readFrameHeader(buf []byte, r io.Reader) (FrameHeader, error) {
 	}, nil
 }
 
+// A Frame is the base interface implemented by all frame types.
+// Callers will generally type-assert the specific frame type:
+// *HeaderFrame, *SettingsFrame, *WindowUpdateFrame, etc.
+//
+// Frames are only valid until the next call to Framer.ReadFrame.
 type Frame interface {
 	Header() FrameHeader
+
+	// invalidate is called by Framer.ReadFrame to make this
+	// frame's buffers as being invalid, since the subsequent
+	// frame will reuse them.
 	invalidate()
 }
 
@@ -218,6 +238,11 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	return f, nil
 }
 
+// A SettingsFrame conveys configuration parameters that affect how
+// endpoints communicate, such as preferences and constraints on peer
+// behavior.
+//
+// See http://http2.github.io/http2-spec/#SETTINGS
 type SettingsFrame struct {
 	FrameHeader
 	p []byte
@@ -279,6 +304,8 @@ func (f *SettingsFrame) ForeachSetting(fn func(s SettingID, v uint32)) {
 	}
 }
 
+// An UnknownFrame is the frame type returned when the frame type is unknown
+// or no specific frame type parser exists.
 type UnknownFrame struct {
 	FrameHeader
 	p []byte
@@ -296,6 +323,8 @@ func parseUnknownFrame(fh FrameHeader, p []byte) (Frame, error) {
 	return &UnknownFrame{fh, p}, nil
 }
 
+// A WindowUpdateFrame is used to implement flow control.
+// See http://http2.github.io/http2-spec/#rfc.section.6.9
 type WindowUpdateFrame struct {
 	FrameHeader
 	Increment uint32
@@ -306,11 +335,10 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 		// Too short.
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
-	f := &WindowUpdateFrame{
+	return &WindowUpdateFrame{
 		FrameHeader: fh,
 		Increment:   binary.BigEndian.Uint32(p[:4]) & 0x7fffffff, // mask off high reserved bit
-	}
-	return f, nil
+	}, nil
 }
 
 type HeaderFrame struct {
