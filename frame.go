@@ -71,6 +71,8 @@ const (
 	FlagHeadersEndHeaders Flags = 0x4
 	FlagHeadersPadded     Flags = 0x8
 	FlagHeadersPriority   Flags = 0x20
+
+	FlagContinuationEndHeaders = FlagHeadersEndHeaders
 )
 
 // A SettingID is an HTTP/2 setting as defined in
@@ -111,6 +113,7 @@ var frameParsers = map[FrameType]frameParser{
 	FrameSettings:     parseSettingsFrame,
 	FrameWindowUpdate: parseWindowUpdateFrame,
 	FrameHeaders:      parseHeadersFrame,
+	FrameContinuation: parseContinuationFrame,
 }
 
 func typeFrameParser(t FrameType) frameParser {
@@ -182,7 +185,7 @@ func readFrameHeader(buf []byte, r io.Reader) (FrameHeader, error) {
 
 // A Frame is the base interface implemented by all frame types.
 // Callers will generally type-assert the specific frame type:
-// *HeaderFrame, *SettingsFrame, *WindowUpdateFrame, etc.
+// *HeadersFrame, *SettingsFrame, *WindowUpdateFrame, etc.
 //
 // Frames are only valid until the next call to Framer.ReadFrame.
 type Frame interface {
@@ -341,7 +344,9 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 	}, nil
 }
 
-type HeaderFrame struct {
+// A HeadersFrame is used to open a stream and additionally carries a
+// header block fragment.
+type HeadersFrame struct {
 	FrameHeader
 
 	// If FlagHeadersPriority:
@@ -351,18 +356,21 @@ type HeaderFrame struct {
 	// Weight is [0,255]. Only valid if FrameHeader.Flags has the
 	// FlagHeadersPriority bit set, in which case the caller must
 	// also add 1 to get to spec-defined [1,256] range.
-	Weight uint8
-
+	Weight        uint8
 	headerFragBuf []byte // not owned
 }
 
-func (f *HeaderFrame) HeaderBlockFragment() []byte {
+func (f *HeadersFrame) HeaderBlockFragment() []byte {
 	f.checkValid()
 	return f.headerFragBuf
 }
 
+func (f *HeadersFrame) HeadersEnded() bool {
+	return f.FrameHeader.Flags.Has(FlagHeadersEndHeaders)
+}
+
 func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
-	hf := &HeaderFrame{
+	hf := &HeadersFrame{
 		FrameHeader: fh,
 	}
 	if fh.StreamID == 0 {
@@ -396,6 +404,26 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 	}
 	hf.headerFragBuf = p[:len(p)-int(padLength)]
 	return hf, nil
+}
+
+// A ContinuationFrame is used to continue a sequence of header block fragments.
+// See http://http2.github.io/http2-spec/#rfc.section.6.10
+type ContinuationFrame struct {
+	FrameHeader
+	headerFragBuf []byte
+}
+
+func parseContinuationFrame(fh FrameHeader, p []byte) (Frame, error) {
+	return &ContinuationFrame{fh, p}, nil
+}
+
+func (f *ContinuationFrame) HeaderBlockFragment() []byte {
+	f.checkValid()
+	return f.headerFragBuf
+}
+
+func (f *ContinuationFrame) HeadersEnded() bool {
+	return f.FrameHeader.Flags.Has(FlagContinuationEndHeaders)
 }
 
 func readByte(p []byte) (remain []byte, b byte, err error) {

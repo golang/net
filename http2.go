@@ -16,6 +16,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+
+	"github.com/bradfitz/http2/hpack"
 )
 
 const (
@@ -28,7 +30,12 @@ var (
 	clientPreface = []byte(ClientPreface)
 )
 
-const npnProto = "h2-14"
+const (
+	npnProto = "h2-14"
+
+	// http://http2.github.io/http2-spec/#SettingValues
+	initialHeaderTableSize = 4096
+)
 
 // Server is an HTTP2 server.
 type Server struct {
@@ -43,6 +50,7 @@ func (srv *Server) handleClientConn(hs *http.Server, c *tls.Conn, h http.Handler
 		handler: h,
 		framer:  NewFramer(c, c),
 	}
+	cc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, cc.onNewHeaderField)
 	cc.serve()
 }
 
@@ -51,6 +59,12 @@ type clientConn struct {
 	conn    *tls.Conn
 	handler http.Handler
 	framer  *Framer
+
+	hpackDecoder *hpack.Decoder
+
+	// midHeaderStreamID is non-zero if we're in the middle
+	// of parsing headers that span multiple frames.
+	midHeaderStreamID uint32
 }
 
 func (cc *clientConn) logf(format string, args ...interface{}) {
@@ -59,6 +73,21 @@ func (cc *clientConn) logf(format string, args ...interface{}) {
 	} else {
 		log.Printf(format, args...)
 	}
+}
+
+func (cc *clientConn) frameAcceptable(f Frame) error {
+	if s := cc.midHeaderStreamID; s != 0 {
+		if cf, ok := f.(*ContinuationFrame); !ok {
+			return ConnectionError(ErrCodeProtocol)
+		} else if cf.Header().StreamID != s {
+			return ConnectionError(ErrCodeProtocol)
+		}
+	}
+	return nil
+}
+
+func (cc *clientConn) onNewHeaderField(f hpack.HeaderField) {
+	log.Printf("Header field: +%v", f)
 }
 
 func (cc *clientConn) serve() {
@@ -79,23 +108,39 @@ func (cc *clientConn) serve() {
 	for {
 
 		f, err := cc.framer.ReadFrame()
+		if err == nil {
+			err = cc.frameAcceptable(f)
+		}
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
-				log.Printf("Disconnection; connection error: %v", err)
+				cc.logf("Disconnection; connection error: %v", err)
 				return
 			}
 			// TODO: stream errors, etc
 		}
 		if err != nil {
-			log.Printf("Disconnection due to other error: %v", err)
+			cc.logf("Disconnection due to other error: %v", err)
 			return
 		}
+
 		log.Printf("got %v: %#v", f.Header(), f)
-		if sf, ok := f.(*SettingsFrame); ok {
-			log.Printf("Is a settings frame")
-			sf.ForeachSetting(func(s SettingID, v uint32) {
+		switch f := f.(type) {
+		case *SettingsFrame:
+			f.ForeachSetting(func(s SettingID, v uint32) {
 				log.Printf("  setting %s = %v", s, v)
 			})
+		case *HeadersFrame:
+			cc.hpackDecoder.Write(f.HeaderBlockFragment())
+			if f.HeadersEnded() {
+				cc.midHeaderStreamID = 0
+				// TODO: transition state
+			}
+		case *ContinuationFrame:
+			cc.hpackDecoder.Write(f.HeaderBlockFragment())
+			if f.HeadersEnded() {
+				cc.midHeaderStreamID = 0
+				// TODO: transition state
+			}
 		}
 	}
 }
