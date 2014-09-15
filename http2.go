@@ -74,16 +74,35 @@ type serverConn struct {
 type streamState int
 
 const (
-	stateOpen streamState = iota
+	stateIdle streamState = iota
+	stateOpen
 	stateHalfClosedLocal
 	stateHalfClosedRemote
 	stateResvLocal
 	stateResvRemote
+	stateClosed
 )
 
 type stream struct {
 	id    uint32
-	state streamState
+	state streamState // owned by serverConn's processing loop
+}
+
+func (sc *serverConn) state(streamID uint32) streamState {
+	// http://http2.github.io/http2-spec/#rfc.section.5.1
+	if st, ok := sc.streams[streamID]; ok {
+		return st.state
+	}
+	// "The first use of a new stream identifier implicitly closes all
+	// streams in the "idle" state that might have been initiated by
+	// that peer with a lower-valued stream identifier. For example, if
+	// a client sends a HEADERS frame on stream 7 without ever sending a
+	// frame on stream 5, then stream 5 transitions to the "closed"
+	// state when the first frame for stream 7 is sent or received."
+	if streamID <= sc.maxStreamID {
+		return stateClosed
+	}
+	return stateIdle
 }
 
 func (sc *serverConn) logf(format string, args ...interface{}) {
