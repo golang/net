@@ -16,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/bradfitz/http2/hpack"
 )
@@ -45,11 +46,12 @@ type Server struct {
 
 func (srv *Server) handleConn(hs *http.Server, c *tls.Conn, h http.Handler) {
 	sc := &serverConn{
-		hs:      hs,
-		conn:    c,
-		handler: h,
-		framer:  NewFramer(c, c),
-		streams: make(map[uint32]*stream),
+		hs:          hs,
+		conn:        c,
+		handler:     h,
+		framer:      NewFramer(c, c),
+		streams:     make(map[uint32]*stream),
+		canonHeader: make(map[string]string),
 	}
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
 	sc.serve()
@@ -61,14 +63,19 @@ type serverConn struct {
 	handler http.Handler
 	framer  *Framer
 
+	maxStreamID uint32 // max ever seen
+	streams     map[uint32]*stream
+
+	// State related to parsing current headers:
 	hpackDecoder *hpack.Decoder
+	header       http.Header
+	canonHeader  map[string]string // http2-lower-case -> Go-Canonical-Case
+
+	method, path, scheme, authority string
 
 	// curHeaderStreamID is non-zero if we're in the middle
 	// of parsing headers that span multiple frames.
 	curHeaderStreamID uint32
-
-	maxStreamID uint32 // max ever seen
-	streams     map[uint32]*stream
 }
 
 type streamState int
@@ -115,6 +122,32 @@ func (sc *serverConn) logf(format string, args ...interface{}) {
 
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	log.Printf("Header field: +%v", f)
+	if strings.HasPrefix(f.Name, ":") {
+		switch f.Name {
+		case ":method":
+			sc.method = f.Value
+		case ":path":
+			sc.path = f.Value
+		case ":scheme":
+			sc.scheme = f.Value
+		case ":authority":
+			sc.authority = f.Value
+		default:
+			log.Printf("Ignoring unknown pseudo-header %q", f.Name)
+		}
+		return
+	}
+	sc.header.Add(sc.canonicalHeader(f.Name), f.Value)
+}
+
+func (sc *serverConn) canonicalHeader(v string) string {
+	// TODO: use a sync.Pool instead of putting the cache on *serverConn?
+	cv, ok := sc.canonHeader[v]
+	if !ok {
+		cv = http.CanonicalHeaderKey(v)
+		sc.canonHeader[v] = cv
+	}
+	return cv
 }
 
 func (sc *serverConn) serve() {
@@ -200,6 +233,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		sc.maxStreamID = id
 	}
 
+	sc.header = make(http.Header)
 	sc.curHeaderStreamID = id
 	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
