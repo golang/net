@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 )
 
@@ -71,12 +70,24 @@ const (
 	SettingEnablePush           SettingID = 0x2
 	SettingMaxConcurrentStreams SettingID = 0x3
 	SettingInitialWindowSize    SettingID = 0x4
+	SettingMaxFrameSize         SettingID = 0x5
+	SettingMaxHeaderListSize    SettingID = 0x6
 )
 
-func knownSetting(id SettingID) bool {
-	// TODO: permit registration of custom settings values?
-	// Per server type?
-	return id >= 1 && id <= 4
+var settingName = map[SettingID]string{
+	SettingHeaderTableSize:      "HEADER_TABLE_SIZE",
+	SettingEnablePush:           "ENABLE_PUSH",
+	SettingMaxConcurrentStreams: "MAX_CONCURRENT_STREAMS",
+	SettingInitialWindowSize:    "INITIAL_WINDOW_SIZE",
+	SettingMaxFrameSize:         "MAX_FRAME_SIZE",
+	SettingMaxHeaderListSize:    "MAX_HEADER_LIST_SIZE",
+}
+
+func (s SettingID) String() string {
+	if v, ok := settingName[s]; ok {
+		return v
+	}
+	return fmt.Sprintf("UNKNOWN_SETTING_%d", uint8(s))
 }
 
 // a frameParser parses a frame. The parser can assume that the Reader will
@@ -209,7 +220,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 
 type SettingsFrame struct {
 	FrameHeader
-	Settings map[SettingID]uint32
+	p []byte
 }
 
 func parseSettingsFrame(fh FrameHeader, p []byte) (Frame, error) {
@@ -230,34 +241,42 @@ func parseSettingsFrame(fh FrameHeader, p []byte) (Frame, error) {
 		// field is anything other than 0x0, the endpoint MUST
 		// respond with a connection error (Section 5.4.1) of
 		// type PROTOCOL_ERROR.
-		log.Printf("Bogus StreamID in settings: %+v", fh)
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
-	if fh.Length%6 != 0 {
+	if len(p)%6 != 0 {
 		// Expecting even number of 6 byte settings.
 		return nil, ConnectionError(ErrCodeFrameSize)
 	}
-	s := make(map[SettingID]uint32)
-	nSettings := int(fh.Length / 6)
-	for i := 0; i < nSettings; i++ {
-		sbuf := p[i*6:]
-		settingID := SettingID(binary.BigEndian.Uint16(sbuf[:2]))
-		value := binary.BigEndian.Uint32(sbuf[2:4])
-		if settingID == SettingInitialWindowSize && value > (1<<31)-1 {
-			// Values above the maximum flow control window size of 2^31 - 1 MUST
-			// be treated as a connection error (Section 5.4.1) of type
-			// FLOW_CONTROL_ERROR.
-			return nil, ConnectionError(ErrCodeFlowControl)
-		}
-		if knownSetting(settingID) {
-			s[settingID] = value
-		}
+	f := &SettingsFrame{FrameHeader: fh, p: p}
+	if v, ok := f.Value(SettingInitialWindowSize); ok && v > (1<<31)-1 {
+		// Values above the maximum flow control window size of 2^31 - 1 MUST
+		// be treated as a connection error (Section 5.4.1) of type
+		// FLOW_CONTROL_ERROR.
+		return nil, ConnectionError(ErrCodeFlowControl)
 	}
+	return f, nil
+}
 
-	return &SettingsFrame{
-		FrameHeader: fh,
-		Settings:    s,
-	}, nil
+func (f *SettingsFrame) Value(s SettingID) (v uint32, ok bool) {
+	f.checkValid()
+	buf := f.p
+	for len(buf) > 0 {
+		settingID := SettingID(binary.BigEndian.Uint16(buf[:2]))
+		if settingID == s {
+			return binary.BigEndian.Uint32(buf[2:4]), true
+		}
+		buf = buf[6:]
+	}
+	return 0, false
+}
+
+func (f *SettingsFrame) ForeachSetting(fn func(s SettingID, v uint32)) {
+	f.checkValid()
+	buf := f.p
+	for len(buf) > 0 {
+		fn(SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:4]))
+		buf = buf[6:]
+	}
 }
 
 type UnknownFrame struct {

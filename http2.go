@@ -89,6 +89,12 @@ func (cc *clientConn) serve() {
 			return
 		}
 		log.Printf("got %v: %#v", f.Header(), f)
+		if sf, ok := f.(*SettingsFrame); ok {
+			log.Printf("Is a settings frame")
+			sf.ForeachSetting(func(s SettingID, v uint32) {
+				log.Printf("  setting %s = %v", s, v)
+			})
+		}
 	}
 }
 
