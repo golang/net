@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -41,7 +40,7 @@ type Server struct {
 }
 
 func (srv *Server) handleClientConn(hs *http.Server, c *tls.Conn, h http.Handler) {
-	cc := &clientConn{hs, c, h}
+	cc := &clientConn{hs, c, h, NewFramer(c, c)}
 	cc.serve()
 }
 
@@ -49,6 +48,7 @@ type clientConn struct {
 	hs *http.Server
 	c  *tls.Conn
 	h  http.Handler
+	fr *Framer
 }
 
 func (cc *clientConn) logf(format string, args ...interface{}) {
@@ -74,19 +74,9 @@ func (cc *clientConn) serve() {
 		return
 	}
 	log.Printf("client %v said hello", cc.c.RemoteAddr())
-	var frameReader = io.LimitedReader{
-		R: cc.c,
-	}
 	for {
-		fh, err := ReadFrameHeader(cc.c)
-		if err != nil {
-			if err != io.EOF {
-				cc.logf("error reading frame: %v", err)
-			}
-			return
-		}
-		frameReader.N = int64(fh.Length)
-		f, err := typeFrameParser(fh.Type)(fh, &frameReader)
+
+		f, err := cc.fr.ReadFrame()
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
 				log.Printf("Disconnection; connection error: %v", err)
@@ -95,14 +85,10 @@ func (cc *clientConn) serve() {
 			// TODO: stream errors, etc
 		}
 		if err != nil {
-			log.Printf("Disconnection to other error: %v", err)
+			log.Printf("Disconnection due to other error: %v", err)
 			return
 		}
-		if n, _ := io.Copy(ioutil.Discard, &frameReader); n > 0 {
-			log.Printf("Frame reader for %s failed to read %d bytes", fh.Type, n)
-			return
-		}
-		log.Printf("got frame: %#v", f)
+		log.Printf("got %v: %#v", f.Header(), f)
 	}
 }
 
