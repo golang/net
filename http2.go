@@ -43,18 +43,19 @@ type Server struct {
 	MaxStreams int
 }
 
-func (srv *Server) handleClientConn(hs *http.Server, c *tls.Conn, h http.Handler) {
-	cc := &clientConn{
+func (srv *Server) handleConn(hs *http.Server, c *tls.Conn, h http.Handler) {
+	sc := &serverConn{
 		hs:      hs,
 		conn:    c,
 		handler: h,
 		framer:  NewFramer(c, c),
+		streams: make(map[uint32]*stream),
 	}
-	cc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, cc.onNewHeaderField)
-	cc.serve()
+	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
+	sc.serve()
 }
 
-type clientConn struct {
+type serverConn struct {
 	hs      *http.Server
 	conn    *tls.Conn
 	handler http.Handler
@@ -65,18 +66,39 @@ type clientConn struct {
 	// midHeaderStreamID is non-zero if we're in the middle
 	// of parsing headers that span multiple frames.
 	midHeaderStreamID uint32
+
+	streams map[uint32]*stream
 }
 
-func (cc *clientConn) logf(format string, args ...interface{}) {
-	if lg := cc.hs.ErrorLog; lg != nil {
+type streamState int
+
+const (
+	stateOpen streamState = iota
+	stateHalfClosedLocal
+	stateHalfClosedRemote
+	stateResvLocal
+	stateResvRemote
+)
+
+type stream struct {
+	id    uint32
+	state streamState
+}
+
+func (sc *serverConn) logf(format string, args ...interface{}) {
+	if lg := sc.hs.ErrorLog; lg != nil {
 		lg.Printf(format, args...)
 	} else {
 		log.Printf(format, args...)
 	}
 }
 
-func (cc *clientConn) frameAcceptable(f Frame) error {
-	if s := cc.midHeaderStreamID; s != 0 {
+func (sc *serverConn) frameAcceptable(f Frame) error {
+	if hf, ok := f.(*HeadersFrame); ok && hf.Header().StreamID%2 != 1 {
+		// TODO: all of http://http2.github.io/http2-spec/#rfc.section.5.1.1
+
+	}
+	if s := sc.midHeaderStreamID; s != 0 {
 		if cf, ok := f.(*ContinuationFrame); !ok {
 			return ConnectionError(ErrCodeProtocol)
 		} else if cf.Header().StreamID != s {
@@ -86,40 +108,40 @@ func (cc *clientConn) frameAcceptable(f Frame) error {
 	return nil
 }
 
-func (cc *clientConn) onNewHeaderField(f hpack.HeaderField) {
+func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	log.Printf("Header field: +%v", f)
 }
 
-func (cc *clientConn) serve() {
-	defer cc.conn.Close()
-	log.Printf("HTTP/2 connection from %v on %p", cc.conn.RemoteAddr(), cc.hs)
+func (sc *serverConn) serve() {
+	defer sc.conn.Close()
+	log.Printf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 
 	buf := make([]byte, len(ClientPreface))
 	// TODO: timeout reading from the client
-	if _, err := io.ReadFull(cc.conn, buf); err != nil {
-		cc.logf("error reading client preface: %v", err)
+	if _, err := io.ReadFull(sc.conn, buf); err != nil {
+		sc.logf("error reading client preface: %v", err)
 		return
 	}
 	if !bytes.Equal(buf, clientPreface) {
-		cc.logf("bogus greeting from client: %q", buf)
+		sc.logf("bogus greeting from client: %q", buf)
 		return
 	}
-	log.Printf("client %v said hello", cc.conn.RemoteAddr())
+	log.Printf("client %v said hello", sc.conn.RemoteAddr())
 	for {
 
-		f, err := cc.framer.ReadFrame()
+		f, err := sc.framer.ReadFrame()
 		if err == nil {
-			err = cc.frameAcceptable(f)
+			err = sc.frameAcceptable(f)
 		}
 		if h2e, ok := err.(Error); ok {
 			if h2e.IsConnectionError() {
-				cc.logf("Disconnection; connection error: %v", err)
+				sc.logf("Disconnection; connection error: %v", err)
 				return
 			}
 			// TODO: stream errors, etc
 		}
 		if err != nil {
-			cc.logf("Disconnection due to other error: %v", err)
+			sc.logf("Disconnection due to other error: %v", err)
 			return
 		}
 
@@ -130,15 +152,15 @@ func (cc *clientConn) serve() {
 				log.Printf("  setting %s = %v", s, v)
 			})
 		case *HeadersFrame:
-			cc.hpackDecoder.Write(f.HeaderBlockFragment())
+			sc.hpackDecoder.Write(f.HeaderBlockFragment())
 			if f.HeadersEnded() {
-				cc.midHeaderStreamID = 0
+				sc.midHeaderStreamID = 0
 				// TODO: transition state
 			}
 		case *ContinuationFrame:
-			cc.hpackDecoder.Write(f.HeaderBlockFragment())
+			sc.hpackDecoder.Write(f.HeaderBlockFragment())
 			if f.HeadersEnded() {
-				cc.midHeaderStreamID = 0
+				sc.midHeaderStreamID = 0
 				// TODO: transition state
 			}
 		}
@@ -174,7 +196,7 @@ func ConfigureServer(s *http.Server, conf *Server) {
 		if testHookOnConn != nil {
 			testHookOnConn()
 		}
-		conf.handleClientConn(hs, c, h)
+		conf.handleConn(hs, c, h)
 	}
 }
 
