@@ -267,7 +267,41 @@ type Framer struct {
 	lastFrame Frame
 	readBuf   []byte
 
-	w io.Writer
+	w    io.Writer
+	wbuf []byte
+}
+
+func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
+	// Write the FrameHeader.
+	f.wbuf = append(f.wbuf[:0],
+		0, // 3 bytes of length, filled in in endWrite
+		0,
+		0,
+		byte(ftype),
+		byte(flags),
+		byte(streamID>>24), // TODO: &127? Or do it in callers? Or allow for testing.
+		byte(streamID>>16),
+		byte(streamID>>8),
+		byte(streamID))
+}
+
+func (f *Framer) endWrite() error {
+	// Now that we know the final size, fill in the FrameHeader in
+	// the space previously reserved for it. Abuse append.
+	length := len(f.wbuf) - frameHeaderLen
+	_ = append(f.wbuf[:0],
+		byte(length>>16),
+		byte(length>>8),
+		byte(length))
+	n, err := f.w.Write(f.wbuf)
+	if err == nil && n != length {
+		err = io.ErrShortWrite
+	}
+	return err
+}
+
+func (f *Framer) writeUint32(v uint32) {
+	f.wbuf = append(f.wbuf, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 }
 
 // NewFramer returns a Framer that writes frames to w and reads them from r.
@@ -583,6 +617,22 @@ func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
 	return &RSTStreamFrame{fh, binary.BigEndian.Uint32(p[:4])}, nil
+}
+
+// WriteRSTStream writes a RST_STREAM frame.
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteRSTStream(streamID, errCode uint32) error {
+	if streamID == 0 {
+		// TODO: return some error to tell the caller that
+		// they're doing it wrong?  Or let them do as they'd
+		// like? Might be useful for testing other people's
+		// http2 implementations.  Maybe we have a
+		// Framer.AllowStupid bool?
+	}
+	f.startWrite(FrameRSTStream, 0, streamID)
+	f.writeUint32(errCode)
+	return f.endWrite()
 }
 
 // A ContinuationFrame is used to continue a sequence of header block fragments.
