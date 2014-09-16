@@ -98,7 +98,7 @@ func requireCurl(t *testing.T) {
 func curl(t *testing.T, args ...string) (container string) {
 	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "gohttp2/curl"}, args...)...).CombinedOutput()
 	if err != nil {
-		t.Fatalf("Failed to run curl in docker: %v, %s", err, out)
+		t.Skipf("Failed to run curl in docker: %v, %s", err, out)
 	}
 	return strings.TrimSpace(string(out))
 }
