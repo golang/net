@@ -72,7 +72,12 @@ const (
 	FlagHeadersPadded     Flags = 0x8
 	FlagHeadersPriority   Flags = 0x20
 
-	FlagContinuationEndHeaders = FlagHeadersEndHeaders
+	// Data Frame
+	FlagDataEndStream Flags = 0x1
+	FlagDataPadded    Flags = 0x8
+
+	// Continuation Frame
+	FlagContinuationEndHeaders Flags = 0x4
 )
 
 // A SettingID is an HTTP/2 setting as defined in
@@ -110,7 +115,7 @@ func (s SettingID) String() string {
 type frameParser func(fh FrameHeader, payload []byte) (Frame, error)
 
 var frameParsers = map[FrameType]frameParser{
-	FrameData:         nil, // TODO
+	FrameData:         parseDataFrame,
 	FrameHeaders:      parseHeadersFrame,
 	FramePriority:     nil, // TODO
 	FrameRSTStream:    nil, // TODO
@@ -244,6 +249,54 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 		return nil, err
 	}
 	fr.lastFrame = f
+	return f, nil
+}
+
+// A DataFrame conveys arbitrary, variable-length sequences of octets
+// associated with a stream.
+// See http://http2.github.io/http2-spec/#rfc.section.6.1
+type DataFrame struct {
+	FrameHeader
+	data []byte
+}
+
+// Data returns the frame's data octets, not including any padding
+// size byte or padding suffix bytes.
+// The caller must not retain the returned memory past the next
+// call to ReadFrame.
+func (f *DataFrame) Data() []byte {
+	f.checkValid()
+	return f.data
+}
+
+func parseDataFrame(fh FrameHeader, payload []byte) (Frame, error) {
+	if fh.StreamID == 0 {
+		// DATA frames MUST be associated with a stream. If a
+		// DATA frame is received whose stream identifier
+		// field is 0x0, the recipient MUST respond with a
+		// connection error (Section 5.4.1) of type
+		// PROTOCOL_ERROR.
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	f := &DataFrame{
+		FrameHeader: fh,
+	}
+	var padSize byte
+	if fh.Flags.Has(FlagDataPadded) {
+		var err error
+		payload, padSize, err = readByte(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if int(padSize) > len(payload) {
+		// If the length of the padding is greater than the
+		// length of the frame payload, the recipient MUST
+		// treat this as a connection error.
+		// Filed: https://github.com/http2/http2-spec/issues/610
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	f.data = payload[:len(payload)-int(padSize)]
 	return f, nil
 }
 
