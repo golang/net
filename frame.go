@@ -118,7 +118,7 @@ var frameParsers = map[FrameType]frameParser{
 	FrameData:         parseDataFrame,
 	FrameHeaders:      parseHeadersFrame,
 	FramePriority:     nil, // TODO
-	FrameRSTStream:    nil, // TODO
+	FrameRSTStream:    parseRSTStreamFrame,
 	FrameSettings:     parseSettingsFrame,
 	FramePushPromise:  nil, // TODO
 	FramePing:         nil, // TODO
@@ -463,6 +463,20 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 	}
 	hf.headerFragBuf = p[:len(p)-int(padLength)]
 	return hf, nil
+}
+
+// A RSTStreamFrame allows for abnormal termination of a stream.
+// See http://http2.github.io/http2-spec/#rfc.section.6.4
+type RSTStreamFrame struct {
+	FrameHeader
+	ErrCode uint32
+}
+
+func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
+	if fh.StreamID == 0 || len(p) < 4 {
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	return &RSTStreamFrame{fh, binary.BigEndian.Uint32(p[:4])}, nil
 }
 
 // A ContinuationFrame is used to continue a sequence of header block fragments.
