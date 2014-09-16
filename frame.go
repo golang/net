@@ -386,6 +386,28 @@ func parseDataFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	return f, nil
 }
 
+// WriteData writes a DATA frame.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteData(streamID uint32, endStream bool, data []byte) error {
+	// TODO: ignoring padding for now. will add when somebody cares.
+	if streamID == 0 {
+		// TODO: return some error to tell the caller that
+		// they're doing it wrong?  Or let them do as they'd
+		// like? Might be useful for testing other people's
+		// http2 implementations.  Maybe we have a
+		// Framer.AllowStupid bool?
+	}
+	var flags Flags
+	if endStream {
+		flags |= FlagDataEndStream
+	}
+	f.startWrite(FrameData, flags, streamID)
+	f.wbuf = append(f.wbuf, data...)
+	return f.endWrite()
+}
+
 // A SettingsFrame conveys configuration parameters that affect how
 // endpoints communicate, such as preferences and constraints on peer
 // behavior.
@@ -620,6 +642,7 @@ func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
 }
 
 // WriteRSTStream writes a RST_STREAM frame.
+//
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility to not call other Write methods concurrently.
 func (f *Framer) WriteRSTStream(streamID, errCode uint32) error {
