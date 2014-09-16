@@ -6,6 +6,7 @@
 package http2
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -68,7 +69,6 @@ const (
 
 	// Headers Frame
 	FlagHeadersEndStream  Flags = 0x1
-	FlagHeadersEndSegment Flags = 0x2
 	FlagHeadersEndHeaders Flags = 0x4
 	FlagHeadersPadded     Flags = 0x8
 	FlagHeadersPriority   Flags = 0x20
@@ -82,6 +82,28 @@ const (
 	// Continuation Frame
 	FlagContinuationEndHeaders Flags = 0x4
 )
+
+var flagName = map[FrameType]map[Flags]string{
+	FrameData: {
+		FlagDataEndStream: "END_STREAM",
+		FlagDataPadded:    "PADDED",
+	},
+	FrameHeaders: {
+		FlagHeadersEndStream:  "END_STREAM",
+		FlagHeadersEndHeaders: "END_HEADERS",
+		FlagHeadersPadded:     "PADDED",
+		FlagHeadersPriority:   "PRIORITY",
+	},
+	FrameSettings: {
+		FlagSettingsAck: "ACK",
+	},
+	FramePing: {
+		FlagPingAck: "ACK",
+	},
+	FrameContinuation: {
+		FlagContinuationEndHeaders: "END_HEADERS",
+	},
+}
 
 // A SettingID is an HTTP/2 setting as defined in
 // http://http2.github.io/http2-spec/#iana-settings
@@ -154,6 +176,33 @@ type FrameHeader struct {
 func (h FrameHeader) Header() FrameHeader { return h }
 
 func (h FrameHeader) String() string {
+	var buf bytes.Buffer
+	buf.WriteString("[FrameHeader ")
+	buf.WriteString(h.Type.String())
+	if h.Flags != 0 {
+		buf.WriteString(" flags=")
+		set := 0
+		for i := uint8(0); i < 8; i++ {
+			if h.Flags&(1<<i) == 0 {
+				continue
+			}
+			set++
+			if set > 1 {
+				buf.WriteByte('|')
+			}
+			name := flagName[h.Type][Flags(1<<i)]
+			if name != "" {
+				buf.WriteString(name)
+			} else {
+				fmt.Fprintf(&buf, "0x%x", 1<<i)
+			}
+		}
+	}
+	if h.StreamID != 0 {
+		fmt.Fprintf(&buf, " stream=%d", h.StreamID)
+	}
+	fmt.Fprintf(&buf, " len=%d]", h.Length)
+	return buf.String()
 	return fmt.Sprintf("[FrameHeader type=%v flags=%v stream=%v len=%v]",
 		h.Type, h.Flags, h.StreamID, h.Length)
 }
