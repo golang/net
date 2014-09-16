@@ -62,8 +62,9 @@ func (f Flags) Has(v Flags) bool {
 
 // Frame-specific FrameHeader flag bits.
 const (
-	// Settings Frame
-	FlagSettingsAck Flags = 0x1
+	// Data Frame
+	FlagDataEndStream Flags = 0x1
+	FlagDataPadded    Flags = 0x8
 
 	// Headers Frame
 	FlagHeadersEndStream  Flags = 0x1
@@ -72,9 +73,11 @@ const (
 	FlagHeadersPadded     Flags = 0x8
 	FlagHeadersPriority   Flags = 0x20
 
-	// Data Frame
-	FlagDataEndStream Flags = 0x1
-	FlagDataPadded    Flags = 0x8
+	// Settings Frame
+	FlagSettingsAck Flags = 0x1
+
+	// Ping Frame
+	FlagPingAck Flags = 0x1
 
 	// Continuation Frame
 	FlagContinuationEndHeaders Flags = 0x4
@@ -121,7 +124,7 @@ var frameParsers = map[FrameType]frameParser{
 	FrameRSTStream:    parseRSTStreamFrame,
 	FrameSettings:     parseSettingsFrame,
 	FramePushPromise:  nil, // TODO
-	FramePing:         nil, // TODO
+	FramePing:         parsePingFrame,
 	FrameGoAway:       nil, // TODO
 	FrameWindowUpdate: parseWindowUpdateFrame,
 	FrameContinuation: parseContinuationFrame,
@@ -364,6 +367,30 @@ func (f *SettingsFrame) ForeachSetting(fn func(s SettingID, v uint32)) {
 		fn(SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:4]))
 		buf = buf[6:]
 	}
+}
+
+// A PingFrame is a mechanism for measuring a minimal round trip time
+// from the sender, as well as determining whether an idle connection
+// is still functional.
+// See http://http2.github.io/http2-spec/#rfc.section.6.7
+type PingFrame struct {
+	FrameHeader
+	data []byte
+}
+
+func (f *PingFrame) Data() []byte {
+	f.checkValid()
+	return f.data
+}
+
+func parsePingFrame(fh FrameHeader, payload []byte) (Frame, error) {
+	if len(payload) != 8 {
+		return nil, ConnectionError(ErrCodeFrameSize)
+	}
+	if fh.StreamID != 0 {
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	return &PingFrame{fh, payload}, nil
 }
 
 // An UnknownFrame is the frame type returned when the frame type is unknown
