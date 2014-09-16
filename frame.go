@@ -125,7 +125,7 @@ var frameParsers = map[FrameType]frameParser{
 	FrameSettings:     parseSettingsFrame,
 	FramePushPromise:  nil, // TODO
 	FramePing:         parsePingFrame,
-	FrameGoAway:       nil, // TODO
+	FrameGoAway:       parseGoAwayFrame,
 	FrameWindowUpdate: parseWindowUpdateFrame,
 	FrameContinuation: parseContinuationFrame,
 }
@@ -375,12 +375,7 @@ func (f *SettingsFrame) ForeachSetting(fn func(s SettingID, v uint32)) {
 // See http://http2.github.io/http2-spec/#rfc.section.6.7
 type PingFrame struct {
 	FrameHeader
-	data []byte
-}
-
-func (f *PingFrame) Data() []byte {
-	f.checkValid()
-	return f.data
+	Data [8]byte
 }
 
 func parsePingFrame(fh FrameHeader, payload []byte) (Frame, error) {
@@ -390,7 +385,42 @@ func parsePingFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	if fh.StreamID != 0 {
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
-	return &PingFrame{fh, payload}, nil
+	f := &PingFrame{FrameHeader: fh}
+	copy(f.Data[:], payload)
+	return f, nil
+}
+
+// A GoAwayFrame informs the remote peer to stop creating streams on this connection.
+// See http://http2.github.io/http2-spec/#rfc.section.6.8
+type GoAwayFrame struct {
+	FrameHeader
+	LastStreamID uint32
+	ErrCode      uint32
+	debugData    []byte
+}
+
+// DebugData returns any debug data in the GOAWAY frame. Its contents
+// are not defined.
+// The caller must not retain the returned memory past the next
+// call to ReadFrame.
+func (f *GoAwayFrame) DebugData() []byte {
+	f.checkValid()
+	return f.debugData
+}
+
+func parseGoAwayFrame(fh FrameHeader, p []byte) (Frame, error) {
+	if fh.StreamID != 0 {
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	if len(p) < 8 {
+		return nil, ConnectionError(ErrCodeFrameSize)
+	}
+	return &GoAwayFrame{
+		FrameHeader:  fh,
+		LastStreamID: binary.BigEndian.Uint32(p[:4]) & (1<<31 - 1),
+		ErrCode:      binary.BigEndian.Uint32(p[4:8]),
+		debugData:    p[:8],
+	}, nil
 }
 
 // An UnknownFrame is the frame type returned when the frame type is unknown
