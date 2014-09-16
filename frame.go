@@ -110,14 +110,20 @@ func (s SettingID) String() string {
 type frameParser func(fh FrameHeader, payload []byte) (Frame, error)
 
 var frameParsers = map[FrameType]frameParser{
-	FrameSettings:     parseSettingsFrame,
-	FrameWindowUpdate: parseWindowUpdateFrame,
+	FrameData:         nil, // TODO
 	FrameHeaders:      parseHeadersFrame,
+	FramePriority:     nil, // TODO
+	FrameRSTStream:    nil, // TODO
+	FrameSettings:     parseSettingsFrame,
+	FramePushPromise:  nil, // TODO
+	FramePing:         nil, // TODO
+	FrameGoAway:       nil, // TODO
+	FrameWindowUpdate: parseWindowUpdateFrame,
 	FrameContinuation: parseContinuationFrame,
 }
 
 func typeFrameParser(t FrameType) frameParser {
-	if f, ok := frameParsers[t]; ok {
+	if f := frameParsers[t]; f != nil {
 		return f
 	}
 	return parseUnknownFrame
