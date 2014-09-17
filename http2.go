@@ -7,7 +7,13 @@
 
 // Package http2 implements the HTTP/2 protocol.
 //
-// It currently targets draft-14. See http://http2.github.io/
+// This is a work in progress. This package is low-level and intended
+// to be used directly by very few people. Most users will use it
+// indirectly through integration with the net/http package. See
+// ConfigureServer. That ConfigureServer call will likely be automatic
+// or available via an empty import in the future.
+//
+// This package currently targets draft-14. See http://http2.github.io/
 package http2
 
 import (
