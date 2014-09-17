@@ -8,12 +8,15 @@ package http2
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 )
 
 const frameHeaderLen = 9
+
+var padZeros = make([]byte, 255) // zeros for padding
 
 // A FrameType is a registered frame type as defined in
 // http://http2.github.io/http2-spec/#rfc.section.11.2
@@ -203,8 +206,6 @@ func (h FrameHeader) String() string {
 	}
 	fmt.Fprintf(&buf, " len=%d]", h.Length)
 	return buf.String()
-	return fmt.Sprintf("[FrameHeader type=%v flags=%v stream=%v len=%v]",
-		h.Type, h.Flags, h.StreamID, h.Length)
 }
 
 func (h *FrameHeader) checkValid() {
@@ -269,6 +270,14 @@ type Framer struct {
 
 	w    io.Writer
 	wbuf []byte
+
+	// AllowIllegalWrites permits the Framer's Write methods to
+	// write frames that do not conform to the HTTP/2 spec.  This
+	// permits using the Framer to test other HTTP/2
+	// implementations' conformance to the spec.
+	// If false, the Write methods will prefer to return an error
+	// rather than comply.
+	AllowIllegalWrites bool
 }
 
 func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
@@ -279,7 +288,7 @@ func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
 		0,
 		byte(ftype),
 		byte(flags),
-		byte(streamID>>24), // TODO: &127? Or do it in callers? Or allow for testing.
+		byte(streamID>>24),
 		byte(streamID>>16),
 		byte(streamID>>8),
 		byte(streamID))
@@ -294,7 +303,7 @@ func (f *Framer) endWrite() error {
 		byte(length>>8),
 		byte(length))
 	n, err := f.w.Write(f.wbuf)
-	if err == nil && n != length {
+	if err == nil && n != len(f.wbuf) {
 		err = io.ErrShortWrite
 	}
 	return err
@@ -302,6 +311,10 @@ func (f *Framer) endWrite() error {
 
 func (f *Framer) writeUint32(v uint32) {
 	f.wbuf = append(f.wbuf, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
+}
+
+func (f *Framer) writeByte(v byte) {
+	f.wbuf = append(f.wbuf, v)
 }
 
 // NewFramer returns a Framer that writes frames to w and reads them from r.
@@ -386,18 +399,20 @@ func parseDataFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	return f, nil
 }
 
+var errStreamID = errors.New("invalid streamid")
+
+func validStreamID(streamID uint32) bool {
+	return streamID != 0 && streamID&(1<<31) == 0
+}
+
 // WriteData writes a DATA frame.
 //
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility to not call other Write methods concurrently.
 func (f *Framer) WriteData(streamID uint32, endStream bool, data []byte) error {
 	// TODO: ignoring padding for now. will add when somebody cares.
-	if streamID == 0 {
-		// TODO: return some error to tell the caller that
-		// they're doing it wrong?  Or let them do as they'd
-		// like? Might be useful for testing other people's
-		// http2 implementations.  Maybe we have a
-		// Framer.AllowStupid bool?
+	if !validStreamID(streamID) && !f.AllowIllegalWrites {
+		return errStreamID
 	}
 	var flags Flags
 	if endStream {
@@ -570,14 +585,9 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 type HeadersFrame struct {
 	FrameHeader
 
-	// If FlagHeadersPriority:
-	ExclusiveDep bool
-	StreamDep    uint32
+	// Priority is set if FlagHeadersPriority is set in the FrameHeader.
+	Priority PriorityParam
 
-	// Weight is [0,255]. Only valid if FrameHeader.Flags has the
-	// FlagHeadersPriority bit set, in which case the caller must
-	// also add 1 to get to spec-defined [1,256] range.
-	Weight        uint8
 	headerFragBuf []byte // not owned
 }
 
@@ -613,9 +623,9 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 		if err != nil {
 			return nil, err
 		}
-		hf.StreamDep = v & 0x7fffffff
-		hf.ExclusiveDep = (v != hf.StreamDep) // high bit was set
-		p, hf.Weight, err = readByte(p)
+		hf.Priority.StreamDep = v & 0x7fffffff
+		hf.Priority.ExclusiveDep = (v != hf.Priority.StreamDep) // high bit was set
+		p, hf.Priority.Weight, err = readByte(p)
 		if err != nil {
 			return nil, err
 		}
@@ -625,6 +635,94 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 	}
 	hf.headerFragBuf = p[:len(p)-int(padLength)]
 	return hf, nil
+}
+
+// HeadersFrameParam are the parameters for writing a HEADERS frame.
+type HeadersFrameParam struct {
+	// StreamID is the required Stream ID to initiate.
+	StreamID uint32
+	// BlockFragment is part (or all) of a Header Block.
+	BlockFragment []byte
+
+	// EndStream indicates that the header block is the last that
+	// the endpoint will send for the identified stream. Setting
+	// this flag causes the stream to enter one of "half closed"
+	// states.
+	EndStream bool
+
+	// EndHeaders indicates that this frame contains an entire
+	// header block and is not followed by any
+	// CONTINUATION frames.
+	EndHeaders bool
+
+	// PadLength is the optional number of bytes of zeros to add
+	// to this frame.
+	PadLength uint8
+
+	// Priority, if non-zero, includes stream priority information
+	// in the HEADER frame.
+	Priority PriorityParam
+}
+
+// WriteHeaders writes a single HEADERS frame.
+//
+// This is a low-level header writing method. Encoding headers and
+// splitting them into any necessary CONTINUATION frames is handled
+// elsewhere.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteHeaders(p HeadersFrameParam) error {
+	var flags Flags
+	if p.PadLength != 0 {
+		flags |= FlagHeadersPadded
+	}
+	if p.EndStream {
+		flags |= FlagHeadersEndStream
+	}
+	if p.EndHeaders {
+		flags |= FlagHeadersEndHeaders
+	}
+	if !p.Priority.IsZero() {
+		flags |= FlagHeadersPriority
+	}
+	f.startWrite(FrameHeaders, flags, p.StreamID)
+	if p.PadLength != 0 {
+		f.writeByte(p.PadLength)
+	}
+	if !p.Priority.IsZero() {
+		v := p.Priority.StreamDep
+		if !validStreamID(v) && !f.AllowIllegalWrites {
+			return errors.New("invalid dependent stream id")
+		}
+		if p.Priority.ExclusiveDep {
+			v |= 1 << 31
+		}
+		f.writeUint32(v)
+		f.writeByte(p.Priority.Weight)
+	}
+	f.wbuf = append(f.wbuf, p.BlockFragment...)
+	f.wbuf = append(f.wbuf, padZeros[:p.PadLength]...)
+	return f.endWrite()
+}
+
+// PriorityParam are the stream prioritzation parameters.
+type PriorityParam struct {
+	// StreamDep is a 31-bit stream identifier for the
+	// stream that this stream depends on. Zero means no
+	// dependency.
+	StreamDep uint32
+
+	// ExclusiveDep is whether the dependency is exclusive.
+	ExclusiveDep bool
+
+	// Weight is the stream's weight. It should be set together
+	// with StreamDep, or neither should be set.
+	Weight uint8
+}
+
+func (p PriorityParam) IsZero() bool {
+	return p == PriorityParam{}
 }
 
 // A RSTStreamFrame allows for abnormal termination of a stream.
@@ -646,12 +744,8 @@ func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility to not call other Write methods concurrently.
 func (f *Framer) WriteRSTStream(streamID, errCode uint32) error {
-	if streamID == 0 {
-		// TODO: return some error to tell the caller that
-		// they're doing it wrong?  Or let them do as they'd
-		// like? Might be useful for testing other people's
-		// http2 implementations.  Maybe we have a
-		// Framer.AllowStupid bool?
+	if !validStreamID(streamID) && !f.AllowIllegalWrites {
+		return errStreamID
 	}
 	f.startWrite(FrameRSTStream, 0, streamID)
 	f.writeUint32(errCode)

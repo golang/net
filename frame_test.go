@@ -67,3 +67,126 @@ func TestWriteData(t *testing.T) {
 		t.Errorf("didn't see END_STREAM flag")
 	}
 }
+
+func TestWriteHeaders(t *testing.T) {
+	tests := []struct {
+		name      string
+		p         HeadersFrameParam
+		wantEnc   string
+		wantFrame *HeadersFrame
+	}{
+		{
+			"basic",
+			HeadersFrameParam{
+				StreamID:      42,
+				BlockFragment: []byte("abc"),
+				Priority:      PriorityParam{},
+			},
+			"\x00\x00\x03\x01\x00\x00\x00\x00*abc",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Length:   uint32(len("abc")),
+				},
+				Priority:      PriorityParam{},
+				headerFragBuf: []byte("abc"),
+			},
+		},
+		{
+			"basic + end flags",
+			HeadersFrameParam{
+				StreamID:      42,
+				BlockFragment: []byte("abc"),
+				EndStream:     true,
+				EndHeaders:    true,
+				Priority:      PriorityParam{},
+			},
+			"\x00\x00\x03\x01\x05\x00\x00\x00*abc",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Flags:    FlagHeadersEndStream | FlagHeadersEndHeaders,
+					Length:   uint32(len("abc")),
+				},
+				Priority:      PriorityParam{},
+				headerFragBuf: []byte("abc"),
+			},
+		},
+		{
+			"with padding",
+			HeadersFrameParam{
+				StreamID:      42,
+				BlockFragment: []byte("abc"),
+				EndStream:     true,
+				EndHeaders:    true,
+				PadLength:     5,
+				Priority:      PriorityParam{},
+			},
+			"\x00\x00\t\x01\r\x00\x00\x00*\x05abc\x00\x00\x00\x00\x00",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Flags:    FlagHeadersEndStream | FlagHeadersEndHeaders | FlagHeadersPadded,
+					Length:   uint32(1 + len("abc") + 5), // pad length + contents + padding
+				},
+				Priority:      PriorityParam{},
+				headerFragBuf: []byte("abc"),
+			},
+		},
+		{
+			"with priority",
+			HeadersFrameParam{
+				StreamID:      42,
+				BlockFragment: []byte("abc"),
+				EndStream:     true,
+				EndHeaders:    true,
+				PadLength:     2,
+				Priority: PriorityParam{
+					StreamDep:    15,
+					ExclusiveDep: true,
+					Weight:       127,
+				},
+			},
+			"\x00\x00\v\x01-\x00\x00\x00*\x02\x80\x00\x00\x0f\u007fabc\x00\x00",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Flags:    FlagHeadersEndStream | FlagHeadersEndHeaders | FlagHeadersPadded | FlagHeadersPriority,
+					Length:   uint32(1 + 5 + len("abc") + 2), // pad length + priority + contents + padding
+				},
+				Priority: PriorityParam{
+					StreamDep:    15,
+					ExclusiveDep: true,
+					Weight:       127,
+				},
+				headerFragBuf: []byte("abc"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		fr, buf := testFramer()
+		if err := fr.WriteHeaders(tt.p); err != nil {
+			t.Errorf("test %q: %v", tt.name, err)
+			continue
+		}
+		if buf.String() != tt.wantEnc {
+			t.Errorf("test %q: encoded %q; want %q", tt.name, buf.Bytes(), tt.wantEnc)
+		}
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("test %q: failed to read the frame back: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(f, tt.wantFrame) {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, f, tt.wantFrame)
+		}
+	}
+}
