@@ -7,6 +7,7 @@ package http2
 
 import "fmt"
 
+// An ErrCode is an unsigned 32-bit error code as defined in the HTTP/2 spec.
 type ErrCode uint32
 
 const (
@@ -25,7 +26,7 @@ const (
 	ErrCodeInadequateSecurity ErrCode = 0xc
 )
 
-var ErrCodeName = map[ErrCode]string{
+var errCodeName = map[ErrCode]string{
 	ErrCodeNo:                 "NO_ERROR",
 	ErrCodeProtocol:           "PROTOCOL_ERROR",
 	ErrCodeInternal:           "INTERNAL_ERROR",
@@ -42,10 +43,10 @@ var ErrCodeName = map[ErrCode]string{
 }
 
 func (e ErrCode) String() string {
-	if s, ok := ErrCodeName[e]; ok {
+	if s, ok := errCodeName[e]; ok {
 		return s
 	}
-	return fmt.Sprintf("unknown error code %x", e)
+	return fmt.Sprintf("unknown error code 0x%x", e)
 }
 
 type Error interface {
@@ -54,6 +55,8 @@ type Error interface {
 	error
 }
 
+// ConnectionError is an error that results in the termination of the
+// entire connection.
 type ConnectionError ErrCode
 
 var _ Error = ConnectionError(0)
@@ -62,6 +65,8 @@ func (e ConnectionError) IsStreamError() bool     { return false }
 func (e ConnectionError) IsConnectionError() bool { return true }
 func (e ConnectionError) Error() string           { return fmt.Sprintf("connection error: %s", ErrCode(e)) }
 
+// StreamError is an error that only affects one stream within an
+// HTTP/2 connection.
 type StreamError uint32
 
 var _ Error = StreamError(0)
