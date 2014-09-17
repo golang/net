@@ -278,6 +278,12 @@ type Framer struct {
 	// If false, the Write methods will prefer to return an error
 	// rather than comply.
 	AllowIllegalWrites bool
+
+	// TODO: track which type of frame & with which flags was sent
+	// last.  Then return an error (unless AllowIllegalWrites) if
+	// we're in the middle of a header block and a
+	// non-Continuation or Continuation on a different stream is
+	// attempted to be written.
 }
 
 func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
