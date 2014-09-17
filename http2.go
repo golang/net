@@ -263,8 +263,9 @@ func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
-// ConfigureServer adds HTTP2 support to s as configured by the HTTP/2
-// server configuration in conf. The configuration may be nil.
+// ConfigureServer adds HTTP/2 support to a net/http Server.
+//
+// The configuration conf may be nil.
 //
 // ConfigureServer must be called before s begins serving.
 func ConfigureServer(s *http.Server, conf *Server) {
