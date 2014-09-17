@@ -148,9 +148,9 @@ func TestWriteHeaders(t *testing.T) {
 				EndHeaders:    true,
 				PadLength:     2,
 				Priority: PriorityParam{
-					StreamDep:    15,
-					ExclusiveDep: true,
-					Weight:       127,
+					StreamDep: 15,
+					Exclusive: true,
+					Weight:    127,
 				},
 			},
 			"\x00\x00\v\x01-\x00\x00\x00*\x02\x80\x00\x00\x0f\u007fabc\x00\x00",
@@ -163,9 +163,9 @@ func TestWriteHeaders(t *testing.T) {
 					Length:   uint32(1 + 5 + len("abc") + 2), // pad length + priority + contents + padding
 				},
 				Priority: PriorityParam{
-					StreamDep:    15,
-					ExclusiveDep: true,
-					Weight:       127,
+					StreamDep: 15,
+					Exclusive: true,
+					Weight:    127,
 				},
 				headerFragBuf: []byte("abc"),
 			},
@@ -233,6 +233,74 @@ func TestWriteContinuation(t *testing.T) {
 	for _, tt := range tests {
 		fr, _ := testFramer()
 		if err := fr.WriteContinuation(streamID, tt.end, tt.frag); err != nil {
+			t.Errorf("test %q: %v", tt.name, err)
+			continue
+		}
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("test %q: failed to read the frame back: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(f, tt.wantFrame) {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, f, tt.wantFrame)
+		}
+	}
+}
+
+func TestWritePriority(t *testing.T) {
+	const streamID = 42
+	tests := []struct {
+		name      string
+		priority  PriorityParam
+		wantFrame *PriorityFrame
+	}{
+		{
+			"not exclusive",
+			PriorityParam{
+				StreamDep: 2,
+				Exclusive: false,
+				Weight:    127,
+			},
+			&PriorityFrame{
+				FrameHeader{
+					valid:    true,
+					StreamID: streamID,
+					Type:     FramePriority,
+					Length:   5,
+				},
+				PriorityParam{
+					StreamDep: 2,
+					Exclusive: false,
+					Weight:    127,
+				},
+			},
+		},
+
+		{
+			"exclusive",
+			PriorityParam{
+				StreamDep: 3,
+				Exclusive: true,
+				Weight:    77,
+			},
+			&PriorityFrame{
+				FrameHeader{
+					valid:    true,
+					StreamID: streamID,
+					Type:     FramePriority,
+					Length:   5,
+				},
+				PriorityParam{
+					StreamDep: 3,
+					Exclusive: true,
+					Weight:    77,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		fr, _ := testFramer()
+		if err := fr.WritePriority(streamID, tt.priority); err != nil {
 			t.Errorf("test %q: %v", tt.name, err)
 			continue
 		}

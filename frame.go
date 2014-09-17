@@ -145,7 +145,7 @@ type frameParser func(fh FrameHeader, payload []byte) (Frame, error)
 var frameParsers = map[FrameType]frameParser{
 	FrameData:         parseDataFrame,
 	FrameHeaders:      parseHeadersFrame,
-	FramePriority:     nil, // TODO
+	FramePriority:     parsePriorityFrame,
 	FrameRSTStream:    parseRSTStreamFrame,
 	FrameSettings:     parseSettingsFrame,
 	FramePushPromise:  nil, // TODO
@@ -630,7 +630,7 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 			return nil, err
 		}
 		hf.Priority.StreamDep = v & 0x7fffffff
-		hf.Priority.ExclusiveDep = (v != hf.Priority.StreamDep) // high bit was set
+		hf.Priority.Exclusive = (v != hf.Priority.StreamDep) // high bit was set
 		p, hf.Priority.Weight, err = readByte(p)
 		if err != nil {
 			return nil, err
@@ -701,7 +701,7 @@ func (f *Framer) WriteHeaders(p HeadersFrameParam) error {
 		if !validStreamID(v) && !f.AllowIllegalWrites {
 			return errors.New("invalid dependent stream id")
 		}
-		if p.Priority.ExclusiveDep {
+		if p.Priority.Exclusive {
 			v |= 1 << 31
 		}
 		f.writeUint32(v)
@@ -712,6 +712,13 @@ func (f *Framer) WriteHeaders(p HeadersFrameParam) error {
 	return f.endWrite()
 }
 
+// A PriorityFrame specifies the sender-advised priority of a stream.
+// See http://http2.github.io/http2-spec/#rfc.section.6.3
+type PriorityFrame struct {
+	FrameHeader
+	PriorityParam
+}
+
 // PriorityParam are the stream prioritzation parameters.
 type PriorityParam struct {
 	// StreamDep is a 31-bit stream identifier for the
@@ -719,8 +726,8 @@ type PriorityParam struct {
 	// dependency.
 	StreamDep uint32
 
-	// ExclusiveDep is whether the dependency is exclusive.
-	ExclusiveDep bool
+	// Exclusive is whether the dependency is exclusive.
+	Exclusive bool
 
 	// Weight is the stream's weight. It should be set together
 	// with StreamDep, or neither should be set.
@@ -729,6 +736,44 @@ type PriorityParam struct {
 
 func (p PriorityParam) IsZero() bool {
 	return p == PriorityParam{}
+}
+
+func parsePriorityFrame(fh FrameHeader, payload []byte) (Frame, error) {
+	if fh.StreamID == 0 {
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	if len(payload) < 5 {
+		// TODO: != 5 or < 5? https://github.com/http2/http2-spec/issues/611
+		return nil, ConnectionError(ErrCodeProtocol)
+	}
+	v := binary.BigEndian.Uint32(payload[:4])
+	streamID := v & 0x7fffffff // mask off high bit
+	return &PriorityFrame{
+		FrameHeader: fh,
+		PriorityParam: PriorityParam{
+			Weight:    payload[4],
+			StreamDep: streamID,
+			Exclusive: streamID != v, // was high bit set?
+		},
+	}, nil
+}
+
+// WritePriority writes a PRIORITY frame.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WritePriority(streamID uint32, p PriorityParam) error {
+	if !validStreamID(streamID) && !f.AllowIllegalWrites {
+		return errStreamID
+	}
+	f.startWrite(FramePriority, 0, streamID)
+	v := p.StreamDep
+	if p.Exclusive {
+		v |= 1 << 31
+	}
+	f.writeUint32(v)
+	f.writeByte(p.Weight)
+	return f.endWrite()
 }
 
 // A RSTStreamFrame allows for abnormal termination of a stream.
