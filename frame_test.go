@@ -190,3 +190,59 @@ func TestWriteHeaders(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteContinuation(t *testing.T) {
+	const streamID = 42
+	tests := []struct {
+		name string
+		end  bool
+		frag []byte
+
+		wantFrame *ContinuationFrame
+	}{
+		{
+			"not end",
+			false,
+			[]byte("abc"),
+			&ContinuationFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: streamID,
+					Type:     FrameContinuation,
+					Length:   uint32(len("abc")),
+				},
+				headerFragBuf: []byte("abc"),
+			},
+		},
+		{
+			"end",
+			true,
+			[]byte("def"),
+			&ContinuationFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: streamID,
+					Type:     FrameContinuation,
+					Flags:    FlagContinuationEndHeaders,
+					Length:   uint32(len("def")),
+				},
+				headerFragBuf: []byte("def"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		fr, _ := testFramer()
+		if err := fr.WriteContinuation(streamID, tt.end, tt.frag); err != nil {
+			t.Errorf("test %q: %v", tt.name, err)
+			continue
+		}
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("test %q: failed to read the frame back: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(f, tt.wantFrame) {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, f, tt.wantFrame)
+		}
+	}
+}

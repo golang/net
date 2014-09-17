@@ -778,6 +778,23 @@ func (f *ContinuationFrame) HeadersEnded() bool {
 	return f.FrameHeader.Flags.Has(FlagContinuationEndHeaders)
 }
 
+// WriteContinuation writes a CONTINUATION frame.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteContinuation(streamID uint32, endHeaders bool, headerBlockFragment []byte) error {
+	if !validStreamID(streamID) && !f.AllowIllegalWrites {
+		return errStreamID
+	}
+	var flags Flags
+	if endHeaders {
+		flags |= FlagContinuationEndHeaders
+	}
+	f.startWrite(FrameContinuation, flags, streamID)
+	f.wbuf = append(f.wbuf, headerBlockFragment...)
+	return f.endWrite()
+}
+
 func readByte(p []byte) (remain []byte, b byte, err error) {
 	if len(p) == 0 {
 		return nil, 0, io.ErrUnexpectedEOF
