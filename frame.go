@@ -318,12 +318,10 @@ func (f *Framer) endWrite() error {
 	return err
 }
 
+func (f *Framer) writeByte(v byte)     { f.wbuf = append(f.wbuf, v) }
+func (f *Framer) writeUint16(v uint16) { f.wbuf = append(f.wbuf, byte(v>>8), byte(v)) }
 func (f *Framer) writeUint32(v uint32) {
 	f.wbuf = append(f.wbuf, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
-}
-
-func (f *Framer) writeByte(v byte) {
-	f.wbuf = append(f.wbuf, v)
 }
 
 // NewFramer returns a Framer that writes frames to w and reads them from r.
@@ -489,13 +487,46 @@ func (f *SettingsFrame) Value(s SettingID) (v uint32, ok bool) {
 	return 0, false
 }
 
-func (f *SettingsFrame) ForeachSetting(fn func(s SettingID, v uint32)) {
+func (f *SettingsFrame) ForeachSetting(fn func(Setting)) {
 	f.checkValid()
 	buf := f.p
 	for len(buf) > 0 {
-		fn(SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:4]))
+		fn(Setting{SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:4])})
 		buf = buf[6:]
 	}
+}
+
+// Setting is a setting parameter: which setting it is, and its value.
+type Setting struct {
+	// ID is which setting is being set.
+	// See http://http2.github.io/http2-spec/#SettingValues
+	ID SettingID
+
+	// Val is the value.
+	Val uint32
+}
+
+// WriteSettings writes a SETTINGS frame with zero or more settings
+// specified and the ACK bit not set.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteSettings(settings ...Setting) error {
+	f.startWrite(FrameSettings, 0, 0)
+	for _, s := range settings {
+		f.writeUint16(uint16(s.ID))
+		f.writeUint32(s.Val)
+	}
+	return f.endWrite()
+}
+
+// WriteSettings writes an empty SETTINGS frame with the ACK bit set.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WriteSettingsAck() error {
+	f.startWrite(FrameSettings, FlagSettingsAck, 0)
+	return f.endWrite()
 }
 
 // A PingFrame is a mechanism for measuring a minimal round trip time

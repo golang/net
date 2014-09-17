@@ -314,3 +314,21 @@ func TestWritePriority(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteSettings(t *testing.T) {
+	fr, buf := testFramer()
+	fr.WriteSettings(Setting{1, 2}, Setting{3, 4})
+	const wantEnc = "\x00\x00\f\x04\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00\x03\x00\x00\x00\x04"
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+}
+
+func TestWriteSettingsAck(t *testing.T) {
+	fr, buf := testFramer()
+	fr.WriteSettingsAck()
+	const wantEnc = "\x00\x00\x00\x04\x01\x00\x00\x00\x00"
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+}

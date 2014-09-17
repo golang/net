@@ -215,8 +215,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
-	f.ForeachSetting(func(s SettingID, v uint32) {
-		log.Printf("  setting %s = %v", s, v)
+	f.ForeachSetting(func(s Setting) {
+		log.Printf("  setting %s = %v", s.ID, s.Val)
 	})
 	return nil
 }
