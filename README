@@ -1,0 +1,3 @@
+This is a work-in-progress HTTP/2 implementation for Go.
+
+Docs are at https://godoc.org/github.com/bradfitz/http2
