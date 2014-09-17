@@ -284,6 +284,9 @@ type Framer struct {
 	// we're in the middle of a header block and a
 	// non-Continuation or Continuation on a different stream is
 	// attempted to be written.
+
+	// TODO: add limits on max frame size allowed to be read &
+	// written.
 }
 
 func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
