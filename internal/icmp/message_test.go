@@ -67,7 +67,7 @@ var marshalAndParseMessageForIPv6Tests = []icmp.Message{
 }
 
 func TestMarshalAndParseMessageForIPv6(t *testing.T) {
-	pshicmp := icmp.IPv6PseudoHeader(net.ParseIP("ff02::1"), net.ParseIP("fe80::1"))
+	pshicmp := icmp.IPv6PseudoHeader(net.ParseIP("fe80::1"), net.ParseIP("ff02::1"))
 	for _, tt := range marshalAndParseMessageForIPv6Tests {
 		for _, psh := range [][]byte{pshicmp, nil} {
 			b, err := tt.Marshal(psh)
