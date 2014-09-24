@@ -16,8 +16,8 @@ const ipv6PseudoHeaderLen = 2*net.IPv6len + 8
 // calculation.
 func IPv6PseudoHeader(src, dst net.IP) []byte {
 	b := make([]byte, ipv6PseudoHeaderLen)
-	copy(b[:net.IPv6len], src)
-	copy(b[net.IPv6len:], dst)
+	copy(b, src.To16())
+	copy(b[net.IPv6len:], dst.To16())
 	b[len(b)-1] = byte(iana.ProtocolIPv6ICMP)
 	return b
 }
