@@ -610,9 +610,8 @@ type WindowUpdateFrame struct {
 }
 
 func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
-	if len(p) < 4 {
-		// Too short.
-		return nil, ConnectionError(ErrCodeProtocol)
+	if len(p) != 4 {
+		return nil, ConnectionError(ErrCodeFrameSize)
 	}
 	return &WindowUpdateFrame{
 		FrameHeader: fh,
@@ -776,9 +775,8 @@ func parsePriorityFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	if fh.StreamID == 0 {
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
-	if len(payload) < 5 {
-		// TODO: != 5 or < 5? https://github.com/http2/http2-spec/issues/611
-		return nil, ConnectionError(ErrCodeProtocol)
+	if len(payload) != 5 {
+		return nil, ConnectionError(ErrCodeFrameSize)
 	}
 	v := binary.BigEndian.Uint32(payload[:4])
 	streamID := v & 0x7fffffff // mask off high bit
@@ -818,7 +816,10 @@ type RSTStreamFrame struct {
 }
 
 func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
-	if fh.StreamID == 0 || len(p) < 4 {
+	if len(p) != 4 {
+		return nil, ConnectionError(ErrCodeFrameSize)
+	}
+	if fh.StreamID == 0 {
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
 	return &RSTStreamFrame{fh, binary.BigEndian.Uint32(p[:4])}, nil
