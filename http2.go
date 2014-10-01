@@ -19,6 +19,7 @@ package http2
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -290,6 +291,9 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		id:    id,
 		state: stateOpen,
 	}
+	if f.Header().Flags.Has(FlagHeadersEndStream) {
+		st.state = stateHalfClosedRemote
+	}
 	sc.streams[id] = st
 	sc.header = make(http.Header)
 	sc.curHeaderStreamID = id
@@ -318,12 +322,12 @@ func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 	sc.curStream = nil
 
 	// TODO: transition streamID state
-	go sc.startHandler(curStream, sc.method, sc.path, sc.scheme, sc.authority, sc.header)
+	go sc.startHandler(curStream.id, curStream.state == stateOpen, sc.method, sc.path, sc.scheme, sc.authority, sc.header)
 
 	return nil
 }
 
-func (sc *serverConn) startHandler(st *stream, method, path, scheme, authority string, reqHeader http.Header) {
+func (sc *serverConn) startHandler(streamID uint32, bodyOpen bool, method, path, scheme, authority string, reqHeader http.Header) {
 	var tlsState *tls.ConnectionState // make this non-nil if https
 	if scheme == "https" {
 		// TODO: get from sc's ConnectionState
@@ -339,6 +343,11 @@ func (sc *serverConn) startHandler(st *stream, method, path, scheme, authority s
 		ProtoMinor: 0,
 		TLS:        tlsState,
 		Host:       authority,
+		Body: &requestBody{
+			sc:       sc,
+			streamID: streamID,
+			hasBody:  bodyOpen,
+		},
 	}
 	if vv, ok := reqHeader["Content-Length"]; ok {
 		req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
@@ -382,6 +391,26 @@ func ConfigureServer(s *http.Server, conf *Server) {
 		}
 		conf.handleConn(hs, c, h)
 	}
+}
+
+type requestBody struct {
+	sc       *serverConn
+	streamID uint32
+	hasBody  bool
+	closed   bool
+}
+
+func (b *requestBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func (b *requestBody) Read(p []byte) (n int, err error) {
+	if !b.hasBody {
+		return 0, io.EOF
+	}
+	// TODO: implement
+	return 0, errors.New("TODO: we don't handle request bodies yet")
 }
 
 var testHookOnConn func() // for testing
