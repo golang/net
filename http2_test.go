@@ -34,6 +34,7 @@ func TestServer(t *testing.T) {
 		// -- Write only
 		// -- WriteString
 		// -- both
+		// -- huge headers over a frame size so we get continuation headers.
 		// Look at net/http's Server tests for inspiration.
 		w.Header().Set("Foo", "Bar")
 	}))
