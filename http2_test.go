@@ -10,7 +10,6 @@ package http2
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -25,7 +24,18 @@ func TestServer(t *testing.T) {
 	requireCurl(t)
 
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "Hello, test.")
+		// TODO: add a bunch of different tests with different
+		// behavior, as a function of r or a table.
+		// -- with request body, without.
+		// -- no interaction with w.
+		// -- panic
+		// -- modify Header only, but no writes or writeheader (this test)
+		// -- WriteHeader only
+		// -- Write only
+		// -- WriteString
+		// -- both
+		// Look at net/http's Server tests for inspiration.
+		w.Header().Set("Foo", "Bar")
 	}))
 	ConfigureServer(ts.Config, &Server{})
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
@@ -52,7 +62,10 @@ func TestServer(t *testing.T) {
 		if err, ok := res.(error); ok {
 			t.Fatal(err)
 		}
-		t.Logf("Got: %s", res)
+		if !strings.Contains(string(res.([]byte)), "< foo:Bar") {
+			t.Errorf("didn't see foo:Bar header")
+			t.Logf("Got: %s", res)
+		}
 	case <-time.After(3 * time.Second):
 		t.Errorf("timeout waiting for curl")
 	}
