@@ -287,6 +287,10 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
+func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
+	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
+}
+
 func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
 		// TODO: convert to stream error I assume?
@@ -300,10 +304,6 @@ func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 		// TODO: transition state
 	}
 	return nil
-}
-
-func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
-	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
 // ConfigureServer adds HTTP/2 support to a net/http Server.
