@@ -22,6 +22,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/bradfitz/http2/hpack"
@@ -97,6 +100,7 @@ type serverConn struct {
 	// curHeaderStreamID is non-zero if we're in the middle
 	// of parsing headers that span multiple frames.
 	curHeaderStreamID uint32
+	curStream         *stream
 }
 
 type streamState int
@@ -282,8 +286,14 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		sc.maxStreamID = id
 	}
 
+	st := &stream{
+		id:    id,
+		state: stateOpen,
+	}
+	sc.streams[id] = st
 	sc.header = make(http.Header)
 	sc.curHeaderStreamID = id
+	sc.curStream = st
 	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
@@ -294,16 +304,50 @@ func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
 		// TODO: convert to stream error I assume?
+		return err
 	}
-	if end {
-		if err := sc.hpackDecoder.Close(); err != nil {
-			// TODO: convert to stream error I assume?
-			return err
-		}
-		sc.curHeaderStreamID = 0
-		// TODO: transition state
+	if !end {
+		return nil
 	}
+	if err := sc.hpackDecoder.Close(); err != nil {
+		// TODO: convert to stream error I assume?
+		return err
+	}
+	curStream := sc.curStream
+	sc.curHeaderStreamID = 0
+	sc.curStream = nil
+
+	// TODO: transition streamID state
+	go sc.startHandler(curStream, sc.method, sc.path, sc.scheme, sc.authority, sc.header)
+
 	return nil
+}
+
+func (sc *serverConn) startHandler(st *stream, method, path, scheme, authority string, reqHeader http.Header) {
+	var tlsState *tls.ConnectionState // make this non-nil if https
+	if scheme == "https" {
+		// TODO: get from sc's ConnectionState
+		tlsState = &tls.ConnectionState{}
+	}
+	req := &http.Request{
+		Method:     method,
+		URL:        &url.URL{},
+		RemoteAddr: sc.conn.RemoteAddr().String(),
+		RequestURI: path,
+		Proto:      "HTTP/2.0",
+		ProtoMajor: 2,
+		ProtoMinor: 0,
+		TLS:        tlsState,
+		Host:       authority,
+	}
+	if vv, ok := reqHeader["Content-Length"]; ok {
+		req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
+	} else {
+		req.ContentLength = -1
+	}
+	var rw = httptest.NewRecorder()
+	sc.handler.ServeHTTP(rw, req)
+	log.Printf("Got code %d: body: %q\n", rw.Code, rw.Body.Bytes())
 }
 
 // ConfigureServer adds HTTP/2 support to a net/http Server.
