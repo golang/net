@@ -6,12 +6,24 @@
 
 package ipv4
 
-func ipv4HeaderPrepend(fd int) (bool, error) {
-	// TODO(mikio): Implement this
-	return false, errOpNoSupport
+import "net"
+
+func getInt(fd int, opt *sockOpt) (int, error) {
+	return 0, errOpNoSupport
 }
 
-func setIPv4HeaderPrepend(fd int, v bool) error {
-	// TODO(mikio): Implement this
+func setInt(fd int, opt *sockOpt, v int) error {
+	return errOpNoSupport
+}
+
+func getInterface(fd int, opt *sockOpt) (*net.Interface, error) {
+	return nil, errOpNoSupport
+}
+
+func setInterface(fd int, opt *sockOpt, ifi *net.Interface) error {
+	return errOpNoSupport
+}
+
+func setGroup(fd int, opt *sockOpt, ifi *net.Interface, ip net.IP) error {
 	return errOpNoSupport
 }

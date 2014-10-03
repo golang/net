@@ -6,9 +6,7 @@
 
 package ipv4
 
-import (
-	"syscall"
-)
+import "syscall"
 
 // TOS returns the type-of-service field value for outgoing packets.
 func (c *genericOpt) TOS() (int, error) {
@@ -19,7 +17,7 @@ func (c *genericOpt) TOS() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv4TOS(fd)
+	return getInt(fd, &sockOpts[ssoTOS])
 }
 
 // SetTOS sets the type-of-service field value for future outgoing
@@ -32,7 +30,7 @@ func (c *genericOpt) SetTOS(tos int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv4TOS(fd, tos)
+	return setInt(fd, &sockOpts[ssoTOS], tos)
 }
 
 // TTL returns the time-to-live field value for outgoing packets.
@@ -44,7 +42,7 @@ func (c *genericOpt) TTL() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv4TTL(fd)
+	return getInt(fd, &sockOpts[ssoTTL])
 }
 
 // SetTTL sets the time-to-live field value for future outgoing
@@ -57,5 +55,5 @@ func (c *genericOpt) SetTTL(ttl int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv4TTL(fd, ttl)
+	return setInt(fd, &sockOpts[ssoTTL], ttl)
 }

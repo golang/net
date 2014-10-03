@@ -2,36 +2,36 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd netbsd openbsd
+// +build dragonfly netbsd openbsd
 
 package ipv4
 
-import "syscall"
+type sysSockoptLen int32
 
 const (
-	// See /usr/include/netinet/in.h.
-	sysSockoptHeaderPrepend      = syscall.IP_HDRINCL
-	sysSockoptTOS                = syscall.IP_TOS
-	sysSockoptTTL                = syscall.IP_TTL
-	sysSockoptMulticastTTL       = syscall.IP_MULTICAST_TTL
-	sysSockoptMulticastInterface = syscall.IP_MULTICAST_IF
-	sysSockoptMulticastLoopback  = syscall.IP_MULTICAST_LOOP
-	sysSockoptJoinGroup          = syscall.IP_ADD_MEMBERSHIP
-	sysSockoptLeaveGroup         = syscall.IP_DROP_MEMBERSHIP
+	sysIP_PKTINFO = 0
+
+	sysSizeofInetPktinfo = 0xc
 )
 
-const (
-	// See /usr/include/netinet/in.h.
-	sysSockoptReceiveTTL       = syscall.IP_RECVTTL
-	sysSockoptReceiveDst       = syscall.IP_RECVDSTADDR
-	sysSockoptReceiveInterface = syscall.IP_RECVIF
-	sysSockoptPacketInfo       = 0x1a // only darwin supports this option for now
-)
-
-const sysSizeofPacketInfo = 0xc
-
-type sysPacketInfo struct {
-	IfIndex  int32
-	RoutedIP [4]byte
-	IP       [4]byte
+type sysInetPktinfo struct {
+	Ifindex  uint32
+	Spec_dst [4]byte /* in_addr */
+	Addr     [4]byte /* in_addr */
 }
+
+var (
+	sockOpts = [ssoMax]sockOpt{
+		ssoTOS:                {sysIP_TOS, ssoTypeInt},
+		ssoTTL:                {sysIP_TTL, ssoTypeInt},
+		ssoMulticastTTL:       {sysIP_MULTICAST_TTL, ssoTypeByte},
+		ssoMulticastInterface: {sysIP_MULTICAST_IF, ssoTypeInterface},
+		ssoMulticastLoopback:  {sysIP_MULTICAST_LOOP, ssoTypeInt},
+		ssoReceiveTTL:         {sysIP_RECVTTL, ssoTypeInt},
+		ssoReceiveDst:         {sysIP_RECVDSTADDR, ssoTypeInt},
+		ssoReceiveInterface:   {sysIP_RECVIF, ssoTypeInt},
+		ssoHeaderPrepend:      {sysIP_HDRINCL, ssoTypeInt},
+		ssoJoinGroup:          {sysIP_ADD_MEMBERSHIP, ssoTypeIPMreq},
+		ssoLeaveGroup:         {sysIP_DROP_MEMBERSHIP, ssoTypeIPMreq},
+	}
+)

@@ -16,7 +16,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
 	defer opt.Unlock()
 	if cf&FlagTTL != 0 {
-		if err := setIPv4ReceiveTTL(fd, on); err != nil {
+		if err := setInt(fd, &sockOpts[ssoReceiveTTL], boolint(on)); err != nil {
 			return err
 		}
 		if on {
@@ -25,9 +25,9 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 			opt.clear(FlagTTL)
 		}
 	}
-	if supportsPacketInfo {
+	if sockOpts[ssoPacketInfo].name > 0 {
 		if cf&(FlagSrc|FlagDst|FlagInterface) != 0 {
-			if err := setIPv4PacketInfo(fd, on); err != nil {
+			if err := setInt(fd, &sockOpts[ssoPacketInfo], boolint(on)); err != nil {
 				return err
 			}
 			if on {
@@ -39,7 +39,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 		}
 	} else {
 		if cf&FlagDst != 0 {
-			if err := setIPv4ReceiveDestinationAddress(fd, on); err != nil {
+			if err := setInt(fd, &sockOpts[ssoReceiveDst], boolint(on)); err != nil {
 				return err
 			}
 			if on {
@@ -49,7 +49,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 			}
 		}
 		if cf&FlagInterface != 0 {
-			if err := setIPv4ReceiveInterface(fd, on); err != nil {
+			if err := setInt(fd, &sockOpts[ssoReceiveInterface], boolint(on)); err != nil {
 				return err
 			}
 			if on {
@@ -66,9 +66,9 @@ func (opt *rawOpt) oobLen() (l int) {
 	if opt.isset(FlagTTL) {
 		l += syscall.CmsgSpace(1)
 	}
-	if supportsPacketInfo {
+	if sockOpts[ssoPacketInfo].name > 0 {
 		if opt.isset(FlagSrc | FlagDst | FlagInterface) {
-			l += syscall.CmsgSpace(sysSizeofPacketInfo)
+			l += syscall.CmsgSpace(sysSizeofInetPktinfo)
 		}
 	} else {
 		if opt.isset(FlagDst) {
@@ -87,30 +87,30 @@ func (opt *rawOpt) marshalControlMessage() (oob []byte) {
 	if opt.isset(FlagTTL) {
 		m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
 		m.Level = ianaProtocolIP
-		m.Type = sysSockoptReceiveTTL
+		m.Type = sysIP_RECVTTL
 		m.SetLen(syscall.CmsgLen(1))
 		off += syscall.CmsgSpace(1)
 	}
-	if supportsPacketInfo {
+	if sockOpts[ssoPacketInfo].name > 0 {
 		if opt.isset(FlagSrc | FlagDst | FlagInterface) {
 			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
 			m.Level = ianaProtocolIP
-			m.Type = sysSockoptPacketInfo
-			m.SetLen(syscall.CmsgLen(sysSizeofPacketInfo))
-			off += syscall.CmsgSpace(sysSizeofPacketInfo)
+			m.Type = sysIP_PKTINFO
+			m.SetLen(syscall.CmsgLen(sysSizeofInetPktinfo))
+			off += syscall.CmsgSpace(sysSizeofInetPktinfo)
 		}
 	} else {
 		if opt.isset(FlagDst) {
 			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
 			m.Level = ianaProtocolIP
-			m.Type = sysSockoptReceiveDst
+			m.Type = sysIP_RECVDSTADDR
 			m.SetLen(syscall.CmsgLen(net.IPv4len))
 			off += syscall.CmsgSpace(net.IPv4len)
 		}
 		if opt.isset(FlagInterface) {
 			m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[off]))
 			m.Level = ianaProtocolIP
-			m.Type = sysSockoptReceiveInterface
+			m.Type = sysIP_RECVIF
 			m.SetLen(syscall.CmsgLen(syscall.SizeofSockaddrDatalink))
 			off += syscall.CmsgSpace(syscall.SizeofSockaddrDatalink)
 		}
@@ -119,24 +119,24 @@ func (opt *rawOpt) marshalControlMessage() (oob []byte) {
 }
 
 func (cm *ControlMessage) oobLen() (l int) {
-	if supportsPacketInfo && (cm.Src.To4() != nil || cm.IfIndex != 0) {
-		l += syscall.CmsgSpace(sysSizeofPacketInfo)
+	if sockOpts[ssoPacketInfo].name > 0 && (cm.Src.To4() != nil || cm.IfIndex != 0) {
+		l += syscall.CmsgSpace(sysSizeofInetPktinfo)
 	}
 	return
 }
 
 func (cm *ControlMessage) parseControlMessage(m *syscall.SocketControlMessage) {
 	switch m.Header.Type {
-	case sysSockoptReceiveTTL:
+	case sysIP_RECVTTL:
 		cm.TTL = int(*(*byte)(unsafe.Pointer(&m.Data[:1][0])))
-	case sysSockoptReceiveDst:
+	case sysIP_RECVDSTADDR:
 		cm.Dst = m.Data[:net.IPv4len]
-	case sysSockoptReceiveInterface:
+	case sysIP_RECVIF:
 		sadl := (*syscall.SockaddrDatalink)(unsafe.Pointer(&m.Data[0]))
 		cm.IfIndex = int(sadl.Index)
-	case sysSockoptPacketInfo:
-		pi := (*sysPacketInfo)(unsafe.Pointer(&m.Data[0]))
-		cm.IfIndex = int(pi.IfIndex)
-		cm.Dst = pi.IP[:]
+	case sysIP_PKTINFO:
+		pi := (*sysInetPktinfo)(unsafe.Pointer(&m.Data[0]))
+		cm.IfIndex = int(pi.Ifindex)
+		cm.Dst = pi.Addr[:]
 	}
 }

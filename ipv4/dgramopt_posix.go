@@ -21,7 +21,7 @@ func (c *dgramOpt) MulticastTTL() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv4MulticastTTL(fd)
+	return getInt(fd, &sockOpts[ssoMulticastTTL])
 }
 
 // SetMulticastTTL sets the time-to-live field value for future
@@ -34,7 +34,7 @@ func (c *dgramOpt) SetMulticastTTL(ttl int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv4MulticastTTL(fd, ttl)
+	return setInt(fd, &sockOpts[ssoMulticastTTL], ttl)
 }
 
 // MulticastInterface returns the default interface for multicast
@@ -47,7 +47,7 @@ func (c *dgramOpt) MulticastInterface() (*net.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ipv4MulticastInterface(fd)
+	return getInterface(fd, &sockOpts[ssoMulticastInterface])
 }
 
 // SetMulticastInterface sets the default interface for future
@@ -60,7 +60,7 @@ func (c *dgramOpt) SetMulticastInterface(ifi *net.Interface) error {
 	if err != nil {
 		return err
 	}
-	return setIPv4MulticastInterface(fd, ifi)
+	return setInterface(fd, &sockOpts[ssoMulticastInterface], ifi)
 }
 
 // MulticastLoopback reports whether transmitted multicast packets
@@ -73,7 +73,11 @@ func (c *dgramOpt) MulticastLoopback() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return ipv4MulticastLoopback(fd)
+	on, err := getInt(fd, &sockOpts[ssoMulticastLoopback])
+	if err != nil {
+		return false, err
+	}
+	return on == 1, nil
 }
 
 // SetMulticastLoopback sets whether transmitted multicast packets
@@ -86,7 +90,7 @@ func (c *dgramOpt) SetMulticastLoopback(on bool) error {
 	if err != nil {
 		return err
 	}
-	return setIPv4MulticastLoopback(fd, on)
+	return setInt(fd, &sockOpts[ssoMulticastLoopback], boolint(on))
 }
 
 // JoinGroup joins the group address group on the interface ifi.
@@ -105,7 +109,7 @@ func (c *dgramOpt) JoinGroup(ifi *net.Interface, group net.Addr) error {
 	if grp == nil {
 		return errMissingAddress
 	}
-	return joinIPv4Group(fd, ifi, grp)
+	return setGroup(fd, &sockOpts[ssoJoinGroup], ifi, grp)
 }
 
 // LeaveGroup leaves the group address group on the interface ifi.
@@ -121,5 +125,5 @@ func (c *dgramOpt) LeaveGroup(ifi *net.Interface, group net.Addr) error {
 	if grp == nil {
 		return errMissingAddress
 	}
-	return leaveIPv4Group(fd, ifi, grp)
+	return setGroup(fd, &sockOpts[ssoLeaveGroup], ifi, grp)
 }

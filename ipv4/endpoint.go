@@ -174,7 +174,7 @@ func NewRawConn(c net.PacketConn) (*RawConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := setIPv4HeaderPrepend(fd, true); err != nil {
+	if err := setInt(fd, &sockOpts[ssoHeaderPrepend], boolint(true)); err != nil {
 		return nil, err
 	}
 	return r, nil

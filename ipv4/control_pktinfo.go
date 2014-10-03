@@ -16,14 +16,14 @@ func (cm *ControlMessage) marshalPacketInfo() (oob []byte) {
 		oob = make([]byte, l)
 		m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[0]))
 		m.Level = ianaProtocolIP
-		m.Type = sysSockoptPacketInfo
-		m.SetLen(syscall.CmsgLen(sysSizeofPacketInfo))
-		pi := (*sysPacketInfo)(unsafe.Pointer(&oob[syscall.CmsgLen(0)]))
+		m.Type = sysIP_PKTINFO
+		m.SetLen(syscall.CmsgLen(sysSizeofInetPktinfo))
+		pi := (*sysInetPktinfo)(unsafe.Pointer(&oob[syscall.CmsgLen(0)]))
 		if ip := cm.Src.To4(); ip != nil {
-			copy(pi.IP[:], ip)
+			copy(pi.Addr[:], ip)
 		}
 		if cm.IfIndex != 0 {
-			pi.IfIndex = int32(cm.IfIndex)
+			pi.setIfindex(cm.IfIndex)
 		}
 	}
 	return

@@ -7,54 +7,86 @@
 package ipv4
 
 import (
+	"net"
 	"os"
-	"syscall"
+	"unsafe"
 )
 
-func ipv4TOS(fd int) (int, error) {
-	v, err := syscall.GetsockoptInt(fd, ianaProtocolIP, sysSockoptTOS)
-	if err != nil {
+func getInt(fd int, opt *sockOpt) (int, error) {
+	if opt.name < 1 || (opt.typ != ssoTypeByte && opt.typ != ssoTypeInt) {
+		return 0, errOpNoSupport
+	}
+	var i int32
+	var b byte
+	p := unsafe.Pointer(&i)
+	l := sysSockoptLen(4)
+	if opt.typ == ssoTypeByte {
+		p = unsafe.Pointer(&b)
+		l = sysSockoptLen(1)
+	}
+	if err := getsockopt(fd, ianaProtocolIP, opt.name, p, &l); err != nil {
 		return 0, os.NewSyscallError("getsockopt", err)
 	}
-	return v, nil
-}
-
-func setIPv4TOS(fd int, v int) error {
-	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, sysSockoptTOS, v))
-}
-
-func ipv4TTL(fd int) (int, error) {
-	v, err := syscall.GetsockoptInt(fd, ianaProtocolIP, sysSockoptTTL)
-	if err != nil {
-		return 0, os.NewSyscallError("getsockopt", err)
+	if opt.typ == ssoTypeByte {
+		return int(b), nil
 	}
-	return v, nil
+	return int(i), nil
 }
 
-func setIPv4TTL(fd int, v int) error {
-	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, sysSockoptTTL, v))
-}
-
-func ipv4ReceiveTTL(fd int) (bool, error) {
-	v, err := syscall.GetsockoptInt(fd, ianaProtocolIP, sysSockoptReceiveTTL)
-	if err != nil {
-		return false, os.NewSyscallError("getsockopt", err)
+func setInt(fd int, opt *sockOpt, v int) error {
+	if opt.name < 1 || (opt.typ != ssoTypeByte && opt.typ != ssoTypeInt) {
+		return errOpNoSupport
 	}
-	return v == 1, nil
-}
-
-func setIPv4ReceiveTTL(fd int, v bool) error {
-	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, sysSockoptReceiveTTL, boolint(v)))
-}
-
-func ipv4HeaderPrepend(fd int) (bool, error) {
-	v, err := syscall.GetsockoptInt(fd, ianaProtocolIP, sysSockoptHeaderPrepend)
-	if err != nil {
-		return false, os.NewSyscallError("getsockopt", err)
+	i := int32(v)
+	var b byte
+	p := unsafe.Pointer(&i)
+	l := sysSockoptLen(4)
+	if opt.typ == ssoTypeByte {
+		b = byte(v)
+		p = unsafe.Pointer(&b)
+		l = sysSockoptLen(1)
 	}
-	return v == 1, nil
+	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIP, opt.name, p, l))
 }
 
-func setIPv4HeaderPrepend(fd int, v bool) error {
-	return os.NewSyscallError("setsockopt", syscall.SetsockoptInt(fd, ianaProtocolIP, sysSockoptHeaderPrepend, boolint(v)))
+func getInterface(fd int, opt *sockOpt) (*net.Interface, error) {
+	if opt.name < 1 {
+		return nil, errOpNoSupport
+	}
+	switch opt.typ {
+	case ssoTypeInterface:
+		return getsockoptInterface(fd, opt.name)
+	case ssoTypeIPMreqn:
+		return getsockoptIPMreqn(fd, opt.name)
+	default:
+		return nil, errOpNoSupport
+	}
+}
+
+func setInterface(fd int, opt *sockOpt, ifi *net.Interface) error {
+	if opt.name < 1 {
+		return errOpNoSupport
+	}
+	switch opt.typ {
+	case ssoTypeInterface:
+		return setsockoptInterface(fd, opt.name, ifi)
+	case ssoTypeIPMreqn:
+		return setsockoptIPMreqn(fd, opt.name, ifi, nil)
+	default:
+		return errOpNoSupport
+	}
+}
+
+func setGroup(fd int, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
+	if opt.name < 1 {
+		return errOpNoSupport
+	}
+	switch opt.typ {
+	case ssoTypeIPMreq:
+		return setsockoptIPMreq(fd, opt.name, ifi, grp)
+	case ssoTypeIPMreqn:
+		return setsockoptIPMreqn(fd, opt.name, ifi, grp)
+	default:
+		return errOpNoSupport
+	}
 }
