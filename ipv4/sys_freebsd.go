@@ -4,23 +4,20 @@
 
 package ipv4
 
-import "syscall"
+import (
+	"net"
+	"syscall"
+)
 
 type sysSockoptLen int32
 
-const (
-	sysIP_PKTINFO = 0
-
-	sysSizeofInetPktinfo = 0xc
-)
-
-type sysInetPktinfo struct {
-	Ifindex  uint32
-	Spec_dst [4]byte /* in_addr */
-	Addr     [4]byte /* in_addr */
-}
-
 var (
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlTTL:       {sysIP_RECVTTL, 1, marshalTTL, parseTTL},
+		ctlDst:       {sysIP_RECVDSTADDR, net.IPv4len, marshalDst, parseDst},
+		ctlInterface: {sysIP_RECVIF, syscall.SizeofSockaddrDatalink, marshalInterface, parseInterface},
+	}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoTOS:                {sysIP_TOS, ssoTypeInt},
 		ssoTTL:                {sysIP_TTL, ssoTypeInt},

@@ -11,7 +11,7 @@ import (
 )
 
 type rawOpt struct {
-	sync.Mutex
+	sync.RWMutex
 	cflags ControlFlags
 }
 
@@ -49,4 +49,22 @@ func (cm *ControlMessage) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("ttl: %v, src: %v, dst: %v, ifindex: %v", cm.TTL, cm.Src, cm.Dst, cm.IfIndex)
+}
+
+// Ancillary data socket options
+const (
+	ctlTTL        = iota // header field
+	ctlSrc               // header field
+	ctlDst               // header field
+	ctlInterface         // inbound or outbound interface
+	ctlPacketInfo        // inbound or outbound packet path
+	ctlMax
+)
+
+// A ctlOpt represents a binding for ancillary data socket option.
+type ctlOpt struct {
+	name    int // option name, must be equal or greater than 1
+	length  int // option length
+	marshal func([]byte, *ControlMessage) []byte
+	parse   func(*ControlMessage, []byte)
 }

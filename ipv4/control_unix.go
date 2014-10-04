@@ -9,12 +9,97 @@ package ipv4
 import (
 	"os"
 	"syscall"
+	"unsafe"
 )
 
-func newControlMessage(opt *rawOpt) (oob []byte) {
+func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
 	defer opt.Unlock()
-	return opt.marshalControlMessage()
+	if cf&FlagTTL != 0 {
+		if err := setInt(fd, &sockOpts[ssoReceiveTTL], boolint(on)); err != nil {
+			return err
+		}
+		if on {
+			opt.set(FlagTTL)
+		} else {
+			opt.clear(FlagTTL)
+		}
+	}
+	if sockOpts[ssoPacketInfo].name > 0 {
+		if cf&(FlagSrc|FlagDst|FlagInterface) != 0 {
+			if err := setInt(fd, &sockOpts[ssoPacketInfo], boolint(on)); err != nil {
+				return err
+			}
+			if on {
+				opt.set(cf & (FlagSrc | FlagDst | FlagInterface))
+			} else {
+				opt.clear(cf & (FlagSrc | FlagDst | FlagInterface))
+			}
+		}
+	} else {
+		if cf&FlagDst != 0 {
+			if err := setInt(fd, &sockOpts[ssoReceiveDst], boolint(on)); err != nil {
+				return err
+			}
+			if on {
+				opt.set(FlagDst)
+			} else {
+				opt.clear(FlagDst)
+			}
+		}
+		if cf&FlagInterface != 0 {
+			if err := setInt(fd, &sockOpts[ssoReceiveInterface], boolint(on)); err != nil {
+				return err
+			}
+			if on {
+				opt.set(FlagInterface)
+			} else {
+				opt.clear(FlagInterface)
+			}
+		}
+	}
+	return nil
+}
+
+func newControlMessage(opt *rawOpt) (oob []byte) {
+	opt.RLock()
+	var l int
+	if opt.isset(FlagTTL) {
+		l += syscall.CmsgSpace(ctlOpts[ctlTTL].length)
+	}
+	if ctlOpts[ctlPacketInfo].name > 0 {
+		if opt.isset(FlagSrc | FlagDst | FlagInterface) {
+			l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
+		}
+	} else {
+		if opt.isset(FlagDst) {
+			l += syscall.CmsgSpace(ctlOpts[ctlDst].length)
+		}
+		if opt.isset(FlagInterface) {
+			l += syscall.CmsgSpace(ctlOpts[ctlInterface].length)
+		}
+	}
+	if l > 0 {
+		oob = make([]byte, l)
+		b := oob
+		if opt.isset(FlagTTL) {
+			b = ctlOpts[ctlTTL].marshal(b, nil)
+		}
+		if ctlOpts[ctlPacketInfo].name > 0 {
+			if opt.isset(FlagSrc | FlagDst | FlagInterface) {
+				b = ctlOpts[ctlPacketInfo].marshal(b, nil)
+			}
+		} else {
+			if opt.isset(FlagDst) {
+				b = ctlOpts[ctlDst].marshal(b, nil)
+			}
+			if opt.isset(FlagInterface) {
+				b = ctlOpts[ctlInterface].marshal(b, nil)
+			}
+		}
+	}
+	opt.RUnlock()
+	return
 }
 
 func parseControlMessage(b []byte) (*ControlMessage, error) {
@@ -30,7 +115,16 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 		if m.Header.Level != ianaProtocolIP {
 			continue
 		}
-		cm.parseControlMessage(&m)
+		switch int(m.Header.Type) {
+		case ctlOpts[ctlTTL].name:
+			ctlOpts[ctlTTL].parse(cm, m.Data[:])
+		case ctlOpts[ctlDst].name:
+			ctlOpts[ctlDst].parse(cm, m.Data[:])
+		case ctlOpts[ctlInterface].name:
+			ctlOpts[ctlInterface].parse(cm, m.Data[:])
+		case ctlOpts[ctlPacketInfo].name:
+			ctlOpts[ctlPacketInfo].parse(cm, m.Data[:])
+		}
 	}
 	return cm, nil
 }
@@ -39,5 +133,32 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 	if cm == nil {
 		return nil
 	}
-	return cm.marshalPacketInfo()
+	var l int
+	if ctlOpts[ctlPacketInfo].name > 0 {
+		if cm.Src.To4() != nil || cm.IfIndex != 0 {
+			l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
+		}
+	}
+	if l > 0 {
+		oob = make([]byte, l)
+		b := oob
+		if ctlOpts[ctlPacketInfo].name > 0 {
+			if cm.Src.To4() != nil || cm.IfIndex != 0 {
+				b = ctlOpts[ctlPacketInfo].marshal(b, cm)
+			}
+		}
+	}
+	return
+}
+
+func marshalTTL(b []byte, cm *ControlMessage) []byte {
+	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
+	m.Level = ianaProtocolIP
+	m.Type = sysIP_RECVTTL
+	m.SetLen(syscall.CmsgLen(1))
+	return b[syscall.CmsgSpace(1):]
+}
+
+func parseTTL(cm *ControlMessage, b []byte) {
+	cm.TTL = int(*(*byte)(unsafe.Pointer(&b[:1][0])))
 }

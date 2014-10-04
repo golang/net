@@ -7,6 +7,11 @@ package ipv4
 type sysSockoptLen int32
 
 var (
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlTTL:        {sysIP_TTL, 1, marshalTTL, parseTTL},
+		ctlPacketInfo: {sysIP_PKTINFO, sysSizeofInetPktinfo, marshalPacketInfo, parsePacketInfo},
+	}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoTOS:                {sysIP_TOS, ssoTypeInt},
 		ssoTTL:                {sysIP_TTL, ssoTypeInt},

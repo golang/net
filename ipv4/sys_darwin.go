@@ -4,11 +4,20 @@
 
 package ipv4
 
-import "syscall"
+import (
+	"net"
+	"syscall"
+)
 
 type sysSockoptLen int32
 
 var (
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlTTL:       {sysIP_RECVTTL, 1, marshalTTL, parseTTL},
+		ctlDst:       {sysIP_RECVDSTADDR, net.IPv4len, marshalDst, parseDst},
+		ctlInterface: {sysIP_RECVIF, syscall.SizeofSockaddrDatalink, marshalInterface, parseInterface},
+	}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoTOS:                {sysIP_TOS, ssoTypeInt},
 		ssoTTL:                {sysIP_TTL, ssoTypeInt},
@@ -40,6 +49,10 @@ func init() {
 	// The IP_PKTINFO was introduced in OS X 10.7 (Darwin
 	// 11.0.0). See http://support.apple.com/kb/HT1633.
 	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '1' {
+		ctlOpts[ctlPacketInfo].name = sysIP_PKTINFO
+		ctlOpts[ctlPacketInfo].length = sysSizeofInetPktinfo
+		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
+		ctlOpts[ctlPacketInfo].parse = parsePacketInfo
 		sockOpts[ssoPacketInfo].name = sysIP_RECVPKTINFO
 		sockOpts[ssoPacketInfo].typ = ssoTypeInt
 		sockOpts[ssoMulticastInterface].typ = ssoTypeIPMreqn
