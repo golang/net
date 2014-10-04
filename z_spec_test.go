@@ -30,7 +30,7 @@ func init() {
 }
 
 // specCover marks all sentences for section sec in defaultSpecCoverage. Sentences not
-// "covered" will be included report outputed by TestSpecCoverage.
+// "covered" will be included in report outputed by TestSpecCoverage.
 func specCover(sec, sentences string) {
 	defaultSpecCoverage.cover(sec, sentences)
 }
