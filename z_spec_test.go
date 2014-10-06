@@ -30,7 +30,7 @@ func init() {
 }
 
 // specCover marks all sentences for section sec in defaultSpecCoverage. Sentences not
-// "covered" will be included report outputed by TestSpecCoverage.
+// "covered" will be included in report outputed by TestSpecCoverage.
 func specCover(sec, sentences string) {
 	defaultSpecCoverage.cover(sec, sentences)
 }
@@ -145,7 +145,7 @@ func parseSentences(sens string) []string {
 	return ss
 }
 
-func Test_Z_Spec_ParseSentences(t *testing.T) {
+func TestSpecParseSentences(t *testing.T) {
 	tests := []struct {
 		ss   string
 		want []string
@@ -171,7 +171,7 @@ func Test_Z_Spec_ParseSentences(t *testing.T) {
 	}
 }
 
-func Test_Z_BuildCoverageTable(t *testing.T) {
+func TestSpecBuildCoverageTable(t *testing.T) {
 	testdata := `
 <rfc>
   <middle>
@@ -204,7 +204,7 @@ func Test_Z_BuildCoverageTable(t *testing.T) {
 	}
 }
 
-func Test_Z_SpecUncovered(t *testing.T) {
+func TestSpecUncovered(t *testing.T) {
 	testdata := `
 <rfc>
   <middle>
