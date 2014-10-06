@@ -5,9 +5,11 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"log"
 	"net"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/ipv4"
 )
 
 func ExampleUnicastTCPListener() {
@@ -23,7 +25,7 @@ func ExampleUnicastTCPListener() {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			err := ipv4.NewConn(c).SetTOS(DiffServAF11)
+			err := ipv4.NewConn(c).SetTOS(iana.DiffServAF11)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -81,7 +83,7 @@ func ExampleMulticastUDPListener() {
 				continue
 			}
 		}
-		p.SetTOS(DiffServCS7)
+		p.SetTOS(iana.DiffServCS7)
 		p.SetTTL(16)
 		_, err = p.WriteTo(b[:n], nil, src)
 		if err != nil {
@@ -175,7 +177,7 @@ func ExampleIPOSPFListener() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	r.SetTOS(DiffServCS6)
+	r.SetTOS(iana.DiffServCS6)
 
 	parseOSPFHeader := func(b []byte) *OSPFHeader {
 		if len(b) < OSPFHeaderLen {
@@ -264,7 +266,7 @@ func ExampleWriteIPOSPFHello() {
 	iph := &ipv4.Header{}
 	iph.Version = ipv4.Version
 	iph.Len = ipv4.HeaderLen
-	iph.TOS = DiffServCS6
+	iph.TOS = iana.DiffServCS6
 	iph.TotalLen = ipv4.HeaderLen + len(ospf)
 	iph.TTL = 1
 	iph.Protocol = 89

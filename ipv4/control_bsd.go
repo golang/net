@@ -10,11 +10,13 @@ import (
 	"net"
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func marshalDst(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIP
+	m.Level = iana.ProtocolIP
 	m.Type = sysIP_RECVDSTADDR
 	m.SetLen(syscall.CmsgLen(net.IPv4len))
 	return b[syscall.CmsgSpace(net.IPv4len):]
@@ -26,7 +28,7 @@ func parseDst(cm *ControlMessage, b []byte) {
 
 func marshalInterface(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIP
+	m.Level = iana.ProtocolIP
 	m.Type = sysIP_RECVIF
 	m.SetLen(syscall.CmsgLen(syscall.SizeofSockaddrDatalink))
 	return b[syscall.CmsgSpace(syscall.SizeofSockaddrDatalink):]

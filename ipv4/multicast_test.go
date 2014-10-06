@@ -5,12 +5,15 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/internal/icmp"
+	"code.google.com/p/go.net/ipv4"
 )
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
@@ -121,15 +124,15 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
@@ -146,9 +149,9 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b[:n])
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b[:n])
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			switch {
 			case m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
@@ -161,7 +164,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 }
 
 func TestRawConnReadWriteMulticastICMP(t *testing.T) {
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
@@ -206,15 +209,15 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		wh := &ipv4.Header{
 			Version:  ipv4.Version,
@@ -239,9 +242,9 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b)
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			switch {
 			case isUnicast(rh.Dst) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1

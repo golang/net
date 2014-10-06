@@ -5,11 +5,12 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/ipv4"
 )
 
 var udpMultipleGroupListenerTests = []net.Addr{
@@ -23,7 +24,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -63,7 +64,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -115,7 +116,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -158,7 +159,7 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
@@ -203,7 +204,7 @@ func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {

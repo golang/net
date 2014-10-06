@@ -9,6 +9,8 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func getInt(fd syscall.Handle, opt *sockOpt) (int, error) {
@@ -17,7 +19,7 @@ func getInt(fd syscall.Handle, opt *sockOpt) (int, error) {
 	}
 	var i int32
 	l := int32(4)
-	if err := syscall.Getsockopt(fd, ianaProtocolIP, int32(opt.name), (*byte)(unsafe.Pointer(&i)), &l); err != nil {
+	if err := syscall.Getsockopt(fd, iana.ProtocolIP, int32(opt.name), (*byte)(unsafe.Pointer(&i)), &l); err != nil {
 		return 0, os.NewSyscallError("getsockopt", err)
 	}
 	return int(i), nil
@@ -28,7 +30,7 @@ func setInt(fd syscall.Handle, opt *sockOpt, v int) error {
 		return errOpNoSupport
 	}
 	i := int32(v)
-	return os.NewSyscallError("setsockopt", syscall.Setsockopt(fd, ianaProtocolIP, int32(opt.name), (*byte)(unsafe.Pointer(&i)), 4))
+	return os.NewSyscallError("setsockopt", syscall.Setsockopt(fd, iana.ProtocolIP, int32(opt.name), (*byte)(unsafe.Pointer(&i)), 4))
 }
 
 func getInterface(fd syscall.Handle, opt *sockOpt) (*net.Interface, error) {

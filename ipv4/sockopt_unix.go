@@ -10,6 +10,8 @@ import (
 	"net"
 	"os"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func getInt(fd int, opt *sockOpt) (int, error) {
@@ -24,7 +26,7 @@ func getInt(fd int, opt *sockOpt) (int, error) {
 		p = unsafe.Pointer(&b)
 		l = sysSockoptLen(1)
 	}
-	if err := getsockopt(fd, ianaProtocolIP, opt.name, p, &l); err != nil {
+	if err := getsockopt(fd, iana.ProtocolIP, opt.name, p, &l); err != nil {
 		return 0, os.NewSyscallError("getsockopt", err)
 	}
 	if opt.typ == ssoTypeByte {
@@ -46,7 +48,7 @@ func setInt(fd int, opt *sockOpt, v int) error {
 		p = unsafe.Pointer(&b)
 		l = sysSockoptLen(1)
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(fd, ianaProtocolIP, opt.name, p, l))
+	return os.NewSyscallError("setsockopt", setsockopt(fd, iana.ProtocolIP, opt.name, p, l))
 }
 
 func getInterface(fd int, opt *sockOpt) (*net.Interface, error) {

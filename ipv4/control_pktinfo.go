@@ -9,11 +9,13 @@ package ipv4
 import (
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIP
+	m.Level = iana.ProtocolIP
 	m.Type = sysIP_PKTINFO
 	m.SetLen(syscall.CmsgLen(sysSizeofInetPktinfo))
 	if cm != nil {

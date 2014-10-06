@@ -5,12 +5,15 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/internal/icmp"
+	"code.google.com/p/go.net/ipv4"
 )
 
 func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
@@ -159,15 +162,15 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
@@ -188,9 +191,9 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b[:n])
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b[:n])
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
 				// On Linux we must handle own sent packets.
@@ -234,15 +237,15 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		wh := &ipv4.Header{
 			Version:  ipv4.Version,
@@ -271,9 +274,9 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b)
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
 				// On Linux we must handle own sent packets.

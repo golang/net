@@ -5,11 +5,12 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/ipv4"
 )
 
 var packetConnMulticastSocketOptionTests = []struct {

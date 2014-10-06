@@ -10,6 +10,8 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
@@ -112,7 +114,7 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 	}
 	cm := &ControlMessage{}
 	for _, m := range cmsgs {
-		if m.Header.Level != ianaProtocolIP {
+		if m.Header.Level != iana.ProtocolIP {
 			continue
 		}
 		switch int(m.Header.Type) {
@@ -153,7 +155,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 
 func marshalTTL(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIP
+	m.Level = iana.ProtocolIP
 	m.Type = sysIP_RECVTTL
 	m.SetLen(syscall.CmsgLen(1))
 	return b[syscall.CmsgSpace(1):]

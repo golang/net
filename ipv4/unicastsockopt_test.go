@@ -5,11 +5,13 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/ipv4"
 )
 
 func TestConnUnicastSocketOptions(t *testing.T) {
@@ -108,7 +110,7 @@ type testIPv4UnicastConn interface {
 }
 
 func testUnicastSocketOptions(t *testing.T, c testIPv4UnicastConn) {
-	tos := DiffServCS0 | NotECNTransport
+	tos := iana.DiffServCS0 | iana.NotECNTransport
 	switch runtime.GOOS {
 	case "windows":
 		// IP_TOS option is supported on Windows 8 and beyond.
