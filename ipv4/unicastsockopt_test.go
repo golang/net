@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/internal/nettest"
 	"code.google.com/p/go.net/ipv4"
 )
 
@@ -19,7 +20,7 @@ func TestConnUnicastSocketOptions(t *testing.T) {
 	case "plan9":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -56,7 +57,7 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	case "plan9":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -83,7 +84,7 @@ func TestRawConnUnicastSocketOptions(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}

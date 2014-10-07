@@ -13,6 +13,7 @@ import (
 
 	"code.google.com/p/go.net/internal/iana"
 	"code.google.com/p/go.net/internal/icmp"
+	"code.google.com/p/go.net/internal/nettest"
 	"code.google.com/p/go.net/ipv4"
 )
 
@@ -21,7 +22,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	case "plan9", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -88,7 +89,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -170,7 +171,7 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -247,7 +248,7 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			switch {
-			case isUnicast(rh.Dst) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
+			case (rh.Dst.IsLoopback() || rh.Dst.IsLinkLocalUnicast() || rh.Dst.IsGlobalUnicast()) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
 			case rh.Dst.IsMulticast() && m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
 			default:
 				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)

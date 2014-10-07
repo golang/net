@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"testing"
 
+	"code.google.com/p/go.net/internal/nettest"
 	"code.google.com/p/go.net/ipv4"
 )
 
@@ -43,7 +44,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 				continue
 			}
 			if err := p.JoinGroup(&ifi, gaddr); err != nil {
@@ -91,7 +92,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 				continue
 			}
 			for _, p := range ps {
@@ -132,7 +133,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip4", &ifi)
 		if !ok {
 			continue
 		}
@@ -184,7 +185,7 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		if _, ok := isMulticastAvailable(&ifi); !ok {
+		if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 			continue
 		}
 		if err := r.JoinGroup(&ifi, &gaddr); err != nil {
@@ -223,7 +224,7 @@ func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip4", &ifi)
 		if !ok {
 			continue
 		}
