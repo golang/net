@@ -61,7 +61,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 		b = append(b, mb...)
 	}
 	if icmpv6 {
-		if psh == nil { // cannot calculate checkshum here
+		if psh == nil { // cannot calculate checksum here
 			return b, nil
 		}
 		off, l := 2*net.IPv6len, len(b)-len(psh)
