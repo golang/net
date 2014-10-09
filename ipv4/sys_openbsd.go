@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build dragonfly netbsd
-
 package ipv4
 
 import (
@@ -25,7 +23,7 @@ var (
 		ssoTTL:                {sysIP_TTL, ssoTypeInt},
 		ssoMulticastTTL:       {sysIP_MULTICAST_TTL, ssoTypeByte},
 		ssoMulticastInterface: {sysIP_MULTICAST_IF, ssoTypeInterface},
-		ssoMulticastLoopback:  {sysIP_MULTICAST_LOOP, ssoTypeInt},
+		ssoMulticastLoopback:  {sysIP_MULTICAST_LOOP, ssoTypeByte},
 		ssoReceiveTTL:         {sysIP_RECVTTL, ssoTypeInt},
 		ssoReceiveDst:         {sysIP_RECVDSTADDR, ssoTypeInt},
 		ssoReceiveInterface:   {sysIP_RECVIF, ssoTypeInt},
