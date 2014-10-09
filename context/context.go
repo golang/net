@@ -142,27 +142,28 @@ var Canceled = errors.New("context canceled")
 // deadline passes.
 var DeadlineExceeded = errors.New("context deadline exceeded")
 
-// An emptyCtx is never canceled, has no values, and has no deadline.
+// An emptyCtx is never canceled, has no values, and has no deadline.  It is not
+// struct{}, since vars of this type must have distinct addresses.
 type emptyCtx int
 
-func (emptyCtx) Deadline() (deadline time.Time, ok bool) {
+func (*emptyCtx) Deadline() (deadline time.Time, ok bool) {
 	return
 }
 
-func (emptyCtx) Done() <-chan struct{} {
+func (*emptyCtx) Done() <-chan struct{} {
 	return nil
 }
 
-func (emptyCtx) Err() error {
+func (*emptyCtx) Err() error {
 	return nil
 }
 
-func (emptyCtx) Value(key interface{}) interface{} {
+func (*emptyCtx) Value(key interface{}) interface{} {
 	return nil
 }
 
-func (n emptyCtx) String() string {
-	switch n {
+func (e *emptyCtx) String() string {
+	switch e {
 	case background:
 		return "context.Background"
 	case todo:
@@ -171,9 +172,9 @@ func (n emptyCtx) String() string {
 	return "unknown empty Context"
 }
 
-const (
-	background emptyCtx = 1
-	todo       emptyCtx = 2
+var (
+	background = new(emptyCtx)
+	todo       = new(emptyCtx)
 )
 
 // Background returns a non-nil, empty Context. It is never canceled, has no
