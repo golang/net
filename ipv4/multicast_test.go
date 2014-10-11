@@ -62,7 +62,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		if err := p.SetControlMessage(cf, toggle); err != nil {
+		if err := p.SetControlMessage(cf, toggle); err != nil && !protocolNotSupported(err) {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -135,7 +135,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
-		if err := p.SetControlMessage(cf, toggle); err != nil {
+		if err := p.SetControlMessage(cf, toggle); err != nil && !protocolNotSupported(err) {
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -228,7 +228,7 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 			Protocol: 1,
 			Dst:      dst.IP,
 		}
-		if err := r.SetControlMessage(cf, toggle); err != nil {
+		if err := r.SetControlMessage(cf, toggle); err != nil && !protocolNotSupported(err) {
 			t.Fatalf("ipv4.RawConn.SetControlMessage failed: %v", err)
 		}
 		if err := r.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
