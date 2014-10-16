@@ -85,6 +85,12 @@ func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
 		}
 		switch v := tk.(type) {
 		case xml.StartElement:
+			if skipElement(v) {
+				if err := d.Skip(); err != nil {
+					panic(err)
+				}
+				break
+			}
 			if v.Name.Local == "section" {
 				sub++
 				readSection(sc, d, append(sec, sub))
@@ -104,7 +110,39 @@ func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
 			}
 		}
 	}
+}
 
+var skipAnchor = map[string]bool{
+	"intro":    true,
+	"Overview": true,
+}
+
+var skipTitle = map[string]bool{
+	"Acknowledgements":            true,
+	"Change Log":                  true,
+	"Document Organization":       true,
+	"Conventions and Terminology": true,
+}
+
+func skipElement(s xml.StartElement) bool {
+	switch s.Name.Local {
+	case "artwork":
+		return true
+	case "section":
+		for _, attr := range s.Attr {
+			switch attr.Name.Local {
+			case "anchor":
+				if skipAnchor[attr.Value] || strings.HasPrefix(attr.Value, "changes.since.") {
+					return true
+				}
+			case "title":
+				if skipTitle[attr.Value] {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func readSpecCov(r io.Reader) specCoverage {
@@ -131,13 +169,14 @@ func (sc specCoverage) cover(sec string, sentence string) {
 
 }
 
+var whitespaceRx = regexp.MustCompile(`\s+`)
+
 func parseSentences(sens string) []string {
 	sens = strings.TrimSpace(sens)
 	if sens == "" {
 		return nil
 	}
-	rx := regexp.MustCompile("[\t\n\r]")
-	ss := strings.Split(rx.ReplaceAllString(sens, " "), ". ")
+	ss := strings.Split(whitespaceRx.ReplaceAllString(sens, " "), ". ")
 	for i, s := range ss {
 		s = strings.TrimSpace(s)
 		if !strings.HasSuffix(s, ".") {
@@ -178,7 +217,7 @@ func TestSpecBuildCoverageTable(t *testing.T) {
 	testdata := `
 <rfc>
   <middle>
-    <section anchor="intro" title="Introduction">
+    <section anchor="foo" title="Introduction">
       <t>Foo.</t>
       <t><t>Sentence 1.
       Sentence 2
@@ -211,7 +250,7 @@ func TestSpecUncovered(t *testing.T) {
 	testdata := `
 <rfc>
   <middle>
-    <section anchor="intro" title="Introduction">
+    <section anchor="foo" title="Introduction">
 	<t>Foo.</t>
 	<t><t>Sentence 1.</t></t>
     </section>
@@ -258,7 +297,10 @@ func TestSpecCoverage(t *testing.T) {
 		notCovered = notCovered[:shortLen]
 	}
 	t.Logf("COVER REPORT:")
+	fails := 0
 	for _, p := range notCovered {
 		t.Errorf("\tSECTION %s: %s", p.section, p.sentence)
+		fails++
 	}
+	t.Logf("%d sections not covered", fails)
 }
