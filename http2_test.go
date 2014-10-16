@@ -8,8 +8,10 @@
 package http2
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -21,6 +23,79 @@ import (
 )
 
 func TestServer(t *testing.T) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Foo", "Bar")
+	}))
+	ConfigureServer(ts.Config, &Server{})
+	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
+	ts.StartTLS()
+	defer ts.Close()
+
+	t.Logf("Running test server at: %s", ts.URL)
+	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{npnProto},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+
+	mustWrite(t, cc, clientPreface)
+	fr := NewFramer(cc, cc)
+	if err := fr.WriteSettings(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect first Settings frame.
+	{
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sf, ok := f.(*SettingsFrame)
+		if !ok {
+			t.Fatalf("Received a %T, not a Settings frame from the server", f)
+		}
+		sf.ForeachSetting(func(s Setting) {
+			t.Logf("Server sent setting %v = %v", s.ID, s.Val)
+		})
+	}
+
+	// And expect an ACK of our settings.
+	{
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sf, ok := f.(*SettingsFrame)
+		if !ok {
+			t.Fatalf("Received a %T, not a Settings ack frame from the server", f)
+		}
+		if !sf.Header().Flags.Has(FlagSettingsAck) {
+			t.Fatal("Settings Frame didn't have ACK set")
+		}
+	}
+
+	// TODO: table-itize steps, write request (HEADERS frame), read response.
+}
+
+func mustWrite(t *testing.T, w io.Writer, p []byte) {
+	n, err := w.Write(p)
+	const maxLen = 80
+	l := len(p)
+	if len(p) > maxLen {
+		p = p[:maxLen]
+	}
+	if err != nil {
+		t.Fatalf("Error writing %d bytes (%q): %v", l, p, err)
+	}
+	if n != len(p) {
+		t.Fatalf("Only wrote %d of %d bytes (%q)", n, l, p)
+	}
+}
+
+func TestServerWithCurl(t *testing.T) {
 	requireCurl(t)
 
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -57,7 +58,7 @@ type Server struct {
 	MaxStreams int
 }
 
-func (srv *Server) handleConn(hs *http.Server, c *tls.Conn, h http.Handler) {
+func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc := &serverConn{
 		hs:                hs,
 		conn:              c,
@@ -87,7 +88,7 @@ type frameAndProcessed struct {
 
 type serverConn struct {
 	hs             *http.Server
-	conn           *tls.Conn
+	conn           net.Conn
 	handler        http.Handler
 	framer         *Framer
 	doneServing    chan struct{}          // closed when serverConn.serve ends
@@ -221,6 +222,36 @@ func (sc *serverConn) serve() {
 		return
 	}
 	log.Printf("client %v said hello", sc.conn.RemoteAddr())
+
+	f, err := sc.framer.ReadFrame()
+	if err != nil {
+		sc.logf("error reading initial frame from client: %v", err)
+		return
+	}
+	sf, ok := f.(*SettingsFrame)
+	if !ok {
+		sc.logf("invalid initial frame type %T received from client", f)
+		return
+	}
+	sf.ForeachSetting(func(s Setting) {
+		// TODO: process, record
+	})
+
+	// TODO: don't send two network packets for our SETTINGS + our
+	// ACK of their settings.  But if we make framer write to a
+	// *bufio.Writer, that increases the per-connection memory
+	// overhead, and there could be many idle conns. So maybe some
+	// liveswitchWriter-like thing where we only switch to a
+	// *bufio Writer when we really need one temporarily, else go
+	// back to an unbuffered writes by default.
+	if err := sc.framer.WriteSettings( /* TODO: actual settings */ ); err != nil {
+		sc.logf("error writing server's initial settings: %v", err)
+		return
+	}
+	if err := sc.framer.WriteSettingsAck(); err != nil {
+		sc.logf("error writing server's ack of client's settings: %v", err)
+		return
+	}
 
 	go sc.readFrames()
 
