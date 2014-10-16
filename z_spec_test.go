@@ -7,6 +7,7 @@ package http2
 
 import (
 	"encoding/xml"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"testing"
 )
+
+var coverSpec = flag.Bool("coverspec", false, "Run spec coverage tests")
 
 // The global map of sentence coverage for the http2 spec.
 var defaultSpecCoverage specCoverage
@@ -236,6 +239,9 @@ func TestSpecUncovered(t *testing.T) {
 }
 
 func TestSpecCoverage(t *testing.T) {
+	if !*coverSpec {
+		t.Skip("skipping spec coverage without -coverspec")
+	}
 	var notCovered bySpecSection
 	for p, covered := range defaultSpecCoverage {
 		if !covered {
