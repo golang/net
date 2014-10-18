@@ -11,10 +11,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -44,7 +45,7 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	log.SetOutput(twriter{t})
 	return &serverTester{
 		t:  t,
 		ts: ts,
@@ -56,6 +57,7 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 func (st *serverTester) Close() {
 	st.ts.Close()
 	st.cc.Close()
+	log.SetOutput(os.Stderr)
 }
 
 func (st *serverTester) writePreface() {
@@ -68,6 +70,45 @@ func (st *serverTester) writePreface() {
 	}
 }
 
+func (st *serverTester) writeInitialSettings() {
+	if err := st.fr.WriteSettings(); err != nil {
+		st.t.Fatalf("Error writing initial SETTINGS frame from client to server: %v", err)
+	}
+}
+
+func (st *serverTester) writeSettingsAck() {
+	if err := st.fr.WriteSettingsAck(); err != nil {
+		st.t.Fatalf("Error writing ACK of server's SETTINGS: %v", err)
+	}
+}
+
+func (st *serverTester) wantSettings() *SettingsFrame {
+	f, err := st.fr.ReadFrame()
+	if err != nil {
+		st.t.Fatal(err)
+	}
+	sf, ok := f.(*SettingsFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *SettingsFrame", f)
+	}
+	return sf
+}
+
+func (st *serverTester) wantSettingsAck() {
+	f, err := st.fr.ReadFrame()
+	if err != nil {
+		st.t.Fatal(err)
+	}
+	sf, ok := f.(*SettingsFrame)
+	if !ok {
+		st.t.Fatalf("Wanting a settings ACK, received a %T", f)
+	}
+	if !sf.Header().Flags.Has(FlagSettingsAck) {
+		st.t.Fatal("Settings Frame didn't have ACK set")
+	}
+
+}
+
 func TestServer(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Foo", "Bar")
@@ -75,58 +116,14 @@ func TestServer(t *testing.T) {
 	defer st.Close()
 
 	st.writePreface()
+	st.writeInitialSettings()
+	st.wantSettings().ForeachSetting(func(s Setting) {
+		t.Logf("Server sent setting %v = %v", s.ID, s.Val)
+	})
+	st.writeSettingsAck()
+	st.wantSettingsAck()
 
-	fr := st.fr // temporary from here on
-	if err := fr.WriteSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Expect first Settings frame.
-	{
-		f, err := fr.ReadFrame()
-		if err != nil {
-			t.Fatal(err)
-		}
-		sf, ok := f.(*SettingsFrame)
-		if !ok {
-			t.Fatalf("Received a %T, not a Settings frame from the server", f)
-		}
-		sf.ForeachSetting(func(s Setting) {
-			t.Logf("Server sent setting %v = %v", s.ID, s.Val)
-		})
-	}
-
-	// And expect an ACK of our settings.
-	{
-		f, err := fr.ReadFrame()
-		if err != nil {
-			t.Fatal(err)
-		}
-		sf, ok := f.(*SettingsFrame)
-		if !ok {
-			t.Fatalf("Received a %T, not a Settings ack frame from the server", f)
-		}
-		if !sf.Header().Flags.Has(FlagSettingsAck) {
-			t.Fatal("Settings Frame didn't have ACK set")
-		}
-	}
-
-	// TODO: table-itize steps, write request (HEADERS frame), read response.
-}
-
-func mustWrite(t *testing.T, w io.Writer, p []byte) {
-	n, err := w.Write(p)
-	const maxLen = 80
-	l := len(p)
-	if len(p) > maxLen {
-		p = p[:maxLen]
-	}
-	if err != nil {
-		t.Fatalf("Error writing %d bytes (%q): %v", l, p, err)
-	}
-	if n != len(p) {
-		t.Fatalf("Only wrote %d of %d bytes (%q)", n, l, p)
-	}
+	// TODO: send a request
 }
 
 func TestServerWithCurl(t *testing.T) {
@@ -224,4 +221,13 @@ func curl(t *testing.T, args ...string) (container string) {
 		t.Skipf("Failed to run curl in docker: %v, %s", err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+type twriter struct {
+	t testing.TB
+}
+
+func (w twriter) Write(p []byte) (n int, err error) {
+	w.t.Logf("%s", p)
+	return len(p), nil
 }

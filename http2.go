@@ -221,7 +221,7 @@ func (sc *serverConn) serve() {
 		sc.logf("bogus greeting from client: %q", buf)
 		return
 	}
-	log.Printf("client %v said hello", sc.conn.RemoteAddr())
+	sc.logf("client %v said hello", sc.conn.RemoteAddr())
 
 	f, err := sc.framer.ReadFrame()
 	if err != nil {
@@ -267,7 +267,10 @@ func (sc *serverConn) serve() {
 			if !ok {
 				err := <-sc.readFrameErrCh
 				if err != io.EOF {
-					sc.logf("client %s stopped sending frames: %v", sc.conn.RemoteAddr(), err)
+					errstr := err.Error()
+					if !strings.Contains(errstr, "use of closed network connection") {
+						sc.logf("client %s stopped sending frames: %v", sc.conn.RemoteAddr(), errstr)
+					}
 				}
 				return
 			}
