@@ -6,6 +6,7 @@
 package http2
 
 import (
+	"bytes"
 	"encoding/xml"
 	"flag"
 	"fmt"
@@ -74,7 +75,10 @@ func (a bySpecSection) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 type specCoverage map[specPart]bool
 
 func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
-	sub := 0
+	var (
+		buf = new(bytes.Buffer)
+		sub = 0
+	)
 	for {
 		tk, err := d.Token()
 		if err != nil {
@@ -99,13 +103,14 @@ func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
 			if len(sec) == 0 {
 				break
 			}
-			ssec := fmt.Sprintf("%d", sec[0])
-			for _, n := range sec[1:] {
-				ssec = fmt.Sprintf("%s.%d", ssec, n)
-			}
-			sc.addSentences(ssec, string(v))
+			buf.Write(v)
 		case xml.EndElement:
 			if v.Name.Local == "section" {
+				ssec := fmt.Sprintf("%d", sec[0])
+				for _, n := range sec[1:] {
+					ssec = fmt.Sprintf("%s.%d", ssec, n)
+				}
+				sc.addSentences(ssec, buf.String())
 				return
 			}
 		}
@@ -278,9 +283,6 @@ func TestSpecUncovered(t *testing.T) {
 }
 
 func TestSpecCoverage(t *testing.T) {
-	if !*coverSpec {
-		t.Skip("skipping spec coverage without -coverspec")
-	}
 	var notCovered bySpecSection
 	for p, covered := range defaultSpecCoverage {
 		if !covered {
