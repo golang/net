@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -22,14 +23,18 @@ import (
 	"time"
 )
 
-func TestServer(t *testing.T) {
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Foo", "Bar")
-	}))
+type serverTester struct {
+	cc net.Conn // client conn
+	t  *testing.T
+	ts *httptest.Server
+	fr *Framer
+}
+
+func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
+	ts := httptest.NewUnstartedServer(handler)
 	ConfigureServer(ts.Config, &Server{})
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.StartTLS()
-	defer ts.Close()
 
 	t.Logf("Running test server at: %s", ts.URL)
 	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
@@ -39,10 +44,39 @@ func TestServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cc.Close()
 
-	mustWrite(t, cc, clientPreface)
-	fr := NewFramer(cc, cc)
+	return &serverTester{
+		t:  t,
+		ts: ts,
+		cc: cc,
+		fr: NewFramer(cc, cc),
+	}
+}
+
+func (st *serverTester) Close() {
+	st.ts.Close()
+	st.cc.Close()
+}
+
+func (st *serverTester) writePreface() {
+	n, err := st.cc.Write(clientPreface)
+	if err != nil {
+		st.t.Fatalf("Error writing client preface: %v", err)
+	}
+	if n != len(clientPreface) {
+		st.t.Fatalf("Writing client preface, wrote %d bytes; want %d", n, len(clientPreface))
+	}
+}
+
+func TestServer(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Foo", "Bar")
+	})
+	defer st.Close()
+
+	st.writePreface()
+
+	fr := st.fr // temporary from here on
 	if err := fr.WriteSettings(); err != nil {
 		t.Fatal(err)
 	}
