@@ -72,15 +72,26 @@ func (a bySpecSection) Len() int           { return len(a) }
 func (a bySpecSection) Less(i, j int) bool { return a[i].Less(a[j]) }
 func (a bySpecSection) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
-type specCoverage map[specPart]bool
+type specCoverage struct {
+	m map[specPart]bool
+	d *xml.Decoder
+}
 
-func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
+func joinSection(sec []int) string {
+	s := fmt.Sprintf("%d", sec[0])
+	for _, n := range sec[1:] {
+		s = fmt.Sprintf("%s.%d", s, n)
+	}
+	return s
+}
+
+func (sc specCoverage) readSection(sec []int) {
 	var (
 		buf = new(bytes.Buffer)
 		sub = 0
 	)
 	for {
-		tk, err := d.Token()
+		tk, err := sc.d.Token()
 		if err != nil {
 			if err == io.EOF {
 				return
@@ -90,14 +101,14 @@ func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
 		switch v := tk.(type) {
 		case xml.StartElement:
 			if skipElement(v) {
-				if err := d.Skip(); err != nil {
+				if err := sc.d.Skip(); err != nil {
 					panic(err)
 				}
 				break
 			}
 			if v.Name.Local == "section" {
 				sub++
-				readSection(sc, d, append(sec, sub))
+				sc.readSection(append(sec, sub))
 			}
 		case xml.CharData:
 			if len(sec) == 0 {
@@ -106,11 +117,7 @@ func readSection(sc specCoverage, d *xml.Decoder, sec []int) {
 			buf.Write(v)
 		case xml.EndElement:
 			if v.Name.Local == "section" {
-				ssec := fmt.Sprintf("%d", sec[0])
-				for _, n := range sec[1:] {
-					ssec = fmt.Sprintf("%s.%d", ssec, n)
-				}
-				sc.addSentences(ssec, buf.String())
+				sc.addSentences(joinSection(sec), buf.String())
 				return
 			}
 		}
@@ -151,27 +158,38 @@ func skipElement(s xml.StartElement) bool {
 }
 
 func readSpecCov(r io.Reader) specCoverage {
-	d := xml.NewDecoder(r)
-	sc := specCoverage{}
-	readSection(sc, d, nil)
+	sc := specCoverage{
+		m: map[specPart]bool{},
+		d: xml.NewDecoder(r)}
+	sc.readSection(nil)
 	return sc
 }
 
 func (sc specCoverage) addSentences(sec string, sentence string) {
 	for _, s := range parseSentences(sentence) {
-		sc[specPart{sec, s}] = false
+		sc.m[specPart{sec, s}] = false
 	}
 }
 
 func (sc specCoverage) cover(sec string, sentence string) {
 	for _, s := range parseSentences(sentence) {
 		p := specPart{sec, s}
-		if _, ok := sc[p]; !ok {
+		if _, ok := sc.m[p]; !ok {
 			panic(fmt.Sprintf("Not found in spec: %q, %q", sec, s))
 		}
-		sc[specPart{sec, s}] = true
+		sc.m[specPart{sec, s}] = true
 	}
 
+}
+
+func (sc specCoverage) uncovered() []specPart {
+	var a []specPart
+	for p, covered := range sc.m {
+		if !covered {
+			a = append(a, p)
+		}
+	}
+	return a
 }
 
 var whitespaceRx = regexp.MustCompile(`\s+`)
@@ -238,12 +256,14 @@ func TestSpecBuildCoverageTable(t *testing.T) {
 </rfc>`
 	got := readSpecCov(strings.NewReader(testdata))
 	want := specCoverage{
-		specPart{"1", "Foo."}:        false,
-		specPart{"1", "Sentence 1."}: false,
-		specPart{"1", "Sentence 2."}: false,
-		specPart{"1", "Sentence 3."}: false,
-		specPart{"2", "Bar."}:        false,
-		specPart{"2.1", "Baz."}:      false,
+		m: map[specPart]bool{
+			specPart{"1", "Foo."}:        false,
+			specPart{"1", "Sentence 1."}: false,
+			specPart{"1", "Sentence 2."}: false,
+			specPart{"1", "Sentence 3."}: false,
+			specPart{"2", "Bar."}:        false,
+			specPart{"2.1", "Baz."}:      false,
+		},
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -265,8 +285,10 @@ func TestSpecUncovered(t *testing.T) {
 	sp.cover("1", "Foo. Sentence 1.")
 
 	want := specCoverage{
-		specPart{"1", "Foo."}:        true,
-		specPart{"1", "Sentence 1."}: true,
+		m: map[specPart]bool{
+			specPart{"1", "Foo."}:        true,
+			specPart{"1", "Sentence 1."}: true,
+		},
 	}
 
 	if !reflect.DeepEqual(sp, want) {
@@ -283,24 +305,19 @@ func TestSpecUncovered(t *testing.T) {
 }
 
 func TestSpecCoverage(t *testing.T) {
-	var notCovered bySpecSection
-	for p, covered := range defaultSpecCoverage {
-		if !covered {
-			notCovered = append(notCovered, p)
-		}
-	}
-	if len(notCovered) == 0 {
+	uncovered := defaultSpecCoverage.uncovered()
+	if len(uncovered) == 0 {
 		return
 	}
-	sort.Sort(notCovered)
+	sort.Sort(bySpecSection(uncovered))
 
 	const shortLen = 5
-	if testing.Short() && len(notCovered) > shortLen {
-		notCovered = notCovered[:shortLen]
+	if testing.Short() && len(uncovered) > shortLen {
+		uncovered = uncovered[:shortLen]
 	}
 	t.Logf("COVER REPORT:")
 	fails := 0
-	for _, p := range notCovered {
+	for _, p := range uncovered {
 		t.Errorf("\tSECTION %s: %s", p.section, p.sentence)
 		fails++
 	}
