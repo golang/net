@@ -147,7 +147,19 @@ func (sc specCoverage) readXRef(se xml.StartElement) []byte {
 			if b != nil {
 				return b
 			}
-			return []byte(fmt.Sprintf("%#v", se))
+			sig := attrSig(se)
+			switch sig {
+			case "target":
+				return []byte(fmt.Sprintf("[%s]", attrValue(se, "target")))
+			case "fmt-of,rel,target", "fmt-,,rel,target":
+				return []byte(fmt.Sprintf("[%s, %s]", attrValue(se, "target"), attrValue(se, "rel")))
+			case "fmt-of,sec,target", "fmt-,,sec,target":
+				return []byte(fmt.Sprintf("[section %s of %s]", attrValue(se, "sec"), attrValue(se, "target")))
+			case "fmt-of,rel,sec,target":
+				return []byte(fmt.Sprintf("[section %s of %s, %s]", attrValue(se, "sec"), attrValue(se, "target"), attrValue(se, "rel")))
+			default:
+				panic(fmt.Sprintf("unknown attribute signature %q in %#v", sig, fmt.Sprintf("%#v", se)))
+			}
 		default:
 			panic(fmt.Sprintf("unexpected tag %q", v))
 		}
@@ -287,4 +299,26 @@ func TestSpecCoverage(t *testing.T) {
 		fails++
 	}
 	t.Logf("%d sections not covered", fails)
+}
+
+func attrSig(se xml.StartElement) string {
+	var names []string
+	for _, attr := range se.Attr {
+		if attr.Name.Local == "fmt" {
+			names = append(names, "fmt-"+attr.Value)
+		} else {
+			names = append(names, attr.Name.Local)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
+}
+
+func attrValue(se xml.StartElement, attr string) string {
+	for _, a := range se.Attr {
+		if a.Name.Local == attr {
+			return a.Value
+		}
+	}
+	panic("unknown attribute " + attr)
 }
