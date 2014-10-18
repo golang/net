@@ -106,9 +106,12 @@ func (sc specCoverage) readSection(sec []int) {
 				}
 				break
 			}
-			if v.Name.Local == "section" {
+			switch v.Name.Local {
+			case "section":
 				sub++
 				sc.readSection(append(sec, sub))
+			case "xref":
+				buf.Write(sc.readXRef(v))
 			}
 		case xml.CharData:
 			if len(sec) == 0 {
@@ -120,6 +123,33 @@ func (sc specCoverage) readSection(sec []int) {
 				sc.addSentences(joinSection(sec), buf.String())
 				return
 			}
+		}
+	}
+}
+
+func (sc specCoverage) readXRef(se xml.StartElement) []byte {
+	var b []byte
+	for {
+		tk, err := sc.d.Token()
+		if err != nil {
+			panic(err)
+		}
+		switch v := tk.(type) {
+		case xml.CharData:
+			if b != nil {
+				panic("unexpected CharData")
+			}
+			b = []byte(v)
+		case xml.EndElement:
+			if v.Name.Local != "xref" {
+				panic("expected </xref>")
+			}
+			if b != nil {
+				return b
+			}
+			return []byte(fmt.Sprintf("%#v", se))
+		default:
+			panic(fmt.Sprintf("unexpected tag %q", v))
 		}
 	}
 }
