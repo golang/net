@@ -266,75 +266,10 @@ func TestSpecParseSentences(t *testing.T) {
 	}
 }
 
-func TestSpecBuildCoverageTable(t *testing.T) {
-	testdata := `
-<rfc>
-  <middle>
-    <section anchor="foo" title="Introduction">
-      <t>Foo.</t>
-      <t><t>Sentence 1.
-      Sentence 2
-   .	Sentence 3.</t></t>
-    </section>
-    <section anchor="bar" title="Introduction">
-      <t>Bar.</t>
-	<section anchor="bar" title="Introduction">
-	  <t>Baz.</t>
-	</section>
-    </section>
-  </middle>
-</rfc>`
-	got := readSpecCov(strings.NewReader(testdata))
-	want := specCoverage{
-		m: map[specPart]bool{
-			specPart{"1", "Foo."}:        false,
-			specPart{"1", "Sentence 1."}: false,
-			specPart{"1", "Sentence 2."}: false,
-			specPart{"1", "Sentence 3."}: false,
-			specPart{"2", "Bar."}:        false,
-			specPart{"2.1", "Baz."}:      false,
-		},
-	}
-
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got = %+v, want %+v", got, want)
-	}
-}
-
-func TestSpecUncovered(t *testing.T) {
-	testdata := `
-<rfc>
-  <middle>
-    <section anchor="foo" title="Introduction">
-	<t>Foo.</t>
-	<t><t>Sentence 1.</t></t>
-    </section>
-  </middle>
-</rfc>`
-	sp := readSpecCov(strings.NewReader(testdata))
-	sp.cover("1", "Foo. Sentence 1.")
-
-	want := specCoverage{
-		m: map[specPart]bool{
-			specPart{"1", "Foo."}:        true,
-			specPart{"1", "Sentence 1."}: true,
-		},
-	}
-
-	if !reflect.DeepEqual(sp, want) {
-		t.Errorf("got = %+v, want %+v", sp, want)
-	}
-
-	defer func() {
-		if err := recover(); err == nil {
-			t.Error("expected panic")
-		}
-	}()
-
-	sp.cover("1", "Not in spec.")
-}
-
 func TestSpecCoverage(t *testing.T) {
+	if !*coverSpec {
+		t.Skip()
+	}
 	uncovered := defaultSpecCoverage.uncovered()
 	if len(uncovered) == 0 {
 		return
