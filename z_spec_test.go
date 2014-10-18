@@ -54,14 +54,19 @@ func (ss specPart) Less(oo specPart) bool {
 	}
 	a := strings.Split(ss.section, ".")
 	b := strings.Split(oo.section, ".")
-	for i := 0; i < len(a); i++ {
-		if i >= len(b) {
+	for len(a) > 0 {
+		if len(b) == 0 {
 			return false
 		}
-		x, y := atoi(a[i]), atoi(b[i])
-		if x < y {
-			return true
+		x, y := atoi(a[0]), atoi(b[0])
+		if x == y {
+			a, b = a[1:], b[1:]
+			continue
 		}
+		return x < y
+	}
+	if len(b) > 0 {
+		return true
 	}
 	return false
 }
@@ -286,7 +291,7 @@ func TestSpecCoverage(t *testing.T) {
 	if len(uncovered) == 0 {
 		return
 	}
-	sort.Sort(bySpecSection(uncovered))
+	sort.Stable(bySpecSection(uncovered))
 
 	const shortLen = 5
 	if testing.Short() && len(uncovered) > shortLen {
@@ -321,4 +326,23 @@ func attrValue(se xml.StartElement, attr string) string {
 		}
 	}
 	panic("unknown attribute " + attr)
+}
+
+func TestSpecPartLess(t *testing.T) {
+	tests := []struct {
+		sec1, sec2 string
+		want       bool
+	}{
+		{"6.2.1", "6.2", false},
+		{"6.2", "6.2.1", true},
+		{"6.10", "6.10.1", true},
+		{"6.10", "6.1.1", false}, // 10, not 1
+		{"6.1", "6.1", false},    // equal, so not less
+	}
+	for _, tt := range tests {
+		got := (specPart{tt.sec1, "foo"}).Less(specPart{tt.sec2, "foo"})
+		if got != tt.want {
+			t.Errorf("Less(%q, %q) = %v; want %v", tt.sec1, tt.sec2, got, tt.want)
+		}
+	}
 }
