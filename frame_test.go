@@ -332,3 +332,33 @@ func TestWriteSettingsAck(t *testing.T) {
 		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
 	}
 }
+
+func TestWriteWindowUpdate(t *testing.T) {
+	fr, buf := testFramer()
+	const streamID = 1<<24 + 2<<16 + 3<<8 + 4
+	const incr = 7<<24 + 6<<16 + 5<<8 + 4
+	if err := fr.WriteWindowUpdate(streamID, incr); err != nil {
+		t.Fatal(err)
+	}
+	const wantEnc = "\x00\x00\x04\x08\x00\x01\x02\x03\x04\x07\x06\x05\x04"
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &WindowUpdateFrame{
+		FrameHeader: FrameHeader{
+			valid:    true,
+			Type:     0x8,
+			Flags:    0x0,
+			Length:   0x4,
+			StreamID: 0x1020304,
+		},
+		Increment: 0x7060504,
+	}
+	if !reflect.DeepEqual(f, want) {
+		t.Errorf("parsed back %#v; want %#v", f, want)
+	}
+}

@@ -613,10 +613,38 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 	if len(p) != 4 {
 		return nil, ConnectionError(ErrCodeFrameSize)
 	}
+	inc := binary.BigEndian.Uint32(p[:4]) & 0x7fffffff // mask off high reserved bit
+	if inc == 0 {
+		// A receiver MUST treat the receipt of a
+		// WINDOW_UPDATE frame with an flow control window
+		// increment of 0 as a stream error (Section 5.4.2) of
+		// type PROTOCOL_ERROR; errors on the connection flow
+		// control window MUST be treated as a connection
+		// error (Section 5.4.1).
+		if fh.StreamID == 0 {
+			return nil, ConnectionError(ErrCodeProtocol)
+		}
+		return nil, StreamError(ErrCodeProtocol)
+	}
 	return &WindowUpdateFrame{
 		FrameHeader: fh,
-		Increment:   binary.BigEndian.Uint32(p[:4]) & 0x7fffffff, // mask off high reserved bit
+		Increment:   inc,
 	}, nil
+}
+
+// WriteWindowUpdate writes a WINDOW_UPDATE frame.
+// The increment value must be between 1 and 2,147,483,647, inclusive.
+// If the Stream ID is zero, the window update applies to the
+// connection as a whole.
+func (f *Framer) WriteWindowUpdate(streamID, incr uint32) error {
+	// "The legal range for the increment to the flow control window is 1 to 2^31-1 (2,147,483,647) octets."
+	if (incr < 1 || incr > 2147483647) && !f.AllowIllegalWrites {
+		return errors.New("illegal window increment value")
+	}
+	f.startWrite(FrameWindowUpdate, 0, streamID)
+	f.writeUint32(incr)
+	return f.endWrite()
+
 }
 
 // A HeadersFrame is used to open a stream and additionally carries a
