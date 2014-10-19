@@ -644,7 +644,6 @@ func (f *Framer) WriteWindowUpdate(streamID, incr uint32) error {
 	f.startWrite(FrameWindowUpdate, 0, streamID)
 	f.writeUint32(incr)
 	return f.endWrite()
-
 }
 
 // A HeadersFrame is used to open a stream and additionally carries a
