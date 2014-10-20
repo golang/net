@@ -78,8 +78,8 @@ func (a bySpecSection) Less(i, j int) bool { return a[i].Less(a[j]) }
 func (a bySpecSection) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
 type specCoverage struct {
-	m map[specPart]bool
-	d *xml.Decoder
+	coverage map[specPart]bool
+	d        *xml.Decoder
 }
 
 func joinSection(sec []int) string {
@@ -206,37 +206,27 @@ func skipElement(s xml.StartElement) bool {
 
 func readSpecCov(r io.Reader) specCoverage {
 	sc := specCoverage{
-		m: map[specPart]bool{},
-		d: xml.NewDecoder(r)}
+		coverage: map[specPart]bool{},
+		d:        xml.NewDecoder(r)}
 	sc.readSection(nil)
 	return sc
 }
 
 func (sc specCoverage) addSentences(sec string, sentence string) {
 	for _, s := range parseSentences(sentence) {
-		sc.m[specPart{sec, s}] = false
+		sc.coverage[specPart{sec, s}] = false
 	}
 }
 
 func (sc specCoverage) cover(sec string, sentence string) {
 	for _, s := range parseSentences(sentence) {
 		p := specPart{sec, s}
-		if _, ok := sc.m[p]; !ok {
+		if _, ok := sc.coverage[p]; !ok {
 			panic(fmt.Sprintf("Not found in spec: %q, %q", sec, s))
 		}
-		sc.m[specPart{sec, s}] = true
+		sc.coverage[specPart{sec, s}] = true
 	}
 
-}
-
-func (sc specCoverage) uncovered() []specPart {
-	var a []specPart
-	for p, covered := range sc.m {
-		if !covered {
-			a = append(a, p)
-		}
-	}
-	return a
 }
 
 var whitespaceRx = regexp.MustCompile(`\s+`)
@@ -287,23 +277,32 @@ func TestSpecCoverage(t *testing.T) {
 	if !*coverSpec {
 		t.Skip()
 	}
-	uncovered := defaultSpecCoverage.uncovered()
-	if len(uncovered) == 0 {
-		return
-	}
-	sort.Stable(bySpecSection(uncovered))
 
-	const shortLen = 5
-	if testing.Short() && len(uncovered) > shortLen {
-		uncovered = uncovered[:shortLen]
+	var (
+		list     []specPart
+		cv       = defaultSpecCoverage.coverage
+		total    = len(cv)
+		complete = 0
+	)
+
+	for sp, touched := range defaultSpecCoverage.coverage {
+		if touched {
+			complete++
+		} else {
+			list = append(list, sp)
+		}
 	}
-	t.Logf("COVER REPORT:")
-	fails := 0
-	for _, p := range uncovered {
+	sort.Stable(bySpecSection(list))
+
+	if testing.Short() {
+		list = list[:5]
+	}
+
+	for _, p := range list {
 		t.Errorf("\tSECTION %s: %s", p.section, p.sentence)
-		fails++
 	}
-	t.Logf("%d sections not covered", fails)
+
+	t.Logf("%d/%d (%d%%) sentances covered", complete, total, (complete/total)*100)
 }
 
 func attrSig(se xml.StartElement) string {
