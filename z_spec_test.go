@@ -33,9 +33,9 @@ func init() {
 	defaultSpecCoverage = readSpecCov(f)
 }
 
-// specCover marks all sentences for section sec in defaultSpecCoverage. Sentences not
+// covers marks all sentences for section sec in defaultSpecCoverage. Sentences not
 // "covered" will be included in report outputed by TestSpecCoverage.
-func specCover(sec, sentences string) {
+func covers(sec, sentences string) {
 	defaultSpecCoverage.cover(sec, sentences)
 }
 
@@ -108,6 +108,9 @@ func (sc specCoverage) readSection(sec []int) {
 			if skipElement(v) {
 				if err := sc.d.Skip(); err != nil {
 					panic(err)
+				}
+				if v.Name.Local == "section" {
+					sub++
 				}
 				break
 			}
@@ -294,7 +297,7 @@ func TestSpecCoverage(t *testing.T) {
 	}
 	sort.Stable(bySpecSection(list))
 
-	if testing.Short() {
+	if testing.Short() && len(list) > 5 {
 		list = list[:5]
 	}
 
