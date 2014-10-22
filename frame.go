@@ -480,7 +480,7 @@ func (f *SettingsFrame) Value(s SettingID) (v uint32, ok bool) {
 	for len(buf) > 0 {
 		settingID := SettingID(binary.BigEndian.Uint16(buf[:2]))
 		if settingID == s {
-			return binary.BigEndian.Uint32(buf[2:4]), true
+			return binary.BigEndian.Uint32(buf[2:6]), true
 		}
 		buf = buf[6:]
 	}
@@ -491,7 +491,7 @@ func (f *SettingsFrame) ForeachSetting(fn func(Setting)) {
 	f.checkValid()
 	buf := f.p
 	for len(buf) > 0 {
-		fn(Setting{SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:4])})
+		fn(Setting{SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:6])})
 		buf = buf[6:]
 	}
 }
