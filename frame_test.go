@@ -336,7 +336,7 @@ func TestWriteSettings(t *testing.T) {
 		got = append(got, s)
 		valBack, ok := sf.Value(s.ID)
 		if !ok || valBack != s.Val {
-			t.Errorf("Value(%d) = %v, %v; want %v, true", valBack, ok)
+			t.Errorf("Value(%d) = %v, %v; want %v, true", s.ID, valBack, ok)
 		}
 	})
 	if !reflect.DeepEqual(settings, got) {
