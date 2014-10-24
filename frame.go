@@ -239,7 +239,7 @@ func readFrameHeader(buf []byte, r io.Reader) (FrameHeader, error) {
 		return FrameHeader{}, err
 	}
 	return FrameHeader{
-		Length:   (uint32(buf[0])<<16 | uint32(buf[1])<<7 | uint32(buf[2])),
+		Length:   (uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])),
 		Type:     FrameType(buf[3]),
 		Flags:    Flags(buf[4]),
 		StreamID: binary.BigEndian.Uint32(buf[5:]) & (1<<31 - 1),
@@ -303,10 +303,15 @@ func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
 		byte(streamID))
 }
 
+var errFrameTooLarge = errors.New("http2: frame too large")
+
 func (f *Framer) endWrite() error {
 	// Now that we know the final size, fill in the FrameHeader in
 	// the space previously reserved for it. Abuse append.
 	length := len(f.wbuf) - frameHeaderLen
+	if length >= (1 << 24) {
+		return errFrameTooLarge
+	}
 	_ = append(f.wbuf[:0],
 		byte(length>>16),
 		byte(length>>8),
@@ -319,6 +324,7 @@ func (f *Framer) endWrite() error {
 }
 
 func (f *Framer) writeByte(v byte)     { f.wbuf = append(f.wbuf, v) }
+func (f *Framer) writeBytes(v []byte)  { f.wbuf = append(f.wbuf, v...) }
 func (f *Framer) writeUint16(v uint16) { f.wbuf = append(f.wbuf, byte(v>>8), byte(v)) }
 func (f *Framer) writeUint32(v uint32) {
 	f.wbuf = append(f.wbuf, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))

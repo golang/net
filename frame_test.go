@@ -382,3 +382,51 @@ func TestWriteWindowUpdate(t *testing.T) {
 		t.Errorf("parsed back %#v; want %#v", f, want)
 	}
 }
+
+func TestReadFrameHeader(t *testing.T) {
+	tests := []struct {
+		len      uint32
+		typ      FrameType
+		flags    Flags
+		streamID uint32
+	}{
+		{len: 0, typ: 255, flags: 1, streamID: 0},
+		{len: 0, typ: 255, flags: 1, streamID: 1},
+		{len: 0, typ: 255, flags: 1, streamID: 255},
+		{len: 0, typ: 255, flags: 1, streamID: 256},
+		{len: 0, typ: 255, flags: 1, streamID: 65535},
+		{len: 0, typ: 255, flags: 1, streamID: 65536},
+
+		{len: 0, typ: 1, flags: 255, streamID: 1},
+		{len: 255, typ: 1, flags: 255, streamID: 1},
+		{len: 256, typ: 1, flags: 255, streamID: 1},
+		{len: 65535, typ: 1, flags: 255, streamID: 1},
+		{len: 65536, typ: 1, flags: 255, streamID: 1},
+		{len: 16777215, typ: 1, flags: 255, streamID: 1},
+	}
+	for _, tt := range tests {
+		fr, buf := testFramer()
+		fr.startWrite(tt.typ, tt.flags, tt.streamID)
+		fr.writeBytes(make([]byte, tt.len))
+		fr.endWrite()
+		fh, err := ReadFrameHeader(buf)
+		if err != nil {
+			t.Errorf("ReadFrameHeader(%+v) = %v", tt, err)
+			continue
+		}
+		if fh.Type != tt.typ || fh.Flags != tt.flags || fh.Length != tt.len || fh.StreamID != tt.streamID {
+			t.Errorf("ReadFrameHeader(%+v) = %+v; mismatch", tt, fh)
+		}
+	}
+
+}
+
+func TestWriteTooLargeFrame(t *testing.T) {
+	fr, _ := testFramer()
+	fr.startWrite(0, 1, 1)
+	fr.writeBytes(make([]byte, 1<<24))
+	err := fr.endWrite()
+	if err != errFrameTooLarge {
+		t.Errorf("endWrite = %v; want errFrameTooLarge", err)
+	}
+}
