@@ -1,7 +1,7 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo -godefs defs_solaris.go
 
-// +build go1.3
+// +build solaris
 
 package ipv4
 
