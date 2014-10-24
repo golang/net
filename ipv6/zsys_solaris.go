@@ -1,6 +1,8 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo -godefs defs_solaris.go
 
+// +build solaris
+
 package ipv6
 
 const (

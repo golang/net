@@ -1,6 +1,8 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo -godefs defs_dragonfly.go
 
+// +build dragonfly
+
 package ipv6
 
 const (
