@@ -90,7 +90,7 @@ func benchmarkReadWriteIPv4UDP(b *testing.B, p *ipv4.PacketConn, wb, rb []byte, 
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
@@ -140,7 +140,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
@@ -215,7 +215,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {

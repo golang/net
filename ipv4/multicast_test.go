@@ -19,7 +19,7 @@ import (
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -86,7 +86,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {

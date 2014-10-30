@@ -24,7 +24,7 @@ var packetConnMulticastSocketOptionTests = []struct {
 
 func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -48,7 +48,7 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 
 func TestRawConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {

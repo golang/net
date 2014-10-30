@@ -17,7 +17,7 @@ import (
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
@@ -54,7 +54,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
@@ -78,7 +78,7 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 
 func TestRawConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
