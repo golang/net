@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This code is a duplicate of syscall/syscall_linux_386.go with small
-// modifications.
-
 package ipv6
 
 import (
@@ -12,30 +9,22 @@ import (
 	"unsafe"
 )
 
-// On x86 Linux, all the socket calls go through an extra indirection,
-// I think because the 5-register system call interface can't handle
-// the 6-argument calls like sendto and recvfrom. Instead the
-// arguments to the underlying system call are the number below and a
-// pointer to an array of uintptr. We hide the pointer in the
-// socketcall assembly to avoid allocation on every system call.
-
 const (
-	// See /usr/include/linux/net.h.
-	_SETSOCKOPT = 14
-	_GETSOCKOPT = 15
+	sysGETSOCKOPT = 0xf
+	sysSETSOCKOPT = 0xe
 )
 
-var socketcall func(call int, a0, a1, a2, a3, a4, a5 uintptr) (int, syscall.Errno)
+func socketcall(call int, a0, a1, a2, a3, a4, a5 uintptr) (int, syscall.Errno)
 
-func getsockopt(fd int, level int, name int, v unsafe.Pointer, l *sysSockoptLen) error {
-	if _, errno := socketcall(_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(unsafe.Pointer(l)), 0); errno != 0 {
+func getsockopt(fd, level, name int, v unsafe.Pointer, l *sysSockoptLen) error {
+	if _, errno := socketcall(sysGETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(unsafe.Pointer(l)), 0); errno != 0 {
 		return error(errno)
 	}
 	return nil
 }
 
-func setsockopt(fd int, level int, name int, v unsafe.Pointer, l uintptr) error {
-	if _, errno := socketcall(_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(l), 0); errno != 0 {
+func setsockopt(fd, level, name int, v unsafe.Pointer, l sysSockoptLen) error {
+	if _, errno := socketcall(sysSETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(v), uintptr(l), 0); errno != 0 {
 		return error(errno)
 	}
 	return nil
