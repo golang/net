@@ -9,26 +9,37 @@ import (
 	"syscall"
 )
 
-// RFC 3542 options
-const (
-	// See /usr/include/linux/ipv6.h,in6.h.
-	sysSockoptReceiveTrafficClass = syscall.IPV6_RECVTCLASS
-	sysSockoptTrafficClass        = syscall.IPV6_TCLASS
-	sysSockoptReceiveHopLimit     = syscall.IPV6_RECVHOPLIMIT
-	sysSockoptHopLimit            = syscall.IPV6_HOPLIMIT
-	sysSockoptReceivePacketInfo   = syscall.IPV6_RECVPKTINFO
-	sysSockoptPacketInfo          = syscall.IPV6_PKTINFO
-	sysSockoptReceivePathMTU      = 0x3c // IPV6_RECVPATHMTU
-	sysSockoptPathMTU             = 0x3d // IPV6_PATHMTU
-	sysSockoptNextHop             = syscall.IPV6_NEXTHOP
-	sysSockoptChecksum            = syscall.IPV6_CHECKSUM
+type sysSockoptLen int32
 
-	// See /usr/include/linux/icmpv6.h.
-	sysSockoptICMPFilter = 0x1 // syscall.ICMPV6_FILTER
+var (
+	sockOpts = [ssoMax]sockOpt{
+		ssoTrafficClass:        {ianaProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
+		ssoHopLimit:            {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
+		ssoMulticastInterface:  {ianaProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
+		ssoMulticastHopLimit:   {ianaProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
+		ssoMulticastLoopback:   {ianaProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
+		ssoReceiveTrafficClass: {ianaProtocolIPv6, sysIPV6_RECVTCLASS, ssoTypeInt},
+		ssoReceiveHopLimit:     {ianaProtocolIPv6, sysIPV6_RECVHOPLIMIT, ssoTypeInt},
+		ssoReceivePacketInfo:   {ianaProtocolIPv6, sysIPV6_RECVPKTINFO, ssoTypeInt},
+		ssoReceivePathMTU:      {ianaProtocolIPv6, sysIPV6_RECVPATHMTU, ssoTypeInt},
+		ssoPathMTU:             {ianaProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo},
+		ssoChecksum:            {ianaProtocolReserved, sysIPV6_CHECKSUM, ssoTypeInt},
+		ssoICMPFilter:          {ianaProtocolIPv6ICMP, sysICMPV6_FILTER, ssoTypeICMPFilter},
+		ssoJoinGroup:           {ianaProtocolIPv6, sysIPV6_ADD_MEMBERSHIP, ssoTypeIPMreq},
+		ssoLeaveGroup:          {ianaProtocolIPv6, sysIPV6_DROP_MEMBERSHIP, ssoTypeIPMreq},
+	}
 )
 
-func setSockaddr(sa *syscall.RawSockaddrInet6, ip net.IP, ifindex int) {
+func (sa *sysSockaddrInet6) setSockaddr(ip net.IP, i int) {
 	sa.Family = syscall.AF_INET6
 	copy(sa.Addr[:], ip)
-	sa.Scope_id = uint32(ifindex)
+	sa.Scope_id = uint32(i)
+}
+
+func (pi *sysInet6Pktinfo) setIfindex(i int) {
+	pi.Ifindex = int32(i)
+}
+
+func (mreq *sysIPv6Mreq) setIfindex(i int) {
+	mreq.Ifindex = int32(i)
 }
