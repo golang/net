@@ -6,11 +6,7 @@
 
 package ipv6
 
-type sysICMPFilter struct {
-	Filt [8]uint32
-}
-
-func (f *sysICMPFilter) set(typ ICMPType, block bool) {
+func (f *sysICMPv6Filter) set(typ ICMPType, block bool) {
 	if block {
 		f.Filt[typ>>5] &^= 1 << (uint32(typ) & 31)
 	} else {
@@ -18,7 +14,7 @@ func (f *sysICMPFilter) set(typ ICMPType, block bool) {
 	}
 }
 
-func (f *sysICMPFilter) setAll(block bool) {
+func (f *sysICMPv6Filter) setAll(block bool) {
 	for i := range f.Filt {
 		if block {
 			f.Filt[i] = 0
@@ -28,6 +24,6 @@ func (f *sysICMPFilter) setAll(block bool) {
 	}
 }
 
-func (f *sysICMPFilter) willBlock(typ ICMPType) bool {
+func (f *sysICMPv6Filter) willBlock(typ ICMPType) bool {
 	return f.Filt[typ>>5]&(1<<(uint32(typ)&31)) == 0
 }

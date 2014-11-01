@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package ipv6
+// +build solaris
 
-type sysICMPv6Filter struct {
-	// TODO(mikio): Implement this
-}
+package ipv6
 
 func (f *sysICMPv6Filter) set(typ ICMPType, block bool) {
 	// TODO(mikio): Implement this

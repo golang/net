@@ -21,7 +21,7 @@ func (typ ICMPType) String() string {
 // packets.
 type ICMPFilter struct {
 	mu sync.RWMutex
-	sysICMPFilter
+	sysICMPv6Filter
 }
 
 // Set sets the ICMP type and filter action to the filter.
