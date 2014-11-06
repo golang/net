@@ -137,7 +137,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 	}
 	var l int
 	if ctlOpts[ctlPacketInfo].name > 0 {
-		if cm.Src.To4() != nil || cm.IfIndex != 0 {
+		if cm.Src.To4() != nil || cm.IfIndex > 0 {
 			l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
 		}
 	}
@@ -145,7 +145,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 		oob = make([]byte, l)
 		b := oob
 		if ctlOpts[ctlPacketInfo].name > 0 {
-			if cm.Src.To4() != nil || cm.IfIndex != 0 {
+			if cm.Src.To4() != nil || cm.IfIndex > 0 {
 				b = ctlOpts[ctlPacketInfo].marshal(b, cm)
 			}
 		}

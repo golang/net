@@ -23,7 +23,7 @@ func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 		if ip := cm.Src.To4(); ip != nil {
 			copy(pi.Spec_dst[:], ip)
 		}
-		if cm.IfIndex != 0 {
+		if cm.IfIndex > 0 {
 			pi.setIfindex(cm.IfIndex)
 		}
 	}
