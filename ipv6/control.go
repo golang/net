@@ -34,7 +34,7 @@ var (
 // 2292 and RFC 3542 for some practical reasons.
 
 type rawOpt struct {
-	sync.Mutex
+	sync.RWMutex
 	cflags ControlFlags
 }
 
@@ -54,6 +54,8 @@ const (
 	FlagInterface                             // pass the interface index on the received packet
 	FlagPathMTU                               // pass the path MTU on the received packet path
 )
+
+const flagPacketInfo = FlagDst | FlagInterface
 
 // A ControlMessage represents per packet basis IP-level socket
 // options.
@@ -80,4 +82,22 @@ func (cm *ControlMessage) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("tclass: %#x, hoplim: %v, src: %v, dst: %v, ifindex: %v, nexthop: %v, mtu: %v", cm.TrafficClass, cm.HopLimit, cm.Src, cm.Dst, cm.IfIndex, cm.NextHop, cm.MTU)
+}
+
+// Ancillary data socket options
+const (
+	ctlTrafficClass = iota // header field
+	ctlHopLimit            // header field
+	ctlPacketInfo          // inbound or outbound packet path
+	ctlNextHop             // nexthop
+	ctlPathMTU             // path mtu
+	ctlMax
+)
+
+// A ctlOpt represents a binding for ancillary data socket option.
+type ctlOpt struct {
+	name    int // option name, must be equal or greater than 1
+	length  int // option length
+	marshal func([]byte, *ControlMessage) []byte
+	parse   func(*ControlMessage, []byte)
 }

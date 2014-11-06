@@ -38,6 +38,8 @@ type sysIPv6Mreq struct {
 }
 
 var (
+	ctlOpts = [ctlMax]ctlOpt{}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoHopLimit:           {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
 		ssoMulticastInterface: {ianaProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},

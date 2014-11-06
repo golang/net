@@ -14,6 +14,13 @@ import (
 type sysSockoptLen int32
 
 var (
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlTrafficClass: {sysIPV6_TCLASS, 4, marshalTrafficClass, parseTrafficClass},
+		ctlHopLimit:     {sysIPV6_HOPLIMIT, 4, marshalHopLimit, parseHopLimit},
+		ctlPacketInfo:   {sysIPV6_PKTINFO, sysSizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo},
+		ctlNextHop:      {sysIPV6_NEXTHOP, sysSizeofSockaddrInet6, marshalNextHop, parseNextHop},
+	}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoTrafficClass:        {ianaProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
 		ssoHopLimit:            {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},

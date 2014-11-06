@@ -12,6 +12,11 @@ import (
 type sysSockoptLen int32
 
 var (
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlHopLimit:   {sysIPV6_2292HOPLIMIT, 4, marshal2292HopLimit, parseHopLimit},
+		ctlPacketInfo: {sysIPV6_2292PKTINFO, sysSizeofInet6Pktinfo, marshal2292PacketInfo, parsePacketInfo},
+	}
+
 	sockOpts = [ssoMax]sockOpt{
 		ssoTrafficClass:       {ianaProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
 		ssoHopLimit:           {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
@@ -44,14 +49,22 @@ func init() {
 	// introduced in OS X 10.7 (Darwin 11.0.0).
 	// See http://support.apple.com/kb/HT1633.
 	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '1' {
+		ctlOpts[ctlTrafficClass].name = sysIPV6_TCLASS
+		ctlOpts[ctlTrafficClass].length = 4
+		ctlOpts[ctlTrafficClass].marshal = marshalTrafficClass
+		ctlOpts[ctlTrafficClass].parse = parseTrafficClass
+		ctlOpts[ctlHopLimit].name = sysIPV6_HOPLIMIT
+		ctlOpts[ctlHopLimit].marshal = marshalHopLimit
+		ctlOpts[ctlPacketInfo].name = sysIPV6_PKTINFO
+		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
+		sockOpts[ssoReceiveTrafficClass].level = ianaProtocolIPv6
+		sockOpts[ssoReceiveTrafficClass].name = sysIPV6_RECVTCLASS
+		sockOpts[ssoReceiveTrafficClass].typ = ssoTypeInt
+		sockOpts[ssoReceiveHopLimit].name = sysIPV6_RECVHOPLIMIT
+		sockOpts[ssoReceivePacketInfo].name = sysIPV6_RECVPKTINFO
 		sockOpts[ssoReceivePathMTU].level = ianaProtocolIPv6
 		sockOpts[ssoReceivePathMTU].name = sysIPV6_RECVPATHMTU
 		sockOpts[ssoReceivePathMTU].typ = ssoTypeInt
-		// Please be informed that IPV6_PATHMTU option will be
-		// a cause of kernel crash on 10.9 and earlier.
-		//sockOpts[ssoPathMTU].level = ianaProtocolIPv6
-		//sockOpts[ssoPathMTU].name = sysIPV6_PATHMTU
-		//sockOpts[ssoPathMTU].typ = ssoTypeMTUInfo
 	}
 }
 
