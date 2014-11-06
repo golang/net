@@ -39,7 +39,6 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	cm := ipv6.ControlMessage{
 		TrafficClass: DiffServAF11 | CongestionExperienced,
 		Src:          net.IPv6loopback,
-		Dst:          net.IPv6loopback,
 	}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	ifi := loopbackInterface()
@@ -104,7 +103,6 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	cm := ipv6.ControlMessage{
 		TrafficClass: DiffServAF11 | CongestionExperienced,
 		Src:          net.IPv6loopback,
-		Dst:          net.IPv6loopback,
 	}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	ifi := loopbackInterface()

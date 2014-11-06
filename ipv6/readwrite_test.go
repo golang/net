@@ -133,7 +133,6 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		cm := ipv6.ControlMessage{
 			TrafficClass: DiffServAF11 | CongestionExperienced,
 			Src:          net.IPv6loopback,
-			Dst:          net.IPv6loopback,
 		}
 		if ifi != nil {
 			cm.IfIndex = ifi.Index
