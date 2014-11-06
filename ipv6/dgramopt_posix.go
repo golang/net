@@ -21,7 +21,7 @@ func (c *dgramOpt) MulticastHopLimit() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv6MulticastHopLimit(fd)
+	return getInt(fd, &sockOpts[ssoMulticastHopLimit])
 }
 
 // SetMulticastHopLimit sets the hop limit field value for future
@@ -34,7 +34,7 @@ func (c *dgramOpt) SetMulticastHopLimit(hoplim int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6MulticastHopLimit(fd, hoplim)
+	return setInt(fd, &sockOpts[ssoMulticastHopLimit], hoplim)
 }
 
 // MulticastInterface returns the default interface for multicast
@@ -47,7 +47,7 @@ func (c *dgramOpt) MulticastInterface() (*net.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ipv6MulticastInterface(fd)
+	return getInterface(fd, &sockOpts[ssoMulticastInterface])
 }
 
 // SetMulticastInterface sets the default interface for future
@@ -60,7 +60,7 @@ func (c *dgramOpt) SetMulticastInterface(ifi *net.Interface) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6MulticastInterface(fd, ifi)
+	return setInterface(fd, &sockOpts[ssoMulticastInterface], ifi)
 }
 
 // MulticastLoopback reports whether transmitted multicast packets
@@ -73,7 +73,11 @@ func (c *dgramOpt) MulticastLoopback() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return ipv6MulticastLoopback(fd)
+	on, err := getInt(fd, &sockOpts[ssoMulticastLoopback])
+	if err != nil {
+		return false, err
+	}
+	return on == 1, nil
 }
 
 // SetMulticastLoopback sets whether transmitted multicast packets
@@ -86,7 +90,7 @@ func (c *dgramOpt) SetMulticastLoopback(on bool) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6MulticastLoopback(fd, on)
+	return setInt(fd, &sockOpts[ssoMulticastLoopback], boolint(on))
 }
 
 // JoinGroup joins the group address group on the interface ifi.
@@ -105,7 +109,7 @@ func (c *dgramOpt) JoinGroup(ifi *net.Interface, group net.Addr) error {
 	if grp == nil {
 		return errMissingAddress
 	}
-	return joinIPv6Group(fd, ifi, grp)
+	return setGroup(fd, &sockOpts[ssoJoinGroup], ifi, grp)
 }
 
 // LeaveGroup leaves the group address group on the interface ifi.
@@ -121,7 +125,7 @@ func (c *dgramOpt) LeaveGroup(ifi *net.Interface, group net.Addr) error {
 	if grp == nil {
 		return errMissingAddress
 	}
-	return leaveIPv6Group(fd, ifi, grp)
+	return setGroup(fd, &sockOpts[ssoLeaveGroup], ifi, grp)
 }
 
 // Checksum reports whether the kernel will compute, store or verify a
@@ -136,7 +140,14 @@ func (c *dgramOpt) Checksum() (on bool, offset int, err error) {
 	if err != nil {
 		return false, 0, err
 	}
-	return ipv6Checksum(fd)
+	offset, err = getInt(fd, &sockOpts[ssoChecksum])
+	if err != nil {
+		return false, 0, err
+	}
+	if offset < 0 {
+		return false, 0, nil
+	}
+	return true, offset, nil
 }
 
 // SetChecksum enables the kernel checksum processing.  If on is ture,
@@ -150,7 +161,10 @@ func (c *dgramOpt) SetChecksum(on bool, offset int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6Checksum(fd, on, offset)
+	if !on {
+		offset = -1
+	}
+	return setInt(fd, &sockOpts[ssoChecksum], offset)
 }
 
 // ICMPFilter returns an ICMP filter.
@@ -162,7 +176,7 @@ func (c *dgramOpt) ICMPFilter() (*ICMPFilter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ipv6ICMPFilter(fd)
+	return getICMPFilter(fd, &sockOpts[ssoICMPFilter])
 }
 
 // SetICMPFilter deploys the ICMP filter.
@@ -174,5 +188,5 @@ func (c *dgramOpt) SetICMPFilter(f *ICMPFilter) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6ICMPFilter(fd, f)
+	return setICMPFilter(fd, &sockOpts[ssoICMPFilter], f)
 }

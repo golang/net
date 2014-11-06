@@ -18,7 +18,7 @@ func (c *genericOpt) TrafficClass() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv6TrafficClass(fd)
+	return getInt(fd, &sockOpts[ssoTrafficClass])
 }
 
 // SetTrafficClass sets the traffic class field value for future
@@ -31,7 +31,7 @@ func (c *genericOpt) SetTrafficClass(tclass int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6TrafficClass(fd, tclass)
+	return setInt(fd, &sockOpts[ssoTrafficClass], tclass)
 }
 
 // HopLimit returns the hop limit field value for outgoing packets.
@@ -43,7 +43,7 @@ func (c *genericOpt) HopLimit() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv6HopLimit(fd)
+	return getInt(fd, &sockOpts[ssoHopLimit])
 }
 
 // SetHopLimit sets the hop limit field value for future outgoing
@@ -56,5 +56,5 @@ func (c *genericOpt) SetHopLimit(hoplim int) error {
 	if err != nil {
 		return err
 	}
-	return setIPv6HopLimit(fd, hoplim)
+	return setInt(fd, &sockOpts[ssoHopLimit], hoplim)
 }

@@ -33,7 +33,11 @@ func (c *Conn) PathMTU() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ipv6PathMTU(fd)
+	_, mtu, err := getMTUInfo(fd, &sockOpts[ssoPathMTU])
+	if err != nil {
+		return 0, err
+	}
+	return mtu, nil
 }
 
 // NewConn returns a new Conn.
