@@ -100,6 +100,7 @@ func (h *Header) Marshal() ([]byte, error) {
 		b[posTotalLen], b[posTotalLen+1] = byte(h.TotalLen>>8), byte(h.TotalLen)
 		b[posFragOff], b[posFragOff+1] = byte(flagsAndFragOff>>8), byte(flagsAndFragOff)
 	} else {
+		// TODO(mikio): fix spurious word boundary access
 		*(*uint16)(unsafe.Pointer(&b[posTotalLen : posTotalLen+1][0])) = uint16(h.TotalLen)
 		*(*uint16)(unsafe.Pointer(&b[posFragOff : posFragOff+1][0])) = uint16(flagsAndFragOff)
 	}
@@ -141,10 +142,12 @@ func ParseHeader(b []byte) (*Header, error) {
 		h.TotalLen = int(b[posTotalLen])<<8 | int(b[posTotalLen+1])
 		h.FragOff = int(b[posFragOff])<<8 | int(b[posFragOff+1])
 	} else {
+		// TODO(mikio): fix spurious word boundary access
 		h.TotalLen = int(*(*uint16)(unsafe.Pointer(&b[posTotalLen : posTotalLen+1][0])))
 		if runtime.GOOS != "freebsd" || freebsdVersion < 1000000 {
 			h.TotalLen += hdrlen
 		}
+		// TODO(mikio): fix spurious word boundary access
 		h.FragOff = int(*(*uint16)(unsafe.Pointer(&b[posFragOff : posFragOff+1][0])))
 	}
 	h.Flags = HeaderFlags(h.FragOff&0xe000) >> 13

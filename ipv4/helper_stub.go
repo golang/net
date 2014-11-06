@@ -7,21 +7,17 @@
 package ipv4
 
 func (c *genericOpt) sysfd() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }
 
 func (c *dgramOpt) sysfd() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }
 
 func (c *payloadHandler) sysfd() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }
 
 func (c *packetHandler) sysfd() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }

@@ -7,21 +7,17 @@
 package ipv4
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
-	// TODO(mikio): Implement this
 	return errOpNoSupport
 }
 
 func newControlMessage(opt *rawOpt) []byte {
-	// TODO(mikio): Implement this
 	return nil
 }
 
 func parseControlMessage(b []byte) (*ControlMessage, error) {
-	// TODO(mikio): Implement this
 	return nil, errOpNoSupport
 }
 
 func marshalControlMessage(cm *ControlMessage) []byte {
-	// TODO(mikio): Implement this
 	return nil
 }

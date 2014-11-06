@@ -7,21 +7,17 @@
 package ipv4
 
 func (c *genericOpt) TOS() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }
 
 func (c *genericOpt) SetTOS(tos int) error {
-	// TODO(mikio): Implement this
 	return errOpNoSupport
 }
 
 func (c *genericOpt) TTL() (int, error) {
-	// TODO(mikio): Implement this
 	return 0, errOpNoSupport
 }
 
 func (c *genericOpt) SetTTL(ttl int) error {
-	// TODO(mikio): Implement this
 	return errOpNoSupport
 }
