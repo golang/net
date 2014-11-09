@@ -48,9 +48,9 @@ func main() {
 	fmt.Println()
 
 	fmt.Println("import (")
-	fmt.Println(`"code.google.com/p/go.text/encoding"`)
+	fmt.Println(`"golang.org/x/text/encoding"`)
 	for _, pkg := range []string{"charmap", "japanese", "korean", "simplifiedchinese", "traditionalchinese", "unicode"} {
-		fmt.Printf("\"code.google.com/p/go.text/encoding/%s\"\n", pkg)
+		fmt.Printf("\"golang.org/x/text/encoding/%s\"\n", pkg)
 	}
 	fmt.Println(")")
 	fmt.Println()

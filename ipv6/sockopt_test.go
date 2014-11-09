@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"code.google.com/p/go.net/ipv6"
+	"golang.org/x/net/ipv6"
 )
 
 var supportsIPv6 bool

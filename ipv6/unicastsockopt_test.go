@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"testing"
 
-	"code.google.com/p/go.net/internal/iana"
-	"code.google.com/p/go.net/ipv6"
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/ipv6"
 )
 
 func TestConnUnicastSocketOptions(t *testing.T) {

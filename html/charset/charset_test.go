@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"code.google.com/p/go.text/transform"
+	"golang.org/x/text/transform"
 )
 
 func transformString(t transform.Transformer, s string) (string, error) {
