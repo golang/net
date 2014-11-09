@@ -390,6 +390,7 @@ func (sc *serverConn) startHandler(streamID uint32, bodyOpen bool, method, path,
 		Method:     method,
 		URL:        &url.URL{},
 		RemoteAddr: sc.conn.RemoteAddr().String(),
+		Header:     reqHeader,
 		RequestURI: path,
 		Proto:      "HTTP/2.0",
 		ProtoMajor: 2,
@@ -402,10 +403,12 @@ func (sc *serverConn) startHandler(streamID uint32, bodyOpen bool, method, path,
 			hasBody:  bodyOpen,
 		},
 	}
-	if vv, ok := reqHeader["Content-Length"]; ok {
-		req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
-	} else {
-		req.ContentLength = -1
+	if bodyOpen {
+		if vv, ok := reqHeader["Content-Length"]; ok {
+			req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
+		} else {
+			req.ContentLength = -1
+		}
 	}
 	rw := &responseWriter{
 		sc:       sc,
