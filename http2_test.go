@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -196,6 +197,53 @@ func TestServer_Request_Get(t *testing.T) {
 		if !reflect.DeepEqual(r.Header, wantHeader) {
 			t.Errorf("Header = %#v; want %#v", r.Header, wantHeader)
 		}
+		if n, err := r.Body.Read([]byte(" ")); err != io.EOF || n != 0 {
+			t.Errorf("Read = %d, %v; want 0, EOF", n, err)
+		}
+	})
+}
+
+// Using a Host header, instead of :authority
+func TestServer_Request_Get_Host(t *testing.T) {
+	const host = "example.com"
+	testServerRequest(t, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID: 1, // clients send odd numbers
+			BlockFragment: encodeHeader(t,
+				":method", "GET",
+				":path", "/",
+				":scheme", "https",
+				"host", host,
+			),
+			EndStream:  true,
+			EndHeaders: true,
+		})
+	}, func(r *http.Request) {
+		if r.Host != host {
+			t.Errorf("Host = %q; want %q", r.Host, host)
+		}
+	})
+}
+
+// Using an :authority pseudo-header, instead of Host
+func TestServer_Request_Get_Authority(t *testing.T) {
+	const host = "example.com"
+	testServerRequest(t, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID: 1, // clients send odd numbers
+			BlockFragment: encodeHeader(t,
+				":method", "GET",
+				":path", "/",
+				":scheme", "https",
+				":authority", host,
+			),
+			EndStream:  true,
+			EndHeaders: true,
+		})
+	}, func(r *http.Request) {
+		if r.Host != host {
+			t.Errorf("Host = %q; want %q", r.Host, host)
+		}
 	})
 }
 
@@ -205,6 +253,9 @@ func TestServer_Request_Get(t *testing.T) {
 func testServerRequest(t *testing.T, writeReq func(*serverTester), checkReq func(*http.Request)) {
 	gotReq := make(chan bool, 1)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil {
+			t.Fatal("nil Body")
+		}
 		checkReq(r)
 		gotReq <- true
 	})

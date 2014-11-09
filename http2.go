@@ -386,6 +386,9 @@ func (sc *serverConn) startHandler(streamID uint32, bodyOpen bool, method, path,
 		// TODO: get from sc's ConnectionState
 		tlsState = &tls.ConnectionState{}
 	}
+	if authority == "" {
+		authority = reqHeader.Get("Host")
+	}
 	req := &http.Request{
 		Method:     method,
 		URL:        &url.URL{},
