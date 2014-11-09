@@ -247,6 +247,56 @@ func TestServer_Request_Get_Authority(t *testing.T) {
 	})
 }
 
+func TestServer_Request_WithContinuation(t *testing.T) {
+	wantHeader := http.Header{
+		"Foo-One":   []string{"value-one"},
+		"Foo-Two":   []string{"value-two"},
+		"Foo-Three": []string{"value-three"},
+	}
+	testServerRequest(t, func(st *serverTester) {
+		fullHeaders := encodeHeader(t,
+			":method", "GET",
+			":path", "/",
+			":scheme", "https",
+			"foo-one", "value-one",
+			"foo-two", "value-two",
+			"foo-three", "value-three",
+		)
+		remain := fullHeaders
+		chunks := 0
+		for len(remain) > 0 {
+			const maxChunkSize = 5
+			chunk := remain
+			if len(chunk) > maxChunkSize {
+				chunk = chunk[:maxChunkSize]
+			}
+			remain = remain[len(chunk):]
+
+			if chunks == 0 {
+				st.writeHeaders(HeadersFrameParam{
+					StreamID:      1, // clients send odd numbers
+					BlockFragment: chunk,
+					EndStream:     true,  // no DATA frames
+					EndHeaders:    false, // we'll have continuation frames
+				})
+			} else {
+				err := st.fr.WriteContinuation(1, len(remain) == 0, chunk)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			chunks++
+		}
+		if chunks < 2 {
+			t.Fatal("too few chunks")
+		}
+	}, func(r *http.Request) {
+		if !reflect.DeepEqual(r.Header, wantHeader) {
+			t.Errorf("Header = %#v; want %#v", r.Header, wantHeader)
+		}
+	})
+}
+
 // testServerRequest sets up an idle HTTP/2 connection and lets you
 // write a single request with writeReq, and then verify that the
 // *http.Request is built correctly in checkReq.
