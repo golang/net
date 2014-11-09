@@ -28,3 +28,9 @@ func SupportsIPv6() bool {
 	ln.Close()
 	return true
 }
+
+// ProtocolNotSupported reports whether err is a protocol not
+// supported error.
+func ProtocolNotSupported(err error) bool {
+	return protocolNotSupported(err)
+}
