@@ -5,11 +5,12 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/ipv6"
 )
 
 var supportsIPv6 bool

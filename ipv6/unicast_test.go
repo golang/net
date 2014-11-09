@@ -6,12 +6,16 @@ package ipv6_test
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/internal/icmp"
+	"code.google.com/p/go.net/internal/nettest"
+	"code.google.com/p/go.net/ipv6"
 )
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
@@ -37,11 +41,11 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	}
 
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		Src:          net.IPv6loopback,
 	}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	if ifi != nil {
 		cm.IfIndex = ifi.Index
 	}
@@ -99,13 +103,13 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		t.Fatalf("net.ResolveIPAddr failed: %v", err)
 	}
 
-	pshicmp := ipv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP, ianaProtocolIPv6ICMP)
+	pshicmp := icmp.IPv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP)
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		Src:          net.IPv6loopback,
 	}
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	if ifi != nil {
 		cm.IfIndex = ifi.Index
 	}
@@ -130,15 +134,15 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			// kernel checksum processing.
 			p.SetChecksum(false, -1)
 		}
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv6.ICMPTypeEchoRequest, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
 		}).Marshal(psh)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
@@ -160,8 +164,8 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			if m, err := parseICMPMessage(rb[:n]); err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+			if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
 				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
 			}

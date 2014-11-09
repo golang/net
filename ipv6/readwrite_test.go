@@ -6,11 +6,14 @@ package ipv6_test
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"runtime"
 	"sync"
 	"testing"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/internal/nettest"
+	"code.google.com/p/go.net/ipv6"
 )
 
 func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
@@ -61,7 +64,7 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 	if err := p.SetControlMessage(cf, true); err != nil {
 		b.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 
 	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
 	b.ResetTimer()
@@ -72,7 +75,7 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 
 func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, dst net.Addr, ifi *net.Interface) {
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		HopLimit:     1,
 	}
 	if ifi != nil {
@@ -110,7 +113,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
 	}
 
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
 
@@ -131,7 +134,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	writer := func(toggle bool) {
 		defer wg.Done()
 		cm := ipv6.ControlMessage{
-			TrafficClass: DiffServAF11 | CongestionExperienced,
+			TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 			Src:          net.IPv6loopback,
 		}
 		if ifi != nil {

@@ -5,11 +5,13 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/internal/nettest"
+	"code.google.com/p/go.net/ipv6"
 )
 
 var packetConnMulticastSocketOptionTests = []struct {
@@ -28,7 +30,7 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}

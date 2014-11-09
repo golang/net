@@ -5,11 +5,13 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"code.google.com/p/go.net/internal/iana"
+	"code.google.com/p/go.net/ipv6"
 )
 
 func TestConnUnicastSocketOptions(t *testing.T) {
@@ -79,7 +81,7 @@ type testIPv6UnicastConn interface {
 }
 
 func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
-	tclass := DiffServCS0 | NotECNTransport
+	tclass := iana.DiffServCS0 | iana.NotECNTransport
 	if err := c.SetTrafficClass(tclass); err != nil {
 		t.Fatalf("ipv6.Conn.SetTrafficClass failed: %v", err)
 	}

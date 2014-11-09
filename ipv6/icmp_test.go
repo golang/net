@@ -5,13 +5,14 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"reflect"
 	"runtime"
 	"sync"
 	"testing"
+
+	"code.google.com/p/go.net/ipv6"
 )
 
 var icmpStringTests = []struct {
