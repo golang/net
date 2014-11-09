@@ -9,6 +9,8 @@ package ipv6
 import (
 	"os"
 	"syscall"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
@@ -102,7 +104,7 @@ func parseControlMessage(b []byte) (*ControlMessage, error) {
 	}
 	cm := &ControlMessage{}
 	for _, m := range cmsgs {
-		if m.Header.Level != ianaProtocolIPv6 {
+		if m.Header.Level != iana.ProtocolIPv6 {
 			continue
 		}
 		switch int(m.Header.Type) {

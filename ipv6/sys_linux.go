@@ -7,6 +7,8 @@ package ipv6
 import (
 	"net"
 	"syscall"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 type sysSockoptLen int32
@@ -19,20 +21,20 @@ var (
 	}
 
 	sockOpts = [ssoMax]sockOpt{
-		ssoTrafficClass:        {ianaProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
-		ssoHopLimit:            {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
-		ssoMulticastInterface:  {ianaProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
-		ssoMulticastHopLimit:   {ianaProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
-		ssoMulticastLoopback:   {ianaProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
-		ssoReceiveTrafficClass: {ianaProtocolIPv6, sysIPV6_RECVTCLASS, ssoTypeInt},
-		ssoReceiveHopLimit:     {ianaProtocolIPv6, sysIPV6_RECVHOPLIMIT, ssoTypeInt},
-		ssoReceivePacketInfo:   {ianaProtocolIPv6, sysIPV6_RECVPKTINFO, ssoTypeInt},
-		ssoReceivePathMTU:      {ianaProtocolIPv6, sysIPV6_RECVPATHMTU, ssoTypeInt},
-		ssoPathMTU:             {ianaProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo},
-		ssoChecksum:            {ianaProtocolReserved, sysIPV6_CHECKSUM, ssoTypeInt},
-		ssoICMPFilter:          {ianaProtocolIPv6ICMP, sysICMPV6_FILTER, ssoTypeICMPFilter},
-		ssoJoinGroup:           {ianaProtocolIPv6, sysIPV6_ADD_MEMBERSHIP, ssoTypeIPMreq},
-		ssoLeaveGroup:          {ianaProtocolIPv6, sysIPV6_DROP_MEMBERSHIP, ssoTypeIPMreq},
+		ssoTrafficClass:        {iana.ProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
+		ssoHopLimit:            {iana.ProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
+		ssoMulticastInterface:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
+		ssoMulticastHopLimit:   {iana.ProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
+		ssoMulticastLoopback:   {iana.ProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
+		ssoReceiveTrafficClass: {iana.ProtocolIPv6, sysIPV6_RECVTCLASS, ssoTypeInt},
+		ssoReceiveHopLimit:     {iana.ProtocolIPv6, sysIPV6_RECVHOPLIMIT, ssoTypeInt},
+		ssoReceivePacketInfo:   {iana.ProtocolIPv6, sysIPV6_RECVPKTINFO, ssoTypeInt},
+		ssoReceivePathMTU:      {iana.ProtocolIPv6, sysIPV6_RECVPATHMTU, ssoTypeInt},
+		ssoPathMTU:             {iana.ProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo},
+		ssoChecksum:            {iana.ProtocolReserved, sysIPV6_CHECKSUM, ssoTypeInt},
+		ssoICMPFilter:          {iana.ProtocolIPv6ICMP, sysICMPV6_FILTER, ssoTypeICMPFilter},
+		ssoJoinGroup:           {iana.ProtocolIPv6, sysIPV6_ADD_MEMBERSHIP, ssoTypeIPMreq},
+		ssoLeaveGroup:          {iana.ProtocolIPv6, sysIPV6_DROP_MEMBERSHIP, ssoTypeIPMreq},
 	}
 )
 

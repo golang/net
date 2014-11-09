@@ -9,11 +9,13 @@ package ipv6
 import (
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func marshal2292HopLimit(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_2292HOPLIMIT
 	m.SetLen(syscall.CmsgLen(4))
 	if cm != nil {
@@ -25,7 +27,7 @@ func marshal2292HopLimit(b []byte, cm *ControlMessage) []byte {
 
 func marshal2292PacketInfo(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_2292PKTINFO
 	m.SetLen(syscall.CmsgLen(sysSizeofInet6Pktinfo))
 	if cm != nil {
@@ -42,7 +44,7 @@ func marshal2292PacketInfo(b []byte, cm *ControlMessage) []byte {
 
 func marshal2292NextHop(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_2292NEXTHOP
 	m.SetLen(syscall.CmsgLen(sysSizeofSockaddrInet6))
 	if cm != nil {

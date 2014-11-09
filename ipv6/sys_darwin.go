@@ -7,6 +7,8 @@ package ipv6
 import (
 	"net"
 	"syscall"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 type sysSockoptLen int32
@@ -18,17 +20,17 @@ var (
 	}
 
 	sockOpts = [ssoMax]sockOpt{
-		ssoTrafficClass:       {ianaProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
-		ssoHopLimit:           {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
-		ssoMulticastInterface: {ianaProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
-		ssoMulticastHopLimit:  {ianaProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
-		ssoMulticastLoopback:  {ianaProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
-		ssoReceiveHopLimit:    {ianaProtocolIPv6, sysIPV6_2292HOPLIMIT, ssoTypeInt},
-		ssoReceivePacketInfo:  {ianaProtocolIPv6, sysIPV6_2292PKTINFO, ssoTypeInt},
-		ssoChecksum:           {ianaProtocolIPv6, sysIPV6_CHECKSUM, ssoTypeInt},
-		ssoICMPFilter:         {ianaProtocolIPv6ICMP, sysICMP6_FILTER, ssoTypeICMPFilter},
-		ssoJoinGroup:          {ianaProtocolIPv6, sysIPV6_JOIN_GROUP, ssoTypeIPMreq},
-		ssoLeaveGroup:         {ianaProtocolIPv6, sysIPV6_LEAVE_GROUP, ssoTypeIPMreq},
+		ssoTrafficClass:       {iana.ProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
+		ssoHopLimit:           {iana.ProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
+		ssoMulticastInterface: {iana.ProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
+		ssoMulticastHopLimit:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
+		ssoMulticastLoopback:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
+		ssoReceiveHopLimit:    {iana.ProtocolIPv6, sysIPV6_2292HOPLIMIT, ssoTypeInt},
+		ssoReceivePacketInfo:  {iana.ProtocolIPv6, sysIPV6_2292PKTINFO, ssoTypeInt},
+		ssoChecksum:           {iana.ProtocolIPv6, sysIPV6_CHECKSUM, ssoTypeInt},
+		ssoICMPFilter:         {iana.ProtocolIPv6ICMP, sysICMP6_FILTER, ssoTypeICMPFilter},
+		ssoJoinGroup:          {iana.ProtocolIPv6, sysIPV6_JOIN_GROUP, ssoTypeIPMreq},
+		ssoLeaveGroup:         {iana.ProtocolIPv6, sysIPV6_LEAVE_GROUP, ssoTypeIPMreq},
 	}
 )
 
@@ -57,12 +59,12 @@ func init() {
 		ctlOpts[ctlHopLimit].marshal = marshalHopLimit
 		ctlOpts[ctlPacketInfo].name = sysIPV6_PKTINFO
 		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
-		sockOpts[ssoReceiveTrafficClass].level = ianaProtocolIPv6
+		sockOpts[ssoReceiveTrafficClass].level = iana.ProtocolIPv6
 		sockOpts[ssoReceiveTrafficClass].name = sysIPV6_RECVTCLASS
 		sockOpts[ssoReceiveTrafficClass].typ = ssoTypeInt
 		sockOpts[ssoReceiveHopLimit].name = sysIPV6_RECVHOPLIMIT
 		sockOpts[ssoReceivePacketInfo].name = sysIPV6_RECVPKTINFO
-		sockOpts[ssoReceivePathMTU].level = ianaProtocolIPv6
+		sockOpts[ssoReceivePathMTU].level = iana.ProtocolIPv6
 		sockOpts[ssoReceivePathMTU].name = sysIPV6_RECVPATHMTU
 		sockOpts[ssoReceivePathMTU].typ = ssoTypeInt
 	}

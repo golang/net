@@ -9,11 +9,13 @@ package ipv6
 import (
 	"syscall"
 	"unsafe"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 func marshalTrafficClass(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_TCLASS
 	m.SetLen(syscall.CmsgLen(4))
 	if cm != nil {
@@ -29,7 +31,7 @@ func parseTrafficClass(cm *ControlMessage, b []byte) {
 
 func marshalHopLimit(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_HOPLIMIT
 	m.SetLen(syscall.CmsgLen(4))
 	if cm != nil {
@@ -45,7 +47,7 @@ func parseHopLimit(cm *ControlMessage, b []byte) {
 
 func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_PKTINFO
 	m.SetLen(syscall.CmsgLen(sysSizeofInet6Pktinfo))
 	if cm != nil {
@@ -68,7 +70,7 @@ func parsePacketInfo(cm *ControlMessage, b []byte) {
 
 func marshalNextHop(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_NEXTHOP
 	m.SetLen(syscall.CmsgLen(sysSizeofSockaddrInet6))
 	if cm != nil {
@@ -83,7 +85,7 @@ func parseNextHop(cm *ControlMessage, b []byte) {
 
 func marshalPathMTU(b []byte, cm *ControlMessage) []byte {
 	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
-	m.Level = ianaProtocolIPv6
+	m.Level = iana.ProtocolIPv6
 	m.Type = sysIPV6_PATHMTU
 	m.SetLen(syscall.CmsgLen(sysSizeofIPv6Mtuinfo))
 	return b[syscall.CmsgSpace(sysSizeofIPv6Mtuinfo):]

@@ -7,6 +7,8 @@ package ipv6
 import (
 	"net"
 	"syscall"
+
+	"code.google.com/p/go.net/internal/iana"
 )
 
 const (
@@ -41,12 +43,12 @@ var (
 	ctlOpts = [ctlMax]ctlOpt{}
 
 	sockOpts = [ssoMax]sockOpt{
-		ssoHopLimit:           {ianaProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
-		ssoMulticastInterface: {ianaProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
-		ssoMulticastHopLimit:  {ianaProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
-		ssoMulticastLoopback:  {ianaProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
-		ssoJoinGroup:          {ianaProtocolIPv6, sysIPV6_JOIN_GROUP, ssoTypeIPMreq},
-		ssoLeaveGroup:         {ianaProtocolIPv6, sysIPV6_LEAVE_GROUP, ssoTypeIPMreq},
+		ssoHopLimit:           {iana.ProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
+		ssoMulticastInterface: {iana.ProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
+		ssoMulticastHopLimit:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
+		ssoMulticastLoopback:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_LOOP, ssoTypeInt},
+		ssoJoinGroup:          {iana.ProtocolIPv6, sysIPV6_JOIN_GROUP, ssoTypeIPMreq},
+		ssoLeaveGroup:         {iana.ProtocolIPv6, sysIPV6_LEAVE_GROUP, ssoTypeIPMreq},
 	}
 )
 
