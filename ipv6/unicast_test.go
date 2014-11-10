@@ -20,7 +20,7 @@ import (
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -80,7 +80,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {

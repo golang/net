@@ -16,7 +16,7 @@ import (
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -52,7 +52,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
