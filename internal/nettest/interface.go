@@ -76,6 +76,9 @@ func routableIP(network string, ip net.IP) net.IP {
 			return ip
 		}
 	case "ip6":
+		if ip.IsLoopback() { // addressing scope of the loopback address depends on each implementation
+			return nil
+		}
 		if ip := ip.To16(); ip != nil && ip.To4() == nil {
 			return ip
 		}
