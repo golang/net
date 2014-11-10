@@ -137,7 +137,7 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 		l += syscall.CmsgSpace(ctlOpts[ctlHopLimit].length)
 	}
 	pktinfo := false
-	if ctlOpts[ctlPacketInfo].name > 0 && cm.Src.To16() != nil && cm.Src.To4() == nil || cm.IfIndex > 0 {
+	if ctlOpts[ctlPacketInfo].name > 0 && (cm.Src.To16() != nil && cm.Src.To4() == nil || cm.IfIndex > 0) {
 		pktinfo = true
 		l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
 	}
