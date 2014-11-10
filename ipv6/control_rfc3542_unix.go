@@ -20,12 +20,14 @@ func marshalTrafficClass(b []byte, cm *ControlMessage) []byte {
 	m.SetLen(syscall.CmsgLen(4))
 	if cm != nil {
 		data := b[syscall.CmsgLen(0):]
+		// TODO(mikio): fix potential misaligned memory access
 		*(*int32)(unsafe.Pointer(&data[:4][0])) = int32(cm.TrafficClass)
 	}
 	return b[syscall.CmsgSpace(4):]
 }
 
 func parseTrafficClass(cm *ControlMessage, b []byte) {
+	// TODO(mikio): fix potential misaligned memory access
 	cm.TrafficClass = int(*(*int32)(unsafe.Pointer(&b[:4][0])))
 }
 
@@ -36,12 +38,14 @@ func marshalHopLimit(b []byte, cm *ControlMessage) []byte {
 	m.SetLen(syscall.CmsgLen(4))
 	if cm != nil {
 		data := b[syscall.CmsgLen(0):]
+		// TODO(mikio): fix potential misaligned memory access
 		*(*int32)(unsafe.Pointer(&data[:4][0])) = int32(cm.HopLimit)
 	}
 	return b[syscall.CmsgSpace(4):]
 }
 
 func parseHopLimit(cm *ControlMessage, b []byte) {
+	// TODO(mikio): fix potential misaligned memory access
 	cm.HopLimit = int(*(*int32)(unsafe.Pointer(&b[:4][0])))
 }
 

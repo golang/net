@@ -7,14 +7,14 @@
 package ipv6
 
 func (f *sysICMPv6Filter) set(typ ICMPType, block bool) {
-	// TODO(mikio): Implement this
+	// TODO(mikio): implement this
 }
 
 func (f *sysICMPv6Filter) setAll(block bool) {
-	// TODO(mikio): Implement this
+	// TODO(mikio): implement this
 }
 
 func (f *sysICMPv6Filter) willBlock(typ ICMPType) bool {
-	// TODO(mikio): Implement this
+	// TODO(mikio): implement this
 	return false
 }
