@@ -60,7 +60,7 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 	defer c.Close()
 
 	p := ipv6.NewPacketConn(c)
-	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagInterface | ipv6.FlagPathMTU
+	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	if err := p.SetControlMessage(cf, true); err != nil {
 		b.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 	}
@@ -116,6 +116,13 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
+
+	if err := p.SetControlMessage(cf, true); err != nil { // probe before test
+		if nettest.ProtocolNotSupported(err) {
+			t.Skipf("not supported on %q", runtime.GOOS)
+		}
+		t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	reader := func() {

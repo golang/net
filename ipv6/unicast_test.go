@@ -53,6 +53,9 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
@@ -145,6 +148,9 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		cm.HopLimit = i + 1
