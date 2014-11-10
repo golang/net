@@ -17,7 +17,7 @@ import (
 func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
 	defer opt.Unlock()
-	if cf&FlagTTL != 0 {
+	if cf&FlagTTL != 0 && sockOpts[ssoReceiveTTL].name > 0 {
 		if err := setInt(fd, &sockOpts[ssoReceiveTTL], boolint(on)); err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 			}
 		}
 	} else {
-		if cf&FlagDst != 0 {
+		if cf&FlagDst != 0 && sockOpts[ssoReceiveDst].name > 0 {
 			if err := setInt(fd, &sockOpts[ssoReceiveDst], boolint(on)); err != nil {
 				return err
 			}
@@ -49,7 +49,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 				opt.clear(FlagDst)
 			}
 		}
-		if cf&FlagInterface != 0 {
+		if cf&FlagInterface != 0 && sockOpts[ssoReceiveInterface].name > 0 {
 			if err := setInt(fd, &sockOpts[ssoReceiveInterface], boolint(on)); err != nil {
 				return err
 			}
@@ -66,7 +66,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 func newControlMessage(opt *rawOpt) (oob []byte) {
 	opt.RLock()
 	var l int
-	if opt.isset(FlagTTL) {
+	if opt.isset(FlagTTL) && ctlOpts[ctlTTL].name > 0 {
 		l += syscall.CmsgSpace(ctlOpts[ctlTTL].length)
 	}
 	if ctlOpts[ctlPacketInfo].name > 0 {
@@ -74,17 +74,17 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 			l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
 		}
 	} else {
-		if opt.isset(FlagDst) {
+		if opt.isset(FlagDst) && ctlOpts[ctlDst].name > 0 {
 			l += syscall.CmsgSpace(ctlOpts[ctlDst].length)
 		}
-		if opt.isset(FlagInterface) {
+		if opt.isset(FlagInterface) && ctlOpts[ctlInterface].name > 0 {
 			l += syscall.CmsgSpace(ctlOpts[ctlInterface].length)
 		}
 	}
 	if l > 0 {
 		oob = make([]byte, l)
 		b := oob
-		if opt.isset(FlagTTL) {
+		if opt.isset(FlagTTL) && ctlOpts[ctlTTL].name > 0 {
 			b = ctlOpts[ctlTTL].marshal(b, nil)
 		}
 		if ctlOpts[ctlPacketInfo].name > 0 {
@@ -92,10 +92,10 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 				b = ctlOpts[ctlPacketInfo].marshal(b, nil)
 			}
 		} else {
-			if opt.isset(FlagDst) {
+			if opt.isset(FlagDst) && ctlOpts[ctlDst].name > 0 {
 				b = ctlOpts[ctlDst].marshal(b, nil)
 			}
-			if opt.isset(FlagInterface) {
+			if opt.isset(FlagInterface) && ctlOpts[ctlInterface].name > 0 {
 				b = ctlOpts[ctlInterface].marshal(b, nil)
 			}
 		}
@@ -136,18 +136,16 @@ func marshalControlMessage(cm *ControlMessage) (oob []byte) {
 		return nil
 	}
 	var l int
-	if ctlOpts[ctlPacketInfo].name > 0 {
-		if cm.Src.To4() != nil || cm.IfIndex > 0 {
-			l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
-		}
+	pktinfo := false
+	if ctlOpts[ctlPacketInfo].name > 0 && (cm.Src.To4() != nil || cm.IfIndex > 0) {
+		pktinfo = true
+		l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
 	}
 	if l > 0 {
 		oob = make([]byte, l)
 		b := oob
-		if ctlOpts[ctlPacketInfo].name > 0 {
-			if cm.Src.To4() != nil || cm.IfIndex > 0 {
-				b = ctlOpts[ctlPacketInfo].marshal(b, cm)
-			}
+		if pktinfo {
+			b = ctlOpts[ctlPacketInfo].marshal(b, cm)
 		}
 	}
 	return
