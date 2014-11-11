@@ -408,6 +408,29 @@ func TestServer_Request_Reject_Pseudo_ExactlyOne(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "GET", ":method", "POST") })
 }
 
+func TestServer_Request_Reject_Pseudo_AfterRegular(t *testing.T) {
+	// 8.1.2.3 Request Pseudo-Header Fields
+	// "All pseudo-header fields MUST appear in the header block
+	// before regular header fields. Any request or response that
+	// contains a pseudo-header field that appears in a header
+	// block after a regular header field MUST be treated as
+	// malformed (Section 8.1.2.6)."
+	testRejectRequest(t, func(st *serverTester) {
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+		enc.WriteField(hpack.HeaderField{Name: ":method", Value: "GET"})
+		enc.WriteField(hpack.HeaderField{Name: "regular", Value: "foobar"})
+		enc.WriteField(hpack.HeaderField{Name: ":path", Value: "/"})
+		enc.WriteField(hpack.HeaderField{Name: ":scheme", Value: "https"})
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: buf.Bytes(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	})
+}
+
 func TestServer_Request_Reject_Pseudo_Missing_path(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":path", "") })
 }

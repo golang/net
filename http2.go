@@ -115,6 +115,7 @@ type serverConn struct {
 	canonHeader       map[string]string // http2-lower-case -> Go-Canonical-Case
 	method, path      string
 	scheme, authority string
+	sawRegularHeader  bool // saw a non-pseudo header already
 	invalidHeader     bool
 
 	// curHeaderStreamID and curStream are non-zero if we're in
@@ -194,6 +195,11 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	case !validHeader(f.Name):
 		sc.invalidHeader = true
 	case strings.HasPrefix(f.Name, ":"):
+		if sc.sawRegularHeader {
+			sc.logf("pseudo-header after regular header")
+			sc.invalidHeader = true
+			return
+		}
 		var dst *string
 		switch f.Name {
 		case ":method":
@@ -221,12 +227,14 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 		}
 		*dst = f.Value
 	case f.Name == "cookie":
+		sc.sawRegularHeader = true
 		if s, ok := sc.header["Cookie"]; ok && len(s) == 1 {
 			s[0] = s[0] + "; " + f.Value
 		} else {
 			sc.header.Add("Cookie", f.Value)
 		}
 	default:
+		sc.sawRegularHeader = true
 		sc.header.Add(sc.canonicalHeader(f.Name), f.Value)
 	}
 }
@@ -426,6 +434,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	sc.scheme = ""
 	sc.authority = ""
 	sc.invalidHeader = false
+	sc.sawRegularHeader = false
 	sc.curHeaderStreamID = id
 	sc.curStream = st
 	return sc.processHeaderBlockFragment(id, f.HeaderBlockFragment(), f.HeadersEnded())
