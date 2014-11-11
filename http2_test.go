@@ -29,6 +29,8 @@ import (
 	"github.com/bradfitz/http2/hpack"
 )
 
+func init() { VerboseLogs = true }
+
 type serverTester struct {
 	cc     net.Conn // client conn
 	t      *testing.T
@@ -388,7 +390,6 @@ func TestServer_Request_CookieConcat(t *testing.T) {
 }
 
 func TestServer_Request_RejectCapitalHeader(t *testing.T) {
-	t.Skip("TODO: not handling stream errors properly yet in http2.go: if h2e.IsStreamError stuff")
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server request made it to handler; should've been rejected")
 	})
@@ -398,6 +399,9 @@ func TestServer_Request_RejectCapitalHeader(t *testing.T) {
 	st.bodylessReq1("UPPER", "v")
 	st.wantRSTStream(1, ErrCodeProtocol)
 }
+
+// TODO: test HEADERS w/o EndHeaders + another HEADERS (should get rejected)
+// TODO: test HEADERS w/ EndHeaders + a continuation HEADERS (should get rejected)
 
 // testServerRequest sets up an idle HTTP/2 connection and lets you
 // write a single request with writeReq, and then verify that the

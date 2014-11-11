@@ -630,7 +630,7 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 		if fh.StreamID == 0 {
 			return nil, ConnectionError(ErrCodeProtocol)
 		}
-		return nil, StreamError(ErrCodeProtocol)
+		return nil, StreamError{fh.StreamID, ErrCodeProtocol}
 	}
 	return &WindowUpdateFrame{
 		FrameHeader: fh,
@@ -703,7 +703,7 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 		}
 	}
 	if len(p)-int(padLength) <= 0 {
-		return nil, StreamError(fh.StreamID)
+		return nil, StreamError{fh.StreamID, ErrCodeProtocol}
 	}
 	hf.headerFragBuf = p[:len(p)-int(padLength)]
 	return hf, nil

@@ -31,6 +31,8 @@ import (
 	"github.com/bradfitz/http2/hpack"
 )
 
+var VerboseLogs = false
+
 const (
 	// ClientPreface is the string that must be sent by new
 	// connections from clients.
@@ -151,6 +153,12 @@ func (sc *serverConn) state(streamID uint32) streamState {
 		return stateClosed
 	}
 	return stateIdle
+}
+
+func (sc *serverConn) vlogf(format string, args ...interface{}) {
+	if VerboseLogs {
+		sc.logf(format, args...)
+	}
 }
 
 func (sc *serverConn) logf(format string, args ...interface{}) {
@@ -285,25 +293,34 @@ func (sc *serverConn) serve() {
 				return
 			}
 			f := fp.f
-			log.Printf("got %v: %#v", f.Header(), f)
+			sc.vlogf("got %v: %#v", f.Header(), f)
 			err := sc.processFrame(f)
 			fp.processed <- struct{}{} // let readFrames proceed
-			if h2e, ok := err.(Error); ok {
-				if h2e.IsConnectionError() {
-					sc.logf("Disconnection; connection error: %v", err)
+			switch ev := err.(type) {
+			case nil:
+				// nothing.
+			case StreamError:
+				if err := sc.resetStreamInLoop(ev); err != nil {
+					sc.logf("Error writing RSTSTream: %v", err)
 					return
 				}
-				if h2e.IsStreamError() {
-					// TODO: stream errors, etc
-					panic("TODO")
-				}
-			}
-			if err != nil {
+			case ConnectionError:
+				sc.logf("Disconnecting; %v", ev)
+				return
+			default:
 				sc.logf("Disconnection due to other error: %v", err)
 				return
 			}
 		}
 	}
+}
+
+func (sc *serverConn) resetStreamInLoop(se StreamError) error {
+	if err := sc.framer.WriteRSTStream(se.streamID, uint32(se.code)); err != nil {
+		return err
+	}
+	delete(sc.streams, se.streamID)
+	return nil
 }
 
 func (sc *serverConn) processFrame(f Frame) error {
@@ -365,14 +382,18 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	sc.invalidHeader = false
 	sc.curHeaderStreamID = id
 	sc.curStream = st
-	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
+	return sc.processHeaderBlockFragment(id, f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
 func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
-	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
+	id := f.Header().StreamID
+	if sc.curHeaderStreamID != id {
+		return ConnectionError(ErrCodeProtocol)
+	}
+	return sc.processHeaderBlockFragment(id, f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
-func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
+func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, end bool) error {
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
 		// TODO: convert to stream error I assume?
 		return err
@@ -390,7 +411,7 @@ func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 		// Malformed requests or responses that are detected
 		// MUST be treated as a stream error (Section 5.4.2)
 		// of type PROTOCOL_ERROR."
-		return StreamError(ErrCodeProtocol)
+		return StreamError{streamID, ErrCodeProtocol}
 	}
 	curStream := sc.curStream
 	sc.curHeaderStreamID = 0

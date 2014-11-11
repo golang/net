@@ -67,10 +67,15 @@ func (e ConnectionError) Error() string           { return fmt.Sprintf("connecti
 
 // StreamError is an error that only affects one stream within an
 // HTTP/2 connection.
-type StreamError uint32
+type StreamError struct {
+	streamID uint32
+	code     ErrCode
+}
 
-var _ Error = StreamError(0)
+var _ Error = StreamError{}
 
 func (e StreamError) IsStreamError() bool     { return true }
 func (e StreamError) IsConnectionError() bool { return false }
-func (e StreamError) Error() string           { return fmt.Sprintf("stream error: stream ID = %d", uint32(e)) }
+func (e StreamError) Error() string {
+	return fmt.Sprintf("stream error: stream ID %d; %v", e.streamID, e.code)
+}
