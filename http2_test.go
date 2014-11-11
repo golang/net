@@ -131,8 +131,31 @@ func (st *serverTester) writeData(streamID uint32, endStream bool, data []byte) 
 	}
 }
 
+func (st *serverTester) readFrame() (Frame, error) {
+	frc := make(chan Frame, 1)
+	errc := make(chan error, 1)
+	go func() {
+		fr, err := st.fr.ReadFrame()
+		if err != nil {
+			errc <- err
+		} else {
+			frc <- fr
+		}
+	}()
+	t := time.NewTimer(2 * time.Second)
+	defer t.Stop()
+	select {
+	case f := <-frc:
+		return f, nil
+	case err := <-errc:
+		return nil, err
+	case <-t.C:
+		return nil, errors.New("timeout waiting for frame")
+	}
+}
+
 func (st *serverTester) wantSettings() *SettingsFrame {
-	f, err := st.fr.ReadFrame()
+	f, err := st.readFrame()
 	if err != nil {
 		st.t.Fatalf("Error while expecting a SETTINGS frame: %v", err)
 	}
@@ -143,8 +166,20 @@ func (st *serverTester) wantSettings() *SettingsFrame {
 	return sf
 }
 
+func (st *serverTester) wantPing() *PingFrame {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatalf("Error while expecting a PING frame: %v", err)
+	}
+	pf, ok := f.(*PingFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *PingFrame", f)
+	}
+	return pf
+}
+
 func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
-	f, err := st.fr.ReadFrame()
+	f, err := st.readFrame()
 	if err != nil {
 		st.t.Fatalf("Error while expecting an RSTStream frame: %v", err)
 	}
@@ -161,7 +196,7 @@ func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 }
 
 func (st *serverTester) wantSettingsAck() {
-	f, err := st.fr.ReadFrame()
+	f, err := st.readFrame()
 	if err != nil {
 		st.t.Fatal(err)
 	}
@@ -456,6 +491,32 @@ func testRejectRequest(t *testing.T, send func(*serverTester)) {
 	st.greet()
 	send(st)
 	st.wantRSTStream(1, ErrCodeProtocol)
+}
+
+func TestServer_Ping(t *testing.T) {
+	st := newServerTester(t, nil)
+	defer st.Close()
+	st.greet()
+
+	// Server should ignore this one, since it has ACK set.
+	ackPingData := [8]byte{1, 2, 4, 8, 16, 32, 64, 128}
+	if err := st.fr.WritePing(true, ackPingData); err != nil {
+		t.Fatal(err)
+	}
+
+	// But the server should reply to this one, since ACK is false.
+	pingData := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	if err := st.fr.WritePing(false, pingData); err != nil {
+		t.Fatal(err)
+	}
+
+	pf := st.wantPing()
+	if !pf.Flags.Has(FlagPingAck) {
+		t.Error("response ping doesn't have ACK set")
+	}
+	if pf.Data != pingData {
+		t.Errorf("response ping has data %q; want %q", pf.Data, pingData)
+	}
 }
 
 // TODO: test HEADERS w/o EndHeaders + another HEADERS (should get rejected)

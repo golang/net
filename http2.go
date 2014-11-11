@@ -386,10 +386,29 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processHeaders(f)
 	case *ContinuationFrame:
 		return sc.processContinuation(f)
+	case *PingFrame:
+		return sc.processPing(f)
 	default:
-		log.Printf("Ignoring unknown %v", f.Header)
+		log.Printf("Ignoring unknown frame %#v", f)
 		return nil
 	}
+}
+
+func (sc *serverConn) processPing(f *PingFrame) error {
+	sc.serveG.check()
+	if f.Flags.Has(FlagSettingsAck) {
+		// 6.7 PING: " An endpoint MUST NOT respond to PING frames containing this flag."
+		return nil
+	}
+	if f.StreamID != 0 {
+		// "PING frames are not associated with any individual
+		// stream. If a PING frame is received with a stream
+		// identifier field value other than 0x0, the
+		// recipient MUST respond with a connection error
+		// (Section 5.4.1) of type PROTOCOL_ERROR."
+		return ConnectionError(ErrCodeProtocol)
+	}
+	return sc.framer.WritePing(true, f.Data)
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
