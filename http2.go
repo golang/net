@@ -107,6 +107,7 @@ type serverConn struct {
 	canonHeader       map[string]string // http2-lower-case -> Go-Canonical-Case
 	method, path      string
 	scheme, authority string
+	invalidHeader     bool
 
 	// State related to writing current headers:
 	hpackEncoder   *hpack.Encoder
@@ -161,8 +162,10 @@ func (sc *serverConn) logf(format string, args ...interface{}) {
 }
 
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
-	log.Printf("Header field: +%v", f)
-	if strings.HasPrefix(f.Name, ":") {
+	switch {
+	case !validHeader(f.Name):
+		sc.invalidHeader = true
+	case strings.HasPrefix(f.Name, ":"):
 		switch f.Name {
 		case ":method":
 			sc.method = f.Value
@@ -176,8 +179,15 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 			log.Printf("Ignoring unknown pseudo-header %q", f.Name)
 		}
 		return
+	case f.Name == "cookie":
+		if s, ok := sc.header["Cookie"]; ok && len(s) == 1 {
+			s[0] = s[0] + "; " + f.Value
+		} else {
+			sc.header.Add("Cookie", f.Value)
+		}
+	default:
+		sc.header.Add(sc.canonicalHeader(f.Name), f.Value)
 	}
-	sc.header.Add(sc.canonicalHeader(f.Name), f.Value)
 }
 
 func (sc *serverConn) canonicalHeader(v string) string {
@@ -208,7 +218,7 @@ func (sc *serverConn) serve() {
 	defer sc.conn.Close()
 	defer close(sc.doneServing)
 
-	log.Printf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
+	sc.logf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 
 	// Read the client preface
 	buf := make([]byte, len(ClientPreface))
@@ -283,7 +293,10 @@ func (sc *serverConn) serve() {
 					sc.logf("Disconnection; connection error: %v", err)
 					return
 				}
-				// TODO: stream errors, etc
+				if h2e.IsStreamError() {
+					// TODO: stream errors, etc
+					panic("TODO")
+				}
 			}
 			if err != nil {
 				sc.logf("Disconnection due to other error: %v", err)
@@ -349,6 +362,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	}
 	sc.streams[id] = st
 	sc.header = make(http.Header)
+	sc.invalidHeader = false
 	sc.curHeaderStreamID = id
 	sc.curStream = st
 	return sc.processHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
@@ -369,6 +383,14 @@ func (sc *serverConn) processHeaderBlockFragment(frag []byte, end bool) error {
 	if err := sc.hpackDecoder.Close(); err != nil {
 		// TODO: convert to stream error I assume?
 		return err
+	}
+	if sc.invalidHeader {
+		// See 8.1.2.6 Malformed Requests and Responses:
+		//
+		// Malformed requests or responses that are detected
+		// MUST be treated as a stream error (Section 5.4.2)
+		// of type PROTOCOL_ERROR."
+		return StreamError(ErrCodeProtocol)
 	}
 	curStream := sc.curStream
 	sc.curHeaderStreamID = 0
@@ -579,3 +601,20 @@ func (w *responseWriter) handlerDone() {
 }
 
 var testHookOnConn func() // for testing
+
+func validHeader(v string) bool {
+	if len(v) == 0 {
+		return false
+	}
+	for _, r := range v {
+		// "Just as in HTTP/1.x, header field names are
+		// strings of ASCII characters that are compared in a
+		// case-insensitive fashion. However, header field
+		// names MUST be converted to lowercase prior to their
+		// encoding in HTTP/2. "
+		if r >= 127 || ('A' <= r && r <= 'Z') {
+			return false
+		}
+	}
+	return true
+}
