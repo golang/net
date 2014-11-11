@@ -556,6 +556,16 @@ func parsePingFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	return f, nil
 }
 
+func (f *Framer) WritePing(ack bool, data [8]byte) error {
+	var flags Flags
+	if ack {
+		flags = FlagPingAck
+	}
+	f.startWrite(FramePing, flags, 0)
+	f.writeBytes(data[:])
+	return f.endWrite()
+}
+
 // A GoAwayFrame informs the remote peer to stop creating streams on this connection.
 // See http://http2.github.io/http2-spec/#rfc.section.6.8
 type GoAwayFrame struct {

@@ -383,6 +383,42 @@ func TestWriteWindowUpdate(t *testing.T) {
 	}
 }
 
+func TestWritePing(t *testing.T)    { testWritePing(t, false) }
+func TestWritePingAck(t *testing.T) { testWritePing(t, true) }
+
+func testWritePing(t *testing.T, ack bool) {
+	fr, buf := testFramer()
+	if err := fr.WritePing(ack, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}); err != nil {
+		t.Fatal(err)
+	}
+	var wantFlags Flags
+	if ack {
+		wantFlags = FlagPingAck
+	}
+	var wantEnc = "\x00\x00\x08\x06" + string(wantFlags) + "\x00\x00\x00\x00" + "\x01\x02\x03\x04\x05\x06\x07\x08"
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &PingFrame{
+		FrameHeader: FrameHeader{
+			valid:    true,
+			Type:     0x6,
+			Flags:    wantFlags,
+			Length:   0x8,
+			StreamID: 0,
+		},
+		Data: [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+	}
+	if !reflect.DeepEqual(f, want) {
+		t.Errorf("parsed back %#v; want %#v", f, want)
+	}
+}
+
 func TestReadFrameHeader(t *testing.T) {
 	tests := []struct {
 		len      uint32
