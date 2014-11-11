@@ -38,7 +38,7 @@ func TestParseIfHeader(t *testing.T) {
 		`<foo>`,
 		ifHeader{},
 	}, {
-		"bad: no list after resource #1",
+		"bad: no list after resource #2",
 		`<foo> <bar> (a)`,
 		ifHeader{},
 	}, {
@@ -66,12 +66,12 @@ func TestParseIfHeader(t *testing.T) {
 		`(Not Not a)`,
 		ifHeader{},
 	}, {
-		"good: one list with a stateToken",
+		"good: one list with a Token",
 		`(a)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `a`,
+				conditions: []Condition{{
+					Token: `a`,
 				}},
 			}},
 		},
@@ -80,8 +80,8 @@ func TestParseIfHeader(t *testing.T) {
 		`([a])`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					entityTag: `a`,
+				conditions: []Condition{{
+					ETag: `a`,
 				}},
 			}},
 		},
@@ -90,15 +90,15 @@ func TestParseIfHeader(t *testing.T) {
 		`(Not a Not b Not [d])`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					not:        true,
-					stateToken: `a`,
+				conditions: []Condition{{
+					Not:   true,
+					Token: `a`,
 				}, {
-					not:        true,
-					stateToken: `b`,
+					Not:   true,
+					Token: `b`,
 				}, {
-					not:       true,
-					entityTag: `d`,
+					Not:  true,
+					ETag: `d`,
 				}},
 			}},
 		},
@@ -107,12 +107,12 @@ func TestParseIfHeader(t *testing.T) {
 		`(a) (b)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `a`,
+				conditions: []Condition{{
+					Token: `a`,
 				}},
 			}, {
-				conditions: []ifCondition{{
-					stateToken: `b`,
+				conditions: []Condition{{
+					Token: `b`,
 				}},
 			}},
 		},
@@ -121,14 +121,14 @@ func TestParseIfHeader(t *testing.T) {
 		`(Not a) (Not b)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					not:        true,
-					stateToken: `a`,
+				conditions: []Condition{{
+					Not:   true,
+					Token: `a`,
 				}},
 			}, {
-				conditions: []ifCondition{{
-					not:        true,
-					stateToken: `b`,
+				conditions: []Condition{{
+					Not:   true,
+					Token: `b`,
 				}},
 			}},
 		},
@@ -139,8 +139,8 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `http://www.example.com/users/f/fielding/index.html`,
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6`,
+				conditions: []Condition{{
+					Token: `urn:uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6`,
 				}},
 			}},
 		},
@@ -149,8 +149,8 @@ func TestParseIfHeader(t *testing.T) {
 		`(<urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf>)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
+				conditions: []Condition{{
+					Token: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
 				}},
 			}},
 		},
@@ -161,8 +161,8 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `http://example.com/locked/`,
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
+				conditions: []Condition{{
+					Token: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
 				}},
 			}},
 		},
@@ -173,8 +173,8 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `http://example.com/locked/member`,
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
+				conditions: []Condition{{
+					Token: `urn:uuid:150852e2-3847-42d5-8cbe-0f4f296f26cf`,
 				}},
 			}},
 		},
@@ -184,12 +184,12 @@ func TestParseIfHeader(t *testing.T) {
 			(<urn:uuid:e454f3f3-acdc-452a-56c7-00a5c91e4b77>)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:fe184f2e-6eec-41d0-c765-01adc56e6bb4`,
+				conditions: []Condition{{
+					Token: `urn:uuid:fe184f2e-6eec-41d0-c765-01adc56e6bb4`,
 				}},
 			}, {
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:e454f3f3-acdc-452a-56c7-00a5c91e4b77`,
+				conditions: []Condition{{
+					Token: `urn:uuid:e454f3f3-acdc-452a-56c7-00a5c91e4b77`,
 				}},
 			}},
 		},
@@ -198,8 +198,8 @@ func TestParseIfHeader(t *testing.T) {
 		`(<urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4>)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4`,
+				conditions: []Condition{{
+					Token: `urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4`,
 				}},
 			}},
 		},
@@ -210,14 +210,14 @@ func TestParseIfHeader(t *testing.T) {
 			(["I am another ETag"])`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
+				conditions: []Condition{{
+					Token: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
 				}, {
-					entityTag: `"I am an ETag"`,
+					ETag: `"I am an ETag"`,
 				}},
 			}, {
-				conditions: []ifCondition{{
-					entityTag: `"I am another ETag"`,
+				conditions: []Condition{{
+					ETag: `"I am another ETag"`,
 				}},
 			}},
 		},
@@ -227,11 +227,11 @@ func TestParseIfHeader(t *testing.T) {
 			<urn:uuid:58f202ac-22cf-11d1-b12d-002035b29092>)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					not:        true,
-					stateToken: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
+				conditions: []Condition{{
+					Not:   true,
+					Token: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
 				}, {
-					stateToken: `urn:uuid:58f202ac-22cf-11d1-b12d-002035b29092`,
+					Token: `urn:uuid:58f202ac-22cf-11d1-b12d-002035b29092`,
 				}},
 			}},
 		},
@@ -241,13 +241,13 @@ func TestParseIfHeader(t *testing.T) {
 			(Not <DAV:no-lock>)`,
 		ifHeader{
 			lists: []ifList{{
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
+				conditions: []Condition{{
+					Token: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
 				}},
 			}, {
-				conditions: []ifCondition{{
-					not:        true,
-					stateToken: `DAV:no-lock`,
+				conditions: []Condition{{
+					Not:   true,
+					Token: `DAV:no-lock`,
 				}},
 			}},
 		},
@@ -259,15 +259,15 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `/resource1`,
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
+				conditions: []Condition{{
+					Token: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
 				}, {
-					entityTag: `W/"A weak ETag"`,
+					ETag: `W/"A weak ETag"`,
 				}},
 			}, {
 				resourceTag: `/resource1`,
-				conditions: []ifCondition{{
-					entityTag: `"strong ETag"`,
+				conditions: []Condition{{
+					ETag: `"strong ETag"`,
 				}},
 			}},
 		},
@@ -278,8 +278,8 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `http://www.example.com/specs/`,
-				conditions: []ifCondition{{
-					stateToken: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
+				conditions: []Condition{{
+					Token: `urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2`,
 				}},
 			}},
 		},
@@ -289,8 +289,8 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `/specs/rfc2518.doc`,
-				conditions: []ifCondition{{
-					entityTag: `"4217"`,
+				conditions: []Condition{{
+					ETag: `"4217"`,
 				}},
 			}},
 		},
@@ -300,9 +300,9 @@ func TestParseIfHeader(t *testing.T) {
 		ifHeader{
 			lists: []ifList{{
 				resourceTag: `/specs/rfc2518.doc`,
-				conditions: []ifCondition{{
-					not:       true,
-					entityTag: `"4217"`,
+				conditions: []Condition{{
+					Not:  true,
+					ETag: `"4217"`,
 				}},
 			}},
 		},

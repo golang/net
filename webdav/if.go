@@ -16,18 +16,10 @@ type ifHeader struct {
 	lists []ifList
 }
 
-// ifList is a conjunction (AND) of ifConditions, and an optional resource tag.
+// ifList is a conjunction (AND) of Conditions, and an optional resource tag.
 type ifList struct {
 	resourceTag string
-	conditions  []ifCondition
-}
-
-// ifCondition can match a WebDAV resource, based on a stateToken or ETag.
-// Exactly one of stateToken and entityTag should be non-empty.
-type ifCondition struct {
-	not        bool
-	stateToken string
-	entityTag  string
+	conditions  []Condition
 }
 
 // parseIfHeader parses the "If: foo bar" HTTP header. The httpHeader string
@@ -110,19 +102,19 @@ func parseList(s string) (l ifList, remaining string, ok bool) {
 	}
 }
 
-func parseCondition(s string) (c ifCondition, remaining string, ok bool) {
+func parseCondition(s string) (c Condition, remaining string, ok bool) {
 	tokenType, tokenStr, s := lex(s)
 	if tokenType == notTokenType {
-		c.not = true
+		c.Not = true
 		tokenType, tokenStr, s = lex(s)
 	}
 	switch tokenType {
 	case strTokenType, angleTokenType:
-		c.stateToken = tokenStr
+		c.Token = tokenStr
 	case squareTokenType:
-		c.entityTag = tokenStr
+		c.ETag = tokenStr
 	default:
-		return ifCondition{}, "", false
+		return Condition{}, "", false
 	}
 	return c, s, true
 }
