@@ -67,6 +67,9 @@ func init() {
 		sockOpts[ssoReceivePathMTU].level = iana.ProtocolIPv6
 		sockOpts[ssoReceivePathMTU].name = sysIPV6_RECVPATHMTU
 		sockOpts[ssoReceivePathMTU].typ = ssoTypeInt
+		sockOpts[ssoPathMTU].level = iana.ProtocolIPv6
+		sockOpts[ssoPathMTU].name = sysIPV6_PATHMTU
+		sockOpts[ssoPathMTU].typ = ssoTypeMTUInfo
 	}
 }
 
