@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -30,8 +31,8 @@ import (
 )
 
 func init() {
-	VerboseLogs = true
 	DebugGoroutines = true
+	flag.BoolVar(&VerboseLogs, "verboseh2", false, "Verbose HTTP/2 debug logging")
 }
 
 type serverTester struct {
@@ -50,7 +51,9 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 	ts.Config.ErrorLog = log.New(io.MultiWriter(twriter{t: t}, logBuf), "", log.LstdFlags)
 	ts.StartTLS()
 
-	t.Logf("Running test server at: %s", ts.URL)
+	if VerboseLogs {
+		t.Logf("Running test server at: %s", ts.URL)
+	}
 	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{npnProto},
@@ -176,7 +179,6 @@ func TestServer(t *testing.T) {
 	gotReq := make(chan bool, 1)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Foo", "Bar")
-		t.Logf("GOT REQUEST %#v", r)
 		gotReq <- true
 	})
 	defer st.Close()
@@ -392,14 +394,34 @@ func TestServer_Request_CookieConcat(t *testing.T) {
 	})
 }
 
-func TestServer_Request_RejectCapitalHeader(t *testing.T) {
+func TestServer_Request_Reject_CapitalHeader(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("UPPER", "v") })
+}
+
+func TestServer_Request_Reject_Pseudo_Missing_method(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "") })
+}
+
+func TestServer_Request_Reject_Pseudo_Missing_path(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":path", "") })
+}
+
+func TestServer_Request_Reject_Pseudo_Missing_scheme(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":scheme", "") })
+}
+
+func TestServer_Request_Reject_Pseudo_Unknown(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":unknown_thing", "") })
+}
+
+func testRejectRequest(t *testing.T, send func(*serverTester)) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server request made it to handler; should've been rejected")
 	})
 	defer st.Close()
 
 	st.greet()
-	st.bodylessReq1("UPPER", "v")
+	send(st)
 	st.wantRSTStream(1, ErrCodeProtocol)
 }
 
