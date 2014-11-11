@@ -73,6 +73,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		writeHeaderCh:     make(chan headerWriteReq), // must not be buffered
 		doneServing:       make(chan struct{}),
 		maxWriteFrameSize: initialMaxFrameSize,
+		serveG:            newGoroutineLock(),
 	}
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
@@ -89,6 +90,7 @@ type frameAndProcessed struct {
 }
 
 type serverConn struct {
+	// Immutable:
 	hs             *http.Server
 	conn           net.Conn
 	handler        http.Handler
@@ -97,6 +99,9 @@ type serverConn struct {
 	readFrameCh    chan frameAndProcessed // written by serverConn.readFrames
 	readFrameErrCh chan error
 	writeHeaderCh  chan headerWriteReq // must not be buffered
+	serveG         goroutineLock       // used to verify funcs are on serve()
+
+	// Everything following is owned by the serve loop; use serveG.check()
 
 	maxStreamID uint32 // max ever seen
 	streams     map[uint32]*stream
@@ -139,6 +144,7 @@ type stream struct {
 }
 
 func (sc *serverConn) state(streamID uint32) streamState {
+	sc.serveG.check()
 	// http://http2.github.io/http2-spec/#rfc.section.5.1
 	if st, ok := sc.streams[streamID]; ok {
 		return st.state
@@ -170,6 +176,7 @@ func (sc *serverConn) logf(format string, args ...interface{}) {
 }
 
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
+	sc.serveG.check()
 	switch {
 	case !validHeader(f.Name):
 		sc.invalidHeader = true
@@ -199,6 +206,7 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 }
 
 func (sc *serverConn) canonicalHeader(v string) string {
+	sc.serveG.check()
 	// TODO: use a sync.Pool instead of putting the cache on *serverConn?
 	cv, ok := sc.canonHeader[v]
 	if !ok {
@@ -208,6 +216,8 @@ func (sc *serverConn) canonicalHeader(v string) string {
 	return cv
 }
 
+// readFrames is the loop that reads incoming frames.
+// It's run on its own goroutine.
 func (sc *serverConn) readFrames() {
 	processed := make(chan struct{}, 1)
 	for {
@@ -223,6 +233,7 @@ func (sc *serverConn) readFrames() {
 }
 
 func (sc *serverConn) serve() {
+	sc.serveG.check()
 	defer sc.conn.Close()
 	defer close(sc.doneServing)
 
@@ -316,6 +327,7 @@ func (sc *serverConn) serve() {
 }
 
 func (sc *serverConn) resetStreamInLoop(se StreamError) error {
+	sc.serveG.check()
 	if err := sc.framer.WriteRSTStream(se.streamID, uint32(se.code)); err != nil {
 		return err
 	}
@@ -324,6 +336,8 @@ func (sc *serverConn) resetStreamInLoop(se StreamError) error {
 }
 
 func (sc *serverConn) processFrame(f Frame) error {
+	sc.serveG.check()
+
 	if s := sc.curHeaderStreamID; s != 0 {
 		if cf, ok := f.(*ContinuationFrame); !ok {
 			return ConnectionError(ErrCodeProtocol)
@@ -346,6 +360,7 @@ func (sc *serverConn) processFrame(f Frame) error {
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
+	sc.serveG.check()
 	f.ForeachSetting(func(s Setting) {
 		log.Printf("  setting %s = %v", s.ID, s.Val)
 	})
@@ -353,6 +368,7 @@ func (sc *serverConn) processSettings(f *SettingsFrame) error {
 }
 
 func (sc *serverConn) processHeaders(f *HeadersFrame) error {
+	sc.serveG.check()
 	id := f.Header().StreamID
 
 	// http://http2.github.io/http2-spec/#rfc.section.5.1.1
@@ -386,6 +402,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 }
 
 func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
+	sc.serveG.check()
 	id := f.Header().StreamID
 	if sc.curHeaderStreamID != id {
 		return ConnectionError(ErrCodeProtocol)
@@ -394,6 +411,7 @@ func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 }
 
 func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, end bool) error {
+	sc.serveG.check()
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
 		// TODO: convert to stream error I assume?
 		return err
@@ -423,6 +441,7 @@ func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, e
 	return nil
 }
 
+// Run on its own goroutine.
 func (sc *serverConn) startHandler(streamID uint32, bodyOpen bool, method, path, scheme, authority string, reqHeader http.Header) {
 	var tlsState *tls.ConnectionState // make this non-nil if https
 	if scheme == "https" {
@@ -486,8 +505,8 @@ func (sc *serverConn) writeHeader(req headerWriteReq) {
 	sc.writeHeaderCh <- req
 }
 
-// called from serverConn.serve loop.
 func (sc *serverConn) writeHeaderInLoop(req headerWriteReq) error {
+	sc.serveG.check()
 	sc.headerWriteBuf.Reset()
 	// TODO: remove this strconv
 	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: strconv.Itoa(req.httpResCode)})

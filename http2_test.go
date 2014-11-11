@@ -29,7 +29,10 @@ import (
 	"github.com/bradfitz/http2/hpack"
 )
 
-func init() { VerboseLogs = true }
+func init() {
+	VerboseLogs = true
+	DebugGoroutines = true
+}
 
 type serverTester struct {
 	cc     net.Conn // client conn
