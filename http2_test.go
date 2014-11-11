@@ -226,8 +226,9 @@ func TestServer(t *testing.T) {
 
 	st.writePreface()
 	st.writeInitialSettings()
-	st.wantSettings().ForeachSetting(func(s Setting) {
+	st.wantSettings().ForeachSetting(func(s Setting) error {
 		t.Logf("Server sent setting %v = %v", s.ID, s.Val)
+		return nil
 	})
 	st.writeSettingsAck()
 	st.wantSettingsAck()

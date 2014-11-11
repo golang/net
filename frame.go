@@ -493,13 +493,21 @@ func (f *SettingsFrame) Value(s SettingID) (v uint32, ok bool) {
 	return 0, false
 }
 
-func (f *SettingsFrame) ForeachSetting(fn func(Setting)) {
+// ForeachSetting runs fn for each setting.
+// It stops and returns the first error.
+func (f *SettingsFrame) ForeachSetting(fn func(Setting) error) error {
 	f.checkValid()
 	buf := f.p
 	for len(buf) > 0 {
-		fn(Setting{SettingID(binary.BigEndian.Uint16(buf[:2])), binary.BigEndian.Uint32(buf[2:6])})
+		if err := fn(Setting{
+			SettingID(binary.BigEndian.Uint16(buf[:2])),
+			binary.BigEndian.Uint32(buf[2:6]),
+		}); err != nil {
+			return err
+		}
 		buf = buf[6:]
 	}
+	return nil
 }
 
 // Setting is a setting parameter: which setting it is, and its value.

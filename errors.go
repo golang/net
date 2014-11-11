@@ -65,3 +65,12 @@ type StreamError struct {
 func (e StreamError) Error() string {
 	return fmt.Sprintf("stream error: stream ID %d; %v", e.streamID, e.code)
 }
+
+// 6.9.1 The Flow Control Window
+// "If a sender receives a WINDOW_UPDATE that causes a flow control
+// window to exceed this maximum it MUST terminate either the stream
+// or the connection, as appropriate. For streams, [...]; for the
+// connection, a GOAWAY frame with a FLOW_CONTROL_ERROR code."
+type goAwayFlowError struct{}
+
+func (goAwayFlowError) Error() string { return "connection exceeded flow control window size" }

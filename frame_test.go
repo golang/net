@@ -332,12 +332,13 @@ func TestWriteSettings(t *testing.T) {
 		t.Fatalf("Got a %T; want a SettingsFrame", f)
 	}
 	var got []Setting
-	sf.ForeachSetting(func(s Setting) {
+	sf.ForeachSetting(func(s Setting) error {
 		got = append(got, s)
 		valBack, ok := sf.Value(s.ID)
 		if !ok || valBack != s.Val {
 			t.Errorf("Value(%d) = %v, %v; want %v, true", s.ID, valBack, ok)
 		}
+		return nil
 	})
 	if !reflect.DeepEqual(settings, got) {
 		t.Errorf("Read settings %+v != written settings %+v", got, settings)

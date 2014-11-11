@@ -16,6 +16,9 @@
 // This package currently targets draft-14. See http://http2.github.io/
 package http2
 
+// TODO: finish GOAWAY support. Consider each incoming frame type and whether
+// it should be ignored during a shutdown race.
+
 import (
 	"bytes"
 	"crypto/tls"
@@ -41,17 +44,17 @@ const (
 	// SETTINGS_MAX_FRAME_SIZE default
 	// http://http2.github.io/http2-spec/#rfc.section.6.5.2
 	initialMaxFrameSize = 16384
-)
 
-var (
-	clientPreface = []byte(ClientPreface)
-)
-
-const (
 	npnProto = "h2-14"
 
 	// http://http2.github.io/http2-spec/#SettingValues
 	initialHeaderTableSize = 4096
+
+	initialWindowSize = 65535 // 6.9.2 Initial Flow Control Window Size
+)
+
+var (
+	clientPreface = []byte(ClientPreface)
 )
 
 // Server is an HTTP2 server.
@@ -71,8 +74,10 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		readFrameCh:       make(chan frameAndProcessed),
 		readFrameErrCh:    make(chan error, 1),
 		writeHeaderCh:     make(chan headerWriteReq), // must not be buffered
+		flow:              newFlow(initialWindowSize),
 		doneServing:       make(chan struct{}),
 		maxWriteFrameSize: initialMaxFrameSize,
+		initialWindowSize: initialWindowSize,
 		serveG:            newGoroutineLock(),
 	}
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
@@ -102,6 +107,7 @@ type serverConn struct {
 	readFrameErrCh chan error
 	writeHeaderCh  chan headerWriteReq // must not be buffered
 	serveG         goroutineLock       // used to verify funcs are on serve()
+	flow           *flow               // the connection-wide one
 
 	// Everything following is owned by the serve loop; use serveG.check()
 
@@ -109,6 +115,8 @@ type serverConn struct {
 	streams     map[uint32]*stream
 
 	maxWriteFrameSize uint32 // TODO: update this when settings come in
+	initialWindowSize int32
+	sentGoAway        bool
 
 	// State related to parsing current headers:
 	header            http.Header
@@ -142,6 +150,7 @@ const (
 type stream struct {
 	id    uint32
 	state streamState // owned by serverConn's processing loop
+	flow  *flow
 }
 
 func (sc *serverConn) state(streamID uint32) streamState {
@@ -296,9 +305,10 @@ func (sc *serverConn) serve() {
 		sc.logf("invalid initial frame type %T received from client", f)
 		return
 	}
-	sf.ForeachSetting(func(s Setting) {
-		// TODO: process, record
-	})
+	if err := sf.ForeachSetting(sc.processSetting); err != nil {
+		sc.logf("initial settings error: %v", err)
+		return
+	}
 
 	// TODO: don't send two network packets for our SETTINGS + our
 	// ACK of their settings.  But if we make framer write to a
@@ -351,12 +361,23 @@ func (sc *serverConn) serve() {
 			case ConnectionError:
 				sc.logf("Disconnecting; %v", ev)
 				return
+			case goAwayFlowError:
+				if err := sc.goAway(ErrCodeFlowControl); err != nil {
+					sc.condlogf(err, "failed to GOAWAY: %v", err)
+					return
+				}
 			default:
 				sc.logf("Disconnection due to other error: %v", err)
 				return
 			}
 		}
 	}
+}
+
+func (sc *serverConn) goAway(code ErrCode) error {
+	sc.serveG.check()
+	sc.sentGoAway = true
+	return sc.framer.WriteGoAway(sc.maxStreamID, code, nil)
 }
 
 func (sc *serverConn) resetStreamInLoop(se StreamError) error {
@@ -386,6 +407,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processHeaders(f)
 	case *ContinuationFrame:
 		return sc.processContinuation(f)
+	case *WindowUpdateFrame:
+		return sc.processWindowUpdate(f)
 	case *PingFrame:
 		return sc.processPing(f)
 	default:
@@ -397,32 +420,101 @@ func (sc *serverConn) processFrame(f Frame) error {
 func (sc *serverConn) processPing(f *PingFrame) error {
 	sc.serveG.check()
 	if f.Flags.Has(FlagSettingsAck) {
-		// 6.7 PING: " An endpoint MUST NOT respond to PING frames containing this flag."
+		// 6.7 PING: " An endpoint MUST NOT respond to PING frames
+		// containing this flag."
 		return nil
 	}
 	if f.StreamID != 0 {
 		// "PING frames are not associated with any individual
 		// stream. If a PING frame is received with a stream
-		// identifier field value other than 0x0, the
-		// recipient MUST respond with a connection error
-		// (Section 5.4.1) of type PROTOCOL_ERROR."
+		// identifier field value other than 0x0, the recipient MUST
+		// respond with a connection error (Section 5.4.1) of type
+		// PROTOCOL_ERROR."
 		return ConnectionError(ErrCodeProtocol)
 	}
 	return sc.framer.WritePing(true, f.Data)
 }
 
+func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
+	sc.serveG.check()
+	switch {
+	case f.StreamID != 0: // stream-level flow control
+		st := sc.streams[f.StreamID]
+		if st == nil {
+			// "WINDOW_UPDATE can be sent by a peer that has sent a
+			// frame bearing the END_STREAM flag. This means that a
+			// receiver could receive a WINDOW_UPDATE frame on a "half
+			// closed (remote)" or "closed" stream. A receiver MUST
+			// NOT treat this as an error, see Section 5.1."
+			return nil
+		}
+		if !st.flow.add(int32(f.Increment)) {
+			return StreamError{f.StreamID, ErrCodeFlowControl}
+		}
+	default: // connection-level flow control
+		if !sc.flow.add(int32(f.Increment)) {
+			return goAwayFlowError{}
+		}
+	}
+	return nil
+}
+
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
 	sc.serveG.check()
-	f.ForeachSetting(func(s Setting) {
-		log.Printf("  setting %s = %v", s.ID, s.Val)
-	})
+	return f.ForeachSetting(sc.processSetting)
+}
+
+func (sc *serverConn) processSetting(s Setting) error {
+	sc.serveG.check()
+	sc.vlogf("processing setting %v", s)
+	switch s.ID {
+	case SettingInitialWindowSize:
+		return sc.processSettingInitialWindowSize(s.Val)
+	}
+	log.Printf("TODO: handle %v", s)
+	return nil
+}
+
+func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
+	sc.serveG.check()
+	if val > (1<<31 - 1) {
+		// 6.5.2 Defined SETTINGS Parameters
+		// "Values above the maximum flow control window size of
+		// 231-1 MUST be treated as a connection error (Section
+		// 5.4.1) of type FLOW_CONTROL_ERROR."
+		return ConnectionError(ErrCodeFlowControl)
+	}
+
+	// "A SETTINGS frame can alter the initial flow control window
+	// size for all current streams. When the value of
+	// SETTINGS_INITIAL_WINDOW_SIZE changes, a receiver MUST
+	// adjust the size of all stream flow control windows that it
+	// maintains by the difference between the new value and the
+	// old value."
+	old := sc.initialWindowSize
+	sc.initialWindowSize = int32(val)
+	growth := sc.initialWindowSize - old // may be negative
+	for _, st := range sc.streams {
+		if !st.flow.add(growth) {
+			// 6.9.2 Initial Flow Control Window Size
+			// "An endpoint MUST treat a change to
+			// SETTINGS_INITIAL_WINDOW_SIZE that causes any flow
+			// control window to exceed the maximum size as a
+			// connection error (Section 5.4.1) of type
+			// FLOW_CONTROL_ERROR."
+			return ConnectionError(ErrCodeFlowControl)
+		}
+	}
 	return nil
 }
 
 func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	sc.serveG.check()
 	id := f.Header().StreamID
-
+	if sc.sentGoAway {
+		// Ignore.
+		return nil
+	}
 	// http://http2.github.io/http2-spec/#rfc.section.5.1.1
 	if id%2 != 1 || id <= sc.maxStreamID {
 		// Streams initiated by a client MUST use odd-numbered
@@ -441,6 +533,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	st := &stream{
 		id:    id,
 		state: stateOpen,
+		flow:  newFlow(sc.initialWindowSize),
 	}
 	if f.Header().Flags.Has(FlagHeadersEndStream) {
 		st.state = stateHalfClosedRemote
