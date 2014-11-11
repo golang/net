@@ -466,3 +466,37 @@ func TestWriteTooLargeFrame(t *testing.T) {
 		t.Errorf("endWrite = %v; want errFrameTooLarge", err)
 	}
 }
+
+func TestWriteGoAway(t *testing.T) {
+	const debug = "foo"
+	fr, buf := testFramer()
+	if err := fr.WriteGoAway(0x01020304, 0x05060708, []byte(debug)); err != nil {
+		t.Fatal(err)
+	}
+	const wantEnc = "\x00\x00\v\a\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08" + debug
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &GoAwayFrame{
+		FrameHeader: FrameHeader{
+			valid:    true,
+			Type:     0x7,
+			Flags:    0,
+			Length:   uint32(4 + 4 + len(debug)),
+			StreamID: 0,
+		},
+		LastStreamID: 0x01020304,
+		ErrCode:      0x05060708,
+		debugData:    []byte(debug),
+	}
+	if !reflect.DeepEqual(f, want) {
+		t.Fatalf("parsed back:\n%#v\nwant:\n%#v", f, want)
+	}
+	if got := string(f.(*GoAwayFrame).DebugData()); got != debug {
+		t.Errorf("debug data = %q; want %q", got, debug)
+	}
+}

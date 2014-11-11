@@ -595,8 +595,16 @@ func parseGoAwayFrame(fh FrameHeader, p []byte) (Frame, error) {
 		FrameHeader:  fh,
 		LastStreamID: binary.BigEndian.Uint32(p[:4]) & (1<<31 - 1),
 		ErrCode:      binary.BigEndian.Uint32(p[4:8]),
-		debugData:    p[:8],
+		debugData:    p[8:],
 	}, nil
+}
+
+func (f *Framer) WriteGoAway(maxStreamID uint32, code ErrCode, debugData []byte) error {
+	f.startWrite(FrameGoAway, 0, 0)
+	f.writeUint32(maxStreamID & (1<<31 - 1))
+	f.writeUint32(uint32(code))
+	f.writeBytes(debugData)
+	return f.endWrite()
 }
 
 // An UnknownFrame is the frame type returned when the frame type is unknown
