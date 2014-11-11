@@ -194,15 +194,16 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	case !validHeader(f.Name):
 		sc.invalidHeader = true
 	case strings.HasPrefix(f.Name, ":"):
+		var dst *string
 		switch f.Name {
 		case ":method":
-			sc.method = f.Value
+			dst = &sc.method
 		case ":path":
-			sc.path = f.Value
+			dst = &sc.path
 		case ":scheme":
-			sc.scheme = f.Value
+			dst = &sc.scheme
 		case ":authority":
-			sc.authority = f.Value
+			dst = &sc.authority
 		default:
 			// 8.1.2.1 Pseudo-Header Fields
 			// "Endpoints MUST treat a request or response
@@ -211,8 +212,14 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 			// 8.1.2.6)."
 			sc.logf("invalid pseudo-header %q", f.Name)
 			sc.invalidHeader = true
+			return
 		}
-		return
+		if *dst != "" {
+			sc.logf("duplicate pseudo-header %q sent", f.Name)
+			sc.invalidHeader = true
+			return
+		}
+		*dst = f.Value
 	case f.Name == "cookie":
 		if s, ok := sc.header["Cookie"]; ok && len(s) == 1 {
 			s[0] = s[0] + "; " + f.Value

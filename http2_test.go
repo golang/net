@@ -402,6 +402,12 @@ func TestServer_Request_Reject_Pseudo_Missing_method(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "") })
 }
 
+func TestServer_Request_Reject_Pseudo_ExactlyOne(t *testing.T) {
+	// 8.1.2.3 Request Pseudo-Header Fields
+	// "All HTTP/2 requests MUST include exactly one valid value" ...
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "GET", ":method", "POST") })
+}
+
 func TestServer_Request_Reject_Pseudo_Missing_path(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":path", "") })
 }
@@ -568,6 +574,7 @@ func (w twriter) Write(p []byte) (n int, err error) {
 // multiple pairs for keys (e.g. "cookie").  The :method, :path, and
 // :scheme headers default to GET, / and https.
 func encodeHeader(t *testing.T, headers ...string) []byte {
+	pseudoCount := map[string]int{}
 	if len(headers)%2 == 1 {
 		panic("odd number of kv args")
 	}
@@ -584,7 +591,13 @@ func encodeHeader(t *testing.T, headers ...string) []byte {
 			keys = append(keys, k)
 		}
 		if strings.HasPrefix(k, ":") {
-			vals[k] = []string{v}
+			pseudoCount[k]++
+			if pseudoCount[k] == 1 {
+				vals[k] = []string{v}
+			} else {
+				// Allows testing of invalid headers w/ dup pseudo fields.
+				vals[k] = append(vals[k], v)
+			}
 		} else {
 			vals[k] = append(vals[k], v)
 		}
