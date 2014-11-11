@@ -49,21 +49,11 @@ func (e ErrCode) String() string {
 	return fmt.Sprintf("unknown error code 0x%x", e)
 }
 
-type Error interface {
-	IsStreamError() bool
-	IsConnectionError() bool
-	error
-}
-
 // ConnectionError is an error that results in the termination of the
 // entire connection.
 type ConnectionError ErrCode
 
-var _ Error = ConnectionError(0)
-
-func (e ConnectionError) IsStreamError() bool     { return false }
-func (e ConnectionError) IsConnectionError() bool { return true }
-func (e ConnectionError) Error() string           { return fmt.Sprintf("connection error: %s", ErrCode(e)) }
+func (e ConnectionError) Error() string { return fmt.Sprintf("connection error: %s", ErrCode(e)) }
 
 // StreamError is an error that only affects one stream within an
 // HTTP/2 connection.
@@ -72,10 +62,6 @@ type StreamError struct {
 	code     ErrCode
 }
 
-var _ Error = StreamError{}
-
-func (e StreamError) IsStreamError() bool     { return true }
-func (e StreamError) IsConnectionError() bool { return false }
 func (e StreamError) Error() string {
 	return fmt.Sprintf("stream error: stream ID %d; %v", e.streamID, e.code)
 }
