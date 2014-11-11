@@ -508,8 +508,7 @@ func (sc *serverConn) writeHeader(req headerWriteReq) {
 func (sc *serverConn) writeHeaderInLoop(req headerWriteReq) error {
 	sc.serveG.check()
 	sc.headerWriteBuf.Reset()
-	// TODO: remove this strconv
-	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: strconv.Itoa(req.httpResCode)})
+	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(req.httpResCode)})
 	for k, vv := range req.h {
 		for _, v := range vv {
 			// TODO: for gargage, cache lowercase copies of headers at
@@ -657,4 +656,21 @@ func validHeader(v string) bool {
 		}
 	}
 	return true
+}
+
+var httpCodeStringCommon = map[int]string{} // n -> strconv.Itoa(n)
+
+func init() {
+	for i := 100; i <= 999; i++ {
+		if v := http.StatusText(i); v != "" {
+			httpCodeStringCommon[i] = strconv.Itoa(i)
+		}
+	}
+}
+
+func httpCodeString(code int) string {
+	if s, ok := httpCodeStringCommon[code]; ok {
+		return s
+	}
+	return strconv.Itoa(code)
 }
