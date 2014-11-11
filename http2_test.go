@@ -410,6 +410,10 @@ func TestServer_Request_Reject_Pseudo_Missing_scheme(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":scheme", "") })
 }
 
+func TestServer_Request_Reject_Pseudo_scheme_invalid(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":scheme", "bogus") })
+}
+
 func TestServer_Request_Reject_Pseudo_Unknown(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":unknown_thing", "") })
 }

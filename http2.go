@@ -446,7 +446,8 @@ func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, e
 		// TODO: convert to stream error I assume?
 		return err
 	}
-	if sc.invalidHeader || sc.method == "" || sc.path == "" || sc.scheme == "" {
+	if sc.invalidHeader || sc.method == "" || sc.path == "" ||
+		(sc.scheme != "https" && sc.scheme != "http") {
 		// See 8.1.2.6 Malformed Requests and Responses:
 		//
 		// Malformed requests or responses that are detected
