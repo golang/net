@@ -47,9 +47,11 @@ func init() {
 			continue
 		}
 	}
-	// The IP_PKTINFO was introduced in OS X 10.7 (Darwin
-	// 11.0.0). See http://support.apple.com/kb/HT1633.
-	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '1' {
+	// The IP_PKTINFO and protocol-independent multicast API were
+	// introduced in OS X 10.7 (Darwin 11.0.0). But it looks like
+	// those features require OS X 10.8 (Darwin 12.0.0) and above.
+	// See http://support.apple.com/kb/HT1633.
+	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '2' {
 		ctlOpts[ctlPacketInfo].name = sysIP_PKTINFO
 		ctlOpts[ctlPacketInfo].length = sysSizeofInetPktinfo
 		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
