@@ -7,6 +7,7 @@ package ipv4
 import (
 	"net"
 	"syscall"
+	"unsafe"
 )
 
 type sysSockoptLen int32
@@ -28,8 +29,12 @@ var (
 		ssoReceiveDst:         {sysIP_RECVDSTADDR, ssoTypeInt},
 		ssoReceiveInterface:   {sysIP_RECVIF, ssoTypeInt},
 		ssoHeaderPrepend:      {sysIP_HDRINCL, ssoTypeInt},
-		ssoJoinGroup:          {sysIP_ADD_MEMBERSHIP, ssoTypeIPMreq},
-		ssoLeaveGroup:         {sysIP_DROP_MEMBERSHIP, ssoTypeIPMreq},
+		ssoJoinGroup:          {sysMCAST_JOIN_GROUP, ssoTypeGroupReq},
+		ssoLeaveGroup:         {sysMCAST_LEAVE_GROUP, ssoTypeGroupReq},
+		ssoJoinSourceGroup:    {sysMCAST_JOIN_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoLeaveSourceGroup:   {sysMCAST_LEAVE_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoBlockSourceGroup:   {sysMCAST_BLOCK_SOURCE, ssoTypeGroupSourceReq},
+		ssoUnblockSourceGroup: {sysMCAST_UNBLOCK_SOURCE, ssoTypeGroupSourceReq},
 	}
 )
 
@@ -38,4 +43,22 @@ func init() {
 	if freebsdVersion >= 1000000 {
 		sockOpts[ssoMulticastInterface].typ = ssoTypeIPMreqn
 	}
+}
+
+func (gr *sysGroupReq) setGroup(grp net.IP) {
+	sa := (*sysSockaddrInet)(unsafe.Pointer(&gr.Group))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], grp)
+}
+
+func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
+	sa := (*sysSockaddrInet)(unsafe.Pointer(&gsr.Group))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], grp)
+	sa = (*sysSockaddrInet)(unsafe.Pointer(&gsr.Source))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], src)
 }

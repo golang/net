@@ -7,6 +7,7 @@ package ipv4
 import (
 	"net"
 	"syscall"
+	"unsafe"
 )
 
 type sysSockoptLen int32
@@ -56,9 +57,39 @@ func init() {
 		sockOpts[ssoPacketInfo].name = sysIP_RECVPKTINFO
 		sockOpts[ssoPacketInfo].typ = ssoTypeInt
 		sockOpts[ssoMulticastInterface].typ = ssoTypeIPMreqn
+		sockOpts[ssoJoinGroup].name = sysMCAST_JOIN_GROUP
+		sockOpts[ssoJoinGroup].typ = ssoTypeGroupReq
+		sockOpts[ssoLeaveGroup].name = sysMCAST_LEAVE_GROUP
+		sockOpts[ssoLeaveGroup].typ = ssoTypeGroupReq
+		sockOpts[ssoJoinSourceGroup].name = sysMCAST_JOIN_SOURCE_GROUP
+		sockOpts[ssoJoinSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoLeaveSourceGroup].name = sysMCAST_LEAVE_SOURCE_GROUP
+		sockOpts[ssoLeaveSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoBlockSourceGroup].name = sysMCAST_BLOCK_SOURCE
+		sockOpts[ssoBlockSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoUnblockSourceGroup].name = sysMCAST_UNBLOCK_SOURCE
+		sockOpts[ssoUnblockSourceGroup].typ = ssoTypeGroupSourceReq
 	}
 }
 
 func (pi *sysInetPktinfo) setIfindex(i int) {
 	pi.Ifindex = uint32(i)
+}
+
+func (gr *sysGroupReq) setGroup(grp net.IP) {
+	sa := (*sysSockaddrInet)(unsafe.Pointer(&gr.Pad_cgo_0[0]))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], grp)
+}
+
+func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
+	sa := (*sysSockaddrInet)(unsafe.Pointer(&gsr.Pad_cgo_0[0]))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], grp)
+	sa = (*sysSockaddrInet)(unsafe.Pointer(&gsr.Pad_cgo_1[0]))
+	sa.Len = sysSizeofSockaddrInet
+	sa.Family = syscall.AF_INET
+	copy(sa.Addr[:], src)
 }

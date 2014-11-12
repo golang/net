@@ -18,6 +18,10 @@ const (
 	ssoHeaderPrepend             // ipv4 header
 	ssoJoinGroup                 // any-source multicast
 	ssoLeaveGroup                // any-source multicast
+	ssoJoinSourceGroup           // source-specific multicast
+	ssoLeaveSourceGroup          // source-specific multicast
+	ssoBlockSourceGroup          // any-source or source-specific multicast
+	ssoUnblockSourceGroup        // any-source or source-specific multicast
 	ssoMax
 )
 
@@ -28,6 +32,8 @@ const (
 	ssoTypeInterface
 	ssoTypeIPMreq
 	ssoTypeIPMreqn
+	ssoTypeGroupReq
+	ssoTypeGroupSourceReq
 )
 
 // A sockOpt represents a binding for sticky socket option.

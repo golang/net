@@ -53,3 +53,8 @@ func setGroup(fd syscall.Handle, opt *sockOpt, ifi *net.Interface, grp net.IP) e
 	}
 	return setsockoptIPMreq(fd, opt.name, ifi, grp)
 }
+
+func setSourceGroup(fd syscall.Handle, opt *sockOpt, ifi *net.Interface, grp, src net.IP) error {
+	// TODO(mikio): implement this
+	return errOpNoSupport
+}

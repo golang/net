@@ -88,7 +88,16 @@ func setGroup(fd int, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
 		return setsockoptIPMreq(fd, opt.name, ifi, grp)
 	case ssoTypeIPMreqn:
 		return setsockoptIPMreqn(fd, opt.name, ifi, grp)
+	case ssoTypeGroupReq:
+		return setsockoptGroupReq(fd, opt.name, ifi, grp)
 	default:
 		return errOpNoSupport
 	}
+}
+
+func setSourceGroup(fd int, opt *sockOpt, ifi *net.Interface, grp, src net.IP) error {
+	if opt.name < 1 || opt.typ != ssoTypeGroupSourceReq {
+		return errOpNoSupport
+	}
+	return setsockoptGroupSourceReq(fd, opt.name, ifi, grp, src)
 }
