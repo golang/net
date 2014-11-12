@@ -9,6 +9,8 @@
 package ipv4
 
 /*
+#include <sys/socket.h>
+
 #include <netinet/in.h>
 */
 import "C"
@@ -40,13 +42,27 @@ const (
 	sysIP_DROP_SOURCE_MEMBERSHIP = C.IP_DROP_SOURCE_MEMBERSHIP
 	sysIP_BLOCK_SOURCE           = C.IP_BLOCK_SOURCE
 	sysIP_UNBLOCK_SOURCE         = C.IP_UNBLOCK_SOURCE
+	sysMCAST_JOIN_GROUP          = C.MCAST_JOIN_GROUP
+	sysMCAST_LEAVE_GROUP         = C.MCAST_LEAVE_GROUP
+	sysMCAST_JOIN_SOURCE_GROUP   = C.MCAST_JOIN_SOURCE_GROUP
+	sysMCAST_LEAVE_SOURCE_GROUP  = C.MCAST_LEAVE_SOURCE_GROUP
+	sysMCAST_BLOCK_SOURCE        = C.MCAST_BLOCK_SOURCE
+	sysMCAST_UNBLOCK_SOURCE      = C.MCAST_UNBLOCK_SOURCE
 
-	sysSizeofInetPktinfo = C.sizeof_struct_in_pktinfo
+	sysSizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
+	sysSizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
+	sysSizeofInetPktinfo     = C.sizeof_struct_in_pktinfo
 
-	sysSizeofIPMreq       = C.sizeof_struct_ip_mreq
-	sysSizeofIPMreqn      = C.sizeof_struct_ip_mreqn
-	sysSizeofIPMreqSource = C.sizeof_struct_ip_mreq_source
+	sysSizeofIPMreq         = C.sizeof_struct_ip_mreq
+	sysSizeofIPMreqn        = C.sizeof_struct_ip_mreqn
+	sysSizeofIPMreqSource   = C.sizeof_struct_ip_mreq_source
+	sysSizeofGroupReq       = C.sizeof_struct_group_req
+	sysSizeofGroupSourceReq = C.sizeof_struct_group_source_req
 )
+
+type sysSockaddrStorage C.struct_sockaddr_storage
+
+type sysSockaddrInet C.struct_sockaddr_in
 
 type sysInetPktinfo C.struct_in_pktinfo
 
@@ -55,3 +71,7 @@ type sysIPMreq C.struct_ip_mreq
 type sysIPMreqn C.struct_ip_mreqn
 
 type sysIPMreqSource C.struct_ip_mreq_source
+
+type sysGroupReq C.struct_group_req
+
+type sysGroupSourceReq C.struct_group_source_req

@@ -36,6 +36,14 @@ const (
 	sysIP_BLOCK_SOURCE           = 0x26
 	sysIP_ADD_SOURCE_MEMBERSHIP  = 0x27
 	sysIP_DROP_SOURCE_MEMBERSHIP = 0x28
+	sysIP_MSFILTER               = 0x29
+	sysMCAST_JOIN_GROUP          = 0x2a
+	sysMCAST_LEAVE_GROUP         = 0x2d
+	sysMCAST_JOIN_SOURCE_GROUP   = 0x2e
+	sysMCAST_LEAVE_SOURCE_GROUP  = 0x2f
+	sysMCAST_BLOCK_SOURCE        = 0x2b
+	sysMCAST_UNBLOCK_SOURCE      = 0x2c
+	sysMCAST_MSFILTER            = 0x30
 	sysIP_MULTICAST_ALL          = 0x31
 
 	sysIP_PMTUDISC_DONT      = 0x0
@@ -52,13 +60,29 @@ const (
 	sysSO_EE_ORIGIN_TXSTATUS     = 0x4
 	sysSO_EE_ORIGIN_TIMESTAMPING = 0x4
 
-	sysSizeofInetPktinfo     = 0xc
-	sysSizeofSockExtendedErr = 0x10
+	sysSizeofKernelSockaddrStorage = 0x80
+	sysSizeofSockaddrInet          = 0x10
+	sysSizeofInetPktinfo           = 0xc
+	sysSizeofSockExtendedErr       = 0x10
 
-	sysSizeofIPMreq       = 0x8
-	sysSizeofIPMreqn      = 0xc
-	sysSizeofIPMreqSource = 0xc
+	sysSizeofIPMreq         = 0x8
+	sysSizeofIPMreqn        = 0xc
+	sysSizeofIPMreqSource   = 0xc
+	sysSizeofGroupReq       = 0x88
+	sysSizeofGroupSourceReq = 0x108
 )
+
+type sysKernelSockaddrStorage struct {
+	Family  uint16
+	X__data [126]int8
+}
+
+type sysSockaddrInet struct {
+	Family uint16
+	Port   uint16
+	Addr   [4]byte /* in_addr */
+	X__pad [8]uint8
+}
 
 type sysInetPktinfo struct {
 	Ifindex  int32
@@ -91,4 +115,17 @@ type sysIPMreqSource struct {
 	Multiaddr  uint32
 	Interface  uint32
 	Sourceaddr uint32
+}
+
+type sysGroupReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysKernelSockaddrStorage
+}
+
+type sysGroupSourceReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysKernelSockaddrStorage
+	Source    sysKernelSockaddrStorage
 }

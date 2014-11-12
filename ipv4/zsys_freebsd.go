@@ -31,11 +31,38 @@ const (
 	sysIP_DROP_SOURCE_MEMBERSHIP = 0x47
 	sysIP_BLOCK_SOURCE           = 0x48
 	sysIP_UNBLOCK_SOURCE         = 0x49
+	sysMCAST_JOIN_GROUP          = 0x50
+	sysMCAST_LEAVE_GROUP         = 0x51
+	sysMCAST_JOIN_SOURCE_GROUP   = 0x52
+	sysMCAST_LEAVE_SOURCE_GROUP  = 0x53
+	sysMCAST_BLOCK_SOURCE        = 0x54
+	sysMCAST_UNBLOCK_SOURCE      = 0x55
 
-	sysSizeofIPMreq       = 0x8
-	sysSizeofIPMreqn      = 0xc
-	sysSizeofIPMreqSource = 0xc
+	sysSizeofSockaddrStorage = 0x80
+	sysSizeofSockaddrInet    = 0x10
+
+	sysSizeofIPMreq         = 0x8
+	sysSizeofIPMreqn        = 0xc
+	sysSizeofIPMreqSource   = 0xc
+	sysSizeofGroupReq       = 0x88
+	sysSizeofGroupSourceReq = 0x108
 )
+
+type sysSockaddrStorage struct {
+	Len         uint8
+	Family      uint8
+	X__ss_pad1  [6]int8
+	X__ss_align int64
+	X__ss_pad2  [112]int8
+}
+
+type sysSockaddrInet struct {
+	Len    uint8
+	Family uint8
+	Port   uint16
+	Addr   [4]byte /* in_addr */
+	Zero   [8]int8
+}
 
 type sysIPMreq struct {
 	Multiaddr [4]byte /* in_addr */
@@ -52,4 +79,17 @@ type sysIPMreqSource struct {
 	Multiaddr  [4]byte /* in_addr */
 	Sourceaddr [4]byte /* in_addr */
 	Interface  [4]byte /* in_addr */
+}
+
+type sysGroupReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysSockaddrStorage
+}
+
+type sysGroupSourceReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysSockaddrStorage
+	Source    sysSockaddrStorage
 }

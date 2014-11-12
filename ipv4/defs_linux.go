@@ -47,6 +47,14 @@ const (
 	sysIP_BLOCK_SOURCE           = C.IP_BLOCK_SOURCE
 	sysIP_ADD_SOURCE_MEMBERSHIP  = C.IP_ADD_SOURCE_MEMBERSHIP
 	sysIP_DROP_SOURCE_MEMBERSHIP = C.IP_DROP_SOURCE_MEMBERSHIP
+	sysIP_MSFILTER               = C.IP_MSFILTER
+	sysMCAST_JOIN_GROUP          = C.MCAST_JOIN_GROUP
+	sysMCAST_LEAVE_GROUP         = C.MCAST_LEAVE_GROUP
+	sysMCAST_JOIN_SOURCE_GROUP   = C.MCAST_JOIN_SOURCE_GROUP
+	sysMCAST_LEAVE_SOURCE_GROUP  = C.MCAST_LEAVE_SOURCE_GROUP
+	sysMCAST_BLOCK_SOURCE        = C.MCAST_BLOCK_SOURCE
+	sysMCAST_UNBLOCK_SOURCE      = C.MCAST_UNBLOCK_SOURCE
+	sysMCAST_MSFILTER            = C.MCAST_MSFILTER
 	sysIP_MULTICAST_ALL          = C.IP_MULTICAST_ALL
 
 	sysIP_PMTUDISC_DONT      = C.IP_PMTUDISC_DONT
@@ -63,13 +71,21 @@ const (
 	sysSO_EE_ORIGIN_TXSTATUS     = C.SO_EE_ORIGIN_TXSTATUS
 	sysSO_EE_ORIGIN_TIMESTAMPING = C.SO_EE_ORIGIN_TIMESTAMPING
 
-	sysSizeofInetPktinfo     = C.sizeof_struct_in_pktinfo
-	sysSizeofSockExtendedErr = C.sizeof_struct_sock_extended_err
+	sysSizeofKernelSockaddrStorage = C.sizeof_struct___kernel_sockaddr_storage
+	sysSizeofSockaddrInet          = C.sizeof_struct_sockaddr_in
+	sysSizeofInetPktinfo           = C.sizeof_struct_in_pktinfo
+	sysSizeofSockExtendedErr       = C.sizeof_struct_sock_extended_err
 
-	sysSizeofIPMreq       = C.sizeof_struct_ip_mreq
-	sysSizeofIPMreqn      = C.sizeof_struct_ip_mreqn
-	sysSizeofIPMreqSource = C.sizeof_struct_ip_mreq_source
+	sysSizeofIPMreq         = C.sizeof_struct_ip_mreq
+	sysSizeofIPMreqn        = C.sizeof_struct_ip_mreqn
+	sysSizeofIPMreqSource   = C.sizeof_struct_ip_mreq_source
+	sysSizeofGroupReq       = C.sizeof_struct_group_req
+	sysSizeofGroupSourceReq = C.sizeof_struct_group_source_req
 )
+
+type sysKernelSockaddrStorage C.struct___kernel_sockaddr_storage
+
+type sysSockaddrInet C.struct_sockaddr_in
 
 type sysInetPktinfo C.struct_in_pktinfo
 
@@ -80,3 +96,7 @@ type sysIPMreq C.struct_ip_mreq
 type sysIPMreqn C.struct_ip_mreqn
 
 type sysIPMreqSource C.struct_ip_mreq_source
+
+type sysGroupReq C.struct_group_req
+
+type sysGroupSourceReq C.struct_group_source_req
