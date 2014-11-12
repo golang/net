@@ -46,13 +46,6 @@ const (
 	sysMCAST_MSFILTER            = 0x30
 	sysIP_MULTICAST_ALL          = 0x31
 
-	sysIP_PMTUDISC_DONT      = 0x0
-	sysIP_PMTUDISC_WANT      = 0x1
-	sysIP_PMTUDISC_DO        = 0x2
-	sysIP_PMTUDISC_PROBE     = 0x3
-	sysIP_PMTUDISC_INTERFACE = 0x4
-	sysIP_PMTUDISC_OMIT      = 0x5
-
 	sysSO_EE_ORIGIN_NONE         = 0x0
 	sysSO_EE_ORIGIN_LOCAL        = 0x1
 	sysSO_EE_ORIGIN_ICMP         = 0x2
@@ -68,8 +61,8 @@ const (
 	sysSizeofIPMreq         = 0x8
 	sysSizeofIPMreqn        = 0xc
 	sysSizeofIPMreqSource   = 0xc
-	sysSizeofGroupReq       = 0x88
-	sysSizeofGroupSourceReq = 0x108
+	sysSizeofGroupReq       = 0x84
+	sysSizeofGroupSourceReq = 0x104
 )
 
 type sysKernelSockaddrStorage struct {
@@ -119,13 +112,11 @@ type sysIPMreqSource struct {
 
 type sysGroupReq struct {
 	Interface uint32
-	Pad_cgo_0 [4]byte
 	Group     sysKernelSockaddrStorage
 }
 
 type sysGroupSourceReq struct {
 	Interface uint32
-	Pad_cgo_0 [4]byte
 	Group     sysKernelSockaddrStorage
 	Source    sysKernelSockaddrStorage
 }

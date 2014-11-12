@@ -63,7 +63,12 @@ func genzsys() error {
 	if err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile("zsys_"+runtime.GOOS+".go", b, 0644); err != nil {
+	zsys := "zsys_" + runtime.GOOS + ".go"
+	switch runtime.GOOS {
+	case "freebsd", "linux":
+		zsys = "zsys_" + runtime.GOOS + "_" + runtime.GOARCH + ".go"
+	}
+	if err := ioutil.WriteFile(zsys, b, 0644); err != nil {
 		return err
 	}
 	return nil
