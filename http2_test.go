@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -308,25 +309,132 @@ func TestServer_Request_Post_NoContentLength_EndStream(t *testing.T) {
 	})
 }
 
-func TestServer_Request_Post_Body(t *testing.T) {
-	t.Skip("TODO: post bodies not yet implemented")
-	testServerRequest(t, func(st *serverTester) {
+func TestServer_Request_Post_Body_ImmediateEOF(t *testing.T) {
+	testBodyContents(t, -1, "", func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
 			BlockFragment: encodeHeader(t, ":method", "POST"),
-			EndStream:     false, // migth be DATA frames
+			EndStream:     false, // to say DATA frames are coming
 			EndHeaders:    true,
 		})
-		st.writeData(1, true, nil)
-	}, func(r *http.Request) {
+		st.writeData(1, true, nil) // just kidding. empty body.
+	})
+}
+
+func TestServer_Request_Post_Body_OneData(t *testing.T) {
+	const content = "Some content"
+	testBodyContents(t, -1, content, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: encodeHeader(t, ":method", "POST"),
+			EndStream:     false, // to say DATA frames are coming
+			EndHeaders:    true,
+		})
+		st.writeData(1, true, []byte(content))
+	})
+}
+
+func TestServer_Request_Post_Body_TwoData(t *testing.T) {
+	const content = "Some content"
+	testBodyContents(t, -1, content, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: encodeHeader(t, ":method", "POST"),
+			EndStream:     false, // to say DATA frames are coming
+			EndHeaders:    true,
+		})
+		st.writeData(1, false, []byte(content[:5]))
+		st.writeData(1, true, []byte(content[5:]))
+	})
+}
+
+func TestServer_Request_Post_Body_ContentLength_Correct(t *testing.T) {
+	const content = "Some content"
+	testBodyContents(t, int64(len(content)), content, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID: 1, // clients send odd numbers
+			BlockFragment: encodeHeader(t,
+				":method", "POST",
+				"content-length", strconv.Itoa(len(content)),
+			),
+			EndStream:  false, // to say DATA frames are coming
+			EndHeaders: true,
+		})
+		st.writeData(1, true, []byte(content))
+	})
+}
+
+func TestServer_Request_Post_Body_ContentLength_TooLarge(t *testing.T) {
+	testBodyContentsFail(t, 3, "Request declared a Content-Length of 3 but only wrote 2 bytes",
+		func(st *serverTester) {
+			st.writeHeaders(HeadersFrameParam{
+				StreamID: 1, // clients send odd numbers
+				BlockFragment: encodeHeader(t,
+					":method", "POST",
+					"content-length", "3",
+				),
+				EndStream:  false, // to say DATA frames are coming
+				EndHeaders: true,
+			})
+			st.writeData(1, true, []byte("12"))
+		})
+}
+
+func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
+	testBodyContentsFail(t, 4, "Sender tried to send more than declared Content-Length of 4 bytes",
+		func(st *serverTester) {
+			st.writeHeaders(HeadersFrameParam{
+				StreamID: 1, // clients send odd numbers
+				BlockFragment: encodeHeader(t,
+					":method", "POST",
+					"content-length", "4",
+				),
+				EndStream:  false, // to say DATA frames are coming
+				EndHeaders: true,
+			})
+			st.writeData(1, true, []byte("12345"))
+		})
+}
+
+func testBodyContents(t *testing.T, wantContentLength int64, wantBody string, write func(st *serverTester)) {
+	testServerRequest(t, write, func(r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("Method = %q; want POST", r.Method)
 		}
-		if r.ContentLength != -1 {
-			t.Errorf("ContentLength = %v; want -1", r.ContentLength)
+		if r.ContentLength != wantContentLength {
+			t.Errorf("ContentLength = %v; want %d", r.ContentLength, wantContentLength)
 		}
-		if n, err := r.Body.Read([]byte(" ")); err != io.EOF || n != 0 {
-			t.Errorf("Read = %d, %v; want 0, EOF", n, err)
+		all, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(all) != wantBody {
+			t.Errorf("Read = %q; want %q", all, wantBody)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
+}
+
+func testBodyContentsFail(t *testing.T, wantContentLength int64, wantReadError string, write func(st *serverTester)) {
+	testServerRequest(t, write, func(r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Method = %q; want POST", r.Method)
+		}
+		if r.ContentLength != wantContentLength {
+			t.Errorf("ContentLength = %v; want %d", r.ContentLength, wantContentLength)
+		}
+		all, err := ioutil.ReadAll(r.Body)
+		if err == nil {
+			t.Fatalf("expected an error (%q) reading from the body. Successfully read %q instead.",
+				wantReadError, all)
+		}
+		if !strings.Contains(err.Error(), wantReadError) {
+			t.Fatalf("Body.Read = %v; want substring %q", err, wantReadError)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
 		}
 	})
 }

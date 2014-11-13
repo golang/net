@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -149,7 +150,11 @@ const (
 type stream struct {
 	id    uint32
 	state streamState // owned by serverConn's processing loop
-	flow  *flow
+	flow  *flow       // limits writing from Handler to client
+	body  *pipe       // non-nil if expecting DATA frames
+
+	bodyBytes     int64 // body bytes seen so far
+	declBodyBytes int64 // or -1 if undeclared
 }
 
 func (sc *serverConn) state(streamID uint32) streamState {
@@ -419,6 +424,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processWindowUpdate(f)
 	case *PingFrame:
 		return sc.processPing(f)
+	case *DataFrame:
+		return sc.processData(f)
 	default:
 		log.Printf("Ignoring unknown frame %#v", f)
 		return nil
@@ -516,6 +523,48 @@ func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
 	return nil
 }
 
+func (sc *serverConn) processData(f *DataFrame) error {
+	sc.serveG.check()
+	// "If a DATA frame is received whose stream is not in "open"
+	// or "half closed (local)" state, the recipient MUST respond
+	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
+	id := f.Header().StreamID
+	st, ok := sc.streams[id]
+	if !ok || (st.state != stateOpen && st.state != stateHalfClosedLocal) {
+		return StreamError{id, ErrCodeStreamClosed}
+	}
+	if st.body == nil {
+		// Not expecting data.
+		// TODO: which error code?
+		return StreamError{id, ErrCodeStreamClosed}
+	}
+	data := f.Data()
+
+	// Sender sending more than they'd declared?
+	if st.declBodyBytes != -1 && st.bodyBytes+int64(len(data)) > st.declBodyBytes {
+		st.body.Close(fmt.Errorf("Sender tried to send more than declared Content-Length of %d bytes", st.declBodyBytes))
+		return StreamError{id, ErrCodeStreamClosed}
+	}
+	if len(data) > 0 {
+		// TODO: verify they're allowed to write with the flow control
+		// window we'd advertised to them.
+		// TODO: verify n from Write
+		if _, err := st.body.Write(data); err != nil {
+			return StreamError{id, ErrCodeStreamClosed}
+		}
+		st.bodyBytes += int64(len(data))
+	}
+	if f.Header().Flags.Has(FlagDataEndStream) {
+		if st.declBodyBytes != -1 && st.declBodyBytes != st.bodyBytes {
+			st.body.Close(fmt.Errorf("Request declared a Content-Length of %d but only wrote %d bytes",
+				st.declBodyBytes, st.bodyBytes))
+		} else {
+			st.body.Close(io.EOF)
+		}
+	}
+	return nil
+}
+
 func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	sc.serveG.check()
 	id := f.Header().StreamID
@@ -550,19 +599,19 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		stream: st,
 		header: make(http.Header),
 	}
-	return sc.processHeaderBlockFragment(id, f.HeaderBlockFragment(), f.HeadersEnded())
+	return sc.processHeaderBlockFragment(st, f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
 func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 	sc.serveG.check()
-	id := f.Header().StreamID
-	if sc.curHeaderStreamID() != id {
+	st := sc.streams[f.Header().StreamID]
+	if st == nil || sc.curHeaderStreamID() != st.id {
 		return ConnectionError(ErrCodeProtocol)
 	}
-	return sc.processHeaderBlockFragment(id, f.HeaderBlockFragment(), f.HeadersEnded())
+	return sc.processHeaderBlockFragment(st, f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
-func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, end bool) error {
+func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bool) error {
 	sc.serveG.check()
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
 		// TODO: convert to stream error I assume?
@@ -580,6 +629,8 @@ func (sc *serverConn) processHeaderBlockFragment(streamID uint32, frag []byte, e
 	if err != nil {
 		return err
 	}
+	st.body = req.Body.(*requestBody).pipe // may be nil
+	st.declBodyBytes = req.ContentLength
 	go sc.runHandler(rw, req)
 	return nil
 }
@@ -611,6 +662,10 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		authority = rp.header.Get("Host")
 	}
 	bodyOpen := rp.stream.state == stateOpen
+	body := &requestBody{
+		sc:       sc,
+		streamID: rp.stream.id,
+	}
 	req := &http.Request{
 		Method:     rp.method,
 		URL:        &url.URL{},
@@ -622,13 +677,14 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		ProtoMinor: 0,
 		TLS:        tlsState,
 		Host:       authority,
-		Body: &requestBody{
-			sc:       sc,
-			streamID: rp.stream.id,
-			hasBody:  bodyOpen,
-		},
+		Body:       body,
 	}
 	if bodyOpen {
+		body.pipe = &pipe{
+			b: buffer{buf: make([]byte, 65536)}, // TODO: share/remove
+		}
+		body.pipe.c.L = &body.pipe.m
+
 		if vv, ok := rp.header["Content-Length"]; ok {
 			req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
 		} else {
@@ -638,6 +694,8 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	rw := &responseWriter{
 		sc:       sc,
 		streamID: rp.stream.id,
+		req:      req,
+		body:     body,
 	}
 	return rw, req, nil
 }
@@ -732,21 +790,29 @@ func ConfigureServer(s *http.Server, conf *Server) {
 type requestBody struct {
 	sc       *serverConn
 	streamID uint32
-	hasBody  bool
 	closed   bool
+	pipe     *pipe // non-nil if we have a HTTP entity message body
 }
 
+var errClosedBody = errors.New("body closed by handler")
+
 func (b *requestBody) Close() error {
+	if b.pipe != nil {
+		b.pipe.Close(errClosedBody)
+	}
 	b.closed = true
 	return nil
 }
 
 func (b *requestBody) Read(p []byte) (n int, err error) {
-	if !b.hasBody {
+	if b.pipe == nil {
 		return 0, io.EOF
 	}
-	// TODO: implement
-	return 0, errors.New("TODO: we don't handle request bodies yet")
+	n, err = b.pipe.Read(p)
+	if n > 0 {
+		// TODO: tell b.sc to send back 'n' flow control quota credits to the sender
+	}
+	return
 }
 
 type responseWriter struct {
@@ -754,6 +820,9 @@ type responseWriter struct {
 	streamID     uint32
 	wroteHeaders bool
 	h            http.Header
+
+	req  *http.Request
+	body *requestBody // to close at end of request, if DATA frames didn't
 }
 
 // TODO: bufio writing of responseWriter. add Flush, add pools of
