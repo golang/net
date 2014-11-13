@@ -10,12 +10,6 @@ import (
 	"time"
 )
 
-func (f *flow) cur() int32 {
-	f.c.L.Lock()
-	defer f.c.L.Unlock()
-	return f.size
-}
-
 func TestFlow(t *testing.T) {
 	f := newFlow(10)
 	if got, want := f.cur(), int32(10); got != want {

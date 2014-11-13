@@ -22,6 +22,16 @@ func newFlow(n int32) *flow {
 	}
 }
 
+// cur returns the current number of bytes allow to write.  Obviously
+// it's not safe to call this and assume acquiring that number of
+// bytes from the acquire method won't be block in the presence of
+// concurrent acquisitions.
+func (f *flow) cur() int32 {
+	f.c.L.Lock()
+	defer f.c.L.Unlock()
+	return f.size
+}
+
 // acquire decrements the flow control window by n bytes, blocking
 // until they're available in the window.
 // The return value is only interesting for tests.
