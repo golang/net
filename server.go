@@ -32,6 +32,42 @@ type Server struct {
 	MaxStreams int
 }
 
+var testHookOnConn func() // for testing
+
+// ConfigureServer adds HTTP/2 support to a net/http Server.
+//
+// The configuration conf may be nil.
+//
+// ConfigureServer must be called before s begins serving.
+func ConfigureServer(s *http.Server, conf *Server) {
+	if conf == nil {
+		conf = new(Server)
+	}
+	if s.TLSConfig == nil {
+		s.TLSConfig = new(tls.Config)
+	}
+	haveNPN := false
+	for _, p := range s.TLSConfig.NextProtos {
+		if p == npnProto {
+			haveNPN = true
+			break
+		}
+	}
+	if !haveNPN {
+		s.TLSConfig.NextProtos = append(s.TLSConfig.NextProtos, npnProto)
+	}
+
+	if s.TLSNextProto == nil {
+		s.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
+	}
+	s.TLSNextProto[npnProto] = func(hs *http.Server, c *tls.Conn, h http.Handler) {
+		if testHookOnConn != nil {
+			testHookOnConn()
+		}
+		conf.handleConn(hs, c, h)
+	}
+}
+
 func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc := &serverConn{
 		hs:                hs,
@@ -746,40 +782,6 @@ func (sc *serverConn) sendWindowUpdateInLoop(wu windowUpdateReq) error {
 	return nil
 }
 
-// ConfigureServer adds HTTP/2 support to a net/http Server.
-//
-// The configuration conf may be nil.
-//
-// ConfigureServer must be called before s begins serving.
-func ConfigureServer(s *http.Server, conf *Server) {
-	if conf == nil {
-		conf = new(Server)
-	}
-	if s.TLSConfig == nil {
-		s.TLSConfig = new(tls.Config)
-	}
-	haveNPN := false
-	for _, p := range s.TLSConfig.NextProtos {
-		if p == npnProto {
-			haveNPN = true
-			break
-		}
-	}
-	if !haveNPN {
-		s.TLSConfig.NextProtos = append(s.TLSConfig.NextProtos, npnProto)
-	}
-
-	if s.TLSNextProto == nil {
-		s.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
-	}
-	s.TLSNextProto[npnProto] = func(hs *http.Server, c *tls.Conn, h http.Handler) {
-		if testHookOnConn != nil {
-			testHookOnConn()
-		}
-		conf.handleConn(hs, c, h)
-	}
-}
-
 type requestBody struct {
 	sc       *serverConn
 	streamID uint32
@@ -866,5 +868,3 @@ func (w *responseWriter) handlerDone() {
 		})
 	}
 }
-
-var testHookOnConn func() // for testing
