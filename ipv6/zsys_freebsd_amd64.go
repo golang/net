@@ -49,18 +49,38 @@ const (
 
 	sysIPV6_BINDANY = 0x40
 
+	sysIPV6_MSFILTER = 0x4a
+
+	sysMCAST_JOIN_GROUP         = 0x50
+	sysMCAST_LEAVE_GROUP        = 0x51
+	sysMCAST_JOIN_SOURCE_GROUP  = 0x52
+	sysMCAST_LEAVE_SOURCE_GROUP = 0x53
+	sysMCAST_BLOCK_SOURCE       = 0x54
+	sysMCAST_UNBLOCK_SOURCE     = 0x55
+
 	sysIPV6_PORTRANGE_DEFAULT = 0x0
 	sysIPV6_PORTRANGE_HIGH    = 0x1
 	sysIPV6_PORTRANGE_LOW     = 0x2
 
-	sysSizeofSockaddrInet6 = 0x1c
-	sysSizeofInet6Pktinfo  = 0x14
-	sysSizeofIPv6Mtuinfo   = 0x20
+	sysSizeofSockaddrStorage = 0x80
+	sysSizeofSockaddrInet6   = 0x1c
+	sysSizeofInet6Pktinfo    = 0x14
+	sysSizeofIPv6Mtuinfo     = 0x20
 
-	sysSizeofIPv6Mreq = 0x14
+	sysSizeofIPv6Mreq       = 0x14
+	sysSizeofGroupReq       = 0x88
+	sysSizeofGroupSourceReq = 0x108
 
 	sysSizeofICMPv6Filter = 0x20
 )
+
+type sysSockaddrStorage struct {
+	Len         uint8
+	Family      uint8
+	X__ss_pad1  [6]int8
+	X__ss_align int64
+	X__ss_pad2  [112]int8
+}
 
 type sysSockaddrInet6 struct {
 	Len      uint8
@@ -84,6 +104,19 @@ type sysIPv6Mtuinfo struct {
 type sysIPv6Mreq struct {
 	Multiaddr [16]byte /* in6_addr */
 	Interface uint32
+}
+
+type sysGroupReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysSockaddrStorage
+}
+
+type sysGroupSourceReq struct {
+	Interface uint32
+	Pad_cgo_0 [4]byte
+	Group     sysSockaddrStorage
+	Source    sysSockaddrStorage
 }
 
 type sysICMPv6Filter struct {

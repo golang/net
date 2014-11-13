@@ -1,5 +1,5 @@
 // Created by cgo -godefs - DO NOT EDIT
-// cgo -godefs defs_darwin.go
+// cgo -godefs defs_freebsd.go
 
 package ipv6
 
@@ -10,30 +10,17 @@ const (
 	sysIPV6_MULTICAST_LOOP = 0xb
 	sysIPV6_JOIN_GROUP     = 0xc
 	sysIPV6_LEAVE_GROUP    = 0xd
-
-	sysIPV6_PORTRANGE    = 0xe
-	sysICMP6_FILTER      = 0x12
-	sysIPV6_2292PKTINFO  = 0x13
-	sysIPV6_2292HOPLIMIT = 0x14
-	sysIPV6_2292NEXTHOP  = 0x15
-	sysIPV6_2292HOPOPTS  = 0x16
-	sysIPV6_2292DSTOPTS  = 0x17
-	sysIPV6_2292RTHDR    = 0x18
-
-	sysIPV6_2292PKTOPTIONS = 0x19
+	sysIPV6_PORTRANGE      = 0xe
+	sysICMP6_FILTER        = 0x12
 
 	sysIPV6_CHECKSUM = 0x1a
 	sysIPV6_V6ONLY   = 0x1b
 
 	sysIPV6_IPSEC_POLICY = 0x1c
 
-	sysIPV6_RECVTCLASS = 0x23
-	sysIPV6_TCLASS     = 0x24
+	sysIPV6_RTHDRDSTOPTS = 0x23
 
-	sysIPV6_RTHDRDSTOPTS = 0x39
-
-	sysIPV6_RECVPKTINFO = 0x3d
-
+	sysIPV6_RECVPKTINFO  = 0x24
 	sysIPV6_RECVHOPLIMIT = 0x25
 	sysIPV6_RECVRTHDR    = 0x26
 	sysIPV6_RECVHOPOPTS  = 0x27
@@ -51,21 +38,25 @@ const (
 	sysIPV6_DSTOPTS  = 0x32
 	sysIPV6_RTHDR    = 0x33
 
+	sysIPV6_RECVTCLASS = 0x39
+
 	sysIPV6_AUTOFLOWLABEL = 0x3b
 
+	sysIPV6_TCLASS   = 0x3d
 	sysIPV6_DONTFRAG = 0x3e
 
 	sysIPV6_PREFER_TEMPADDR = 0x3f
 
-	sysIPV6_MSFILTER            = 0x4a
+	sysIPV6_BINDANY = 0x40
+
+	sysIPV6_MSFILTER = 0x4a
+
 	sysMCAST_JOIN_GROUP         = 0x50
 	sysMCAST_LEAVE_GROUP        = 0x51
 	sysMCAST_JOIN_SOURCE_GROUP  = 0x52
 	sysMCAST_LEAVE_SOURCE_GROUP = 0x53
 	sysMCAST_BLOCK_SOURCE       = 0x54
 	sysMCAST_UNBLOCK_SOURCE     = 0x55
-
-	sysIPV6_BOUND_IF = 0x7d
 
 	sysIPV6_PORTRANGE_DEFAULT = 0x0
 	sysIPV6_PORTRANGE_HIGH    = 0x1
@@ -115,17 +106,17 @@ type sysIPv6Mreq struct {
 	Interface uint32
 }
 
-type sysICMPv6Filter struct {
-	Filt [8]uint32
-}
-
 type sysGroupReq struct {
 	Interface uint32
-	Pad_cgo_0 [128]byte
+	Group     sysSockaddrStorage
 }
 
 type sysGroupSourceReq struct {
 	Interface uint32
-	Pad_cgo_0 [128]byte
-	Pad_cgo_1 [128]byte
+	Group     sysSockaddrStorage
+	Source    sysSockaddrStorage
+}
+
+type sysICMPv6Filter struct {
+	Filt [8]uint32
 }
