@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bradfitz/http2/hpack"
 )
@@ -690,13 +691,22 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 			req.ContentLength = -1
 		}
 	}
-	rw := &responseWriter{
-		sc:       sc,
-		streamID: rp.stream.id,
-		req:      req,
-		body:     body,
-	}
+
+	rws := responseWriterStatePool.Get().(*responseWriterState)
+	rws.sc = sc
+	rws.streamID = rp.stream.id
+	rws.req = req
+	rws.body = body
+	rws.wbuf.Reset()
+
+	rw := &responseWriter{rws: rws}
 	return rw, req, nil
+}
+
+var responseWriterStatePool = sync.Pool{
+	New: func() interface{} {
+		return new(responseWriterState)
+	},
 }
 
 // Run on its own goroutine.
@@ -811,14 +821,40 @@ func (b *requestBody) Read(p []byte) (n int, err error) {
 	return
 }
 
+// responseWriter is the http.ResponseWriter implementation.  It's
+// intentionally small (1 pointer wide) to minimize garbage.  The
+// responseWriterState pointer inside is zeroed at the end of a
+// request (in handlerDone) and calls on the responseWriter thereafter
+// simply crash (caller's mistake), but the much larger responseWriterState
+// and buffers are reused between multiple requests.
 type responseWriter struct {
-	sc           *serverConn
-	streamID     uint32
-	wroteHeaders bool
-	h            http.Header
+	rws *responseWriterState
+}
 
-	req  *http.Request
-	body *requestBody // to close at end of request, if DATA frames didn't
+type responseWriterState struct {
+	// immutable within a request:
+	sc       *serverConn
+	streamID uint32
+	req      *http.Request
+	body     *requestBody // to close at end of request, if DATA frames didn't
+
+	wbuf bytes.Buffer
+
+	// mutated by http.Handler goroutine:
+	h            http.Header // h goes from maybe-nil to non-nil; contents changed by http.Handler goroutine
+	wroteHeaders bool
+	calledHeader bool
+}
+
+// Optional http.ResponseWriter interfaces implemented.
+var (
+	_ http.Flusher = (*responseWriter)(nil)
+	_ stringWriter = (*responseWriter)(nil)
+	// TODO: hijacker for websockets
+)
+
+func (w *responseWriter) Flush() {
+	// TODO: implement
 }
 
 // TODO: bufio writing of responseWriter. add Flush, add pools of
@@ -826,14 +862,23 @@ type responseWriter struct {
 // updates from peer? For now: naive.
 
 func (w *responseWriter) Header() http.Header {
-	if w.h == nil {
-		w.h = make(http.Header)
+	rws := w.rws
+	if rws == nil {
+		panic("Header called after Handler finished")
 	}
-	return w.h
+	if rws.h == nil {
+		rws.h = make(http.Header)
+	}
+	rws.calledHeader = true
+	return rws.h
 }
 
 func (w *responseWriter) WriteHeader(code int) {
-	if w.wroteHeaders {
+	rws := w.rws
+	if rws == nil {
+		panic("WriteHeader called after Handler finished")
+	}
+	if rws.wroteHeaders {
 		return
 	}
 	// TODO: defer actually writing this frame until a Flush or
@@ -841,30 +886,43 @@ func (w *responseWriter) WriteHeader(code int) {
 	// e.g. a 204 response to have a Header response frame with
 	// END_STREAM set, without a separate frame being sent in
 	// handleDone.
-	w.wroteHeaders = true
-	w.sc.writeHeader(headerWriteReq{
-		streamID:    w.streamID,
+	rws.wroteHeaders = true
+	rws.sc.writeHeader(headerWriteReq{
+		streamID:    rws.streamID,
 		httpResCode: code,
-		h:           w.h,
+		h:           rws.h,
 	})
 }
 
-// TODO: responseWriter.WriteString too?
+func (w *responseWriter) WriteString(s string) (n int, err error) {
+	// TODO: better impl
+	return w.Write([]byte(s))
+}
 
 func (w *responseWriter) Write(p []byte) (n int, err error) {
-	if !w.wroteHeaders {
+	rws := w.rws
+	if rws == nil {
+		panic("Write called after Handler finished")
+	}
+	if !rws.wroteHeaders {
 		w.WriteHeader(200)
 	}
-	return w.sc.writeData(w.streamID, p) // blocks waiting for tokens
+	return rws.sc.writeData(rws.streamID, p) // blocks waiting for tokens
 }
 
 func (w *responseWriter) handlerDone() {
-	if !w.wroteHeaders {
-		w.sc.writeHeader(headerWriteReq{
-			streamID:    w.streamID,
+	rws := w.rws
+	if rws == nil {
+		panic("handlerDone called twice")
+	}
+	w.rws = nil
+	if !rws.wroteHeaders {
+		rws.sc.writeHeader(headerWriteReq{
+			streamID:    rws.streamID,
 			httpResCode: 200,
-			h:           w.h,
+			h:           rws.h,
 			endStream:   true, // handler has finished; can't be any data.
 		})
 	}
+	// TODO: recycle rws back into a pool
 }

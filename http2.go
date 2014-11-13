@@ -89,3 +89,8 @@ func httpCodeString(code int) string {
 	}
 	return strconv.Itoa(code)
 }
+
+// from pkg io
+type stringWriter interface {
+	WriteString(s string) (n int, err error)
+}
