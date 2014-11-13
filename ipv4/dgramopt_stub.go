@@ -39,3 +39,19 @@ func (c *dgramOpt) JoinGroup(ifi *net.Interface, grp net.Addr) error {
 func (c *dgramOpt) LeaveGroup(ifi *net.Interface, grp net.Addr) error {
 	return errOpNoSupport
 }
+
+func (c *dgramOpt) JoinSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	return errOpNoSupport
+}
+
+func (c *dgramOpt) LeaveSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	return errOpNoSupport
+}
+
+func (c *dgramOpt) ExcludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	return errOpNoSupport
+}
+
+func (c *dgramOpt) IncludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	return errOpNoSupport
+}

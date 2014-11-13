@@ -29,6 +29,10 @@ var (
 //	http://tools.ietf.org/html/rfc1112
 // RFC 1122  Requirements for Internet Hosts
 //	http://tools.ietf.org/html/rfc1122
+// RFC 3678  Socket Interface Extensions for Multicast Source Filters
+//	http://tools.ietf.org/html/rfc3678
+// RFC 4607  Source-Specific Multicast for IP
+//	http://tools.ietf.org/html/rfc4607
 
 const (
 	Version      = 4  // protocol version

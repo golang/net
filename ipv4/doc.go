@@ -7,8 +7,8 @@
 //
 // The package provides IP-level socket options that allow
 // manipulation of IPv4 facilities.  The IPv4 and basic host
-// requirements for IPv4 are defined in RFC 791, RFC 1112 and RFC
-// 1122.
+// requirements for IPv4 are defined in RFC 791, RFC 1112, RFC 1122,
+// RFC 3678 and RFC 4607.
 //
 //
 // Unicasting
