@@ -186,13 +186,30 @@ func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 	}
 	rs, ok := f.(*RSTStreamFrame)
 	if !ok {
-		st.t.Fatalf("got a %T; want *RSTStream", f)
+		st.t.Fatalf("got a %T; want *RSTStreamFrame", f)
 	}
 	if rs.FrameHeader.StreamID != streamID {
 		st.t.Fatalf("RSTStream StreamID = %d; want %d", rs.FrameHeader.StreamID, streamID)
 	}
 	if rs.ErrCode != uint32(errCode) {
 		st.t.Fatalf("RSTStream ErrCode = %d (%s); want %d (%s)", rs.ErrCode, rs.ErrCode, errCode, errCode)
+	}
+}
+
+func (st *serverTester) wantWindowUpdate(streamID, incr uint32) {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatalf("Error while expecting an RSTStream frame: %v", err)
+	}
+	wu, ok := f.(*WindowUpdateFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *WindowUpdateFrame", f)
+	}
+	if wu.FrameHeader.StreamID != streamID {
+		st.t.Fatalf("WindowUpdate StreamID = %d; want %d", wu.FrameHeader.StreamID, streamID)
+	}
+	if wu.Increment != incr {
+		st.t.Fatalf("WindowUpdate increment = %d; want %d", wu.Increment, incr)
 	}
 }
 
@@ -628,6 +645,51 @@ func TestServer_Ping(t *testing.T) {
 	}
 }
 
+func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
+	puppet := newHandlerPuppet()
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		puppet.act(w, r)
+	})
+	defer st.Close()
+	defer puppet.done()
+
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1, // clients send odd numbers
+		BlockFragment: encodeHeader(t, ":method", "POST"),
+		EndStream:     false, // data coming
+		EndHeaders:    true,
+	})
+	st.writeData(1, true, []byte("abcdef"))
+	puppet.do(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 3)
+		_, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if string(buf) != "abc" {
+			t.Errorf("read %q; want abc", buf)
+		}
+	})
+	st.wantWindowUpdate(0, 3)
+	st.wantWindowUpdate(1, 3)
+	puppet.do(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 3)
+		_, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if string(buf) != "def" {
+			t.Errorf("read %q; want abc", buf)
+		}
+	})
+	st.wantWindowUpdate(0, 3)
+	st.wantWindowUpdate(1, 3)
+}
+
 // TODO: test HEADERS w/o EndHeaders + another HEADERS (should get rejected)
 // TODO: test HEADERS w/ EndHeaders + a continuation HEADERS (should get rejected)
 
@@ -805,4 +867,33 @@ func encodeHeader(t *testing.T, headers ...string) []byte {
 		}
 	}
 	return buf.Bytes()
+}
+
+type puppetCommand struct {
+	fn   func(w http.ResponseWriter, r *http.Request)
+	done chan<- bool
+}
+
+type handlerPuppet struct {
+	ch chan puppetCommand
+}
+
+func newHandlerPuppet() *handlerPuppet {
+	return &handlerPuppet{
+		ch: make(chan puppetCommand),
+	}
+}
+
+func (p *handlerPuppet) act(w http.ResponseWriter, r *http.Request) {
+	for cmd := range p.ch {
+		cmd.fn(w, r)
+		cmd.done <- true
+	}
+}
+
+func (p *handlerPuppet) done() { close(p.ch) }
+func (p *handlerPuppet) do(fn func(http.ResponseWriter, *http.Request)) {
+	done := make(chan bool)
+	p.ch <- puppetCommand{fn, done}
+	<-done
 }

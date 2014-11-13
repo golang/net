@@ -69,12 +69,13 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		hs:                hs,
 		conn:              c,
 		handler:           h,
-		framer:            NewFramer(c, c),
+		framer:            NewFramer(c, c), // TODO: write to a (custom?) buffered writer that can alternate when it's in buffered mode.
 		streams:           make(map[uint32]*stream),
 		canonHeader:       make(map[string]string),
 		readFrameCh:       make(chan frameAndProcessed),
 		readFrameErrCh:    make(chan error, 1),
 		writeHeaderCh:     make(chan headerWriteReq), // must not be buffered
+		windowUpdateCh:    make(chan windowUpdateReq, 8),
 		flow:              newFlow(initialWindowSize),
 		doneServing:       make(chan struct{}),
 		maxWriteFrameSize: initialMaxFrameSize,
@@ -107,8 +108,9 @@ type serverConn struct {
 	readFrameCh    chan frameAndProcessed // written by serverConn.readFrames
 	readFrameErrCh chan error
 	writeHeaderCh  chan headerWriteReq // must not be buffered
-	serveG         goroutineLock       // used to verify funcs are on serve()
-	flow           *flow               // the connection-wide one
+	windowUpdateCh chan windowUpdateReq
+	serveG         goroutineLock // used to verify funcs are on serve()
+	flow           *flow         // the connection-wide one
 
 	// Everything following is owned by the serve loop; use serveG.check()
 	maxStreamID       uint32 // max ever seen
@@ -337,6 +339,11 @@ func (sc *serverConn) serve() {
 		case hr := <-sc.writeHeaderCh:
 			if err := sc.writeHeaderInLoop(hr); err != nil {
 				sc.condlogf(err, "error writing response header: %v", err)
+				return
+			}
+		case wu := <-sc.windowUpdateCh:
+			if err := sc.sendWindowUpdateInLoop(wu); err != nil {
+				sc.condlogf(err, "error writing window update: %v", err)
 				return
 			}
 		case fp, ok := <-sc.readFrameCh:
@@ -753,6 +760,36 @@ func (sc *serverConn) writeHeaderInLoop(req headerWriteReq) error {
 	})
 }
 
+type windowUpdateReq struct {
+	streamID uint32
+	n        uint32
+}
+
+// called from handler goroutines
+func (sc *serverConn) sendWindowUpdate(streamID uint32, n int) {
+	const maxUint32 = 2147483647
+	for n >= maxUint32 {
+		sc.windowUpdateCh <- windowUpdateReq{streamID, maxUint32}
+		n -= maxUint32
+	}
+	if n > 0 {
+		sc.windowUpdateCh <- windowUpdateReq{streamID, uint32(n)}
+	}
+}
+
+func (sc *serverConn) sendWindowUpdateInLoop(wu windowUpdateReq) error {
+	sc.serveG.check()
+	// TODO: sc.bufferedOutput.StartBuffering()
+	if err := sc.framer.WriteWindowUpdate(0, wu.n); err != nil {
+		return err
+	}
+	if err := sc.framer.WriteWindowUpdate(wu.streamID, wu.n); err != nil {
+		return err
+	}
+	// TODO: return sc.bufferedOutput.Flush()
+	return nil
+}
+
 // ConfigureServer adds HTTP/2 support to a net/http Server.
 //
 // The configuration conf may be nil.
@@ -810,6 +847,7 @@ func (b *requestBody) Read(p []byte) (n int, err error) {
 	}
 	n, err = b.pipe.Read(p)
 	if n > 0 {
+		b.sc.sendWindowUpdate(b.streamID, n)
 		// TODO: tell b.sc to send back 'n' flow control quota credits to the sender
 	}
 	return
