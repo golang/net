@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build dragonfly netbsd openbsd
-
 package ipv6
 
 import (
 	"net"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/net/internal/iana"
 )
@@ -36,8 +35,12 @@ var (
 		ssoPathMTU:             {iana.ProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo},
 		ssoChecksum:            {iana.ProtocolIPv6, sysIPV6_CHECKSUM, ssoTypeInt},
 		ssoICMPFilter:          {iana.ProtocolIPv6ICMP, sysICMP6_FILTER, ssoTypeICMPFilter},
-		ssoJoinGroup:           {iana.ProtocolIPv6, sysIPV6_JOIN_GROUP, ssoTypeIPMreq},
-		ssoLeaveGroup:          {iana.ProtocolIPv6, sysIPV6_LEAVE_GROUP, ssoTypeIPMreq},
+		ssoJoinGroup:           {iana.ProtocolIPv6, sysMCAST_JOIN_GROUP, ssoTypeGroupReq},
+		ssoLeaveGroup:          {iana.ProtocolIPv6, sysMCAST_LEAVE_GROUP, ssoTypeGroupReq},
+		ssoJoinSourceGroup:     {iana.ProtocolIPv6, sysMCAST_JOIN_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoLeaveSourceGroup:    {iana.ProtocolIPv6, sysMCAST_LEAVE_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoBlockSourceGroup:    {iana.ProtocolIPv6, sysMCAST_BLOCK_SOURCE, ssoTypeGroupSourceReq},
+		ssoUnblockSourceGroup:  {iana.ProtocolIPv6, sysMCAST_UNBLOCK_SOURCE, ssoTypeGroupSourceReq},
 	}
 )
 
@@ -54,4 +57,22 @@ func (pi *sysInet6Pktinfo) setIfindex(i int) {
 
 func (mreq *sysIPv6Mreq) setIfindex(i int) {
 	mreq.Interface = uint32(i)
+}
+
+func (gr *sysGroupReq) setGroup(grp net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gr.Group))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+}
+
+func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Group))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+	sa = (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Source))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], src)
 }

@@ -7,6 +7,7 @@ package ipv6
 import (
 	"net"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/net/internal/iana"
 )
@@ -47,10 +48,11 @@ func init() {
 			continue
 		}
 	}
-	// The IPV6_RECVPATHMTU and IPV6_PATHMTU options were
-	// introduced in OS X 10.7 (Darwin 11.0.0).
+	// The IP_PKTINFO and protocol-independent multicast API were
+	// introduced in OS X 10.7 (Darwin 11.0.0). But it looks like
+	// those features require OS X 10.8 (Darwin 12.0.0) and above.
 	// See http://support.apple.com/kb/HT1633.
-	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '1' {
+	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '2' {
 		ctlOpts[ctlTrafficClass].name = sysIPV6_TCLASS
 		ctlOpts[ctlTrafficClass].length = 4
 		ctlOpts[ctlTrafficClass].marshal = marshalTrafficClass
@@ -70,6 +72,22 @@ func init() {
 		sockOpts[ssoPathMTU].level = iana.ProtocolIPv6
 		sockOpts[ssoPathMTU].name = sysIPV6_PATHMTU
 		sockOpts[ssoPathMTU].typ = ssoTypeMTUInfo
+		sockOpts[ssoJoinGroup].name = sysMCAST_JOIN_GROUP
+		sockOpts[ssoJoinGroup].typ = ssoTypeGroupReq
+		sockOpts[ssoLeaveGroup].name = sysMCAST_LEAVE_GROUP
+		sockOpts[ssoLeaveGroup].typ = ssoTypeGroupReq
+		sockOpts[ssoJoinSourceGroup].level = iana.ProtocolIPv6
+		sockOpts[ssoJoinSourceGroup].name = sysMCAST_JOIN_SOURCE_GROUP
+		sockOpts[ssoJoinSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoLeaveSourceGroup].level = iana.ProtocolIPv6
+		sockOpts[ssoLeaveSourceGroup].name = sysMCAST_LEAVE_SOURCE_GROUP
+		sockOpts[ssoLeaveSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoBlockSourceGroup].level = iana.ProtocolIPv6
+		sockOpts[ssoBlockSourceGroup].name = sysMCAST_BLOCK_SOURCE
+		sockOpts[ssoBlockSourceGroup].typ = ssoTypeGroupSourceReq
+		sockOpts[ssoUnblockSourceGroup].level = iana.ProtocolIPv6
+		sockOpts[ssoUnblockSourceGroup].name = sysMCAST_UNBLOCK_SOURCE
+		sockOpts[ssoUnblockSourceGroup].typ = ssoTypeGroupSourceReq
 	}
 }
 
@@ -86,4 +104,22 @@ func (pi *sysInet6Pktinfo) setIfindex(i int) {
 
 func (mreq *sysIPv6Mreq) setIfindex(i int) {
 	mreq.Interface = uint32(i)
+}
+
+func (gr *sysGroupReq) setGroup(grp net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gr.Pad_cgo_0[0]))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+}
+
+func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Pad_cgo_0[0]))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+	sa = (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Pad_cgo_1[0]))
+	sa.Len = sysSizeofSockaddrInet6
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], src)
 }

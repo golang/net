@@ -7,6 +7,7 @@ package ipv6
 import (
 	"net"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/net/internal/iana"
 )
@@ -33,8 +34,12 @@ var (
 		ssoPathMTU:             {iana.ProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo},
 		ssoChecksum:            {iana.ProtocolReserved, sysIPV6_CHECKSUM, ssoTypeInt},
 		ssoICMPFilter:          {iana.ProtocolIPv6ICMP, sysICMPV6_FILTER, ssoTypeICMPFilter},
-		ssoJoinGroup:           {iana.ProtocolIPv6, sysIPV6_ADD_MEMBERSHIP, ssoTypeIPMreq},
-		ssoLeaveGroup:          {iana.ProtocolIPv6, sysIPV6_DROP_MEMBERSHIP, ssoTypeIPMreq},
+		ssoJoinGroup:           {iana.ProtocolIPv6, sysMCAST_JOIN_GROUP, ssoTypeGroupReq},
+		ssoLeaveGroup:          {iana.ProtocolIPv6, sysMCAST_LEAVE_GROUP, ssoTypeGroupReq},
+		ssoJoinSourceGroup:     {iana.ProtocolIPv6, sysMCAST_JOIN_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoLeaveSourceGroup:    {iana.ProtocolIPv6, sysMCAST_LEAVE_SOURCE_GROUP, ssoTypeGroupSourceReq},
+		ssoBlockSourceGroup:    {iana.ProtocolIPv6, sysMCAST_BLOCK_SOURCE, ssoTypeGroupSourceReq},
+		ssoUnblockSourceGroup:  {iana.ProtocolIPv6, sysMCAST_UNBLOCK_SOURCE, ssoTypeGroupSourceReq},
 	}
 )
 
@@ -50,4 +55,19 @@ func (pi *sysInet6Pktinfo) setIfindex(i int) {
 
 func (mreq *sysIPv6Mreq) setIfindex(i int) {
 	mreq.Ifindex = int32(i)
+}
+
+func (gr *sysGroupReq) setGroup(grp net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gr.Group))
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+}
+
+func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Group))
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], grp)
+	sa = (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Source))
+	sa.Family = syscall.AF_INET6
+	copy(sa.Addr[:], src)
 }

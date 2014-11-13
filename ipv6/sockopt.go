@@ -20,6 +20,10 @@ const (
 	ssoICMPFilter                 // icmp filter, RFC 2292 or 3542
 	ssoJoinGroup                  // any-source multicast, RFC 3493
 	ssoLeaveGroup                 // any-source multicast, RFC 3493
+	ssoJoinSourceGroup            // source-specific multicast
+	ssoLeaveSourceGroup           // source-specific multicast
+	ssoBlockSourceGroup           // any-source or source-specific multicast
+	ssoUnblockSourceGroup         // any-source or source-specific multicast
 	ssoMax
 )
 
@@ -30,6 +34,8 @@ const (
 	ssoTypeICMPFilter
 	ssoTypeMTUInfo
 	ssoTypeIPMreq
+	ssoTypeGroupReq
+	ssoTypeGroupSourceReq
 )
 
 // A sockOpt represents a binding for sticky socket option.

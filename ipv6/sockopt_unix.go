@@ -101,8 +101,22 @@ func getMTUInfo(fd int, opt *sockOpt) (*net.Interface, int, error) {
 }
 
 func setGroup(fd int, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
-	if opt.name < 1 || opt.typ != ssoTypeIPMreq {
+	if opt.name < 1 {
 		return errOpNoSupport
 	}
-	return setsockoptIPMreq(fd, opt, ifi, grp)
+	switch opt.typ {
+	case ssoTypeIPMreq:
+		return setsockoptIPMreq(fd, opt, ifi, grp)
+	case ssoTypeGroupReq:
+		return setsockoptGroupReq(fd, opt, ifi, grp)
+	default:
+		return errOpNoSupport
+	}
+}
+
+func setSourceGroup(fd int, opt *sockOpt, ifi *net.Interface, grp, src net.IP) error {
+	if opt.name < 1 || opt.typ != ssoTypeGroupSourceReq {
+		return errOpNoSupport
+	}
+	return setsockoptGroupSourceReq(fd, opt, ifi, grp, src)
 }
