@@ -6,7 +6,6 @@
 package webdav
 
 // TODO: ETag, properties.
-// TODO: figure out what/when is responsible for path cleaning: no "../../etc/passwd"s.
 
 import (
 	"errors"
