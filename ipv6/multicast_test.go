@@ -18,6 +18,15 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
+var packetConnReadWriteMulticastUDPTests = []struct {
+	addr     string
+	grp, src *net.UDPAddr
+}{
+	{"[ff02::]:0", &net.UDPAddr{IP: net.ParseIP("ff02::114")}, nil}, // see RFC 4727
+
+	{"[ff30::8000:0]:0", &net.UDPAddr{IP: net.ParseIP("ff30::8000:1")}, &net.UDPAddr{IP: net.IPv6loopback}}, // see RFC 5771
+}
+
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
 	case "freebsd": // due to a bug on loopback marking
@@ -34,72 +43,90 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
-	c, err := net.ListenPacket("udp6", "[ff02::114]:0") // see RFC 4727
-	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
-	}
-	defer c.Close()
+	for _, tt := range packetConnReadWriteMulticastUDPTests {
+		c, err := net.ListenPacket("udp6", tt.addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
 
-	_, port, err := net.SplitHostPort(c.LocalAddr().String())
-	if err != nil {
-		t.Fatalf("net.SplitHostPort failed: %v", err)
-	}
-	dst, err := net.ResolveUDPAddr("udp6", "[ff02::114]:"+port) // see RFC 4727
-	if err != nil {
-		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
-	}
-
-	p := ipv6.NewPacketConn(c)
-	defer p.Close()
-	if err := p.JoinGroup(ifi, dst); err != nil {
-		t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
-	}
-	if err := p.SetMulticastInterface(ifi); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetMulticastInterface failed: %v", err)
-	}
-	if _, err := p.MulticastInterface(); err != nil {
-		t.Fatalf("ipv6.PacketConn.MulticastInterface failed: %v", err)
-	}
-	if err := p.SetMulticastLoopback(true); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetMulticastLoopback failed: %v", err)
-	}
-	if _, err := p.MulticastLoopback(); err != nil {
-		t.Fatalf("ipv6.PacketConn.MulticastLoopback failed: %v", err)
-	}
-
-	cm := ipv6.ControlMessage{
-		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
-		Src:          net.IPv6loopback,
-		IfIndex:      ifi.Index,
-	}
-	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
-	wb := []byte("HELLO-R-U-THERE")
-
-	for i, toggle := range []bool{true, false, true} {
-		if err := p.SetControlMessage(cf, toggle); err != nil {
-			if nettest.ProtocolNotSupported(err) {
-				t.Skipf("not supported on %q", runtime.GOOS)
+		grp := *tt.grp
+		grp.Port = c.LocalAddr().(*net.UDPAddr).Port
+		p := ipv6.NewPacketConn(c)
+		defer p.Close()
+		if tt.src == nil {
+			if err := p.JoinGroup(ifi, &grp); err != nil {
+				t.Fatal(err)
 			}
-			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
-		}
-		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
-		}
-		cm.HopLimit = i + 1
-		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
-		} else if n != len(wb) {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
-		}
-		rb := make([]byte, 128)
-		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
-		} else if !bytes.Equal(rb[:n], wb) {
-			t.Fatalf("got %v; expected %v", rb[:n], wb)
+			defer p.LeaveGroup(ifi, &grp)
 		} else {
-			t.Logf("rcvd cmsg: %v", cm)
+			if err := p.JoinSourceSpecificGroup(ifi, &grp, tt.src); err != nil {
+				switch runtime.GOOS {
+				case "freebsd", "linux":
+				default: // platforms that don't support IGMPv2/3 fail here
+					t.Logf("not supported on %q", runtime.GOOS)
+					continue
+				}
+				t.Fatal(err)
+			}
+			defer p.LeaveSourceSpecificGroup(ifi, &grp, tt.src)
+		}
+		if err := p.SetMulticastInterface(ifi); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.MulticastInterface(); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.SetMulticastLoopback(true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.MulticastLoopback(); err != nil {
+			t.Fatal(err)
+		}
+
+		cm := ipv6.ControlMessage{
+			TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
+			Src:          net.IPv6loopback,
+			IfIndex:      ifi.Index,
+		}
+		cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
+		wb := []byte("HELLO-R-U-THERE")
+
+		for i, toggle := range []bool{true, false, true} {
+			if err := p.SetControlMessage(cf, toggle); err != nil {
+				if nettest.ProtocolNotSupported(err) {
+					t.Logf("not supported on %q", runtime.GOOS)
+					continue
+				}
+				t.Fatal(err)
+			}
+			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+				t.Fatal(err)
+			}
+			cm.HopLimit = i + 1
+			if n, err := p.WriteTo(wb, &cm, &grp); err != nil {
+				t.Fatal(err)
+			} else if n != len(wb) {
+				t.Fatal(err)
+			}
+			rb := make([]byte, 128)
+			if n, cm, _, err := p.ReadFrom(rb); err != nil {
+				t.Fatal(err)
+			} else if !bytes.Equal(rb[:n], wb) {
+				t.Fatalf("got %v; expected %v", rb[:n], wb)
+			} else {
+				t.Logf("rcvd cmsg: %v", cm)
+			}
 		}
 	}
+}
+
+var packetConnReadWriteMulticastICMPTests = []struct {
+	grp, src *net.IPAddr
+}{
+	{&net.IPAddr{IP: net.ParseIP("ff02::114")}, nil}, // see RFC 4727
+
+	{&net.IPAddr{IP: net.ParseIP("ff30::8000:1")}, &net.IPAddr{IP: net.IPv6loopback}}, // see RFC 5771
 }
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
@@ -118,97 +145,110 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
-	c, err := net.ListenPacket("ip6:ipv6-icmp", "::")
-	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
-	}
-	defer c.Close()
-
-	dst, err := net.ResolveIPAddr("ip6", "ff02::114") // see RFC 4727
-	if err != nil {
-		t.Fatalf("net.ResolveIPAddr failed: %v", err)
-	}
-
-	pshicmp := icmp.IPv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP)
-	p := ipv6.NewPacketConn(c)
-	defer p.Close()
-	if err := p.JoinGroup(ifi, dst); err != nil {
-		t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
-	}
-	if err := p.SetMulticastInterface(ifi); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetMulticastInterface failed: %v", err)
-	}
-	if _, err := p.MulticastInterface(); err != nil {
-		t.Fatalf("ipv6.PacketConn.MulticastInterface failed: %v", err)
-	}
-	if err := p.SetMulticastLoopback(true); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetMulticastLoopback failed: %v", err)
-	}
-	if _, err := p.MulticastLoopback(); err != nil {
-		t.Fatalf("ipv6.PacketConn.MulticastLoopback failed: %v", err)
-	}
-
-	cm := ipv6.ControlMessage{
-		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
-		Src:          net.IPv6loopback,
-		IfIndex:      ifi.Index,
-	}
-	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
-
-	var f ipv6.ICMPFilter
-	f.SetAll(true)
-	f.Set(ipv6.ICMPTypeEchoReply, false)
-	if err := p.SetICMPFilter(&f); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetICMPFilter failed: %v", err)
-	}
-
-	var psh []byte
-	for i, toggle := range []bool{true, false, true} {
-		if toggle {
-			psh = nil
-			if err := p.SetChecksum(true, 2); err != nil {
-				t.Fatalf("ipv6.PacketConn.SetChecksum failed: %v", err)
-			}
-		} else {
-			psh = pshicmp
-			// Some platforms never allow to disable the
-			// kernel checksum processing.
-			p.SetChecksum(false, -1)
-		}
-		wb, err := (&icmp.Message{
-			Type: ipv6.ICMPTypeEchoRequest, Code: 0,
-			Body: &icmp.Echo{
-				ID: os.Getpid() & 0xffff, Seq: i + 1,
-				Data: []byte("HELLO-R-U-THERE"),
-			},
-		}).Marshal(psh)
+	for _, tt := range packetConnReadWriteMulticastICMPTests {
+		c, err := net.ListenPacket("ip6:ipv6-icmp", "::")
 		if err != nil {
-			t.Fatalf("icmp.Message.Marshal failed: %v", err)
+			t.Fatal(err)
 		}
-		if err := p.SetControlMessage(cf, toggle); err != nil {
-			if nettest.ProtocolNotSupported(err) {
-				t.Skipf("not supported on %q", runtime.GOOS)
+		defer c.Close()
+
+		pshicmp := icmp.IPv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, tt.grp.IP)
+		p := ipv6.NewPacketConn(c)
+		defer p.Close()
+		if tt.src == nil {
+			if err := p.JoinGroup(ifi, tt.grp); err != nil {
+				t.Fatal(err)
 			}
-			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
-		}
-		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetDeadline failed: %v", err)
-		}
-		cm.HopLimit = i + 1
-		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
-		} else if n != len(wb) {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
-		}
-		rb := make([]byte, 128)
-		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
+			defer p.LeaveGroup(ifi, tt.grp)
 		} else {
-			t.Logf("rcvd cmsg: %v", cm)
-			if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
-				t.Fatalf("icmp.ParseMessage failed: %v", err)
-			} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
-				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
+			if err := p.JoinSourceSpecificGroup(ifi, tt.grp, tt.src); err != nil {
+				switch runtime.GOOS {
+				case "freebsd", "linux":
+				default: // platforms that don't support IGMPv2/3 fail here
+					t.Logf("not supported on %q", runtime.GOOS)
+					continue
+				}
+				t.Fatal(err)
+			}
+			defer p.LeaveSourceSpecificGroup(ifi, tt.grp, tt.src)
+		}
+		if err := p.SetMulticastInterface(ifi); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.MulticastInterface(); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.SetMulticastLoopback(true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.MulticastLoopback(); err != nil {
+			t.Fatal(err)
+		}
+
+		cm := ipv6.ControlMessage{
+			TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
+			Src:          net.IPv6loopback,
+			IfIndex:      ifi.Index,
+		}
+		cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
+
+		var f ipv6.ICMPFilter
+		f.SetAll(true)
+		f.Set(ipv6.ICMPTypeEchoReply, false)
+		if err := p.SetICMPFilter(&f); err != nil {
+			t.Fatal(err)
+		}
+
+		var psh []byte
+		for i, toggle := range []bool{true, false, true} {
+			if toggle {
+				psh = nil
+				if err := p.SetChecksum(true, 2); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				psh = pshicmp
+				// Some platforms never allow to
+				// disable the kernel checksum
+				// processing.
+				p.SetChecksum(false, -1)
+			}
+			wb, err := (&icmp.Message{
+				Type: ipv6.ICMPTypeEchoRequest, Code: 0,
+				Body: &icmp.Echo{
+					ID: os.Getpid() & 0xffff, Seq: i + 1,
+					Data: []byte("HELLO-R-U-THERE"),
+				},
+			}).Marshal(psh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.SetControlMessage(cf, toggle); err != nil {
+				if nettest.ProtocolNotSupported(err) {
+					t.Logf("not supported on %q", runtime.GOOS)
+					continue
+				}
+				t.Fatal(err)
+			}
+			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+				t.Fatal(err)
+			}
+			cm.HopLimit = i + 1
+			if n, err := p.WriteTo(wb, &cm, tt.grp); err != nil {
+				t.Fatal(err)
+			} else if n != len(wb) {
+				t.Fatalf("got %v; expected %v", n, len(wb))
+			}
+			rb := make([]byte, 128)
+			if n, cm, _, err := p.ReadFrom(rb); err != nil {
+				t.Fatal(err)
+			} else {
+				t.Logf("rcvd cmsg: %v", cm)
+				if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
+					t.Fatal(err)
+				} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
+					t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
+				}
 			}
 		}
 	}

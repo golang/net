@@ -16,10 +16,13 @@ import (
 
 var packetConnMulticastSocketOptionTests = []struct {
 	net, proto, addr string
-	gaddr            net.Addr
+	grp, src         net.Addr
 }{
-	{"udp6", "", "[ff02::]:0", &net.UDPAddr{IP: net.ParseIP("ff02::114")}}, // see RFC 4727
-	{"ip6", ":ipv6-icmp", "::", &net.IPAddr{IP: net.ParseIP("ff02::114")}}, // see RFC 4727
+	{"udp6", "", "[ff02::]:0", &net.UDPAddr{IP: net.ParseIP("ff02::114")}, nil}, // see RFC 4727
+	{"ip6", ":ipv6-icmp", "::", &net.IPAddr{IP: net.ParseIP("ff02::115")}, nil}, // see RFC 4727
+
+	{"udp6", "", "[ff30::8000:0]:0", &net.UDPAddr{IP: net.ParseIP("ff30::8000:1")}, &net.UDPAddr{IP: net.IPv6loopback}}, // see RFC 5771
+	{"ip6", ":ipv6-icmp", "::", &net.IPAddr{IP: net.ParseIP("ff30::8000:2")}, &net.IPAddr{IP: net.IPv6loopback}},        // see RFC 5771
 }
 
 func TestPacketConnMulticastSocketOptions(t *testing.T) {
@@ -37,42 +40,118 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 
 	for _, tt := range packetConnMulticastSocketOptionTests {
 		if tt.net == "ip6" && os.Getuid() != 0 {
-			t.Skip("must be root")
+			t.Log("must be root")
+			continue
 		}
 		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
 		if err != nil {
-			t.Fatalf("net.ListenPacket failed: %v", err)
+			t.Fatal(err)
 		}
 		defer c.Close()
-
 		p := ipv6.NewPacketConn(c)
+		defer p.Close()
 
-		hoplim := 255
-		if err := p.SetMulticastHopLimit(hoplim); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetMulticastHopLimit failed: %v", err)
+		if tt.src == nil {
+			testMulticastSocketOptions(t, p, ifi, tt.grp)
+		} else {
+			testSourceSpecificMulticastSocketOptions(t, p, ifi, tt.grp, tt.src)
 		}
-		if v, err := p.MulticastHopLimit(); err != nil {
-			t.Fatalf("ipv6.PacketConn.MulticastHopLimit failed: %v", err)
-		} else if v != hoplim {
-			t.Fatalf("got unexpected multicast hop limit %v; expected %v", v, hoplim)
-		}
+	}
+}
 
-		for _, toggle := range []bool{true, false} {
-			if err := p.SetMulticastLoopback(toggle); err != nil {
-				t.Fatalf("ipv6.PacketConn.SetMulticastLoopback failed: %v", err)
-			}
-			if v, err := p.MulticastLoopback(); err != nil {
-				t.Fatalf("ipv6.PacketConn.MulticastLoopback failed: %v", err)
-			} else if v != toggle {
-				t.Fatalf("got unexpected multicast loopback %v; expected %v", v, toggle)
-			}
-		}
+type testIPv6MulticastConn interface {
+	MulticastHopLimit() (int, error)
+	SetMulticastHopLimit(ttl int) error
+	MulticastLoopback() (bool, error)
+	SetMulticastLoopback(bool) error
+	JoinGroup(*net.Interface, net.Addr) error
+	LeaveGroup(*net.Interface, net.Addr) error
+	JoinSourceSpecificGroup(*net.Interface, net.Addr, net.Addr) error
+	LeaveSourceSpecificGroup(*net.Interface, net.Addr, net.Addr) error
+	ExcludeSourceSpecificGroup(*net.Interface, net.Addr, net.Addr) error
+	IncludeSourceSpecificGroup(*net.Interface, net.Addr, net.Addr) error
+}
 
-		if err := p.JoinGroup(ifi, tt.gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.JoinGroup(%v, %v) failed: %v", ifi, tt.gaddr, err)
+func testMulticastSocketOptions(t *testing.T, c testIPv6MulticastConn, ifi *net.Interface, grp net.Addr) {
+	const hoplim = 255
+	if err := c.SetMulticastHopLimit(hoplim); err != nil {
+		t.Error(err)
+		return
+	}
+	if v, err := c.MulticastHopLimit(); err != nil {
+		t.Error(err)
+		return
+	} else if v != hoplim {
+		t.Errorf("got unexpected multicast hop limit %v; expected %v", v, hoplim)
+		return
+	}
+
+	for _, toggle := range []bool{true, false} {
+		if err := c.SetMulticastLoopback(toggle); err != nil {
+			t.Error(err)
+			return
 		}
-		if err := p.LeaveGroup(ifi, tt.gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.LeaveGroup(%v, %v) failed: %v", ifi, tt.gaddr, err)
+		if v, err := c.MulticastLoopback(); err != nil {
+			t.Error(err)
+			return
+		} else if v != toggle {
+			t.Errorf("got unexpected multicast loopback %v; expected %v", v, toggle)
+			return
 		}
+	}
+
+	if err := c.JoinGroup(ifi, grp); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := c.LeaveGroup(ifi, grp); err != nil {
+		t.Error(err)
+		return
+	}
+}
+
+func testSourceSpecificMulticastSocketOptions(t *testing.T, c testIPv6MulticastConn, ifi *net.Interface, grp, src net.Addr) {
+	// MCAST_JOIN_GROUP -> MCAST_BLOCK_SOURCE -> MCAST_UNBLOCK_SOURCE -> MCAST_LEAVE_GROUP
+	if err := c.JoinGroup(ifi, grp); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := c.ExcludeSourceSpecificGroup(ifi, grp, src); err != nil {
+		switch runtime.GOOS {
+		case "freebsd", "linux":
+		default: // platforms that don't support IGMPv2/3 fail here
+			t.Logf("not supported on %q", runtime.GOOS)
+			return
+		}
+		t.Error(err)
+		return
+	}
+	if err := c.IncludeSourceSpecificGroup(ifi, grp, src); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := c.LeaveGroup(ifi, grp); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// MCAST_JOIN_SOURCE_GROUP -> MCAST_LEAVE_SOURCE_GROUP
+	if err := c.JoinSourceSpecificGroup(ifi, grp, src); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := c.LeaveSourceSpecificGroup(ifi, grp, src); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// MCAST_JOIN_SOURCE_GROUP -> MCAST_LEAVE_GROUP
+	if err := c.JoinSourceSpecificGroup(ifi, grp, src); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := c.LeaveGroup(ifi, grp); err != nil {
+		t.Error(err)
+		return
 	}
 }

@@ -7,7 +7,8 @@
 //
 // The package provides IP-level socket options that allow
 // manipulation of IPv6 facilities.  The IPv6 and socket options for
-// IPv6 are defined in RFC 2460, RFC 3493 and RFC 3542.
+// IPv6 are defined in RFC 2460, RFC 3493, RFC 3542, RFC 3678 and RFC
+// 4607.
 //
 //
 // Unicasting

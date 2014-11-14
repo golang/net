@@ -93,7 +93,11 @@ func (c *dgramOpt) SetMulticastLoopback(on bool) error {
 	return setInt(fd, &sockOpts[ssoMulticastLoopback], boolint(on))
 }
 
-// JoinGroup joins the group address group on the interface ifi.
+// JoinGroup joins the group address group on the interface ifi. By
+// default all sources that can cast data to group are accepted. It's
+// possible to mute and unmute data transmission from a specific
+// source by using ExcludeSourceSpecificGroup and
+// IncludeSourceSpecificGroup.
 // It uses the system assigned multicast interface when ifi is nil,
 // although this is not recommended because the assignment depends on
 // platforms and sometimes it might require routing configuration.
@@ -113,6 +117,8 @@ func (c *dgramOpt) JoinGroup(ifi *net.Interface, group net.Addr) error {
 }
 
 // LeaveGroup leaves the group address group on the interface ifi.
+// It's allowed to leave the group which is formed by
+// JoinSourceSpecificGroup for convenience.
 func (c *dgramOpt) LeaveGroup(ifi *net.Interface, group net.Addr) error {
 	if !c.ok() {
 		return syscall.EINVAL
@@ -126,6 +132,94 @@ func (c *dgramOpt) LeaveGroup(ifi *net.Interface, group net.Addr) error {
 		return errMissingAddress
 	}
 	return setGroup(fd, &sockOpts[ssoLeaveGroup], ifi, grp)
+}
+
+// JoinSourceSpecificGroup joins the source-specific group consisting
+// group and source on the interface ifi. It uses the system assigned
+// multicast interface when ifi is nil, although this is not
+// recommended because the assignment depends on platforms and
+// sometimes it might require routing configuration.
+func (c *dgramOpt) JoinSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	if !c.ok() {
+		return syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return err
+	}
+	grp := netAddrToIP16(group)
+	if grp == nil {
+		return errMissingAddress
+	}
+	src := netAddrToIP16(source)
+	if src == nil {
+		return errMissingAddress
+	}
+	return setSourceGroup(fd, &sockOpts[ssoJoinSourceGroup], ifi, grp, src)
+}
+
+// LeaveSourceSpecificGroup leaves the source-specific group on the
+// interface ifi.
+func (c *dgramOpt) LeaveSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	if !c.ok() {
+		return syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return err
+	}
+	grp := netAddrToIP16(group)
+	if grp == nil {
+		return errMissingAddress
+	}
+	src := netAddrToIP16(source)
+	if src == nil {
+		return errMissingAddress
+	}
+	return setSourceGroup(fd, &sockOpts[ssoLeaveSourceGroup], ifi, grp, src)
+}
+
+// ExcludeSourceSpecificGroup excludes the source-specific group from
+// the already joined groups by either JoinGroup or
+// JoinSourceSpecificGroup on the interface ifi.
+func (c *dgramOpt) ExcludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	if !c.ok() {
+		return syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return err
+	}
+	grp := netAddrToIP16(group)
+	if grp == nil {
+		return errMissingAddress
+	}
+	src := netAddrToIP16(source)
+	if src == nil {
+		return errMissingAddress
+	}
+	return setSourceGroup(fd, &sockOpts[ssoBlockSourceGroup], ifi, grp, src)
+}
+
+// IncludeSourceSpecificGroup includes the excluded source-specific
+// group by ExcludeSourceSpecificGroup again on the interface ifi.
+func (c *dgramOpt) IncludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
+	if !c.ok() {
+		return syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return err
+	}
+	grp := netAddrToIP16(group)
+	if grp == nil {
+		return errMissingAddress
+	}
+	src := netAddrToIP16(source)
+	if src == nil {
+		return errMissingAddress
+	}
+	return setSourceGroup(fd, &sockOpts[ssoUnblockSourceGroup], ifi, grp, src)
 }
 
 // Checksum reports whether the kernel will compute, store or verify a
