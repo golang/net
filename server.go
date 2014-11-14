@@ -841,9 +841,10 @@ type responseWriterState struct {
 	wbuf bytes.Buffer
 
 	// mutated by http.Handler goroutine:
-	h            http.Header // h goes from maybe-nil to non-nil; contents changed by http.Handler goroutine
-	wroteHeaders bool
-	calledHeader bool
+	h               http.Header // h goes from maybe-nil to non-nil; contents changed by http.Handler goroutine
+	wroteHeaders    bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
+	writeHeaderCode int
+	calledHeader    bool
 }
 
 // Optional http.ResponseWriter interfaces implemented.
@@ -881,12 +882,13 @@ func (w *responseWriter) WriteHeader(code int) {
 	if rws.wroteHeaders {
 		return
 	}
+	rws.wroteHeaders = true
+	rws.writeHeaderCode = code
 	// TODO: defer actually writing this frame until a Flush or
 	// handlerDone, like net/http's Server. then we can coalesce
 	// e.g. a 204 response to have a Header response frame with
 	// END_STREAM set, without a separate frame being sent in
 	// handleDone.
-	rws.wroteHeaders = true
 	rws.sc.writeHeader(headerWriteReq{
 		streamID:    rws.streamID,
 		httpResCode: code,
@@ -894,12 +896,19 @@ func (w *responseWriter) WriteHeader(code int) {
 	})
 }
 
-func (w *responseWriter) WriteString(s string) (n int, err error) {
-	// TODO: better impl
-	return w.Write([]byte(s))
+// The Life Of A Write is like this:
+//
+// TODO: copy/adapt the similar comment from Go's http server.go
+func (w *responseWriter) Write(p []byte) (n int, err error) {
+	return w.write(len(p), p, "")
 }
 
-func (w *responseWriter) Write(p []byte) (n int, err error) {
+func (w *responseWriter) WriteString(s string) (n int, err error) {
+	return w.write(len(s), nil, s)
+}
+
+// either dataB or dataS is non-zero.
+func (w *responseWriter) write(lenData int, dataB []byte, dataS string) (n int, err error) {
 	rws := w.rws
 	if rws == nil {
 		panic("Write called after Handler finished")
@@ -907,7 +916,13 @@ func (w *responseWriter) Write(p []byte) (n int, err error) {
 	if !rws.wroteHeaders {
 		w.WriteHeader(200)
 	}
-	return rws.sc.writeData(rws.streamID, p) // blocks waiting for tokens
+	// TODO: write to a bufio.Writer instead like the
+	if dataB != nil {
+		rws.wbuf.Write(dataB)
+	} else {
+		rws.wbuf.WriteString(dataS)
+	}
+	return lenData, nil
 }
 
 func (w *responseWriter) handlerDone() {
