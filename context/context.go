@@ -124,7 +124,7 @@ type Context interface {
 	//
 	// 	// NewContext returns a new Context that carries value u.
 	// 	func NewContext(ctx context.Context, u *User) context.Context {
-	// 		return context.WithValue(userKey, u)
+	// 		return context.WithValue(ctx, userKey, u)
 	// 	}
 	//
 	// 	// FromContext returns the User value stored in ctx, if any.
