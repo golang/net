@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bradfitz/http2/hpack"
 )
@@ -197,7 +198,7 @@ func (sc *serverConn) condlogf(err error, format string, args ...interface{}) {
 		return
 	}
 	str := err.Error()
-	if strings.Contains(str, "use of closed network connection") {
+	if err == io.EOF || strings.Contains(str, "use of closed network connection") {
 		// Boring, expected errors.
 		sc.vlogf(format, args...)
 	} else {
@@ -314,18 +315,10 @@ func (sc *serverConn) serve() {
 
 	sc.vlogf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 
-	// Read the client preface
-	buf := make([]byte, len(ClientPreface))
-	// TODO: timeout reading from the client
-	if _, err := io.ReadFull(sc.conn, buf); err != nil {
-		sc.logf("error reading client preface: %v", err)
+	if err := sc.readPreface(); err != nil {
+		sc.condlogf(err, "Error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
 		return
 	}
-	if !bytes.Equal(buf, clientPreface) {
-		sc.logf("bogus greeting from client: %q", buf)
-		return
-	}
-	sc.vlogf("client %v said hello", sc.conn.RemoteAddr())
 
 	f, err := sc.framer.ReadFrame() // TODO: timeout
 	if err != nil {
@@ -405,6 +398,35 @@ func (sc *serverConn) serve() {
 				return
 			}
 		}
+	}
+}
+
+// readPreface reads the ClientPreface greeting from the peer
+// or returns an error on timeout or an invalid greeting.
+func (sc *serverConn) readPreface() error {
+	errc := make(chan error, 1)
+	go func() {
+		// Read the client preface
+		buf := make([]byte, len(ClientPreface))
+		// TODO: timeout reading from the client
+		if _, err := io.ReadFull(sc.conn, buf); err != nil {
+			errc <- err
+		} else if !bytes.Equal(buf, clientPreface) {
+			errc <- fmt.Errorf("bogus greeting %q", buf)
+		} else {
+			errc <- nil
+		}
+	}()
+	timer := time.NewTimer(5 * time.Second) // TODO: configurable on *Server?
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return errors.New("timeout waiting for client preface")
+	case err := <-errc:
+		if err == nil {
+			sc.vlogf("client %v said hello", sc.conn.RemoteAddr())
+		}
+		return err
 	}
 }
 
