@@ -77,7 +77,6 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		handler:           h,
 		framer:            NewFramer(c, c), // TODO: write to a (custom?) buffered writer that can alternate when it's in buffered mode.
 		streams:           make(map[uint32]*stream),
-		canonHeader:       make(map[string]string),
 		readFrameCh:       make(chan frameAndProcessed),
 		readFrameErrCh:    make(chan error, 1), // must be buffered for 1
 		wantWriteFrameCh:  make(chan frameWriteMsg, 8),
@@ -258,12 +257,19 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 
 func (sc *serverConn) canonicalHeader(v string) string {
 	sc.serveG.check()
-	// TODO: use a sync.Pool instead of putting the cache on *serverConn?
-	cv, ok := sc.canonHeader[v]
-	if !ok {
-		cv = http.CanonicalHeaderKey(v)
-		sc.canonHeader[v] = cv
+	cv, ok := commonCanonHeader[v]
+	if ok {
+		return cv
 	}
+	cv, ok = sc.canonHeader[v]
+	if ok {
+		return cv
+	}
+	if sc.canonHeader == nil {
+		sc.canonHeader = make(map[string]string)
+	}
+	cv = http.CanonicalHeaderKey(v)
+	sc.canonHeader[v] = cv
 	return cv
 }
 
@@ -845,15 +851,13 @@ func (sc *serverConn) writeHeadersFrame(v interface{}) error {
 	sc.headerWriteBuf.Reset()
 	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(req.httpResCode)})
 	for k, vv := range req.h {
+		k = lowerHeader(k)
 		for _, v := range vv {
 			// TODO: more of "8.1.2.2 Connection-Specific Header Fields"
-			if k == "Transfer-Encoding" && v != "trailers" {
+			if k == "transfer-encoding" && v != "trailers" {
 				continue
 			}
-			// TODO: for gargage, cache lowercase copies of headers at
-			// least for common ones and/or popular recent ones for
-			// this serverConn. LRU?
-			sc.hpackEncoder.WriteField(hpack.HeaderField{Name: strings.ToLower(k), Value: v})
+			sc.hpackEncoder.WriteField(hpack.HeaderField{Name: k, Value: v})
 		}
 	}
 	if req.contentType != "" {
