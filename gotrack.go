@@ -36,6 +36,15 @@ func (g goroutineLock) check() {
 	}
 }
 
+func (g goroutineLock) checkNotOn() {
+	if !DebugGoroutines {
+		return
+	}
+	if curGoroutineID() == uint64(g) {
+		panic("running on the wrong goroutine")
+	}
+}
+
 var goroutineSpace = []byte("goroutine ")
 
 func curGoroutineID() uint64 {
