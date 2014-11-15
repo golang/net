@@ -294,6 +294,9 @@ func TestServer_Request_Get(t *testing.T) {
 		if r.Method != "GET" {
 			t.Errorf("Method = %q; want GET", r.Method)
 		}
+		if r.URL.Path != "/" {
+			t.Errorf("URL.Path = %q; want /", r.URL.Path)
+		}
 		if r.ContentLength != 0 {
 			t.Errorf("ContentLength = %v; want 0", r.ContentLength)
 		}
@@ -314,6 +317,24 @@ func TestServer_Request_Get(t *testing.T) {
 		}
 		if n, err := r.Body.Read([]byte(" ")); err != io.EOF || n != 0 {
 			t.Errorf("Read = %d, %v; want 0, EOF", n, err)
+		}
+	})
+}
+
+func TestServer_Request_Get_PathSlashes(t *testing.T) {
+	testServerRequest(t, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: encodeHeader(t, ":path", "/%2f/"),
+			EndStream:     true, // no DATA frames
+			EndHeaders:    true,
+		})
+	}, func(r *http.Request) {
+		if r.RequestURI != "/%2f/" {
+			t.Errorf("RequestURI = %q; want /%2f/", r.RequestURI)
+		}
+		if r.URL.Path != "///" {
+			t.Errorf("URL.Path = %q; want ///", r.URL.Path)
 		}
 	})
 }

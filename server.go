@@ -718,9 +718,14 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		sc:       sc,
 		streamID: rp.stream.id,
 	}
+	url, err := url.ParseRequestURI(rp.path)
+	if err != nil {
+		// TODO: find the right error code?
+		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
+	}
 	req := &http.Request{
 		Method:     rp.method,
-		URL:        &url.URL{},
+		URL:        url,
 		RemoteAddr: sc.conn.RemoteAddr().String(),
 		Header:     rp.header,
 		RequestURI: rp.path,
