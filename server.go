@@ -331,10 +331,7 @@ func (sc *serverConn) serve() {
 
 	sc.vlogf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 
-	if err := sc.framer.WriteSettings( /* TODO: actual settings */ ); err != nil {
-		sc.logf("error writing server's initial settings: %v", err)
-		return
-	}
+	sc.enqueueFrameWrite(frameWriteMsg{write: (*serverConn).sendInitialSettings})
 
 	if err := sc.readPreface(); err != nil {
 		sc.condlogf(err, "Error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
@@ -367,6 +364,11 @@ func (sc *serverConn) serve() {
 			return
 		}
 	}
+}
+
+func (sc *serverConn) sendInitialSettings(_ interface{}) error {
+	sc.writeG.check()
+	return sc.framer.WriteSettings( /* TODO: actual settings */ )
 }
 
 // readPreface reads the ClientPreface greeting from the peer
