@@ -1045,6 +1045,76 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 	})
 }
 
+func TestServer_Response_Automatic100Continue(t *testing.T) {
+	const msg = "foo"
+	const reply = "bar"
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		if v := r.Header.Get("Expect"); v != "" {
+			t.Errorf("Expect header = %q; want empty", v)
+		}
+		buf := make([]byte, len(msg))
+		// This read should trigger the 100-continue being sent.
+		if n, err := io.ReadFull(r.Body, buf); err != nil || n != len(msg) || string(buf) != msg {
+			return fmt.Errorf("ReadFull = %q, %v; want %q, nil", buf[:n], err, msg)
+		}
+		_, err := io.WriteString(w, reply)
+		return err
+	}, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: encodeHeader(st.t, ":method", "POST", "expect", "100-continue"),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("unexpected END_STREAM flag")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
+		}
+		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "100"},
+		}
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Fatalf("Got headers %v; want %v", goth, wanth)
+		}
+
+		// Okay, they sent status 100, so we can send our
+		// gigantic and/or sensitive "foo" payload now.
+		st.writeData(1, true, []byte(msg))
+
+		st.wantWindowUpdate(0, uint32(len(msg)))
+		st.wantWindowUpdate(1, uint32(len(msg)))
+
+		hf = st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("expected data to follow")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
+		}
+		goth = decodeHeader(t, hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", strconv.Itoa(len(reply))},
+		}
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got headers %v; want %v", goth, wanth)
+		}
+
+		df := st.wantData()
+		if string(df.Data()) != reply {
+			t.Errorf("Client read %q; want %q", df.Data(), reply)
+		}
+		if !df.StreamEnded() {
+			t.Errorf("expect data stream end")
+		}
+	})
+}
+
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})

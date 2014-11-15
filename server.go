@@ -31,8 +31,6 @@ const (
 	firstSettingsTimeout = 2 * time.Second // should be in-flight with preface anyway
 )
 
-// TODO: automatic 100-continue
-
 // TODO: finish GOAWAY support. Consider each incoming frame type and
 // whether it should be ignored during a shutdown race.
 
@@ -817,10 +815,15 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	if authority == "" {
 		authority = rp.header.Get("Host")
 	}
+	needsContinue := rp.header.Get("Expect") == "100-continue"
+	if needsContinue {
+		rp.header.Del("Expect")
+	}
 	bodyOpen := rp.stream.state == stateOpen
 	body := &requestBody{
-		sc:       sc,
-		streamID: rp.stream.id,
+		sc:            sc,
+		streamID:      rp.stream.id,
+		needsContinue: needsContinue,
 	}
 	url, err := url.ParseRequestURI(rp.path)
 	if err != nil {
@@ -969,6 +972,30 @@ func (sc *serverConn) writeHeadersFrame(v interface{}) error {
 	})
 }
 
+// called from handler goroutines.
+// h may be nil.
+func (sc *serverConn) write100ContinueHeaders(streamID uint32) {
+	sc.serveG.checkNotOn()
+	sc.writeFrame(frameWriteMsg{
+		write:    (*serverConn).write100ContinueHeadersFrame,
+		v:        &streamID,
+		streamID: streamID,
+	})
+}
+
+func (sc *serverConn) write100ContinueHeadersFrame(v interface{}) error {
+	sc.writeG.check()
+	streamID := *(v.(*uint32))
+	sc.headerWriteBuf.Reset()
+	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: "100"})
+	return sc.framer.WriteHeaders(HeadersFrameParam{
+		StreamID:      streamID,
+		BlockFragment: sc.headerWriteBuf.Bytes(),
+		EndStream:     false,
+		EndHeaders:    true,
+	})
+}
+
 func (sc *serverConn) writeDataFrame(v interface{}) error {
 	sc.writeG.check()
 	rws := v.(*responseWriterState)
@@ -1013,10 +1040,11 @@ func (sc *serverConn) sendWindowUpdateInLoop(v interface{}) error {
 }
 
 type requestBody struct {
-	sc       *serverConn
-	streamID uint32
-	closed   bool
-	pipe     *pipe // non-nil if we have a HTTP entity message body
+	sc            *serverConn
+	streamID      uint32
+	closed        bool
+	pipe          *pipe // non-nil if we have a HTTP entity message body
+	needsContinue bool  // need to send a 100-continue
 }
 
 var errClosedBody = errors.New("body closed by handler")
@@ -1030,6 +1058,10 @@ func (b *requestBody) Close() error {
 }
 
 func (b *requestBody) Read(p []byte) (n int, err error) {
+	if b.needsContinue {
+		b.needsContinue = false
+		b.sc.write100ContinueHeaders(b.streamID)
+	}
 	if b.pipe == nil {
 		return 0, io.EOF
 	}
@@ -1073,7 +1105,6 @@ type responseWriterState struct {
 	snapHeader    http.Header // snapshot of handlerHeader at WriteHeader time
 	wroteHeader   bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
 	status        int         // status code passed to WriteHeader
-	wroteContinue bool        // 100 Continue response was written
 	sentHeader    bool        // have we sent the header frame?
 	handlerDone   bool        // handler has finished
 
