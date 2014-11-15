@@ -1170,21 +1170,10 @@ func testServerResponse(t *testing.T,
 
 func TestServerWithCurl(t *testing.T) {
 	requireCurl(t)
-
+	const msg = "Hello from curl!\n"
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: add a bunch of different tests with different
-		// behavior, as a function of r or a table.
-		// -- with request body, without.
-		// -- no interaction with w.
-		// -- panic
-		// -- modify Header only, but no writes or writeheader (this test)
-		// -- WriteHeader only
-		// -- Write only
-		// -- WriteString
-		// -- both
-		// -- huge headers over a frame size so we get continuation headers.
-		// Look at net/http's Server tests for inspiration.
 		w.Header().Set("Foo", "Bar")
+		io.WriteString(w, msg)
 	}))
 	ConfigureServer(ts.Config, &Server{})
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
@@ -1213,6 +1202,10 @@ func TestServerWithCurl(t *testing.T) {
 		}
 		if !strings.Contains(string(res.([]byte)), "< foo:Bar") {
 			t.Errorf("didn't see foo:Bar header")
+			t.Logf("Got: %s", res)
+		}
+		if !strings.Contains(string(res.([]byte)), msg) {
+			t.Errorf("didn't see %q content", msg)
 			t.Logf("Got: %s", res)
 		}
 	case <-time.After(3 * time.Second):
