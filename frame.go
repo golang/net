@@ -372,6 +372,10 @@ type DataFrame struct {
 	data []byte
 }
 
+func (f *DataFrame) StreamEnded() bool {
+	return f.FrameHeader.Flags.Has(FlagDataEndStream)
+}
+
 // Data returns the frame's data octets, not including any padding
 // size byte or padding suffix bytes.
 // The caller must not retain the returned memory past the next
@@ -696,6 +700,10 @@ func (f *HeadersFrame) HeaderBlockFragment() []byte {
 
 func (f *HeadersFrame) HeadersEnded() bool {
 	return f.FrameHeader.Flags.Has(FlagHeadersEndHeaders)
+}
+
+func (f *HeadersFrame) StreamEnded() bool {
+	return f.FrameHeader.Flags.Has(FlagHeadersEndStream)
 }
 
 func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
