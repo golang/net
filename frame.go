@@ -484,6 +484,10 @@ func parseSettingsFrame(fh FrameHeader, p []byte) (Frame, error) {
 	return f, nil
 }
 
+func (f *SettingsFrame) IsAck() bool {
+	return f.FrameHeader.Flags.Has(FlagSettingsAck)
+}
+
 func (f *SettingsFrame) Value(s SettingID) (v uint32, ok bool) {
 	f.checkValid()
 	buf := f.p
