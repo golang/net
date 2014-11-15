@@ -43,8 +43,8 @@ func init() {
 	}
 	var i int
 	for i = range osver {
-		if osver[i] != '.' {
-			continue
+		if osver[i] == '.' {
+			break
 		}
 	}
 	// The IP_PKTINFO and protocol-independent multicast API were
