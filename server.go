@@ -290,7 +290,11 @@ func (sc *serverConn) writeFrames() {
 	for wm := range sc.writeFrameCh {
 		err := wm.write(sc, wm.v)
 		if ch := wm.done; ch != nil {
-			ch <- err
+			select {
+			case ch <- err:
+			default:
+				panic(fmt.Sprintf("unbuffered done channel passed in for type %T", wm.v))
+			}
 		}
 		sc.wroteFrameCh <- struct{}{} // tickle frame selection scheduler
 	}
