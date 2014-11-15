@@ -84,6 +84,8 @@ func ConfigureServer(s *http.Server, conf *Server) {
 	}
 }
 
+var testHookGetServerConn func(*serverConn)
+
 func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc := &serverConn{
 		hs:                hs,
@@ -104,6 +106,9 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	}
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
+	if hook := testHookGetServerConn; hook != nil {
+		hook(sc)
+	}
 	sc.serve()
 }
 
@@ -130,6 +135,7 @@ type serverConn struct {
 	wantWriteFrameCh chan frameWriteMsg // from handlers -> serve
 	writeFrameCh     chan frameWriteMsg // from serve -> writeFrames
 	wroteFrameCh     chan struct{}      // from writeFrames -> serve, tickles more sends on writeFrameCh
+	testHookCh       chan func()        // code to run on the serve loop
 
 	serveG goroutineLock // used to verify funcs are on serve()
 	writeG goroutineLock // used to verify things running on writeLoop
@@ -370,6 +376,8 @@ func (sc *serverConn) serve() {
 		case <-settingsTimer.C:
 			sc.logf("timeout waiting for SETTINGS frames from %v", sc.conn.RemoteAddr())
 			return
+		case fn := <-sc.testHookCh:
+			fn()
 		}
 	}
 }

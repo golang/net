@@ -36,6 +36,7 @@ type serverTester struct {
 	ts     *httptest.Server
 	fr     *Framer
 	logBuf *bytes.Buffer
+	sc     *serverConn
 }
 
 func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
@@ -48,6 +49,11 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 
 	if VerboseLogs {
 		t.Logf("Running test server at: %s", ts.URL)
+	}
+	var sc *serverConn
+	testHookGetServerConn = func(v *serverConn) {
+		sc = v
+		sc.testHookCh = make(chan func())
 	}
 	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
 		InsecureSkipVerify: true,
@@ -63,7 +69,24 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 		cc:     cc,
 		fr:     NewFramer(cc, cc),
 		logBuf: logBuf,
+		sc:     sc,
 	}
+}
+
+func (st *serverTester) stream(id uint32) *stream {
+	ch := make(chan *stream, 1)
+	st.sc.testHookCh <- func() {
+		ch <- st.sc.streams[id]
+	}
+	return <-ch
+}
+
+func (st *serverTester) streamState(id uint32) streamState {
+	ch := make(chan streamState, 1)
+	st.sc.testHookCh <- func() {
+		ch <- st.sc.state(id)
+	}
+	return <-ch
 }
 
 func (st *serverTester) Close() {
@@ -838,6 +861,62 @@ func TestServer_DeadConn_Unblocks_Read(t *testing.T) {
 		st.Close()
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for Handler's Body.Read to error out")
+	}
+}
+
+func TestServer_StateTransitions(t *testing.T) {
+	t.Skip("TODO: failing test. fix")
+	var st *serverTester
+	inHandler := make(chan bool)
+	writeData := make(chan bool)
+	leaveHandler := make(chan bool)
+	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- true
+		if st.stream(1) == nil {
+			t.Errorf("nil stream 1 in handler")
+		}
+		if got := st.streamState(1); got != stateOpen {
+			t.Errorf("in handler, state is %v; want OPEN", got)
+		}
+		writeData <- true
+		if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != io.EOF {
+			t.Errorf("body read = %d, %v; want 0, EOF", n, err)
+		}
+		if got, want := st.streamState(1), stateHalfClosedRemote; got != want {
+			t.Errorf("in handler, state is %v; want %v", got, want)
+		}
+
+		<-leaveHandler
+	})
+	st.greet()
+	if st.stream(1) != nil {
+		t.Fatal("stream 1 should be empty")
+	}
+	if got := st.streamState(1); got != stateIdle {
+		t.Fatalf("stream 1 should be idle; got %v", got)
+	}
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		EndStream:     false, // keep it open
+		EndHeaders:    true,
+	})
+	<-inHandler
+	<-writeData
+	st.writeData(1, true, nil)
+
+	leaveHandler <- true
+	hf := st.wantHeaders()
+	if !hf.StreamEnded() {
+		t.Fatal("expected END_STREAM flag")
+	}
+
+	if got, want := st.streamState(1), stateClosed; got != want {
+		t.Errorf("at end, state is %v; want %v", got, want)
+	}
+	if st.stream(1) != nil {
+		t.Fatal("at end, stream 1 should be gone")
 	}
 }
 

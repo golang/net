@@ -56,6 +56,20 @@ const (
 	stateClosed
 )
 
+var stateName = [...]string{
+	stateIdle:             "Idle",
+	stateOpen:             "Open",
+	stateHalfClosedLocal:  "HalfClosedLocal",
+	stateHalfClosedRemote: "HalfClosedRemote",
+	stateResvLocal:        "ResvLocal",
+	stateResvRemote:       "ResvRemote",
+	stateClosed:           "Closed",
+}
+
+func (st streamState) String() string {
+	return stateName[st]
+}
+
 func validHeader(v string) bool {
 	if len(v) == 0 {
 		return false
