@@ -24,6 +24,7 @@ const (
 	ErrCodeConnect            ErrCode = 0xa
 	ErrCodeEnhanceYourCalm    ErrCode = 0xb
 	ErrCodeInadequateSecurity ErrCode = 0xc
+	ErrCodeHTTP11Required     ErrCode = 0xd
 )
 
 var errCodeName = map[ErrCode]string{
@@ -40,6 +41,7 @@ var errCodeName = map[ErrCode]string{
 	ErrCodeConnect:            "CONNECT_ERROR",
 	ErrCodeEnhanceYourCalm:    "ENHANCE_YOUR_CALM",
 	ErrCodeInadequateSecurity: "INADEQUATE_SECURITY",
+	ErrCodeHTTP11Required:     "HTTP_1_1_REQUIRED",
 }
 
 func (e ErrCode) String() string {

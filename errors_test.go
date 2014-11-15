@@ -15,6 +15,7 @@ func TestErrCodeString(t *testing.T) {
 		want string
 	}{
 		{ErrCodeProtocol, "PROTOCOL_ERROR"},
+		{0xd, "HTTP_1_1_REQUIRED"},
 		{0xf, "unknown error code 0xf"},
 	}
 	for i, tt := range tests {
