@@ -19,7 +19,7 @@ func TestWriteRST(t *testing.T) {
 	fr, buf := testFramer()
 	var streamID uint32 = 1<<24 + 2<<16 + 3<<8 + 4
 	var errCode uint32 = 7<<24 + 6<<16 + 5<<8 + 4
-	fr.WriteRSTStream(streamID, errCode)
+	fr.WriteRSTStream(streamID, ErrCode(errCode))
 	const wantEnc = "\x00\x00\x04\x03\x00\x01\x02\x03\x04\x07\x06\x05\x04"
 	if buf.String() != wantEnc {
 		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)

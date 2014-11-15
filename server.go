@@ -457,19 +457,47 @@ func (sc *serverConn) scheduleFrameWrite() {
 	sc.writeFrameCh <- wm
 }
 
-func (sc *serverConn) goAway(code ErrCode) error {
+func (sc *serverConn) goAway(code ErrCode) {
 	sc.serveG.check()
+	if sc.sentGoAway {
+		return
+	}
 	sc.sentGoAway = true
-	return sc.framer.WriteGoAway(sc.maxStreamID, code, nil)
+	// TODO: set a timer to see if they're gone at some point?
+	sc.enqueueFrameWrite(frameWriteMsg{
+		write: (*serverConn).writeGoAwayFrame,
+		v: &goAwayParams{
+			maxStreamID: sc.maxStreamID,
+			code:        code,
+		},
+	})
+}
+
+type goAwayParams struct {
+	maxStreamID uint32
+	code        ErrCode
+}
+
+func (sc *serverConn) writeGoAwayFrame(v interface{}) error {
+	sc.writeG.check()
+	p := v.(*goAwayParams)
+	return sc.framer.WriteGoAway(p.maxStreamID, p.code, nil)
 }
 
 func (sc *serverConn) resetStreamInLoop(se StreamError) error {
 	sc.serveG.check()
-	if err := sc.framer.WriteRSTStream(se.streamID, uint32(se.code)); err != nil {
-		return err
-	}
 	delete(sc.streams, se.streamID)
+	sc.enqueueFrameWrite(frameWriteMsg{
+		write: (*serverConn).writeRSTStreamFrame,
+		v:     &se,
+	})
 	return nil
+}
+
+func (sc *serverConn) writeRSTStreamFrame(v interface{}) error {
+	sc.writeG.check()
+	se := v.(*StreamError)
+	return sc.framer.WriteRSTStream(se.streamID, se.code)
 }
 
 func (sc *serverConn) curHeaderStreamID() uint32 {
@@ -515,10 +543,7 @@ func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool
 		}
 		return true
 	case goAwayFlowError:
-		if err := sc.goAway(ErrCodeFlowControl); err != nil {
-			sc.condlogf(err, "failed to GOAWAY: %v", err)
-			return false
-		}
+		sc.goAway(ErrCodeFlowControl)
 		return true
 	case ConnectionError:
 		sc.logf("disconnecting; %v", ev)

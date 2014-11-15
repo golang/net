@@ -587,7 +587,7 @@ func (f *Framer) WritePing(ack bool, data [8]byte) error {
 type GoAwayFrame struct {
 	FrameHeader
 	LastStreamID uint32
-	ErrCode      uint32
+	ErrCode      ErrCode
 	debugData    []byte
 }
 
@@ -610,7 +610,7 @@ func parseGoAwayFrame(fh FrameHeader, p []byte) (Frame, error) {
 	return &GoAwayFrame{
 		FrameHeader:  fh,
 		LastStreamID: binary.BigEndian.Uint32(p[:4]) & (1<<31 - 1),
-		ErrCode:      binary.BigEndian.Uint32(p[4:8]),
+		ErrCode:      ErrCode(binary.BigEndian.Uint32(p[4:8])),
 		debugData:    p[8:],
 	}, nil
 }
@@ -900,12 +900,12 @@ func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
 //
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility to not call other Write methods concurrently.
-func (f *Framer) WriteRSTStream(streamID, errCode uint32) error {
+func (f *Framer) WriteRSTStream(streamID uint32, code ErrCode) error {
 	if !validStreamID(streamID) && !f.AllowIllegalWrites {
 		return errStreamID
 	}
 	f.startWrite(FrameRSTStream, 0, streamID)
-	f.writeUint32(errCode)
+	f.writeUint32(uint32(code))
 	return f.endWrite()
 }
 

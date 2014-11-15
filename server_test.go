@@ -196,6 +196,18 @@ func (st *serverTester) wantPing() *PingFrame {
 	return pf
 }
 
+func (st *serverTester) wantGoAway() *GoAwayFrame {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatalf("Error while expecting a PING frame: %v", err)
+	}
+	gf, ok := f.(*GoAwayFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *GoAwayFrame", f)
+	}
+	return gf
+}
+
 func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 	f, err := st.readFrame()
 	if err != nil {
@@ -726,6 +738,46 @@ func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
 	})
 	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
+}
+
+func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
+	st := newServerTester(t, nil)
+	defer st.Close()
+	st.greet()
+	if err := st.fr.WriteWindowUpdate(0, 1<<31-1); err != nil {
+		t.Fatal(err)
+	}
+	gf := st.wantGoAway()
+	if gf.ErrCode != ErrCodeFlowControl {
+		t.Errorf("GOAWAY err = %v; want %v", gf.ErrCode, ErrCodeFlowControl)
+	}
+	if gf.LastStreamID != 0 {
+		t.Errorf("GOAWAY last stream ID = %v; want %v", gf.LastStreamID, 0)
+	}
+}
+
+func TestServer_Send_RstStream_After_Bogus_WindowUpdate(t *testing.T) {
+	inHandler := make(chan bool)
+	blockHandler := make(chan bool)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- true
+		<-blockHandler
+	})
+	defer st.Close()
+	defer close(blockHandler)
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		EndStream:     false, // keep it open
+		EndHeaders:    true,
+	})
+	<-inHandler
+	// Send a bogus window update:
+	if err := st.fr.WriteWindowUpdate(1, 1<<31-1); err != nil {
+		t.Fatal(err)
+	}
+	st.wantRSTStream(1, ErrCodeFlowControl)
 }
 
 // TODO: test HEADERS w/o EndHeaders + another HEADERS (should get rejected)
