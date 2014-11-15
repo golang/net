@@ -499,7 +499,17 @@ func (sc *serverConn) processPing(f *PingFrame) error {
 		// PROTOCOL_ERROR."
 		return ConnectionError(ErrCodeProtocol)
 	}
-	return sc.framer.WritePing(true, f.Data)
+	sc.wantWriteFrameCh <- frameWriteMsg{
+		write: (*serverConn).writePingAck,
+		v:     f,
+	}
+	return nil
+}
+
+func (sc *serverConn) writePingAck(v interface{}) error {
+	sc.writeG.check()
+	pf := v.(*PingFrame) // contains the data we need to write back
+	return sc.framer.WritePing(true, pf.Data)
 }
 
 func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
@@ -808,7 +818,7 @@ type headerWriteReq struct {
 
 // called from handler goroutines.
 // h may be nil.
-func (sc *serverConn) writeHeader(req headerWriteReq) {
+func (sc *serverConn) writeHeaders(req headerWriteReq) {
 	var errc chan error
 	if req.h != nil {
 		// If there's a header map (which we don't own), so we have to block on
@@ -818,7 +828,7 @@ func (sc *serverConn) writeHeader(req headerWriteReq) {
 		errc = make(chan error, 1)
 	}
 	sc.wantWriteFrameCh <- frameWriteMsg{
-		write:    (*serverConn).writeHeaderInLoop,
+		write:    (*serverConn).writeHeadersFrame,
 		v:        req,
 		streamID: req.streamID,
 		done:     errc,
@@ -828,7 +838,7 @@ func (sc *serverConn) writeHeader(req headerWriteReq) {
 	}
 }
 
-func (sc *serverConn) writeHeaderInLoop(v interface{}) error {
+func (sc *serverConn) writeHeadersFrame(v interface{}) error {
 	sc.writeG.check()
 	req := v.(headerWriteReq)
 
@@ -866,7 +876,7 @@ func (sc *serverConn) writeHeaderInLoop(v interface{}) error {
 	})
 }
 
-func (sc *serverConn) writeDataInLoop(v interface{}) error {
+func (sc *serverConn) writeDataFrame(v interface{}) error {
 	sc.writeG.check()
 	rws := v.(*responseWriterState)
 	return sc.framer.WriteData(rws.streamID, rws.curChunkIsFinal, rws.curChunk)
@@ -1014,7 +1024,7 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 		if rws.snapHeader.Get("Content-Type") == "" {
 			ctype = http.DetectContentType(p)
 		}
-		rws.sc.writeHeader(headerWriteReq{
+		rws.sc.writeHeaders(headerWriteReq{
 			streamID:      rws.streamID,
 			httpResCode:   rws.status,
 			h:             rws.snapHeader,
@@ -1033,7 +1043,7 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 	rws.sc.wantWriteFrameCh <- frameWriteMsg{
 		cost:     uint32(len(p)),
 		streamID: rws.streamID,
-		write:    (*serverConn).writeDataInLoop,
+		write:    (*serverConn).writeDataFrame,
 		done:     rws.chunkWrittenCh,
 		v:        rws, // writeDataInLoop uses only rws.curChunk and rws.curChunkIsFinal
 	}
