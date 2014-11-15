@@ -94,3 +94,9 @@ func httpCodeString(code int) string {
 type stringWriter interface {
 	WriteString(s string) (n int, err error)
 }
+
+// A gate lets two goroutines coordinate their activities.
+type gate chan struct{}
+
+func (g gate) Done() { g <- struct{}{} }
+func (g gate) Wait() { <-g }
