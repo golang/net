@@ -8,6 +8,7 @@
 package http2
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"errors"
@@ -418,9 +419,13 @@ func (sc *serverConn) scheduleFrameWrite() {
 		// TODO: flush Framer's underlying buffered writer, once that's added
 		return
 	}
+
 	// TODO: proper scheduler
 	wm := sc.writeQueue[0]
-	copy(sc.writeQueue, sc.writeQueue[1:]) // shift it all down. kinda lame. will be removed later anyway.
+	// shift it all down. kinda lame. will be removed later anyway.
+	copy(sc.writeQueue, sc.writeQueue[1:])
+	sc.writeQueue = sc.writeQueue[:len(sc.writeQueue)-1]
+
 	sc.writingFrame = true
 	sc.writeFrameCh <- wm
 }
@@ -740,24 +745,27 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	}
 
 	rws := responseWriterStatePool.Get().(*responseWriterState)
-	wbufSave := rws.wbuf
+	bwSave := rws.bw
 	*rws = responseWriterState{} // zero all the fields
-	rws.wbuf = wbufSave
-	rws.wbuf.Reset()
+	rws.bw = bwSave
+	rws.bw.Reset(chunkWriter{rws})
 	rws.sc = sc
 	rws.streamID = rp.stream.id
 	rws.req = req
 	rws.body = body
+	rws.chunkWrittenCh = make(chan error, 1)
 
 	rw := &responseWriter{rws: rws}
 	return rw, req, nil
 }
 
+const handlerChunkWriteSize = 4 << 10
+
 var responseWriterStatePool = sync.Pool{
 	New: func() interface{} {
-		return &responseWriterState{
-			wbuf: new(bytes.Buffer),
-		}
+		rws := &responseWriterState{}
+		rws.bw = bufio.NewWriterSize(chunkWriter{rws}, handlerChunkWriteSize)
+		return rws
 	},
 }
 
@@ -766,13 +774,6 @@ func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request) {
 	defer rw.handlerDone()
 	// TODO: catch panics like net/http.Server
 	sc.handler.ServeHTTP(rw, req)
-}
-
-// called from handler goroutines
-func (sc *serverConn) writeData(streamID uint32, p []byte) (n int, err error) {
-	// TODO: implement
-	log.Printf("WRITE on %d: %q", streamID, p)
-	return len(p), nil
 }
 
 type frameWriteMsg struct {
@@ -786,7 +787,7 @@ type frameWriteMsg struct {
 	// done, if non-nil, must be a buffered channel with space for
 	// 1 message and is sent the return value from write (or an
 	// earlier error) when the frame has been written.
-	done chan<- error
+	done chan error
 }
 
 // headerWriteReq is a request to write an HTTP response header from a server Handler.
@@ -803,10 +804,22 @@ type headerWriteReq struct {
 // called from handler goroutines.
 // h may be nil.
 func (sc *serverConn) writeHeader(req headerWriteReq) {
+	var errc chan error
+	if req.h != nil {
+		// If there's a header map (which we don't own), so we have to block on
+		// waiting for this frame to be written, so an http.Flush mid-handler
+		// writes out the correct value of keys, before a handler later potentially
+		// mutates it.
+		errc = make(chan error, 1)
+	}
 	sc.wantWriteFrameCh <- frameWriteMsg{
 		write:    (*serverConn).writeHeaderInLoop,
 		v:        req,
 		streamID: req.streamID,
+		done:     errc,
+	}
+	if errc != nil {
+		<-errc
 	}
 }
 
@@ -818,6 +831,10 @@ func (sc *serverConn) writeHeaderInLoop(v interface{}) error {
 	sc.hpackEncoder.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(req.httpResCode)})
 	for k, vv := range req.h {
 		for _, v := range vv {
+			// TODO: more of "8.1.2.2 Connection-Specific Header Fields"
+			if k == "Transfer-Encoding" && v != "trailers" {
+				continue
+			}
 			// TODO: for gargage, cache lowercase copies of headers at
 			// least for common ones and/or popular recent ones for
 			// this serverConn. LRU?
@@ -842,6 +859,12 @@ func (sc *serverConn) writeHeaderInLoop(v interface{}) error {
 		EndStream:     req.endStream,
 		EndHeaders:    true, // no continuation yet
 	})
+}
+
+func (sc *serverConn) writeDataInLoop(v interface{}) error {
+	sc.writeG.check()
+	rws := v.(*responseWriterState)
+	return sc.framer.WriteData(rws.streamID, rws.curChunkIsFinal, rws.curChunk)
 }
 
 type windowUpdateReq struct {
@@ -920,6 +943,13 @@ type responseWriter struct {
 	rws *responseWriterState
 }
 
+// Optional http.ResponseWriter interfaces implemented.
+var (
+	_ http.Flusher = (*responseWriter)(nil)
+	_ stringWriter = (*responseWriter)(nil)
+	// TODO: hijacker for websockets?
+)
+
 type responseWriterState struct {
 	// immutable within a request:
 	sc       *serverConn
@@ -928,52 +958,101 @@ type responseWriterState struct {
 	body     *requestBody // to close at end of request, if DATA frames didn't
 
 	// TODO: adjust buffer writing sizes based on server config, frame size updates from peer, etc
-	wbuf *bytes.Buffer
+	bw *bufio.Writer // writing to a chunkWriter{this *responseWriterState}
 
 	// mutated by http.Handler goroutine:
-	h             http.Header // h goes from maybe-nil to non-nil; contents changed by http.Handler goroutine
+	handlerHeader http.Header // nil until called
+	snapHeader    http.Header // snapshot of handlerHeader at WriteHeader time
 	wroteHeader   bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
 	status        int         // status code passed to WriteHeader
 	wroteContinue bool        // 100 Continue response was written
-	calledHeader  bool
-	sentHeader    bool // have we sent the header frame?
-	handlerDone   bool // handler has finished.
+	sentHeader    bool        // have we sent the header frame?
+	handlerDone   bool        // handler has finished
+
+	curChunk        []byte // current chunk we're writing
+	curChunkIsFinal bool
+	chunkWrittenCh  chan error
 }
 
-// Optional http.ResponseWriter interfaces implemented.
-var (
-	_ http.Flusher = (*responseWriter)(nil)
-	_ stringWriter = (*responseWriter)(nil)
-	// TODO: hijacker for websockets
-)
+type chunkWriter struct{ rws *responseWriterState }
+
+// chunkWriter.Write is called from bufio.Writer. Because bufio.Writer passes through large
+// writes, we break them up here if they're too big.
+func (cw chunkWriter) Write(p []byte) (n int, err error) {
+	for len(p) > 0 {
+		chunk := p
+		if len(chunk) > handlerChunkWriteSize {
+			chunk = chunk[:handlerChunkWriteSize]
+		}
+		_, err = cw.rws.writeChunk(chunk)
+		if err != nil {
+			return
+		}
+		n += len(chunk)
+		p = p[len(chunk):]
+	}
+	return n, nil
+}
+
+// writeChunk writes small (max 4k, or handlerChunkWriteSize) chunks.
+// It's also responsible for sending the HEADER response.
+func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
+	if !rws.wroteHeader {
+		rws.writeHeader(200)
+	}
+	if !rws.sentHeader {
+		rws.sentHeader = true
+		var ctype, clen string // implicit ones, if we can calculate it
+		if rws.handlerDone && rws.snapHeader.Get("Content-Length") == "" {
+			clen = strconv.Itoa(len(p))
+		}
+		if rws.snapHeader.Get("Content-Type") == "" {
+			ctype = http.DetectContentType(p)
+		}
+		rws.sc.writeHeader(headerWriteReq{
+			streamID:      rws.streamID,
+			httpResCode:   rws.status,
+			h:             rws.snapHeader,
+			endStream:     rws.handlerDone && len(p) == 0,
+			contentType:   ctype,
+			contentLength: clen,
+		})
+	}
+	if len(p) == 0 && !rws.handlerDone {
+		return
+	}
+	rws.curChunk = p
+	rws.curChunkIsFinal = rws.handlerDone
+
+	// TODO: await flow control tokens for both stream and conn
+	rws.sc.wantWriteFrameCh <- frameWriteMsg{
+		cost:     uint32(len(p)),
+		streamID: rws.streamID,
+		write:    (*serverConn).writeDataInLoop,
+		done:     rws.chunkWrittenCh,
+		v:        rws, // writeDataInLoop uses only rws.curChunk and rws.curChunkIsFinal
+	}
+	err = <-rws.chunkWrittenCh // block until it's written
+	return len(p), err
+}
 
 func (w *responseWriter) Flush() {
 	rws := w.rws
 	if rws == nil {
 		panic("Header called after Handler finished")
 	}
-	if !rws.wroteHeader {
-		w.WriteHeader(200)
-	}
-	if !rws.sentHeader {
-		rws.sentHeader = true
-		var ctype, clen string // implicit ones, if we can calculate it
-		if rws.handlerDone && rws.h.Get("Content-Length") == "" {
-			clen = strconv.Itoa(rws.wbuf.Len())
+	if rws.bw.Buffered() > 0 {
+		if err := rws.bw.Flush(); err != nil {
+			// Ignore the error. The frame writer already knows.
+			return
 		}
-		if rws.h.Get("Content-Type") == "" {
-			ctype = http.DetectContentType(rws.wbuf.Bytes())
-		}
-		rws.sc.writeHeader(headerWriteReq{
-			streamID:      rws.streamID,
-			httpResCode:   rws.status,
-			h:             rws.h,
-			endStream:     rws.wbuf.Len() == 0,
-			contentType:   ctype,
-			contentLength: clen,
-		})
+	} else {
+		// The bufio.Writer won't call chunkWriter.Write
+		// (writeChunk with zero bytes, so we have to do it
+		// ourselves to force the HTTP response header and/or
+		// final DATA frame (with END_STREAM) to be sent.
+		rws.writeChunk(nil)
 	}
-
 }
 
 func (w *responseWriter) Header() http.Header {
@@ -981,11 +1060,10 @@ func (w *responseWriter) Header() http.Header {
 	if rws == nil {
 		panic("Header called after Handler finished")
 	}
-	if rws.h == nil {
-		rws.h = make(http.Header)
+	if rws.handlerHeader == nil {
+		rws.handlerHeader = make(http.Header)
 	}
-	rws.calledHeader = true
-	return rws.h
+	return rws.handlerHeader
 }
 
 func (w *responseWriter) WriteHeader(code int) {
@@ -993,11 +1071,27 @@ func (w *responseWriter) WriteHeader(code int) {
 	if rws == nil {
 		panic("WriteHeader called after Handler finished")
 	}
-	if rws.wroteHeader {
-		return
+	rws.writeHeader(code)
+}
+
+func (rws *responseWriterState) writeHeader(code int) {
+	if !rws.wroteHeader {
+		rws.wroteHeader = true
+		rws.status = code
+		if len(rws.handlerHeader) > 0 {
+			rws.snapHeader = cloneHeader(rws.handlerHeader)
+		}
 	}
-	rws.wroteHeader = true
-	rws.status = code
+}
+
+func cloneHeader(h http.Header) http.Header {
+	h2 := make(http.Header, len(h))
+	for k, vv := range h {
+		vv2 := make([]string, len(vv))
+		copy(vv2, vv)
+		h2[k] = vv2
+	}
+	return h2
 }
 
 // The Life Of A Write is like this:
@@ -1020,13 +1114,11 @@ func (w *responseWriter) write(lenData int, dataB []byte, dataS string) (n int, 
 	if !rws.wroteHeader {
 		w.WriteHeader(200)
 	}
-	// TODO: write to a bufio.Writer instead like the
 	if dataB != nil {
-		rws.wbuf.Write(dataB)
+		return rws.bw.Write(dataB)
 	} else {
-		rws.wbuf.WriteString(dataS)
+		return rws.bw.WriteString(dataS)
 	}
-	return lenData, nil
 }
 
 func (w *responseWriter) handlerDone() {
