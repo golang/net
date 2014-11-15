@@ -11,8 +11,9 @@ import "sync"
 
 // flow is the flow control window's counting semaphore.
 type flow struct {
-	c    *sync.Cond // protects size
-	size int32
+	c      *sync.Cond // protects size
+	size   int32
+	closed bool
 }
 
 func newFlow(n int32) *flow {
@@ -42,6 +43,9 @@ func (f *flow) acquire(n int32) (waited int) {
 	f.c.L.Lock()
 	defer f.c.L.Unlock()
 	for {
+		if f.closed {
+			return
+		}
 		if f.size >= n {
 			f.size -= n
 			return
@@ -63,4 +67,13 @@ func (f *flow) add(n int32) bool {
 	f.size += n
 	f.c.Broadcast()
 	return true
+}
+
+// close marks the flow as closed, meaning everybody gets all the
+// tokens they want, because everything else will fail anyway.
+func (f *flow) close() {
+	f.c.L.Lock()
+	defer f.c.L.Unlock()
+	f.closed = true
+	f.c.Broadcast()
 }

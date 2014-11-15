@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -220,7 +221,7 @@ func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 	if rs.FrameHeader.StreamID != streamID {
 		st.t.Fatalf("RSTStream StreamID = %d; want %d", rs.FrameHeader.StreamID, streamID)
 	}
-	if rs.ErrCode != uint32(errCode) {
+	if rs.ErrCode != errCode {
 		st.t.Fatalf("RSTStream ErrCode = %d (%s); want %d (%s)", rs.ErrCode, rs.ErrCode, errCode, errCode)
 	}
 }
@@ -780,6 +781,66 @@ func TestServer_Send_RstStream_After_Bogus_WindowUpdate(t *testing.T) {
 	st.wantRSTStream(1, ErrCodeFlowControl)
 }
 
+func TestServer_RSTStream_Unblocks_Read(t *testing.T) {
+	inHandler := make(chan bool)
+	errc := make(chan error, 1)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- true
+		_, err := r.Body.Read(make([]byte, 1))
+		errc <- err
+	})
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		EndStream:     false, // keep it open
+		EndHeaders:    true,
+	})
+	<-inHandler
+	if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Fatal("unexpected nil error from Read")
+		}
+		t.Logf("Read = %v", err)
+		st.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for Handler's Body.Read to error out")
+	}
+}
+
+func TestServer_DeadConn_Unblocks_Read(t *testing.T) {
+	inHandler := make(chan bool)
+	errc := make(chan error, 1)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- true
+		_, err := r.Body.Read(make([]byte, 1))
+		errc <- err
+	})
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		EndStream:     false, // keep it open
+		EndHeaders:    true,
+	})
+	<-inHandler
+	st.cc.Close() // hard-close the network connection
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Fatal("unexpected nil error from Read")
+		}
+		t.Logf("Read = %v", err)
+		st.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for Handler's Body.Read to error out")
+	}
+}
+
 // TODO: test HEADERS w/o EndHeaders + another HEADERS (should get rejected)
 // TODO: test HEADERS w/ EndHeaders + a continuation HEADERS (should get rejected)
 
@@ -1221,6 +1282,9 @@ func testServerResponse(t *testing.T,
 }
 
 func TestServerWithCurl(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("skipping Docker test on Darwin; requires --net which won't work with boot2docker anyway")
+	}
 	requireCurl(t)
 	const msg = "Hello from curl!\n"
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

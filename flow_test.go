@@ -59,3 +59,24 @@ func TestFlowAdd(t *testing.T) {
 	}
 
 }
+
+func TestFlowClose(t *testing.T) {
+	f := newFlow(0)
+
+	// Wait for 10, which should block, so start a background goroutine
+	// to refill it.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		f.close()
+	}()
+	donec := make(chan bool)
+	go func() {
+		defer close(donec)
+		f.acquire(10)
+	}()
+	select {
+	case <-donec:
+	case <-time.After(2 * time.Second):
+		t.Error("timeout")
+	}
+}

@@ -883,7 +883,7 @@ func (f *Framer) WritePriority(streamID uint32, p PriorityParam) error {
 // See http://http2.github.io/http2-spec/#rfc.section.6.4
 type RSTStreamFrame struct {
 	FrameHeader
-	ErrCode uint32
+	ErrCode ErrCode
 }
 
 func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
@@ -893,7 +893,7 @@ func parseRSTStreamFrame(fh FrameHeader, p []byte) (Frame, error) {
 	if fh.StreamID == 0 {
 		return nil, ConnectionError(ErrCodeProtocol)
 	}
-	return &RSTStreamFrame{fh, binary.BigEndian.Uint32(p[:4])}, nil
+	return &RSTStreamFrame{fh, ErrCode(binary.BigEndian.Uint32(p[:4]))}, nil
 }
 
 // WriteRSTStream writes a RST_STREAM frame.
