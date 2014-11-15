@@ -21,7 +21,6 @@ var (
 	}
 
 	sockOpts = [ssoMax]sockOpt{
-		ssoTrafficClass:       {iana.ProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt},
 		ssoHopLimit:           {iana.ProtocolIPv6, sysIPV6_UNICAST_HOPS, ssoTypeInt},
 		ssoMulticastInterface: {iana.ProtocolIPv6, sysIPV6_MULTICAST_IF, ssoTypeInterface},
 		ssoMulticastHopLimit:  {iana.ProtocolIPv6, sysIPV6_MULTICAST_HOPS, ssoTypeInt},
@@ -44,8 +43,8 @@ func init() {
 	}
 	var i int
 	for i = range osver {
-		if osver[i] != '.' {
-			continue
+		if osver[i] == '.' {
+			break
 		}
 	}
 	// The IP_PKTINFO and protocol-independent multicast API were
@@ -61,6 +60,9 @@ func init() {
 		ctlOpts[ctlHopLimit].marshal = marshalHopLimit
 		ctlOpts[ctlPacketInfo].name = sysIPV6_PKTINFO
 		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
+		sockOpts[ssoTrafficClass].level = iana.ProtocolIPv6
+		sockOpts[ssoTrafficClass].name = sysIPV6_TCLASS
+		sockOpts[ssoTrafficClass].typ = ssoTypeInt
 		sockOpts[ssoReceiveTrafficClass].level = iana.ProtocolIPv6
 		sockOpts[ssoReceiveTrafficClass].name = sysIPV6_RECVTCLASS
 		sockOpts[ssoReceiveTrafficClass].typ = ssoTypeInt
