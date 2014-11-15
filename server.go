@@ -42,6 +42,12 @@ const (
 // be in-flight and then the frame scheduler in the serve goroutine
 // will be responsible for splitting things.
 
+// TODO: test/handle a client sending a POST with potential data, get
+// stuck in the handler in a Read, then client sends RST_STREAM, and
+// we should verify the Read then unblocks, rather than being stuck
+// forever and leaking a goroutine. and it should return an error from
+// the Read.
+
 // Server is an HTTP/2 server.
 type Server struct {
 	// MaxStreams optionally ...
