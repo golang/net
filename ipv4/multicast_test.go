@@ -95,13 +95,13 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 			if n, err := p.WriteTo(wb, nil, &grp); err != nil {
 				t.Fatal(err)
 			} else if n != len(wb) {
-				t.Fatalf("got %v; expected %v", n, len(wb))
+				t.Fatalf("got %v; want %v", n, len(wb))
 			}
 			rb := make([]byte, 128)
 			if n, cm, _, err := p.ReadFrom(rb); err != nil {
 				t.Fatal(err)
 			} else if !bytes.Equal(rb[:n], wb) {
-				t.Fatalf("got %v; expected %v", rb[:n], wb)
+				t.Fatalf("got %v; want %v", rb[:n], wb)
 			} else {
 				t.Logf("rcvd cmsg: %v", cm)
 			}
@@ -195,7 +195,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			if n, err := p.WriteTo(wb, nil, tt.grp); err != nil {
 				t.Fatal(err)
 			} else if n != len(wb) {
-				t.Fatalf("got %v; expected %v", n, len(wb))
+				t.Fatalf("got %v; want %v", n, len(wb))
 			}
 			rb := make([]byte, 128)
 			if n, cm, _, err := p.ReadFrom(rb); err != nil {
@@ -210,7 +210,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 				case m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
 				case m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
 				default:
-					t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+					t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
 				}
 			}
 		}
@@ -326,7 +326,7 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 				case (rh.Dst.IsLoopback() || rh.Dst.IsLinkLocalUnicast() || rh.Dst.IsGlobalUnicast()) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
 				case rh.Dst.IsMulticast() && m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
 				default:
-					t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+					t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
 				}
 			}
 		}

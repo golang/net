@@ -31,7 +31,7 @@ func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
 func BenchmarkReadWriteNetUDP(b *testing.B) {
 	c, dst, err := benchmarkUDPListener()
 	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
+		b.Fatal(err)
 	}
 	defer c.Close()
 
@@ -44,17 +44,17 @@ func BenchmarkReadWriteNetUDP(b *testing.B) {
 
 func benchmarkReadWriteNetUDP(b *testing.B, c net.PacketConn, wb, rb []byte, dst net.Addr) {
 	if _, err := c.WriteTo(wb, dst); err != nil {
-		b.Fatalf("net.PacketConn.WriteTo failed: %v", err)
+		b.Fatal(err)
 	}
 	if _, _, err := c.ReadFrom(rb); err != nil {
-		b.Fatalf("net.PacketConn.ReadFrom failed: %v", err)
+		b.Fatal(err)
 	}
 }
 
 func BenchmarkReadWriteIPv4UDP(b *testing.B) {
 	c, dst, err := benchmarkUDPListener()
 	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
+		b.Fatal(err)
 	}
 	defer c.Close()
 
@@ -62,7 +62,7 @@ func BenchmarkReadWriteIPv4UDP(b *testing.B) {
 	defer p.Close()
 	cf := ipv4.FlagTTL | ipv4.FlagInterface
 	if err := p.SetControlMessage(cf, true); err != nil {
-		b.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
+		b.Fatal(err)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 
@@ -79,12 +79,12 @@ func benchmarkReadWriteIPv4UDP(b *testing.B, p *ipv4.PacketConn, wb, rb []byte, 
 		cm.IfIndex = ifi.Index
 	}
 	if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-		b.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
+		b.Fatal(err)
 	} else if n != len(wb) {
-		b.Fatalf("ipv4.PacketConn.WriteTo failed: short write: %v", n)
+		b.Fatalf("got %v; want %v", n, len(wb))
 	}
 	if _, _, _, err := p.ReadFrom(rb); err != nil {
-		b.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
+		b.Fatal(err)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		if nettest.ProtocolNotSupported(err) {
 			t.Skipf("not supported on %q", runtime.GOOS)
 		}
-		t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
+		t.Fatal(err)
 	}
 
 	var wg sync.WaitGroup

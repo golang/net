@@ -27,7 +27,7 @@ func TestConnUnicastSocketOptions(t *testing.T) {
 
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("net.Listen failed: %v", err)
+		t.Fatal(err)
 	}
 	defer ln.Close()
 
@@ -36,7 +36,7 @@ func TestConnUnicastSocketOptions(t *testing.T) {
 
 	c, err := net.Dial("tcp4", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("net.Dial failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
@@ -64,11 +64,12 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 
 	for _, tt := range packetConnUnicastSocketOptionTests {
 		if tt.net == "ip4" && os.Getuid() != 0 {
-			t.Skip("must be root")
+			t.Log("must be root")
+			continue
 		}
 		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
 		if err != nil {
-			t.Fatalf("net.ListenPacket(%q, %q) failed: %v", tt.net+tt.proto, tt.addr, err)
+			t.Fatal(err)
 		}
 		defer c.Close()
 
@@ -91,13 +92,13 @@ func TestRawConnUnicastSocketOptions(t *testing.T) {
 
 	c, err := net.ListenPacket("ip4:icmp", "127.0.0.1")
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
 	r, err := ipv4.NewRawConn(c)
 	if err != nil {
-		t.Fatalf("ipv4.NewRawConn failed: %v", err)
+		t.Fatal(err)
 	}
 
 	testUnicastSocketOptions(t, r)
@@ -115,24 +116,24 @@ func testUnicastSocketOptions(t *testing.T, c testIPv4UnicastConn) {
 	switch runtime.GOOS {
 	case "windows":
 		// IP_TOS option is supported on Windows 8 and beyond.
-		t.Skipf("skipping IP_TOS test on %q", runtime.GOOS)
+		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 
 	if err := c.SetTOS(tos); err != nil {
-		t.Fatalf("ipv4.Conn.SetTOS failed: %v", err)
+		t.Fatal(err)
 	}
 	if v, err := c.TOS(); err != nil {
-		t.Fatalf("ipv4.Conn.TOS failed: %v", err)
+		t.Fatal(err)
 	} else if v != tos {
-		t.Fatalf("got unexpected TOS value %v; expected %v", v, tos)
+		t.Fatalf("got %v; want %v", v, tos)
 	}
 	const ttl = 255
 	if err := c.SetTTL(ttl); err != nil {
-		t.Fatalf("ipv4.Conn.SetTTL failed: %v", err)
+		t.Fatal(err)
 	}
 	if v, err := c.TTL(); err != nil {
-		t.Fatalf("ipv4.Conn.TTL failed: %v", err)
+		t.Fatal(err)
 	} else if v != ttl {
-		t.Fatalf("got unexpected TTL value %v; expected %v", v, ttl)
+		t.Fatalf("got %v; want %v", v, ttl)
 	}
 }

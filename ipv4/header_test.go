@@ -70,7 +70,7 @@ var (
 func TestMarshalHeader(t *testing.T) {
 	b, err := testHeader.Marshal()
 	if err != nil {
-		t.Fatalf("ipv4.Header.Marshal failed: %v", err)
+		t.Fatal(err)
 	}
 	var wh []byte
 	if supportsNewIPInput {
@@ -79,7 +79,7 @@ func TestMarshalHeader(t *testing.T) {
 		wh = wireHeaderToTradBSDKernel[:]
 	}
 	if !bytes.Equal(b, wh) {
-		t.Fatalf("ipv4.Header.Marshal failed: %#v not equal %#v", b, wh)
+		t.Fatalf("got %#v; want %#v", b, wh)
 	}
 }
 
@@ -96,9 +96,9 @@ func TestParseHeader(t *testing.T) {
 	}
 	h, err := ParseHeader(wh)
 	if err != nil {
-		t.Fatalf("ipv4.ParseHeader failed: %v", err)
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(h, testHeader) {
-		t.Fatalf("ipv4.ParseHeader failed: %#v not equal %#v", h, testHeader)
+		t.Fatalf("got %#v; want %#v", h, testHeader)
 	}
 }

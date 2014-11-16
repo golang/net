@@ -120,7 +120,7 @@ func testMulticastSocketOptions(t *testing.T, c testIPv4MulticastConn, ifi *net.
 		t.Error(err)
 		return
 	} else if v != ttl {
-		t.Errorf("got unexpected multicast ttl %v; expected %v", v, ttl)
+		t.Errorf("got %v; want %v", v, ttl)
 		return
 	}
 
@@ -133,7 +133,7 @@ func testMulticastSocketOptions(t *testing.T, c testIPv4MulticastConn, ifi *net.
 			t.Error(err)
 			return
 		} else if v != toggle {
-			t.Errorf("got unexpected multicast loopback %v; expected %v", v, toggle)
+			t.Errorf("got %v; want %v", v, toggle)
 			return
 		}
 	}

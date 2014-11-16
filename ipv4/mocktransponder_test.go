@@ -14,7 +14,7 @@ func acceptor(t *testing.T, ln net.Listener, done chan<- bool) {
 
 	c, err := ln.Accept()
 	if err != nil {
-		t.Errorf("net.Listener.Accept failed: %v", err)
+		t.Error(err)
 		return
 	}
 	c.Close()
