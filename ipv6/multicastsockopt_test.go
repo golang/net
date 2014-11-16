@@ -82,7 +82,7 @@ func testMulticastSocketOptions(t *testing.T, c testIPv6MulticastConn, ifi *net.
 		t.Error(err)
 		return
 	} else if v != hoplim {
-		t.Errorf("got unexpected multicast hop limit %v; expected %v", v, hoplim)
+		t.Errorf("got %v; want %v", v, hoplim)
 		return
 	}
 
@@ -95,7 +95,7 @@ func testMulticastSocketOptions(t *testing.T, c testIPv6MulticastConn, ifi *net.
 			t.Error(err)
 			return
 		} else if v != toggle {
-			t.Errorf("got unexpected multicast loopback %v; expected %v", v, toggle)
+			t.Errorf("got %v; want %v", v, toggle)
 			return
 		}
 	}
@@ -119,7 +119,7 @@ func testSourceSpecificMulticastSocketOptions(t *testing.T, c testIPv6MulticastC
 	if err := c.ExcludeSourceSpecificGroup(ifi, grp, src); err != nil {
 		switch runtime.GOOS {
 		case "freebsd", "linux":
-		default: // platforms that don't support IGMPv2/3 fail here
+		default: // platforms that don't support MLDv2 fail here
 			t.Logf("not supported on %q", runtime.GOOS)
 			return
 		}

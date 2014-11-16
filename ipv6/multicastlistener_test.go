@@ -33,7 +33,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	for _, gaddr := range udpMultipleGroupListenerTests {
 		c, err := net.ListenPacket("udp6", "[::]:0") // wildcard address with non-reusable port
 		if err != nil {
-			t.Fatalf("net.ListenPacket failed: %v", err)
+			t.Fatal(err)
 		}
 		defer c.Close()
 
@@ -42,20 +42,20 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 		ift, err := net.Interfaces()
 		if err != nil {
-			t.Fatalf("net.Interfaces failed: %v", err)
+			t.Fatal(err)
 		}
 		for i, ifi := range ift {
 			if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
 				continue
 			}
 			if err := p.JoinGroup(&ifi, gaddr); err != nil {
-				t.Fatalf("ipv6.PacketConn.JoinGroup %v on %v failed: %v", gaddr, ifi, err)
+				t.Fatal(err)
 			}
 			mift = append(mift, &ift[i])
 		}
 		for _, ifi := range mift {
 			if err := p.LeaveGroup(ifi, gaddr); err != nil {
-				t.Fatalf("ipv6.PacketConn.LeaveGroup %v on %v failed: %v", gaddr, ifi, err)
+				t.Fatal(err)
 			}
 		}
 	}
@@ -73,13 +73,13 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	for _, gaddr := range udpMultipleGroupListenerTests {
 		c1, err := net.ListenPacket("udp6", "[ff02::]:1024") // wildcard address with reusable port
 		if err != nil {
-			t.Fatalf("net.ListenPacket failed: %v", err)
+			t.Fatal(err)
 		}
 		defer c1.Close()
 
 		c2, err := net.ListenPacket("udp6", "[ff02::]:1024") // wildcard address with reusable port
 		if err != nil {
-			t.Fatalf("net.ListenPacket failed: %v", err)
+			t.Fatal(err)
 		}
 		defer c2.Close()
 
@@ -90,7 +90,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 		ift, err := net.Interfaces()
 		if err != nil {
-			t.Fatalf("net.Interfaces failed: %v", err)
+			t.Fatal(err)
 		}
 		for i, ifi := range ift {
 			if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
@@ -98,7 +98,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 			}
 			for _, p := range ps {
 				if err := p.JoinGroup(&ifi, gaddr); err != nil {
-					t.Fatalf("ipv6.PacketConn.JoinGroup %v on %v failed: %v", gaddr, ifi, err)
+					t.Fatal(err)
 				}
 			}
 			mift = append(mift, &ift[i])
@@ -106,7 +106,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 		for _, ifi := range mift {
 			for _, p := range ps {
 				if err := p.LeaveGroup(ifi, gaddr); err != nil {
-					t.Fatalf("ipv6.PacketConn.LeaveGroup %v on %v failed: %v", gaddr, ifi, err)
+					t.Fatal(err)
 				}
 			}
 		}
@@ -131,7 +131,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 	ift, err := net.Interfaces()
 	if err != nil {
-		t.Fatalf("net.Interfaces failed: %v", err)
+		t.Fatal(err)
 	}
 	for i, ifi := range ift {
 		ip, ok := nettest.IsMulticastCapable("ip6", &ifi)
@@ -140,18 +140,18 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		}
 		c, err := net.ListenPacket("udp6", fmt.Sprintf("[%s%%%s]:1024", ip.String(), ifi.Name)) // unicast address with non-reusable port
 		if err != nil {
-			t.Fatalf("net.ListenPacket with %v failed: %v", ip, err)
+			t.Fatal(err)
 		}
 		defer c.Close()
 		p := ipv6.NewPacketConn(c)
 		if err := p.JoinGroup(&ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
+			t.Fatal(err)
 		}
 		mlt = append(mlt, &ml{p, &ift[i]})
 	}
 	for _, m := range mlt {
 		if err := m.c.LeaveGroup(m.ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.LeaveGroup on %v failed: %v", m.ifi, err)
+			t.Fatal(err)
 		}
 	}
 }
@@ -170,7 +170,7 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::") // wildcard address
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
@@ -180,27 +180,29 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 	ift, err := net.Interfaces()
 	if err != nil {
-		t.Fatalf("net.Interfaces failed: %v", err)
+		t.Fatal(err)
 	}
 	for i, ifi := range ift {
 		if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
 			continue
 		}
 		if err := p.JoinGroup(&ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
+			t.Fatal(err)
 		}
 		mift = append(mift, &ift[i])
 	}
 	for _, ifi := range mift {
 		if err := p.LeaveGroup(ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.LeaveGroup on %v failed: %v", ifi, err)
+			t.Fatal(err)
 		}
 	}
 }
 
 func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "darwin", "dragonfly", "nacl", "plan9", "solaris", "windows":
+	case "darwin", "dragonfly", "openbsd": // platforms that return fe80::1%lo0: bind: can't assign requested address
+		t.Skipf("not supported on %q", runtime.GOOS)
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -219,7 +221,7 @@ func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 	ift, err := net.Interfaces()
 	if err != nil {
-		t.Fatalf("net.Interfaces failed: %v", err)
+		t.Fatal(err)
 	}
 	for i, ifi := range ift {
 		ip, ok := nettest.IsMulticastCapable("ip6", &ifi)
@@ -228,18 +230,18 @@ func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		}
 		c, err := net.ListenPacket("ip6:ipv6-icmp", fmt.Sprintf("%s%%%s", ip.String(), ifi.Name)) // unicast address
 		if err != nil {
-			t.Fatalf("net.ListenPacket failed: %v", err)
+			t.Fatal(err)
 		}
 		defer c.Close()
 		p := ipv6.NewPacketConn(c)
 		if err := p.JoinGroup(&ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.JoinGroup on %v failed: %v", ifi, err)
+			t.Fatal(err)
 		}
 		mlt = append(mlt, &ml{p, &ift[i]})
 	}
 	for _, m := range mlt {
 		if err := m.c.LeaveGroup(m.ifi, &gaddr); err != nil {
-			t.Fatalf("ipv6.PacketConn.LeaveGroup on %v failed: %v", m.ifi, err)
+			t.Fatal(err)
 		}
 	}
 }

@@ -10,26 +10,11 @@ import (
 	"runtime"
 	"testing"
 
+	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv6"
 )
 
-var supportsIPv6 bool
-
-func init() {
-	if ln, err := net.Listen("tcp6", "[::1]:0"); err == nil {
-		ln.Close()
-		supportsIPv6 = true
-	}
-}
-
-var condFatalf = func() func(*testing.T, string, ...interface{}) {
-	// A few APIs are not implemented yet on some platforms.
-	switch runtime.GOOS {
-	case "darwin", "nacl", "plan9", "solaris", "windows":
-		return (*testing.T).Logf
-	}
-	return (*testing.T).Fatalf
-}()
+var supportsIPv6 bool = nettest.SupportsIPv6()
 
 func TestConnInitiatorPathMTU(t *testing.T) {
 	switch runtime.GOOS {
@@ -42,7 +27,7 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
 	if err != nil {
-		t.Fatalf("net.Listen failed: %v", err)
+		t.Fatal(err)
 	}
 	defer ln.Close()
 
@@ -51,12 +36,12 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 	c, err := net.Dial("tcp6", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("net.Dial failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
 	if pmtu, err := ipv6.NewConn(c).PathMTU(); err != nil {
-		condFatalf(t, "ipv6.Conn.PathMTU failed: %v", err)
+		t.Fatal(err)
 	} else {
 		t.Logf("path mtu for %v: %v", c.RemoteAddr(), pmtu)
 	}
@@ -75,7 +60,7 @@ func TestConnResponderPathMTU(t *testing.T) {
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
 	if err != nil {
-		t.Fatalf("net.Listen failed: %v", err)
+		t.Fatal(err)
 	}
 	defer ln.Close()
 
@@ -84,12 +69,12 @@ func TestConnResponderPathMTU(t *testing.T) {
 
 	c, err := ln.Accept()
 	if err != nil {
-		t.Fatalf("net.Accept failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
 	if pmtu, err := ipv6.NewConn(c).PathMTU(); err != nil {
-		condFatalf(t, "ipv6.Conn.PathMTU failed: %v", err)
+		t.Fatal(err)
 	} else {
 		t.Logf("path mtu for %v: %v", c.RemoteAddr(), pmtu)
 	}
@@ -111,7 +96,7 @@ func TestPacketConnChecksum(t *testing.T) {
 
 	c, err := net.ListenPacket("ip6:89", "::") // OSPF for IPv6
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
@@ -129,7 +114,7 @@ func TestPacketConnChecksum(t *testing.T) {
 			}
 		}
 		if on, offset, err := p.Checksum(); err != nil {
-			t.Fatalf("ipv6.PacketConn.Checksum failed: %v", err)
+			t.Fatal(err)
 		} else {
 			t.Logf("kernel checksum processing enabled=%v, offset=%v", on, offset)
 		}

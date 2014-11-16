@@ -14,7 +14,7 @@ func connector(t *testing.T, network, addr string, done chan<- bool) {
 
 	c, err := net.Dial(network, addr)
 	if err != nil {
-		t.Errorf("net.Dial failed: %v", err)
+		t.Error(err)
 		return
 	}
 	c.Close()
@@ -25,7 +25,7 @@ func acceptor(t *testing.T, ln net.Listener, done chan<- bool) {
 
 	c, err := ln.Accept()
 	if err != nil {
-		t.Errorf("net.Listener.Accept failed: %v", err)
+		t.Error(err)
 		return
 	}
 	c.Close()

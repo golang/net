@@ -28,7 +28,7 @@ func TestICMPString(t *testing.T) {
 	for _, tt := range icmpStringTests {
 		s := tt.in.String()
 		if s != tt.out {
-			t.Errorf("got %s; expected %s", s, tt.out)
+			t.Errorf("got %s; want %s", s, tt.out)
 		}
 	}
 }
@@ -80,7 +80,7 @@ func TestSetICMPFilter(t *testing.T) {
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::1")
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 
@@ -91,13 +91,13 @@ func TestSetICMPFilter(t *testing.T) {
 	f.Set(ipv6.ICMPTypeEchoRequest, false)
 	f.Set(ipv6.ICMPTypeEchoReply, false)
 	if err := p.SetICMPFilter(&f); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetICMPFilter failed: %v", err)
+		t.Fatal(err)
 	}
 	kf, err := p.ICMPFilter()
 	if err != nil {
-		t.Fatalf("ipv6.PacketConn.ICMPFilter failed: %v", err)
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(kf, &f) {
-		t.Fatalf("got unexpected filter %#v; expected %#v", kf, f)
+		t.Fatalf("got %#v; want %#v", kf, f)
 	}
 }

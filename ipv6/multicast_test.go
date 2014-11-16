@@ -63,7 +63,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 			if err := p.JoinSourceSpecificGroup(ifi, &grp, tt.src); err != nil {
 				switch runtime.GOOS {
 				case "freebsd", "linux":
-				default: // platforms that don't support IGMPv2/3 fail here
+				default: // platforms that don't support MLDv2 fail here
 					t.Logf("not supported on %q", runtime.GOOS)
 					continue
 				}
@@ -113,7 +113,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 			if n, cm, _, err := p.ReadFrom(rb); err != nil {
 				t.Fatal(err)
 			} else if !bytes.Equal(rb[:n], wb) {
-				t.Fatalf("got %v; expected %v", rb[:n], wb)
+				t.Fatalf("got %v; want %v", rb[:n], wb)
 			} else {
 				t.Logf("rcvd cmsg: %v", cm)
 			}
@@ -131,6 +131,9 @@ var packetConnReadWriteMulticastICMPTests = []struct {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
+	case "freebsd": // due to a bug on loopback marking
+		// See http://www.freebsd.org/cgi/query-pr.cgi?pr=180065.
+		t.Skipf("not supported on %q", runtime.GOOS)
 	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
@@ -164,7 +167,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			if err := p.JoinSourceSpecificGroup(ifi, tt.grp, tt.src); err != nil {
 				switch runtime.GOOS {
 				case "freebsd", "linux":
-				default: // platforms that don't support IGMPv2/3 fail here
+				default: // platforms that don't support MLDv2 fail here
 					t.Logf("not supported on %q", runtime.GOOS)
 					continue
 				}
@@ -237,17 +240,22 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			if n, err := p.WriteTo(wb, &cm, tt.grp); err != nil {
 				t.Fatal(err)
 			} else if n != len(wb) {
-				t.Fatalf("got %v; expected %v", n, len(wb))
+				t.Fatalf("got %v; want %v", n, len(wb))
 			}
 			rb := make([]byte, 128)
 			if n, cm, _, err := p.ReadFrom(rb); err != nil {
+				switch runtime.GOOS {
+				case "darwin": // older darwin kernels have some limitation on receiving icmp packet through raw socket
+					t.Logf("not supported on %q", runtime.GOOS)
+					continue
+				}
 				t.Fatal(err)
 			} else {
 				t.Logf("rcvd cmsg: %v", cm)
 				if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
 					t.Fatal(err)
 				} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
-					t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
+					t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
 				}
 			}
 		}

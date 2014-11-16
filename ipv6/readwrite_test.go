@@ -30,9 +30,13 @@ func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
 }
 
 func BenchmarkReadWriteNetUDP(b *testing.B) {
+	if !supportsIPv6 {
+		b.Skip("ipv6 is not supported")
+	}
+
 	c, dst, err := benchmarkUDPListener()
 	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
+		b.Fatal(err)
 	}
 	defer c.Close()
 
@@ -45,24 +49,28 @@ func BenchmarkReadWriteNetUDP(b *testing.B) {
 
 func benchmarkReadWriteNetUDP(b *testing.B, c net.PacketConn, wb, rb []byte, dst net.Addr) {
 	if _, err := c.WriteTo(wb, dst); err != nil {
-		b.Fatalf("net.PacketConn.WriteTo failed: %v", err)
+		b.Fatal(err)
 	}
 	if _, _, err := c.ReadFrom(rb); err != nil {
-		b.Fatalf("net.PacketConn.ReadFrom failed: %v", err)
+		b.Fatal(err)
 	}
 }
 
 func BenchmarkReadWriteIPv6UDP(b *testing.B) {
+	if !supportsIPv6 {
+		b.Skip("ipv6 is not supported")
+	}
+
 	c, dst, err := benchmarkUDPListener()
 	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
+		b.Fatal(err)
 	}
 	defer c.Close()
 
 	p := ipv6.NewPacketConn(c)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	if err := p.SetControlMessage(cf, true); err != nil {
-		b.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+		b.Fatal(err)
 	}
 	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 
@@ -82,12 +90,12 @@ func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, 
 		cm.IfIndex = ifi.Index
 	}
 	if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-		b.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
+		b.Fatal(err)
 	} else if n != len(wb) {
-		b.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
+		b.Fatal("got %v; want %v", n, len(wb))
 	}
 	if _, _, _, err := p.ReadFrom(rb); err != nil {
-		b.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
+		b.Fatal(err)
 	}
 }
 
@@ -102,7 +110,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 
 	c, err := net.ListenPacket("udp6", "[::1]:0")
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 	p := ipv6.NewPacketConn(c)
@@ -110,7 +118,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 
 	dst, err := net.ResolveUDPAddr("udp6", c.LocalAddr().String())
 	if err != nil {
-		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
+		t.Fatal(err)
 	}
 
 	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
@@ -121,7 +129,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		if nettest.ProtocolNotSupported(err) {
 			t.Skipf("not supported on %q", runtime.GOOS)
 		}
-		t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+		t.Fatal(err)
 	}
 
 	var wg sync.WaitGroup
@@ -129,10 +137,10 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		defer wg.Done()
 		rb := make([]byte, 128)
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Errorf("ipv6.PacketConn.ReadFrom failed: %v", err)
+			t.Error(err)
 			return
 		} else if !bytes.Equal(rb[:n], wb) {
-			t.Errorf("got %v; expected %v", rb[:n], wb)
+			t.Errorf("got %v; want %v", rb[:n], wb)
 			return
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
@@ -148,14 +156,14 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Errorf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+			t.Error(err)
 			return
 		}
 		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Errorf("ipv6.PacketConn.WriteTo failed: %v", err)
+			t.Error(err)
 			return
 		} else if n != len(wb) {
-			t.Errorf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
+			t.Errorf("got %v; want %v", n, len(wb))
 			return
 		}
 	}

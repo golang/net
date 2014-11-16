@@ -29,7 +29,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 	c, err := net.ListenPacket("udp6", "[::1]:0")
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 	p := ipv6.NewPacketConn(c)
@@ -37,7 +37,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 	dst, err := net.ResolveUDPAddr("udp6", c.LocalAddr().String())
 	if err != nil {
-		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
+		t.Fatal(err)
 	}
 
 	cm := ipv6.ControlMessage{
@@ -56,25 +56,25 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			if nettest.ProtocolNotSupported(err) {
 				t.Skipf("not supported on %q", runtime.GOOS)
 			}
-			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+			t.Fatal(err)
 		}
 		cm.HopLimit = i + 1
 		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
+			t.Fatal(err)
 		}
 		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
+			t.Fatal(err)
 		} else if n != len(wb) {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
+			t.Fatalf("got %v; want %v", n, len(wb))
 		}
 		rb := make([]byte, 128)
 		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
+			t.Fatal(err)
 		}
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
+			t.Fatal(err)
 		} else if !bytes.Equal(rb[:n], wb) {
-			t.Fatalf("got %v; expected %v", rb[:n], wb)
+			t.Fatalf("got %v; want %v", rb[:n], wb)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
 		}
@@ -95,7 +95,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::1")
 	if err != nil {
-		t.Fatalf("net.ListenPacket failed: %v", err)
+		t.Fatal(err)
 	}
 	defer c.Close()
 	p := ipv6.NewPacketConn(c)
@@ -103,7 +103,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 	dst, err := net.ResolveIPAddr("ip6", "::1")
 	if err != nil {
-		t.Fatalf("net.ResolveIPAddr failed: %v", err)
+		t.Fatal(err)
 	}
 
 	pshicmp := icmp.IPv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP)
@@ -121,7 +121,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	f.SetAll(true)
 	f.Set(ipv6.ICMPTypeEchoReply, false)
 	if err := p.SetICMPFilter(&f); err != nil {
-		t.Fatalf("ipv6.PacketConn.SetICMPFilter failed: %v", err)
+		t.Fatal(err)
 	}
 
 	var psh []byte
@@ -129,7 +129,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		if toggle {
 			psh = nil
 			if err := p.SetChecksum(true, 2); err != nil {
-				t.Fatalf("ipv6.PacketConn.SetChecksum failed: %v", err)
+				t.Fatal(err)
 			}
 		} else {
 			psh = pshicmp
@@ -145,35 +145,40 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			},
 		}).Marshal(psh)
 		if err != nil {
-			t.Fatalf("icmp.Message.Marshal failed: %v", err)
+			t.Fatal(err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			if nettest.ProtocolNotSupported(err) {
 				t.Skipf("not supported on %q", runtime.GOOS)
 			}
-			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+			t.Fatal(err)
 		}
 		cm.HopLimit = i + 1
 		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetWriteDeadline failed: %v", err)
+			t.Fatal(err)
 		}
 		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: %v", err)
+			t.Fatal(err)
 		} else if n != len(wb) {
-			t.Fatalf("ipv6.PacketConn.WriteTo failed: short write: %v", n)
+			t.Fatalf("got %v; want %v", n, len(wb))
 		}
 		rb := make([]byte, 128)
 		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatalf("ipv6.PacketConn.SetReadDeadline failed: %v", err)
+			t.Fatal(err)
 		}
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
+			switch runtime.GOOS {
+			case "darwin": // older darwin kernels have some limitation on receiving icmp packet through raw socket
+				t.Logf("not supported on %q", runtime.GOOS)
+				continue
+			}
+			t.Fatal(err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
 			if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
-				t.Fatalf("icmp.ParseMessage failed: %v", err)
+				t.Fatal(err)
 			} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
-				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
+				t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
 			}
 		}
 	}
