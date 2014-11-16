@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -50,8 +51,13 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 	if VerboseLogs {
 		t.Logf("Running test server at: %s", ts.URL)
 	}
-	var sc *serverConn
+	var (
+		mu sync.Mutex
+		sc *serverConn
+	)
 	testHookGetServerConn = func(v *serverConn) {
+		mu.Lock()
+		defer mu.Unlock()
 		sc = v
 		sc.testHookCh = make(chan func())
 	}
@@ -63,6 +69,7 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 		t.Fatal(err)
 	}
 	log.SetOutput(twriter{t})
+	mu.Lock()
 	return &serverTester{
 		t:      t,
 		ts:     ts,
@@ -875,8 +882,8 @@ func TestServer_StateTransitions(t *testing.T) {
 		if st.stream(1) == nil {
 			t.Errorf("nil stream 1 in handler")
 		}
-		if got := st.streamState(1); got != stateOpen {
-			t.Errorf("in handler, state is %v; want OPEN", got)
+		if got, want := st.streamState(1), stateOpen; got != want {
+			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
 		writeData <- true
 		if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != io.EOF {
