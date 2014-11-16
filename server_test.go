@@ -872,7 +872,6 @@ func TestServer_DeadConn_Unblocks_Read(t *testing.T) {
 }
 
 func TestServer_StateTransitions(t *testing.T) {
-	t.Skip("TODO: failing test. fix")
 	var st *serverTester
 	inHandler := make(chan bool)
 	writeData := make(chan bool)
