@@ -88,21 +88,24 @@ var testHookGetServerConn func(*serverConn)
 
 func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc := &serverConn{
-		hs:                hs,
-		conn:              c,
-		handler:           h,
-		framer:            NewFramer(c, c), // TODO: write to a (custom?) buffered writer that can alternate when it's in buffered mode.
-		streams:           make(map[uint32]*stream),
-		readFrameCh:       make(chan frameAndGate),
-		readFrameErrCh:    make(chan error, 1), // must be buffered for 1
-		wantWriteFrameCh:  make(chan frameWriteMsg, 8),
-		writeFrameCh:      make(chan frameWriteMsg, 1), // may be 0 or 1, but more is useless. (max 1 in flight)
-		wroteFrameCh:      make(chan struct{}, 1),
-		flow:              newFlow(initialWindowSize),
-		doneServing:       make(chan struct{}),
-		maxWriteFrameSize: initialMaxFrameSize,
-		initialWindowSize: initialWindowSize,
-		serveG:            newGoroutineLock(),
+		hs:                   hs,
+		conn:                 c,
+		handler:              h,
+		framer:               NewFramer(c, c), // TODO: write to a (custom?) buffered writer that can alternate when it's in buffered mode.
+		streams:              make(map[uint32]*stream),
+		readFrameCh:          make(chan frameAndGate),
+		readFrameErrCh:       make(chan error, 1), // must be buffered for 1
+		wantWriteFrameCh:     make(chan frameWriteMsg, 8),
+		writeFrameCh:         make(chan frameWriteMsg, 1), // may be 0 or 1, but more is useless. (max 1 in flight)
+		wroteFrameCh:         make(chan struct{}, 1),
+		flow:                 newFlow(initialWindowSize),
+		doneServing:          make(chan struct{}),
+		maxWriteFrameSize:    initialMaxFrameSize,
+		initialWindowSize:    initialWindowSize,
+		headerTableSize:      initialHeaderTableSize,
+		maxConcurrentStreams: -1, // no limit
+		serveG:               newGoroutineLock(),
+		pushEnabled:          true,
 	}
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
@@ -142,12 +145,16 @@ type serverConn struct {
 	flow   *flow         // connection-wide (not stream-specific) flow control
 
 	// Everything following is owned by the serve loop; use serveG.check():
+	pushEnabled           bool
 	sawFirstSettings      bool // got the initial SETTINGS frame after the preface
 	needToSendSettingsAck bool
 	maxStreamID           uint32 // max ever seen
 	streams               map[uint32]*stream
-	maxWriteFrameSize     uint32 // TODO: update this when settings come in
+	maxWriteFrameSize     uint32
 	initialWindowSize     int32
+	headerTableSize       uint32
+	maxHeaderListSize     uint32            // zero means unknown (default)
+	maxConcurrentStreams  int64             // negative means no limit.
 	canonHeader           map[string]string // http2-lower-case -> Go-Canonical-Case
 	sentGoAway            bool
 	req                   requestParam    // non-zero while reading request headers
@@ -723,24 +730,39 @@ func (sc *serverConn) writeSettingsAck(_ interface{}) error {
 
 func (sc *serverConn) processSetting(s Setting) error {
 	sc.serveG.check()
+	if err := s.Valid(); err != nil {
+		return err
+	}
 	sc.vlogf("processing setting %v", s)
 	switch s.ID {
+	case SettingHeaderTableSize:
+		sc.headerTableSize = s.Val
+		return nil
+	case SettingEnablePush:
+		sc.pushEnabled = s.Val != 0
+		return nil
+	case SettingMaxConcurrentStreams:
+		sc.maxConcurrentStreams = int64(s.Val)
+		return nil
 	case SettingInitialWindowSize:
 		return sc.processSettingInitialWindowSize(s.Val)
+	case SettingMaxFrameSize:
+		sc.maxWriteFrameSize = s.Val
+		return nil
+	case SettingMaxHeaderListSize:
+		sc.maxHeaderListSize = s.Val
+		return nil
 	}
-	log.Printf("TODO: handle %v", s)
+	// Unknown setting: "An endpoint that receives a SETTINGS
+	// frame with any unknown or unsupported identifier MUST
+	// ignore that setting."
 	return nil
 }
 
 func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
 	sc.serveG.check()
-	if val > (1<<31 - 1) {
-		// 6.5.2 Defined SETTINGS Parameters
-		// "Values above the maximum flow control window size of
-		// 231-1 MUST be treated as a connection error (Section
-		// 5.4.1) of type FLOW_CONTROL_ERROR."
-		return ConnectionError(ErrCodeFlowControl)
-	}
+	// Note: val already validated to be within range by
+	// processSetting's Valid call.
 
 	// "A SETTINGS frame can alter the initial flow control window
 	// size for all current streams. When the value of

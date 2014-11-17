@@ -26,6 +26,21 @@ func init() {
 	flag.BoolVar(&VerboseLogs, "verboseh2", false, "Verbose HTTP/2 debug logging")
 }
 
+func TestSettingString(t *testing.T) {
+	tests := []struct {
+		s    Setting
+		want string
+	}{
+		{Setting{SettingMaxFrameSize, 123}, "[MAX_FRAME_SIZE = 123]"},
+	}
+	for i, tt := range tests {
+		got := fmt.Sprint(tt.s)
+		if got != tt.want {
+			t.Errorf("%d. for %#v, string = %q; want %q", i, tt.s, got, tt.want)
+		}
+	}
+}
+
 type twriter struct {
 	t testing.TB
 }

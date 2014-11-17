@@ -17,6 +17,7 @@
 package http2
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -68,6 +69,69 @@ var stateName = [...]string{
 
 func (st streamState) String() string {
 	return stateName[st]
+}
+
+// Setting is a setting parameter: which setting it is, and its value.
+type Setting struct {
+	// ID is which setting is being set.
+	// See http://http2.github.io/http2-spec/#SettingValues
+	ID SettingID
+
+	// Val is the value.
+	Val uint32
+}
+
+func (s Setting) String() string {
+	return fmt.Sprintf("[%v = %d]", s.ID, s.Val)
+}
+
+// Valid reports whether the setting is valid.
+func (s Setting) Valid() error {
+	// Limits and error codes from 6.5.2 Defined SETTINGS Parameters
+	switch s.ID {
+	case SettingEnablePush:
+		if s.Val != 1 && s.Val != 0 {
+			return ConnectionError(ErrCodeProtocol)
+		}
+	case SettingInitialWindowSize:
+		if s.Val > 1<<31-1 {
+			return ConnectionError(ErrCodeFlowControl)
+		}
+	case SettingMaxFrameSize:
+		if s.Val < 16384 || s.Val > 1<<24-1 {
+			return ConnectionError(ErrCodeProtocol)
+		}
+	}
+	return nil
+}
+
+// A SettingID is an HTTP/2 setting as defined in
+// http://http2.github.io/http2-spec/#iana-settings
+type SettingID uint16
+
+const (
+	SettingHeaderTableSize      SettingID = 0x1
+	SettingEnablePush           SettingID = 0x2
+	SettingMaxConcurrentStreams SettingID = 0x3
+	SettingInitialWindowSize    SettingID = 0x4
+	SettingMaxFrameSize         SettingID = 0x5
+	SettingMaxHeaderListSize    SettingID = 0x6
+)
+
+var settingName = map[SettingID]string{
+	SettingHeaderTableSize:      "HEADER_TABLE_SIZE",
+	SettingEnablePush:           "ENABLE_PUSH",
+	SettingMaxConcurrentStreams: "MAX_CONCURRENT_STREAMS",
+	SettingInitialWindowSize:    "INITIAL_WINDOW_SIZE",
+	SettingMaxFrameSize:         "MAX_FRAME_SIZE",
+	SettingMaxHeaderListSize:    "MAX_HEADER_LIST_SIZE",
+}
+
+func (s SettingID) String() string {
+	if v, ok := settingName[s]; ok {
+		return v
+	}
+	return fmt.Sprintf("UNKNOWN_SETTING_%d", uint8(s))
 }
 
 func validHeader(v string) bool {
