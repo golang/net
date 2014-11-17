@@ -92,7 +92,7 @@ func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, 
 	if n, err := p.WriteTo(wb, &cm, dst); err != nil {
 		b.Fatal(err)
 	} else if n != len(wb) {
-		b.Fatal("got %v; want %v", n, len(wb))
+		b.Fatalf("got %v; want %v", n, len(wb))
 	}
 	if _, _, _, err := p.ReadFrom(rb); err != nil {
 		b.Fatal(err)
