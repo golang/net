@@ -19,6 +19,7 @@ var (
 		ctlTrafficClass: {sysIPV6_TCLASS, 4, marshalTrafficClass, parseTrafficClass},
 		ctlHopLimit:     {sysIPV6_HOPLIMIT, 4, marshalHopLimit, parseHopLimit},
 		ctlPacketInfo:   {sysIPV6_PKTINFO, sysSizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo},
+		ctlPathMTU:      {sysIPV6_PATHMTU, sysSizeofIPv6Mtuinfo, marshalPathMTU, parsePathMTU},
 	}
 
 	sockOpts = [ssoMax]sockOpt{
