@@ -968,8 +968,24 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	}
 	var tlsState *tls.ConnectionState // make this non-nil if https
 	if rp.scheme == "https" {
-		// TODO: get from sc's ConnectionState
 		tlsState = &tls.ConnectionState{}
+		if tc, ok := sc.conn.(*tls.Conn); ok {
+			*tlsState = tc.ConnectionState()
+			if tlsState.Version < tls.VersionTLS12 {
+				// 9.2 Use of TLS Features
+				// An implementation of HTTP/2 over TLS MUST use TLS
+				// 1.2 or higher with the restrictions on feature set
+				// and cipher suite described in this section. Due to
+				// implementation limitations, it might not be
+				// possible to fail TLS negotiation. An endpoint MUST
+				// immediately terminate an HTTP/2 connection that
+				// does not meet the TLS requirements described in
+				// this section with a connection error (Section
+				// 5.4.1) of type INADEQUATE_SECURITY.
+				return nil, nil, ConnectionError(ErrCodeInadequateSecurity)
+			}
+			// TODO: verify cipher suites. (9.2.1, 9.2.2)
+		}
 	}
 	authority := rp.authority
 	if authority == "" {
