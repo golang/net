@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 var VerboseLogs = false
@@ -178,3 +179,35 @@ type gate chan struct{}
 
 func (g gate) Done() { g <- struct{}{} }
 func (g gate) Wait() { <-g }
+
+// A closeWaiter is like a sync.WaitGroup but only goes 1 to 0 (open to closed).
+type closeWaiter struct {
+	m      sync.Mutex
+	c      sync.Cond
+	closed bool
+}
+
+// Init makes a closeWaiter usable.
+// It exists because so a closeWaiter value can be placed inside a
+// larger struct and have the Mutex and Cond's memory in the same
+// allocation.
+func (cw *closeWaiter) Init() {
+	cw.c.L = &cw.m
+}
+
+// Close marks the closeWwaiter as closed and unblocks any waiters.
+func (cw *closeWaiter) Close() {
+	cw.m.Lock()
+	cw.closed = true
+	cw.m.Unlock()
+	cw.c.Broadcast()
+}
+
+// Wait waits for the closeWaiter to become closed.
+func (cw *closeWaiter) Wait() {
+	cw.m.Lock()
+	defer cw.m.Unlock()
+	for !cw.closed {
+		cw.c.Wait()
+	}
+}

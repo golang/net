@@ -811,64 +811,99 @@ func TestServer_Send_RstStream_After_Bogus_WindowUpdate(t *testing.T) {
 	st.wantRSTStream(1, ErrCodeFlowControl)
 }
 
-func TestServer_RSTStream_Unblocks_Read(t *testing.T) {
+// testServerPostUnblock sends a hanging POST with unsent data to handler,
+// then runs fn once in the handler, and verifies that the error returned from
+// handler is acceptable. It fails if takes over 5 seconds for handler to exit.
+func testServerPostUnblock(t *testing.T,
+	handler func(http.ResponseWriter, *http.Request) error,
+	fn func(*serverTester),
+	checkErr func(error),
+	otherHeaders ...string) {
 	inHandler := make(chan bool)
 	errc := make(chan error, 1)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		inHandler <- true
-		_, err := r.Body.Read(make([]byte, 1))
-		errc <- err
+		errc <- handler(w, r)
 	})
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		BlockFragment: encodeHeader(st.t, append([]string{":method", "POST"}, otherHeaders...)...),
 		EndStream:     false, // keep it open
 		EndHeaders:    true,
 	})
 	<-inHandler
-	if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
-		t.Fatal(err)
-	}
+	fn(st)
 	select {
 	case err := <-errc:
-		if err == nil {
-			t.Fatal("unexpected nil error from Read")
+		if checkErr != nil {
+			checkErr(err)
 		}
-		t.Logf("Read = %v", err)
-		st.Close()
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for Handler's Body.Read to error out")
+		t.Fatal("timeout waiting for Handler to return")
 	}
+	st.Close()
+}
+
+func TestServer_RSTStream_Unblocks_Read(t *testing.T) {
+	testServerPostUnblock(t,
+		func(w http.ResponseWriter, r *http.Request) (err error) {
+			_, err = r.Body.Read(make([]byte, 1))
+			return
+		},
+		func(st *serverTester) {
+			if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+				t.Fatal(err)
+			}
+		},
+		func(err error) {
+			if err == nil {
+				t.Error("unexpected nil error from Request.Body.Read")
+			}
+		},
+	)
 }
 
 func TestServer_DeadConn_Unblocks_Read(t *testing.T) {
-	inHandler := make(chan bool)
-	errc := make(chan error, 1)
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		inHandler <- true
-		_, err := r.Body.Read(make([]byte, 1))
-		errc <- err
-	})
-	st.greet()
-	st.writeHeaders(HeadersFrameParam{
-		StreamID:      1,
-		BlockFragment: encodeHeader(st.t, ":method", "POST"),
-		EndStream:     false, // keep it open
-		EndHeaders:    true,
-	})
-	<-inHandler
-	st.cc.Close() // hard-close the network connection
-	select {
-	case err := <-errc:
-		if err == nil {
-			t.Fatal("unexpected nil error from Read")
+	testServerPostUnblock(t,
+		func(w http.ResponseWriter, r *http.Request) (err error) {
+			_, err = r.Body.Read(make([]byte, 1))
+			return
+		},
+		func(st *serverTester) { st.cc.Close() },
+		func(err error) {
+			if err == nil {
+				t.Error("unexpected nil error from Request.Body.Read")
+			}
+		},
+	)
+}
+
+var blockUntilClosed = func(w http.ResponseWriter, r *http.Request) error {
+	<-w.(http.CloseNotifier).CloseNotify()
+	return nil
+}
+
+func TestServer_CloseNotify_After_RSTStream(t *testing.T) {
+	testServerPostUnblock(t, blockUntilClosed, func(st *serverTester) {
+		if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+			t.Fatal(err)
 		}
-		t.Logf("Read = %v", err)
-		st.Close()
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for Handler's Body.Read to error out")
-	}
+	}, nil)
+}
+
+func TestServer_CloseNotify_After_ConnClose(t *testing.T) {
+	testServerPostUnblock(t, blockUntilClosed, func(st *serverTester) { st.cc.Close() }, nil)
+}
+
+// that CloseNotify unblocks after a stream error due to the client's
+// problem that's unrelated to them explicitly canceling it (which is
+// TestServer_CloseNotify_After_RSTStream above)
+func TestServer_CloseNotify_After_StreamError(t *testing.T) {
+	testServerPostUnblock(t, blockUntilClosed, func(st *serverTester) {
+		// data longer than declared Content-Length => stream error
+		st.writeData(1, true, []byte("1234"))
+	}, nil, "content-length", "3")
 }
 
 func TestServer_StateTransitions(t *testing.T) {
