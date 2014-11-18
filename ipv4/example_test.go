@@ -5,19 +5,25 @@
 package ipv4_test
 
 import (
+	"fmt"
 	"log"
 	"net"
+	"os"
+	"runtime"
+	"time"
 
 	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/icmp"
 	"golang.org/x/net/ipv4"
 )
 
-func ExampleUnicastTCPListener() {
+func ExampleConn_markingTCP() {
 	ln, err := net.Listen("tcp4", "0.0.0.0:1024")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer ln.Close()
+
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -25,261 +31,193 @@ func ExampleUnicastTCPListener() {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			err := ipv4.NewConn(c).SetTOS(iana.DiffServAF11)
-			if err != nil {
+			p := ipv4.NewConn(c)
+			if err := p.SetTOS(iana.DiffServAF11); err != nil {
 				log.Fatal(err)
 			}
-			_, err = c.Write([]byte("HELLO-R-U-THERE-ACK"))
-			if err != nil {
+			if err := p.SetTTL(128); err != nil {
+				log.Fatal(err)
+			}
+			if _, err := c.Write([]byte("HELLO-R-U-THERE-ACK")); err != nil {
 				log.Fatal(err)
 			}
 		}(c)
 	}
 }
 
-func ExampleMulticastUDPListener() {
-	en0, err := net.InterfaceByName("en0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	en1, err := net.InterfaceByIndex(911)
-	if err != nil {
-		log.Fatal(err)
-	}
-	group := net.IPv4(224, 0, 0, 250)
-
-	c, err := net.ListenPacket("udp4", "0.0.0.0:1024")
+func ExamplePacketConn_servingOneShotMulticastDNS() {
+	c, err := net.ListenPacket("udp4", "0.0.0.0:5353") // mDNS over UDP
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer c.Close()
-
 	p := ipv4.NewPacketConn(c)
-	err = p.JoinGroup(en0, &net.UDPAddr{IP: group})
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = p.JoinGroup(en1, &net.UDPAddr{IP: group})
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	err = p.SetControlMessage(ipv4.FlagDst, true)
+	en0, err := net.InterfaceByName("en0")
 	if err != nil {
+		log.Fatal(err)
+	}
+	mDNSLinkLocal := net.UDPAddr{IP: net.IPv4(224, 0, 0, 251)}
+	if err := p.JoinGroup(en0, &mDNSLinkLocal); err != nil {
+		log.Fatal(err)
+	}
+	defer p.LeaveGroup(en0, &mDNSLinkLocal)
+	if err := p.SetControlMessage(ipv4.FlagDst, true); err != nil {
 		log.Fatal(err)
 	}
 
 	b := make([]byte, 1500)
 	for {
-		n, cm, src, err := p.ReadFrom(b)
+		_, cm, peer, err := p.ReadFrom(b)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if cm.Dst.IsMulticast() {
-			if cm.Dst.Equal(group) {
-				// joined group, do something
-			} else {
-				// unknown group, discard
-				continue
-			}
+		if !cm.Dst.IsMulticast() || !cm.Dst.Equal(mDNSLinkLocal.IP) {
+			continue
 		}
-		p.SetTOS(iana.DiffServCS7)
-		p.SetTTL(16)
-		_, err = p.WriteTo(b[:n], nil, src)
-		if err != nil {
+		answers := []byte("FAKE-MDNS-ANSWERS") // fake mDNS answers, you need to implement this
+		if _, err := p.WriteTo(answers, nil, peer); err != nil {
 			log.Fatal(err)
 		}
-		dst := &net.UDPAddr{IP: group, Port: 1024}
-		for _, ifi := range []*net.Interface{en0, en1} {
-			err := p.SetMulticastInterface(ifi)
-			if err != nil {
-				log.Fatal(err)
-			}
-			p.SetMulticastTTL(2)
-			_, err = p.WriteTo(b[:n], nil, dst)
-			if err != nil {
-				log.Fatal(err)
-			}
+	}
+}
+
+func ExamplePacketConn_tracingIPPacketRoute() {
+	// Tracing an IP packet route to www.google.com.
+
+	const host = "www.google.com"
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var dst net.IPAddr
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			dst.IP = ip
+			fmt.Printf("using %v for tracing an IP packet route to %s\n", dst.IP, host)
+			break
 		}
 	}
-
-	err = p.LeaveGroup(en1, &net.UDPAddr{IP: group})
-	if err != nil {
-		log.Fatal(err)
+	if dst.IP == nil {
+		log.Fatal("no A record found")
 	}
-	newgroup := net.IPv4(224, 0, 0, 249)
-	err = p.JoinGroup(en1, &net.UDPAddr{IP: newgroup})
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
-type OSPFHeader struct {
-	Version  byte
-	Type     byte
-	Len      uint16
-	RouterID uint32
-	AreaID   uint32
-	Checksum uint16
-}
-
-const (
-	OSPFHeaderLen      = 14
-	OSPFHelloHeaderLen = 20
-	OSPF_VERSION       = 2
-	OSPF_TYPE_HELLO    = iota + 1
-	OSPF_TYPE_DB_DESCRIPTION
-	OSPF_TYPE_LS_REQUEST
-	OSPF_TYPE_LS_UPDATE
-	OSPF_TYPE_LS_ACK
-)
-
-var (
-	AllSPFRouters = net.IPv4(224, 0, 0, 5)
-	AllDRouters   = net.IPv4(224, 0, 0, 6)
-)
-
-func ExampleIPOSPFListener() {
-	var ifs []*net.Interface
-	en0, err := net.InterfaceByName("en0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	ifs = append(ifs, en0)
-	en1, err := net.InterfaceByIndex(911)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ifs = append(ifs, en1)
-
-	c, err := net.ListenPacket("ip4:89", "0.0.0.0") // OSFP for IPv4
+	c, err := net.ListenPacket(fmt.Sprintf("ip4:%d", iana.ProtocolICMP), "0.0.0.0") // ICMP for IPv4
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer c.Close()
+	p := ipv4.NewPacketConn(c)
 
-	r, err := ipv4.NewRawConn(c)
-	if err != nil {
+	if err := p.SetControlMessage(ipv4.FlagTTL|ipv4.FlagSrc|ipv4.FlagDst|ipv4.FlagInterface, true); err != nil {
 		log.Fatal(err)
 	}
-	for _, ifi := range ifs {
-		err := r.JoinGroup(ifi, &net.IPAddr{IP: AllSPFRouters})
+	wm := icmp.Message{
+		Type: ipv4.ICMPTypeEcho, Code: 0,
+		Body: &icmp.Echo{
+			ID:   os.Getpid() & 0xffff,
+			Data: []byte("HELLO-R-U-THERE"),
+		},
+	}
+
+	rb := make([]byte, 1500)
+	for i := 1; i <= 64; i++ { // up to 64 hops
+		wm.Body.(*icmp.Echo).Seq = i
+		wb, err := wm.Marshal(nil)
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = r.JoinGroup(ifi, &net.IPAddr{IP: AllDRouters})
-		if err != nil {
+		if err := p.SetTTL(i); err != nil {
 			log.Fatal(err)
 		}
-	}
 
-	err = r.SetControlMessage(ipv4.FlagDst|ipv4.FlagInterface, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	r.SetTOS(iana.DiffServCS6)
-
-	parseOSPFHeader := func(b []byte) *OSPFHeader {
-		if len(b) < OSPFHeaderLen {
-			return nil
-		}
-		return &OSPFHeader{
-			Version:  b[0],
-			Type:     b[1],
-			Len:      uint16(b[2])<<8 | uint16(b[3]),
-			RouterID: uint32(b[4])<<24 | uint32(b[5])<<16 | uint32(b[6])<<8 | uint32(b[7]),
-			AreaID:   uint32(b[8])<<24 | uint32(b[9])<<16 | uint32(b[10])<<8 | uint32(b[11]),
-			Checksum: uint16(b[12])<<8 | uint16(b[13]),
-		}
-	}
-
-	b := make([]byte, 1500)
-	for {
-		iph, p, _, err := r.ReadFrom(b)
-		if err != nil {
+		// In the real world usually there are several
+		// multiple traffic-engineered paths for each hop.
+		// You may need to probe a few times to each hop.
+		begin := time.Now()
+		if _, err := p.WriteTo(wb, nil, &dst); err != nil {
 			log.Fatal(err)
 		}
-		if iph.Version != ipv4.Version {
-			continue
+		if err := p.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+			log.Fatal(err)
 		}
-		if iph.Dst.IsMulticast() {
-			if !iph.Dst.Equal(AllSPFRouters) && !iph.Dst.Equal(AllDRouters) {
+		n, cm, peer, err := p.ReadFrom(rb)
+		if err != nil {
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				fmt.Printf("%v\t*\n", i)
 				continue
 			}
+			log.Fatal(err)
 		}
-		ospfh := parseOSPFHeader(p)
-		if ospfh == nil {
-			continue
+		rm, err := icmp.ParseMessage(iana.ProtocolICMP, rb[:n])
+		if err != nil {
+			log.Fatal(err)
 		}
-		if ospfh.Version != OSPF_VERSION {
-			continue
-		}
-		switch ospfh.Type {
-		case OSPF_TYPE_HELLO:
-		case OSPF_TYPE_DB_DESCRIPTION:
-		case OSPF_TYPE_LS_REQUEST:
-		case OSPF_TYPE_LS_UPDATE:
-		case OSPF_TYPE_LS_ACK:
+		rtt := time.Since(begin)
+
+		// In the real world you need to determine whether the
+		// received message is yours using ControlMessage.Src,
+		// ControlMessage.Dst, icmp.Echo.ID and icmp.Echo.Seq.
+		switch rm.Type {
+		case ipv4.ICMPTypeTimeExceeded:
+			names, _ := net.LookupAddr(peer.String())
+			fmt.Printf("%d\t%v %+v %v\n\t%+v\n", i, peer, names, rtt, cm)
+		case ipv4.ICMPTypeEchoReply:
+			names, _ := net.LookupAddr(peer.String())
+			fmt.Printf("%d\t%v %+v %v\n\t%+v\n", i, peer, names, rtt, cm)
+			return
+		default:
+			log.Printf("unknown ICMP message: %+v\n", rm)
 		}
 	}
 }
 
-func ExampleWriteIPOSPFHello() {
-	var ifs []*net.Interface
-	en0, err := net.InterfaceByName("en0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	ifs = append(ifs, en0)
-	en1, err := net.InterfaceByIndex(911)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ifs = append(ifs, en1)
-
-	c, err := net.ListenPacket("ip4:89", "0.0.0.0") // OSPF for IPv4
+func ExampleRawConn_advertisingOSPFHello() {
+	c, err := net.ListenPacket(fmt.Sprintf("ip4:%d", iana.ProtocolOSPFIGP), "0.0.0.0") // OSPF for IPv4
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer c.Close()
-
 	r, err := ipv4.NewRawConn(c)
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, ifi := range ifs {
-		err := r.JoinGroup(ifi, &net.IPAddr{IP: AllSPFRouters})
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = r.JoinGroup(ifi, &net.IPAddr{IP: AllDRouters})
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 
-	hello := make([]byte, OSPFHelloHeaderLen)
-	ospf := make([]byte, OSPFHeaderLen)
-	ospf[0] = OSPF_VERSION
-	ospf[1] = OSPF_TYPE_HELLO
+	en0, err := net.InterfaceByName("en0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	allSPFRouters := net.IPAddr{IP: net.IPv4(224, 0, 0, 5)}
+	if err := r.JoinGroup(en0, &allSPFRouters); err != nil {
+		log.Fatal(err)
+	}
+	defer r.LeaveGroup(en0, &allSPFRouters)
+
+	hello := make([]byte, 24) // fake hello data, you need to implement this
+	ospf := make([]byte, 24)  // fake ospf header, you need to implement this
+	ospf[0] = 2               // version 2
+	ospf[1] = 1               // hello packet
 	ospf = append(ospf, hello...)
-	iph := &ipv4.Header{}
-	iph.Version = ipv4.Version
-	iph.Len = ipv4.HeaderLen
-	iph.TOS = iana.DiffServCS6
-	iph.TotalLen = ipv4.HeaderLen + len(ospf)
-	iph.TTL = 1
-	iph.Protocol = 89
-	iph.Dst = AllSPFRouters
+	iph := &ipv4.Header{
+		Version:  ipv4.Version,
+		Len:      ipv4.HeaderLen,
+		TOS:      iana.DiffServCS6,
+		TotalLen: ipv4.HeaderLen + len(ospf),
+		TTL:      1,
+		Protocol: iana.ProtocolOSPFIGP,
+		Dst:      allSPFRouters.IP.To4(),
+	}
 
-	for _, ifi := range ifs {
-		err := r.SetMulticastInterface(ifi)
-		if err != nil {
-			return
+	var cm *ipv4.ControlMessage
+	switch runtime.GOOS {
+	case "darwin", "linux":
+		cm = &ipv4.ControlMessage{IfIndex: en0.Index}
+	default:
+		if err := r.SetMulticastInterface(en0); err != nil {
+			log.Fatal(err)
 		}
-		err = r.WriteTo(iph, ospf, nil)
-		if err != nil {
-			return
-		}
+	}
+	if err := r.WriteTo(iph, ospf, cm); err != nil {
+		log.Fatal(err)
 	}
 }
