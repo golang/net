@@ -60,6 +60,14 @@ func init() {
 		ctlOpts[ctlHopLimit].marshal = marshalHopLimit
 		ctlOpts[ctlPacketInfo].name = sysIPV6_PKTINFO
 		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
+		ctlOpts[ctlNextHop].name = sysIPV6_NEXTHOP
+		ctlOpts[ctlNextHop].length = sysSizeofSockaddrInet6
+		ctlOpts[ctlNextHop].marshal = marshalNextHop
+		ctlOpts[ctlNextHop].parse = parseNextHop
+		ctlOpts[ctlPathMTU].name = sysIPV6_PATHMTU
+		ctlOpts[ctlPathMTU].length = sysSizeofIPv6Mtuinfo
+		ctlOpts[ctlPathMTU].marshal = marshalPathMTU
+		ctlOpts[ctlPathMTU].parse = parsePathMTU
 		sockOpts[ssoTrafficClass].level = iana.ProtocolIPv6
 		sockOpts[ssoTrafficClass].name = sysIPV6_TCLASS
 		sockOpts[ssoTrafficClass].typ = ssoTypeInt
