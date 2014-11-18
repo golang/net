@@ -71,7 +71,7 @@ coreos:
         
         [Service]
         ExecStartPre=/bin/bash -c 'mkdir -p /opt/bin && curl -s -o /opt/bin/h2demo http://storage.googleapis.com/http2-demo-server-tls/h2demo && chmod +x /opt/bin/h2demo'
-        ExecStart=/opt/bin/h2demo
+        ExecStart=/opt/bin/h2demo --prod
         RestartSec=5s
         Restart=always
         Type=simple
@@ -232,8 +232,8 @@ OpLoop:
 }
 
 func instanceDisk(svc *compute.Service) *compute.AttachedDisk {
-	const imageURL = "https://www.googleapis.com/compute/v1/projects/coreos-cloud/global/images/coreos-stable-445-5-0-v20141016"
-	diskName := *instName + "-coreos-stateless-pd"
+	const imageURL = "https://www.googleapis.com/compute/v1/projects/coreos-cloud/global/images/coreos-stable-444-5-0-v20141016"
+	diskName := *instName + "-disk"
 
 	return &compute.AttachedDisk{
 		AutoDelete: true,
