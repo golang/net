@@ -5,11 +5,13 @@
 package ipv6_test
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 
+	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv6"
 )
@@ -104,7 +106,7 @@ func TestPacketConnChecksum(t *testing.T) {
 		t.Skip("must be root")
 	}
 
-	c, err := net.ListenPacket("ip6:89", "::") // OSPF for IPv6
+	c, err := net.ListenPacket(fmt.Sprintf("ip6:%d", iana.ProtocolIPv6ICMP), "::") // OSPF for IPv6
 	if err != nil {
 		t.Fatal(err)
 	}
