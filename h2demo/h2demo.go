@@ -47,7 +47,7 @@ func homeOldHTTP(w http.ResponseWriter, r *http.Request) {
 <p>Unfortunately, you're <b>not</b> using HTTP/2 right now. To do so:</p>
 <ul>
    <li>Use Firefox Nightly or go to <b>about:config</b> and enable "network.http.spdy.enabled.http2draft"</li>
-   <li>Use Google Chrome Canary and/or <a href="chrome://flags/#enable-spdy4">Enable SPDY/4</a> (Chrome's name for HTTP/2)</li>
+   <li>Use Google Chrome Canary and/or go to <b>chrome://flags/#enable-spdy4</b> to <i>Enable SPDY/4</i> (Chrome's name for HTTP/2)</li>
 </ul>
 <p>See code & instructions for connecting at <a href="https://github.com/bradfitz/http2">https://github.com/bradfitz/http2</a>.</p>
 
