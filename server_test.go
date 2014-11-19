@@ -1348,6 +1348,41 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 	})
 }
 
+func TestServer_HandlerWriteErrorOnDisconnect(t *testing.T) {
+	errc := make(chan error, 1)
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		p := []byte("some data.\n")
+		for {
+			_, err := w.Write(p)
+			if err != nil {
+				errc <- err
+				return nil
+			}
+		}
+	}, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1,
+			BlockFragment: encodeHeader(st.t),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("unexpected END_STREAM flag")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
+		}
+		// Close the connection and wait for the handler to (hopefully) notice.
+		st.cc.Close()
+		select {
+		case <-errc:
+		case <-time.After(5 * time.Second):
+			t.Error("timeout")
+		}
+	})
+}
+
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})

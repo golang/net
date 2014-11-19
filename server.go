@@ -42,6 +42,9 @@ const (
 // be in-flight and then the frame scheduler in the serve goroutine
 // will be responsible for splitting things.
 
+// TODO: send PING frames to idle clients and disconnect them if no
+// reply
+
 // Server is an HTTP/2 server.
 type Server struct {
 	// MaxStreams optionally ...
@@ -352,9 +355,8 @@ func (sc *serverConn) writeFrames() {
 
 var errClientDisconnected = errors.New("client disconnected")
 
-func (sc *serverConn) stopServing() {
+func (sc *serverConn) closeAllStreamsOnConnClose() {
 	sc.serveG.check()
-	close(sc.writeFrameCh) // stop the writeFrames loop
 	for _, st := range sc.streams {
 		sc.closeStream(st, errClientDisconnected)
 	}
@@ -363,7 +365,9 @@ func (sc *serverConn) stopServing() {
 func (sc *serverConn) serve() {
 	sc.serveG.check()
 	defer sc.conn.Close()
-	defer sc.stopServing()
+	defer sc.closeAllStreamsOnConnClose()
+	defer close(sc.doneServing)  // unblocks handlers trying to send
+	defer close(sc.writeFrameCh) // stop the writeFrames loop
 
 	sc.vlogf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 
@@ -444,8 +448,12 @@ func (sc *serverConn) readPreface() error {
 // should be called from non-serve() goroutines, otherwise the ends may deadlock
 // the serve loop. (it's only buffered a little bit).
 func (sc *serverConn) writeFrame(wm frameWriteMsg) {
-	sc.serveG.checkNotOn() // note the "NOT"
-	sc.wantWriteFrameCh <- wm
+	sc.serveG.checkNotOn() // NOT
+	select {
+	case sc.wantWriteFrameCh <- wm:
+	case <-sc.doneServing:
+		// Client has closed their connection to the server.
+	}
 }
 
 func (sc *serverConn) enqueueFrameWrite(wm frameWriteMsg) {
@@ -1113,7 +1121,13 @@ func (sc *serverConn) writeHeaders(req headerWriteReq) {
 		endStream: req.endStream,
 	})
 	if errc != nil {
-		<-errc
+		select {
+		case <-errc:
+			// Ignore. Just for synchronization.
+			// Any error will be handled in the writing goroutine.
+		case <-sc.doneServing:
+			// Client has closed the connection.
+		}
 	}
 }
 
@@ -1367,7 +1381,13 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 			done:      rws.chunkWrittenCh,
 			v:         rws, // writeDataInLoop uses only rws.curChunk and rws.curChunkIsFinal
 		})
-		err = <-rws.chunkWrittenCh // block until it's written
+		// Block until it's written, or if the client disconnects.
+		select {
+		case err = <-rws.chunkWrittenCh:
+		case <-rws.stream.conn.doneServing:
+			// Client disconnected.
+			err = errClientDisconnected
+		}
 		if err != nil {
 			break
 		}
