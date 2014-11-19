@@ -180,7 +180,7 @@ type requestParam struct {
 	invalidHeader     bool // an invalid header was seen
 }
 
-// stream represents an stream. This is the minimal metadata needed by
+// stream represents a stream. This is the minimal metadata needed by
 // the serve goroutine. Most of the actual stream state is owned by
 // the http.Handler's goroutine in the responseWriter. Because the
 // responseWriter's responseWriterState is recycled at the end of a
