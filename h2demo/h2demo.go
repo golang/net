@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ href="https://github.com/bradfitz/http2/issues">file a bug</a>.</p>
   <li>GET <a href="/file/gopher.png">/file/gopher.png</a> for a small file (does If-Modified-Since, Content-Range, etc)</li>
   <li>GET <a href="/file/go.src.tar.gz">/file/go.src.tar.gz</a> for a larger file (~10 MB)</li>
   <li>GET <a href="/redirect">/redirect</a> to redirect back to / (this page)</li>
+  <li>GET <a href="/goroutines">/goroutines</a> to see all active goroutines in this server</li>
   <li>PUT something to <a href="/crc32">/crc32</a> to get a count of number of bytes and its CRC-32</li>
 </ul>
 
@@ -195,6 +197,12 @@ func registerHandlers() {
 	mux2.HandleFunc("/clockstream", clockStreamHandler)
 	mux2.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
+	})
+	stripHomedir := regexp.MustCompile(`/(Users|home)/\w+`)
+	mux2.HandleFunc("/goroutines", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		buf := make([]byte, 2<<20)
+		w.Write(stripHomedir.ReplaceAll(buf[:runtime.Stack(buf, true)], nil))
 	})
 }
 
