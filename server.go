@@ -405,7 +405,11 @@ func (sc *serverConn) serve() {
 
 func (sc *serverConn) sendInitialSettings(_ interface{}) error {
 	sc.writeG.check()
-	return sc.framer.WriteSettings( /* TODO: actual settings */ )
+	return sc.framer.WriteSettings(
+		Setting{SettingMaxFrameSize, 1 << 20},
+		Setting{SettingMaxConcurrentStreams, 250}, // TODO: tunable?
+		/* TODO: more actual settings */
+	)
 }
 
 // readPreface reads the ClientPreface greeting from the peer
