@@ -237,7 +237,17 @@ type Framer struct {
 	r         io.Reader
 	lr        io.LimitedReader
 	lastFrame Frame
-	readBuf   []byte
+
+	maxReadSize uint32
+	headerBuf   [frameHeaderLen]byte
+
+	// TODO: let getReadBuf be configurable, and use a less memory-pinning
+	// allocator in server.go to minimize memory pinned for many idle conns.
+	// Will probably also need to make frame invalidation have a hook too.
+	getReadBuf func(size uint32) []byte
+	readBuf    []byte // cache for default getReadBuf
+
+	maxWriteSize uint32 // zero means unlimited; TODO: implement
 
 	w    io.Writer
 	wbuf []byte
@@ -255,9 +265,6 @@ type Framer struct {
 	// we're in the middle of a header block and a
 	// non-Continuation or Continuation on a different stream is
 	// attempted to be written.
-
-	// TODO: add limits on max frame size allowed to be read &
-	// written.
 }
 
 func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
@@ -274,14 +281,12 @@ func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
 		byte(streamID))
 }
 
-var errFrameTooLarge = errors.New("http2: frame too large")
-
 func (f *Framer) endWrite() error {
 	// Now that we know the final size, fill in the FrameHeader in
 	// the space previously reserved for it. Abuse append.
 	length := len(f.wbuf) - frameHeaderLen
 	if length >= (1 << 24) {
-		return errFrameTooLarge
+		return ErrFrameTooLarge
 	}
 	_ = append(f.wbuf[:0],
 		byte(length>>16),
@@ -301,29 +306,59 @@ func (f *Framer) writeUint32(v uint32) {
 	f.wbuf = append(f.wbuf, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 }
 
+const (
+	minMaxFrameSize = 1 << 14
+	maxFrameSize    = 1<<24 - 1
+)
+
 // NewFramer returns a Framer that writes frames to w and reads them from r.
 func NewFramer(w io.Writer, r io.Reader) *Framer {
-	return &Framer{
-		w:       w,
-		r:       r,
-		readBuf: make([]byte, 1<<10),
+	fr := &Framer{
+		w: w,
+		r: r,
 	}
+	fr.getReadBuf = func(size uint32) []byte {
+		if cap(fr.readBuf) >= int(size) {
+			return fr.readBuf[:size]
+		}
+		fr.readBuf = make([]byte, size)
+		return fr.readBuf
+	}
+	fr.SetMaxReadFrameSize(maxFrameSize)
+	return fr
 }
+
+// SetMaxReadFrameSize sets the maximum size of a frame
+// that will be read by a subsequent call to ReadFrame.
+// It is the caller's responsibility to advertise this
+// limit with a SETTINGS frame.
+func (fr *Framer) SetMaxReadFrameSize(v uint32) {
+	if v > maxFrameSize {
+		v = maxFrameSize
+	}
+	fr.maxReadSize = v
+}
+
+// ErrFrameTooLarge is returned from Framer.ReadFrame when the peer
+// sends a frame that is larger than declared with SetMaxReadFrameSize.
+var ErrFrameTooLarge = errors.New("http2: frame too large")
 
 // ReadFrame reads a single frame. The returned Frame is only valid
 // until the next call to ReadFrame.
+// If the frame is larger than previously set with SetMaxReadFrameSize,
+// the returned error is ErrFrameTooLarge.
 func (fr *Framer) ReadFrame() (Frame, error) {
 	if fr.lastFrame != nil {
 		fr.lastFrame.invalidate()
 	}
-	fh, err := readFrameHeader(fr.readBuf, fr.r)
+	fh, err := readFrameHeader(fr.headerBuf[:], fr.r)
 	if err != nil {
 		return nil, err
 	}
-	if uint32(len(fr.readBuf)) < fh.Length {
-		fr.readBuf = make([]byte, fh.Length)
+	if fh.Length > fr.maxReadSize {
+		return nil, ErrFrameTooLarge
 	}
-	payload := fr.readBuf[:fh.Length]
+	payload := fr.getReadBuf(fh.Length)
 	if _, err := io.ReadFull(fr.r, payload); err != nil {
 		return nil, err
 	}
@@ -904,6 +939,14 @@ func (f *Framer) WriteContinuation(streamID uint32, endHeaders bool, headerBlock
 	}
 	f.startWrite(FrameContinuation, flags, streamID)
 	f.wbuf = append(f.wbuf, headerBlockFragment...)
+	return f.endWrite()
+}
+
+// WriteRawFrame writes a raw frame. This can be used to write
+// extension frames unknown to this package.
+func (f *Framer) WriteRawFrame(t FrameType, flags Flags, streamID uint32, payload []byte) error {
+	f.startWrite(t, flags, streamID)
+	f.writeBytes(payload)
 	return f.endWrite()
 }
 

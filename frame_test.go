@@ -463,7 +463,7 @@ func TestWriteTooLargeFrame(t *testing.T) {
 	fr.startWrite(0, 1, 1)
 	fr.writeBytes(make([]byte, 1<<24))
 	err := fr.endWrite()
-	if err != errFrameTooLarge {
+	if err != ErrFrameTooLarge {
 		t.Errorf("endWrite = %v; want errFrameTooLarge", err)
 	}
 }

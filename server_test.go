@@ -230,7 +230,7 @@ func (st *serverTester) wantPing() *PingFrame {
 func (st *serverTester) wantGoAway() *GoAwayFrame {
 	f, err := st.readFrame()
 	if err != nil {
-		st.t.Fatalf("Error while expecting a PING frame: %v", err)
+		st.t.Fatalf("Error while expecting a GOAWAY frame: %v", err)
 	}
 	gf, ok := f.(*GoAwayFrame)
 	if !ok {
@@ -723,6 +723,22 @@ func TestServer_Ping(t *testing.T) {
 	}
 	if pf.Data != pingData {
 		t.Errorf("response ping has data %q; want %q", pf.Data, pingData)
+	}
+}
+
+func TestServer_RejectsLargeFrames(t *testing.T) {
+	st := newServerTester(t, nil)
+	defer st.Close()
+	st.greet()
+
+	// Write too large of a frame (too large by one byte)
+	// We ignore the return value because it's expected that the server
+	// will only read the first 9 bytes (the headre) and then disconnect.
+	st.fr.WriteRawFrame(0xff, 0, 0, make([]byte, defaultMaxReadFrameSize+1))
+
+	gf := st.wantGoAway()
+	if gf.ErrCode != ErrCodeFrameSize {
+		t.Errorf("GOAWAY err = %v; want %v", gf.ErrCode, ErrCodeFrameSize)
 	}
 }
 
