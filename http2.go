@@ -17,7 +17,9 @@
 package http2
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"sync"
@@ -212,4 +214,45 @@ func (cw *closeWaiter) Wait() {
 	for !cw.closed {
 		cw.c.Wait()
 	}
+}
+
+// bufferedWriter is a buffered writer that writes to w.
+// Its buffered writer is lazily allocated as needed, to minimize
+// idle memory usage with many connections.
+type bufferedWriter struct {
+	w  io.Writer     // immutable
+	bw *bufio.Writer // non-nil when data is buffered
+}
+
+func newBufferedWriter(w io.Writer) *bufferedWriter {
+	return &bufferedWriter{w: w}
+}
+
+var bufWriterPool = sync.Pool{
+	New: func() interface{} {
+		// TODO: pick something better? this is a bit under
+		// (3 x typical 1500 byte MTU) at least.
+		return bufio.NewWriterSize(nil, 4<<10)
+	},
+}
+
+func (w *bufferedWriter) Write(p []byte) (n int, err error) {
+	if w.bw == nil {
+		bw := bufWriterPool.Get().(*bufio.Writer)
+		bw.Reset(w.w)
+		w.bw = bw
+	}
+	return w.bw.Write(p)
+}
+
+func (w *bufferedWriter) Flush() error {
+	bw := w.bw
+	if bw == nil {
+		return nil
+	}
+	err := bw.Flush()
+	bw.Reset(nil)
+	bufWriterPool.Put(bw)
+	w.bw = nil
+	return err
 }
