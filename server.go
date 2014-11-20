@@ -419,7 +419,7 @@ func (sc *serverConn) serve() {
 	sc.enqueueFrameWrite(frameWriteMsg{write: (*serverConn).sendInitialSettings})
 
 	if err := sc.readPreface(); err != nil {
-		sc.condlogf(err, "Error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
+		sc.condlogf(err, "error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
 		return
 	}
 
@@ -792,7 +792,7 @@ func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool
 		sc.goAway(ErrCode(ev))
 		return true // goAway will handle shutdown
 	default:
-		sc.logf("Disconnection due to other error: %v", err)
+		sc.logf("disconnection due to other error: %v", err)
 	}
 	return false
 }
@@ -1016,7 +1016,7 @@ func (sc *serverConn) processData(f *DataFrame) error {
 
 	// Sender sending more than they'd declared?
 	if st.declBodyBytes != -1 && st.bodyBytes+int64(len(data)) > st.declBodyBytes {
-		st.body.Close(fmt.Errorf("Sender tried to send more than declared Content-Length of %d bytes", st.declBodyBytes))
+		st.body.Close(fmt.Errorf("sender tried to send more than declared Content-Length of %d bytes", st.declBodyBytes))
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if len(data) > 0 {
@@ -1030,7 +1030,7 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	}
 	if f.StreamEnded() {
 		if st.declBodyBytes != -1 && st.declBodyBytes != st.bodyBytes {
-			st.body.Close(fmt.Errorf("Request declared a Content-Length of %d but only wrote %d bytes",
+			st.body.Close(fmt.Errorf("request declared a Content-Length of %d but only wrote %d bytes",
 				st.declBodyBytes, st.bodyBytes))
 		} else {
 			st.body.Close(io.EOF)
