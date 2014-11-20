@@ -52,7 +52,7 @@ func curGoroutineID() uint64 {
 	defer littleBuf.Put(bp)
 	b := *bp
 	b = b[:runtime.Stack(b, false)]
-	// Parse the 4707 otu of "goroutine 4707 ["
+	// Parse the 4707 out of "goroutine 4707 ["
 	b = bytes.TrimPrefix(b, goroutineSpace)
 	i := bytes.IndexByte(b, ' ')
 	if i < 0 {
