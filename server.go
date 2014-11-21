@@ -1177,7 +1177,6 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	}
 	bodyOpen := rp.stream.state == stateOpen
 	body := &requestBody{
-		sc:            sc,
 		stream:        rp.stream,
 		needsContinue: needsContinue,
 	}
@@ -1368,6 +1367,7 @@ type windowUpdateReq struct {
 
 // called from handler goroutines
 func (sc *serverConn) sendWindowUpdate(st *stream, n int) {
+	sc.serveG.checkNotOn() // NOT
 	if st == nil {
 		panic("no stream")
 	}
@@ -1402,7 +1402,6 @@ func (sc *serverConn) sendWindowUpdateInLoop(streamID uint32, v interface{}) err
 }
 
 type requestBody struct {
-	sc            *serverConn
 	stream        *stream
 	closed        bool
 	pipe          *pipe // non-nil if we have a HTTP entity message body
@@ -1422,15 +1421,14 @@ func (b *requestBody) Close() error {
 func (b *requestBody) Read(p []byte) (n int, err error) {
 	if b.needsContinue {
 		b.needsContinue = false
-		b.sc.write100ContinueHeaders(b.stream)
+		b.stream.conn.write100ContinueHeaders(b.stream)
 	}
 	if b.pipe == nil {
 		return 0, io.EOF
 	}
 	n, err = b.pipe.Read(p)
 	if n > 0 {
-		b.sc.sendWindowUpdate(b.stream, n)
-		// TODO: tell b.sc to send back 'n' flow control quota credits to the sender
+		b.stream.conn.sendWindowUpdate(b.stream, n)
 	}
 	return
 }
