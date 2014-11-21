@@ -512,7 +512,7 @@ func (sc *serverConn) readPreface() error {
 // The provided ch is used to avoid allocating new channels for each
 // write operation.  It's expected that the caller reuses req and ch
 // over time.
-func (sc *serverConn) writeData(stream *stream, req *dataWriteRequest, ch chan error) error {
+func (sc *serverConn) writeData(stream *stream, data *dataWriteParams, ch chan error) error {
 	sc.serveG.checkNotOn() // otherwise could deadlock in sc.writeFrame
 
 	// TODO: wait for flow control tokens. instead of writing a
@@ -522,10 +522,10 @@ func (sc *serverConn) writeData(stream *stream, req *dataWriteRequest, ch chan e
 	// once in one frame.
 	sc.writeFrame(frameWriteMsg{
 		write:     (*serverConn).writeDataFrame,
-		cost:      uint32(len(req.p)),
+		cost:      uint32(len(data.p)),
 		stream:    stream,
-		endStream: req.end,
-		v:         req,
+		endStream: data.end,
+		v:         data,
 		done:      ch,
 	})
 	select {
@@ -714,11 +714,6 @@ func (sc *serverConn) shutDownIn(d time.Duration) {
 	sc.serveG.check()
 	sc.shutdownTimer = time.NewTimer(d)
 	sc.shutdownTimerCh = sc.shutdownTimer.C
-}
-
-type goAwayParams struct {
-	maxStreamID uint32
-	code        ErrCode
 }
 
 func (sc *serverConn) writeGoAwayFrame(_ uint32, v interface{}) error {
@@ -1357,7 +1352,7 @@ func (sc *serverConn) write100ContinueHeadersFrame(streamID uint32, _ interface{
 
 func (sc *serverConn) writeDataFrame(streamID uint32, v interface{}) error {
 	sc.writeG.check()
-	req := v.(*dataWriteRequest)
+	req := v.(*dataWriteParams)
 	return sc.framer.WriteData(streamID, req.end, req.p)
 }
 
@@ -1463,11 +1458,11 @@ type responseWriterState struct {
 	// mutated by http.Handler goroutine:
 	handlerHeader http.Header // nil until called
 	snapHeader    http.Header // snapshot of handlerHeader at WriteHeader time
-	wroteHeader   bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
 	status        int         // status code passed to WriteHeader
+	wroteHeader   bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
 	sentHeader    bool        // have we sent the header frame?
 	handlerDone   bool        // handler has finished
-	curWrite      dataWriteRequest
+	curWrite      dataWriteParams
 	frameWriteCh  chan error // re-used whenever we need to block on a frame being written
 
 	closeNotifierMu sync.Mutex // guards closeNotifierCh
@@ -1478,11 +1473,6 @@ func (rws *responseWriterState) writeData(p []byte, end bool) error {
 	rws.curWrite.p = p
 	rws.curWrite.end = end
 	return rws.stream.conn.writeData(rws.stream, &rws.curWrite, rws.frameWriteCh)
-}
-
-type dataWriteRequest struct {
-	p   []byte
-	end bool
 }
 
 type chunkWriter struct{ rws *responseWriterState }

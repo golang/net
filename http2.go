@@ -256,3 +256,13 @@ func (w *bufferedWriter) Flush() error {
 	w.bw = nil
 	return err
 }
+
+type goAwayParams struct {
+	maxStreamID uint32
+	code        ErrCode
+}
+
+type dataWriteParams struct {
+	p   []byte
+	end bool
+}
