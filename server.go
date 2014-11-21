@@ -48,6 +48,18 @@ const (
 // TODO: don't keep the writeFrames goroutine active. turn it off when no frames
 // are enqueued.
 
+// TODO: for bonus points: turn off the serve goroutine also when
+// idle, so an idle conn only has the readFrames goroutine
+// active. (which could also be optimized probably to pin less memory
+// in crypto/tls). This would involve tracking when the serve
+// goroutine is active (atomic int32 read/CAS probably?) and starting
+// it up when frames arrive, and shutting it down when all handlers
+// exit. the occasional PING packets could use time.AfterFunc to call
+// sc.wakeStartServeLoop() (which is a no-op if already running) and
+// then queue the PING write as normal. The serve loop would then exit
+// in most cases (if no Handlers running) and not be woken up again
+// until the PING packet returns.
+
 // Server is an HTTP/2 server.
 type Server struct {
 	// MaxStreams optionally ...
