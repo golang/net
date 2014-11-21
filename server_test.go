@@ -463,7 +463,7 @@ func TestServer_Request_Post_Body_ContentLength_Correct(t *testing.T) {
 }
 
 func TestServer_Request_Post_Body_ContentLength_TooLarge(t *testing.T) {
-	testBodyContentsFail(t, 3, "Request declared a Content-Length of 3 but only wrote 2 bytes",
+	testBodyContentsFail(t, 3, "request declared a Content-Length of 3 but only wrote 2 bytes",
 		func(st *serverTester) {
 			st.writeHeaders(HeadersFrameParam{
 				StreamID: 1, // clients send odd numbers
@@ -479,7 +479,7 @@ func TestServer_Request_Post_Body_ContentLength_TooLarge(t *testing.T) {
 }
 
 func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
-	testBodyContentsFail(t, 4, "Sender tried to send more than declared Content-Length of 4 bytes",
+	testBodyContentsFail(t, 4, "sender tried to send more than declared Content-Length of 4 bytes",
 		func(st *serverTester) {
 			st.writeHeaders(HeadersFrameParam{
 				StreamID: 1, // clients send odd numbers
