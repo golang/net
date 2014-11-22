@@ -34,7 +34,7 @@
 //			defer c.Close()
 //
 // The outgoing packets will be labeled DiffServ assured forwarding
-// class 1 low drop precedence, as known as AF11 packets.
+// class 1 low drop precedence, known as AF11 packets.
 //
 //			if err := ipv4.NewConn(c).SetTOS(DiffServAF11); err != nil {
 //				// error handling
@@ -193,4 +193,45 @@
 //	if err := p.JoinGroup(en0, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 250)}); err != nil {
 //		// error handling
 //	}
+//
+//
+// Source-specific multicasting
+//
+// An application that uses PacketConn or RawConn on IGMPv3 supported
+// platform is able to join source-specific multicast groups as
+// described in RFC 3678.  The application may use
+// JoinSourceSpecificGroup and LeaveSourceSpecificGroup for the
+// operation known as "include" mode,
+//
+//	ssmgroup := net.UDPAddr{IP: net.IPv4(232, 7, 8, 9)}
+//	ssmsource := net.UDPAddr{IP: net.IPv4(192, 168, 0, 1)})
+//	if err := p.JoinSourceSpecificGroup(en0, &ssmgroup, &ssmsource); err != nil {
+//		// error handling
+//	}
+//	if err := p.LeaveSourceSpecificGroup(en0, &ssmgroup, &ssmsource); err != nil {
+//		// error handling
+//	}
+//
+// or JoinGroup, ExcludeSourceSpecificGroup,
+// IncludeSourceSpecificGroup and LeaveGroup for the operation known
+// as "exclude" mode.
+//
+//	exclsource := net.UDPAddr{IP: net.IPv4(192, 168, 0, 254)}
+//	if err := p.JoinGroup(en0, &ssmgroup); err != nil {
+//		// error handling
+//	}
+//	if err := p.ExcludeSourceSpecificGroup(en0, &ssmgroup, &exclsource); err != nil {
+//		// error handling
+//	}
+//	if err := p.LeaveGroup(en0, &ssmgroup); err != nil {
+//		// error handling
+//	}
+//
+// Note that it depends on each platform implementation what happens
+// when an application which runs on IGMPv3 unsupported platform uses
+// JoinSourceSpecificGroup and LeaveSourceSpecificGroup.
+// In general the platform tries to fall back to conversations using
+// IGMPv1 or IGMP2 and starts to listen to multicast traffic.
+// In the fallback case, ExcludeSourceSpecificGroup and
+// IncludeSourceSpecificGroup may return an error.
 package ipv4
