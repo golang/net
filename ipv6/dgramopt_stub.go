@@ -44,30 +44,32 @@ func (c *dgramOpt) SetMulticastLoopback(on bool) error {
 	return errOpNoSupport
 }
 
-// JoinGroup joins the group address group on the interface ifi. By
-// default all sources that can cast data to group are accepted. It's
-// possible to mute and unmute data transmission from a specific
+// JoinGroup joins the group address group on the interface ifi.
+// By default all sources that can cast data to group are accepted.
+// It's possible to mute and unmute data transmission from a specific
 // source by using ExcludeSourceSpecificGroup and
 // IncludeSourceSpecificGroup.
-// It uses the system assigned multicast interface when ifi is nil,
-// although this is not recommended because the assignment depends on
-// platforms and sometimes it might require routing configuration.
+// JoinGroup uses the system assigned multicast interface when ifi is
+// nil, although this is not recommended because the assignment
+// depends on platforms and sometimes it might require routing
+// configuration.
 func (c *dgramOpt) JoinGroup(ifi *net.Interface, group net.Addr) error {
 	return errOpNoSupport
 }
 
-// LeaveGroup leaves the group address group on the interface ifi.
-// It's allowed to leave the group which is formed by
-// JoinSourceSpecificGroup for convenience.
+// LeaveGroup leaves the group address group on the interface ifi
+// regardless of whether the group is any-source group or
+// source-specific group.
 func (c *dgramOpt) LeaveGroup(ifi *net.Interface, group net.Addr) error {
 	return errOpNoSupport
 }
 
-// JoinSourceSpecificGroup joins the source-specific group consisting
-// group and source on the interface ifi. It uses the system assigned
-// multicast interface when ifi is nil, although this is not
-// recommended because the assignment depends on platforms and
-// sometimes it might require routing configuration.
+// JoinSourceSpecificGroup joins the source-specific group comprising
+// group and source on the interface ifi.
+// JoinSourceSpecificGroup uses the system assigned multicast
+// interface when ifi is nil, although this is not recommended because
+// the assignment depends on platforms and sometimes it might require
+// routing configuration.
 func (c *dgramOpt) JoinSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
 	return errOpNoSupport
 }
@@ -79,8 +81,8 @@ func (c *dgramOpt) LeaveSourceSpecificGroup(ifi *net.Interface, group, source ne
 }
 
 // ExcludeSourceSpecificGroup excludes the source-specific group from
-// the already joined groups by either JoinGroup or
-// JoinSourceSpecificGroup on the interface ifi.
+// the already joined any-source groups by JoinGroup on the interface
+// ifi.
 func (c *dgramOpt) ExcludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
 	return errOpNoSupport
 }

@@ -34,7 +34,7 @@
 //			defer c.Close()
 //
 // The outgoing packets will be labeled DiffServ assured forwarding
-// class 1 low drop precedence, as known as AF11 packets.
+// class 1 low drop precedence, known as AF11 packets.
 //
 //			if err := ipv6.NewConn(c).SetTrafficClass(DiffServAF11); err != nil {
 //				// error handling
@@ -191,4 +191,44 @@
 //	if err := p.JoinGroup(en0, &net.UDPAddr{IP: net.ParseIP("ff01::114")}); err != nil {
 //		// error handling
 //	}
+//
+//
+// Source-specific multicasting
+//
+// An application that uses PacketConn on MLDv2 supported platform is
+// able to join source-specific multicast groups as described in RFC
+// 3678.  The application may use JoinSourceSpecificGroup and
+// LeaveSourceSpecificGroup for the operation known as "include" mode,
+//
+//	ssmgroup := net.UDPAddr{IP: net.ParseIP("ff32::8000:9")}
+//	ssmsource := net.UDPAddr{IP: net.ParseIP("fe80::cafe")}
+//	if err := p.JoinSourceSpecificGroup(en0, &ssmgroup, &ssmsource); err != nil {
+//		// error handling
+//	}
+//	if err := p.LeaveSourceSpecificGroup(en0, &ssmgroup, &ssmsource); err != nil {
+//		// error handling
+//	}
+//
+// or JoinGroup, ExcludeSourceSpecificGroup,
+// IncludeSourceSpecificGroup and LeaveGroup for the operation known
+// as "exclude" mode.
+//
+//	exclsource := net.UDPAddr{IP: net.ParseIP("fe80::dead")}
+//	if err := p.JoinGroup(en0, &ssmgroup); err != nil {
+//		// error handling
+//	}
+//	if err := p.ExcludeSourceSpecificGroup(en0, &ssmgroup, &exclsource); err != nil {
+//		// error handling
+//	}
+//	if err := p.LeaveGroup(en0, &ssmgroup); err != nil {
+//		// error handling
+//	}
+//
+// Note that it depends on each platform implementation what happens
+// when an application which runs on MLDv2 unsupported platform uses
+// JoinSourceSpecificGroup and LeaveSourceSpecificGroup.
+// In general the platform tries to fall back to conversations using
+// MLDv1 and starts to listen to multicast traffic.
+// In the fallback case, ExcludeSourceSpecificGroup and
+// IncludeSourceSpecificGroup may return an error.
 package ipv6
