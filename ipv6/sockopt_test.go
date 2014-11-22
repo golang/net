@@ -106,7 +106,7 @@ func TestPacketConnChecksum(t *testing.T) {
 		t.Skip("must be root")
 	}
 
-	c, err := net.ListenPacket(fmt.Sprintf("ip6:%d", iana.ProtocolIPv6ICMP), "::") // OSPF for IPv6
+	c, err := net.ListenPacket(fmt.Sprintf("ip6:%d", iana.ProtocolOSPFIGP), "::") // OSPF for IPv6
 	if err != nil {
 		t.Fatal(err)
 	}
