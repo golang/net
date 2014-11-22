@@ -954,6 +954,7 @@ func (sc *serverConn) processSetting(s Setting) error {
 	switch s.ID {
 	case SettingHeaderTableSize:
 		sc.headerTableSize = s.Val
+		sc.hpackEncoder.SetMaxDynamicTableSize(s.Val)
 		return nil
 	case SettingEnablePush:
 		sc.pushEnabled = s.Val != 0

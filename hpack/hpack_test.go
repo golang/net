@@ -142,6 +142,41 @@ func TestDynamicTableAt(t *testing.T) {
 	}
 }
 
+func TestDynamicTableSearch(t *testing.T) {
+	dt := dynamicTable{}
+	dt.setMaxSize(4096)
+
+	dt.add(pair("foo", "bar"))
+	dt.add(pair("blake", "miz"))
+	dt.add(pair(":method", "GET"))
+
+	tests := []struct {
+		hf        HeaderField
+		wantI     uint64
+		wantMatch bool
+	}{
+		// Name and Value match
+		{pair("foo", "bar"), 3, true},
+		{pair(":method", "GET"), 1, true},
+
+		// Only name match because of Sensitive == true
+		{HeaderField{"blake", "miz", true}, 2, false},
+
+		// Only Name matches
+		{pair("foo", "..."), 3, false},
+		{pair("blake", "..."), 2, false},
+		{pair(":method", "..."), 1, false},
+
+		// None match
+		{pair("foo-", "bar"), 0, false},
+	}
+	for _, tt := range tests {
+		if gotI, gotMatch := dt.search(tt.hf); gotI != tt.wantI || gotMatch != tt.wantMatch {
+			t.Errorf("d.search(%+v) = %v, %v; want %v, %v", tt.hf, gotI, gotMatch, tt.wantI, tt.wantMatch)
+		}
+	}
+}
+
 func TestDynamicTableSizeEvict(t *testing.T) {
 	d := NewDecoder(4096, nil)
 	if want := uint32(0); d.dynTab.size != want {
@@ -517,6 +552,32 @@ func TestHuffmanDecode(t *testing.T) {
 		}
 		if got := buf.String(); tt.want != got {
 			t.Errorf("%d. decode = %q; want %q", i, got, tt.want)
+		}
+	}
+}
+
+func TestAppendHuffmanString(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"www.example.com", "f1e3 c2e5 f23a 6ba0 ab90 f4ff"},
+		{"no-cache", "a8eb 1064 9cbf"},
+		{"custom-key", "25a8 49e9 5ba9 7d7f"},
+		{"custom-value", "25a8 49e9 5bb8 e8b4 bf"},
+		{"302", "6402"},
+		{"private", "aec3 771a 4b"},
+		{"Mon, 21 Oct 2013 20:13:21 GMT", "d07a be94 1054 d444 a820 0595 040b 8166 e082 a62d 1bff"},
+		{"https://www.example.com", "9d29 ad17 1863 c78f 0b97 c8e9 ae82 ae43 d3"},
+		{"gzip", "9bd9 ab"},
+		{"foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1",
+			"94e7 821d d7f2 e6c7 b335 dfdf cd5b 3960 d5af 2708 7f36 72c1 ab27 0fb5 291f 9587 3160 65c0 03ed 4ee5 b106 3d50 07"},
+	}
+	for i, tt := range tests {
+		buf := []byte{}
+		want := strings.Replace(tt.want, " ", "", -1)
+		buf = AppendHuffmanString(buf, tt.in)
+		if got := hex.EncodeToString(buf); want != got {
+			t.Errorf("%d. encode = %q; want %q", i, got, want)
 		}
 	}
 }
