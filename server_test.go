@@ -1459,6 +1459,60 @@ func TestServer_HandlerWriteErrorOnDisconnect(t *testing.T) {
 	})
 }
 
+func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
+	inHandler := make(chan uint32)
+	leaveHandler := make(chan bool)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- w.(*responseWriter).rws.stream.id
+		<-leaveHandler
+	})
+	defer st.Close()
+	st.greet()
+	nextStreamID := uint32(1)
+	streamID := func() uint32 {
+		defer func() { nextStreamID += 2 }()
+		return nextStreamID
+	}
+	sendReq := func(id uint32) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      id,
+			BlockFragment: encodeHeader(st.t),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	for i := 0; i < defaultMaxStreams; i++ {
+		sendReq(streamID())
+		<-inHandler
+	}
+	defer func() {
+		for i := 0; i < defaultMaxStreams; i++ {
+			leaveHandler <- true
+		}
+	}()
+
+	// And this one should cross the limit:
+	rejectID := streamID()
+	sendReq(rejectID)
+	st.wantRSTStream(rejectID, ErrCodeProtocol)
+
+	// But let a handler finish:
+	leaveHandler <- true
+	st.wantHeaders()
+
+	// And now another stream should be able to start:
+	goodID := streamID()
+	sendReq(goodID)
+	select {
+	case got := <-inHandler:
+		if got != goodID {
+			t.Errorf("Got stream %d; want %d", got, goodID)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("timeout waiting for handler")
+	}
+}
+
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})
