@@ -35,6 +35,7 @@ const (
 var (
 	errClientDisconnected = errors.New("client disconnected")
 	errClosedBody         = errors.New("body closed by handler")
+	errStreamBroken       = errors.New("http2: stream broken")
 )
 
 var responseWriterStatePool = sync.Pool{
@@ -1516,6 +1517,11 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 		if len(chunk) > handlerChunkWriteSize {
 			chunk = chunk[:handlerChunkWriteSize]
 		}
+		allowedSize := rws.stream.flow.wait(int32(len(chunk)))
+		if allowedSize == 0 {
+			return n, errStreamBroken
+		}
+		chunk = chunk[:allowedSize]
 		p = p[len(chunk):]
 		isFinal := rws.handlerDone && len(p) == 0
 		err = rws.writeData(chunk, isFinal)

@@ -33,10 +33,11 @@ func (f *flow) cur() int32 {
 	return f.size
 }
 
-// acquire decrements the flow control window by n bytes, blocking
-// until they're available in the window.
-// The return value is only interesting for tests.
-func (f *flow) acquire(n int32) (waited int) {
+// wait waits for between 1 and n bytes (inclusive) to be available
+// and returns the number of quota bytes decremented from the quota
+// and allowed to be written. The returned value will be 0 iff the
+// stream has been killed.
+func (f *flow) wait(n int32) (got int32) {
 	if n < 0 {
 		panic("negative acquire")
 	}
@@ -44,13 +45,16 @@ func (f *flow) acquire(n int32) (waited int) {
 	defer f.c.L.Unlock()
 	for {
 		if f.closed {
-			return
+			return 0
 		}
-		if f.size >= n {
-			f.size -= n
-			return
+		if f.size >= 1 {
+			got = f.size
+			if got > n {
+				got = n
+			}
+			f.size -= got
+			return got
 		}
-		waited++
 		f.c.Wait()
 	}
 }

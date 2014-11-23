@@ -15,10 +15,16 @@ func TestFlow(t *testing.T) {
 	if got, want := f.cur(), int32(10); got != want {
 		t.Fatalf("size = %d; want %d", got, want)
 	}
-	if waits := f.acquire(1); waits != 0 {
-		t.Errorf("waits = %d; want 0", waits)
+	if got, want := f.wait(1), int32(1); got != want {
+		t.Errorf("wait = %d; want %d", got, want)
 	}
 	if got, want := f.cur(), int32(9); got != want {
+		t.Fatalf("size = %d; want %d", got, want)
+	}
+	if got, want := f.wait(20), int32(9); got != want {
+		t.Errorf("wait = %d; want %d", got, want)
+	}
+	if got, want := f.cur(), int32(0); got != want {
 		t.Fatalf("size = %d; want %d", got, want)
 	}
 
@@ -28,8 +34,8 @@ func TestFlow(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		f.add(50)
 	}()
-	if waits := f.acquire(10); waits != 1 {
-		t.Errorf("waits for 50 = %d; want 0", waits)
+	if got, want := f.wait(1), int32(1); got != want {
+		t.Errorf("after block, got %d; want %d", got, want)
 	}
 
 	if got, want := f.cur(), int32(49); got != want {
@@ -69,13 +75,15 @@ func TestFlowClose(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		f.close()
 	}()
-	donec := make(chan bool)
+	gotc := make(chan int32)
 	go func() {
-		defer close(donec)
-		f.acquire(10)
+		gotc <- f.wait(1)
 	}()
 	select {
-	case <-donec:
+	case got := <-gotc:
+		if got != 0 {
+			t.Errorf("got %d; want 0", got)
+		}
 	case <-time.After(2 * time.Second):
 		t.Error("timeout")
 	}

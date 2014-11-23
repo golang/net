@@ -1254,6 +1254,12 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		return nil
 	}, func(st *serverTester) {
 		getSlash(st) // make the single request
+
+		// Give the handler quota to write:
+		if err := st.fr.WriteWindowUpdate(1, size); err != nil {
+			t.Fatal(err)
+		}
+
 		hf := st.wantHeaders()
 		if hf.StreamEnded() {
 			t.Fatal("unexpected END_STREAM flag")
@@ -1275,7 +1281,6 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 			df := st.wantData()
 			bytes += len(df.Data())
 			frames++
-			// TODO: send WINDOW_UPDATE frames at the server to keep it from stalling
 			for _, b := range df.Data() {
 				if b != 'a' {
 					t.Fatal("non-'a' byte seen in DATA")
@@ -1290,6 +1295,61 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		}
 		if want := 257; frames != want {
 			t.Errorf("Got %d frames; want %d", frames, size)
+		}
+	})
+}
+
+// Test that the handler can't write more than the client allows
+func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
+	const size = 1 << 20
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.(http.Flusher).Flush()
+		n, err := w.Write(bytes.Repeat([]byte("a"), size))
+		if err != nil {
+			return fmt.Errorf("Write error: %v", err)
+		}
+		if n != size {
+			return fmt.Errorf("wrong size %d from Write", n)
+		}
+		return nil
+	}, func(st *serverTester) {
+		// Set the window size to something explicit for this test.
+		// It's also how much initial data we expect.
+		const initWindowSize = 123
+		if err := st.fr.WriteSettings(Setting{SettingInitialWindowSize, initWindowSize}); err != nil {
+			t.Fatal(err)
+		}
+		st.wantSettingsAck()
+
+		getSlash(st) // make the single request
+
+		defer func() { st.fr.WriteRSTStream(1, ErrCodeCancel) }()
+
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("unexpected END_STREAM flag")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
+		}
+
+		df := st.wantData()
+		if got := len(df.Data()); got != initWindowSize {
+			t.Fatalf("Initial window size = %d but got DATA with %d bytes", initWindowSize, got)
+		}
+
+		for _, quota := range []int{1, 13, 127} {
+			if err := st.fr.WriteWindowUpdate(1, uint32(quota)); err != nil {
+				t.Fatal(err)
+			}
+			df := st.wantData()
+			if int(quota) != len(df.Data()) {
+				t.Fatalf("read %d bytes after giving %d quota", len(df.Data()), quota)
+			}
+		}
+
+		if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
