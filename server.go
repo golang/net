@@ -955,25 +955,21 @@ func (sc *serverConn) processSetting(s Setting) error {
 	case SettingHeaderTableSize:
 		sc.headerTableSize = s.Val
 		sc.hpackEncoder.SetMaxDynamicTableSize(s.Val)
-		return nil
 	case SettingEnablePush:
 		sc.pushEnabled = s.Val != 0
-		return nil
 	case SettingMaxConcurrentStreams:
 		sc.maxConcurrentStreams = int64(s.Val)
-		return nil
 	case SettingInitialWindowSize:
 		return sc.processSettingInitialWindowSize(s.Val)
 	case SettingMaxFrameSize:
 		sc.maxWriteFrameSize = s.Val
-		return nil
 	case SettingMaxHeaderListSize:
 		sc.maxHeaderListSize = s.Val
-		return nil
+	default:
+		// Unknown setting: "An endpoint that receives a SETTINGS
+		// frame with any unknown or unsupported identifier MUST
+		// ignore that setting."
 	}
-	// Unknown setting: "An endpoint that receives a SETTINGS
-	// frame with any unknown or unsupported identifier MUST
-	// ignore that setting."
 	return nil
 }
 
