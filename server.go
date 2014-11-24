@@ -1469,7 +1469,6 @@ var (
 	_ http.CloseNotifier = (*responseWriter)(nil)
 	_ http.Flusher       = (*responseWriter)(nil)
 	_ stringWriter       = (*responseWriter)(nil)
-	// TODO: hijacker for websockets?
 )
 
 type responseWriterState struct {
