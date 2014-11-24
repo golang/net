@@ -761,17 +761,16 @@ func (sc *serverConn) writeGoAwayFrame(_ uint32, v interface{}) error {
 
 func (sc *serverConn) resetStream(se StreamError) {
 	sc.serveG.check()
+	st, ok := sc.streams[se.StreamID]
+	if !ok {
+		panic("internal package error; resetStream called on non-existent stream")
+	}
 	sc.writeFrame(frameWriteMsg{
 		write: (*serverConn).writeRSTStreamFrame,
 		v:     &se,
 	})
-	// Close the stream if it was open.
-	// It might not even be open or known (e.g. in the case of a HEADERS frame
-	// arriving and violating the max concurrent streams limit)
-	if st, ok := sc.streams[se.StreamID]; ok {
-		st.sentReset = true
-		sc.closeStream(st, se)
-	}
+	st.sentReset = true
+	sc.closeStream(st, se)
 }
 
 func (sc *serverConn) writeRSTStreamFrame(streamID uint32, v interface{}) error {
@@ -1104,13 +1103,6 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 	if id > sc.maxStreamID {
 		sc.maxStreamID = id
 	}
-	if sc.curOpenStreams == sc.advMaxStreams {
-		// Too many open streams.
-		// TODO: which error code here? Using ErrCodeProtocol for now.
-		// https://github.com/http2/http2-spec/issues/649
-		return StreamError{id, ErrCodeProtocol}
-	}
-	sc.curOpenStreams++
 	st := &stream{
 		conn:  sc,
 		id:    id,
@@ -1122,6 +1114,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		st.state = stateHalfClosedRemote
 	}
 	sc.streams[id] = st
+	sc.curOpenStreams++
 	sc.req = requestParam{
 		stream: st,
 		header: make(http.Header),
@@ -1151,8 +1144,15 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 		// TODO: convert to stream error I assume?
 		return err
 	}
+	defer sc.resetPendingRequest()
+	if sc.curOpenStreams > sc.advMaxStreams {
+		// Too many open streams.
+		// TODO: which error code here? Using ErrCodeProtocol for now.
+		// https://github.com/http2/http2-spec/issues/649
+		return StreamError{st.id, ErrCodeProtocol}
+	}
+
 	rw, req, err := sc.newWriterAndRequest()
-	sc.req = requestParam{}
 	if err != nil {
 		return err
 	}
@@ -1160,6 +1160,14 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 	st.declBodyBytes = req.ContentLength
 	go sc.runHandler(rw, req)
 	return nil
+}
+
+// resetPendingRequest zeros out all state related to a HEADERS frame
+// and its zero or more CONTINUATION frames sent to start a new
+// request.
+func (sc *serverConn) resetPendingRequest() {
+	sc.serveG.check()
+	sc.req = requestParam{}
 }
 
 func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, error) {

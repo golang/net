@@ -1460,10 +1460,16 @@ func TestServer_HandlerWriteErrorOnDisconnect(t *testing.T) {
 }
 
 func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
+	const testPath = "/some/path"
+
 	inHandler := make(chan uint32)
 	leaveHandler := make(chan bool)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		inHandler <- w.(*responseWriter).rws.stream.id
+		id := w.(*responseWriter).rws.stream.id
+		inHandler <- id
+		if id == 1+(defaultMaxStreams+1)*2 && r.URL.Path != testPath {
+			t.Errorf("decoded final path as %q; want %q", r.URL.Path, testPath)
+		}
 		<-leaveHandler
 	})
 	defer st.Close()
@@ -1473,10 +1479,10 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 		defer func() { nextStreamID += 2 }()
 		return nextStreamID
 	}
-	sendReq := func(id uint32) {
+	sendReq := func(id uint32, headers ...string) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      id,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: encodeHeader(st.t, headers...),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -1492,8 +1498,20 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	}()
 
 	// And this one should cross the limit:
+	// (It's also sent as a CONTINUATION, to verify we still track the decoder context,
+	// even if we're rejecting it)
 	rejectID := streamID()
-	sendReq(rejectID)
+	headerBlock := encodeHeader(st.t, ":path", testPath)
+	frag1, frag2 := headerBlock[:3], headerBlock[3:]
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      rejectID,
+		BlockFragment: frag1,
+		EndStream:     true,
+		EndHeaders:    false, // CONTINUATION coming
+	})
+	if err := st.fr.WriteContinuation(rejectID, true, frag2); err != nil {
+		t.Fatal(err)
+	}
 	st.wantRSTStream(rejectID, ErrCodeProtocol)
 
 	// But let a handler finish:
@@ -1502,7 +1520,7 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 
 	// And now another stream should be able to start:
 	goodID := streamID()
-	sendReq(goodID)
+	sendReq(goodID, ":path", testPath)
 	select {
 	case got := <-inHandler:
 		if got != goodID {
