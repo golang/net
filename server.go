@@ -403,7 +403,7 @@ func (sc *serverConn) readFrames() {
 	for {
 		f, err := sc.framer.ReadFrame()
 		if err != nil {
-			sc.readFrameErrCh <- err // BEFORE the close
+			sc.readFrameErrCh <- err
 			close(sc.readFrameCh)
 			return
 		}
@@ -788,29 +788,33 @@ func (sc *serverConn) curHeaderStreamID() uint32 {
 // processFrameFromReader returns whether the connection should be kept open.
 func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool {
 	sc.serveG.check()
+	var clientGone bool
+	var err error
 	if !fgValid {
-		err := <-sc.readFrameErrCh
+		err = <-sc.readFrameErrCh
 		if err == ErrFrameTooLarge {
 			sc.goAway(ErrCodeFrameSize)
 			return true // goAway will close the loop
 		}
-		if err != io.EOF {
-			errstr := err.Error()
-			if !strings.Contains(errstr, "use of closed network connection") {
-				sc.logf("client %s stopped sending frames: %v", sc.conn.RemoteAddr(), errstr)
-			}
+		clientGone = err == io.EOF || strings.Contains(err.Error(), "use of closed network connection")
+		if clientGone {
+			// TODO: could we also get into this state if
+			// the peer does a half close
+			// (e.g. CloseWrite) because they're done
+			// sending frames but they're still wanting
+			// our open replies?  Investigate.
+			return false
 		}
-		// TODO: could we also get into this state if the peer does a half close (e.g. CloseWrite)
-		// because they're done sending frames but they're still wanting our open replies?
-		// Investigate.
-		return false
 	}
-	f := fg.f
-	sc.vlogf("got %v: %#v", f.Header(), f)
-	err := sc.processFrame(f)
-	fg.g.Done() // unblock the readFrames goroutine
-	if err == nil {
-		return true
+
+	if fgValid {
+		f := fg.f
+		sc.vlogf("got %v: %#v", f.Header(), f)
+		err = sc.processFrame(f)
+		fg.g.Done() // unblock the readFrames goroutine
+		if err == nil {
+			return true
+		}
 	}
 
 	switch ev := err.(type) {
@@ -825,7 +829,11 @@ func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool
 		sc.goAway(ErrCode(ev))
 		return true // goAway will handle shutdown
 	default:
-		sc.logf("disconnection due to other error: %v", err)
+		if !fgValid {
+			sc.logf("disconnecting; error reading frame from client %s: %v", sc.conn.RemoteAddr(), err)
+		} else {
+			sc.logf("disconnection due to other error: %v", err)
+		}
 	}
 	return false
 }

@@ -779,6 +779,9 @@ type HeadersFrameParam struct {
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility to not call other Write methods concurrently.
 func (f *Framer) WriteHeaders(p HeadersFrameParam) error {
+	if !validStreamID(p.StreamID) && !f.AllowIllegalWrites {
+		return errStreamID
+	}
 	var flags Flags
 	if p.PadLength != 0 {
 		flags |= FlagHeadersPadded

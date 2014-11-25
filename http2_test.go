@@ -42,10 +42,19 @@ func TestSettingString(t *testing.T) {
 }
 
 type twriter struct {
-	t testing.TB
+	t  testing.TB
+	st *serverTester // optional
 }
 
 func (w twriter) Write(p []byte) (n int, err error) {
+	if w.st != nil {
+		ps := string(p)
+		for _, phrase := range w.st.logFilter {
+			if strings.Contains(ps, phrase) {
+				return len(p), nil // no logging
+			}
+		}
+	}
 	w.t.Logf("%s", p)
 	return len(p), nil
 }
@@ -90,6 +99,20 @@ func encodeHeader(t *testing.T, headers ...string) []byte {
 			if err := enc.WriteField(hpack.HeaderField{Name: k, Value: v}); err != nil {
 				t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
 			}
+		}
+	}
+	return buf.Bytes()
+}
+
+// like encodeHeader, but don't add implicit psuedo headers.
+func encodeHeaderNoImplicit(t *testing.T, headers ...string) []byte {
+	var buf bytes.Buffer
+	enc := hpack.NewEncoder(&buf)
+	for len(headers) > 0 {
+		k, v := headers[0], headers[1]
+		headers = headers[2:]
+		if err := enc.WriteField(hpack.HeaderField{Name: k, Value: v}); err != nil {
+			t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
 		}
 	}
 	return buf.Bytes()
