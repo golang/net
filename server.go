@@ -161,7 +161,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		readFrameCh:       make(chan frameAndGate),
 		readFrameErrCh:    make(chan error, 1), // must be buffered for 1
 		wantWriteFrameCh:  make(chan frameWriteMsg, 8),
-		wroteFrameCh:      make(chan struct{}, 1), // TODO: consider 0. will deadlock currently in startFrameWrite in sentReset case
+		wroteFrameCh:      make(chan struct{}, 1), // buffered; one send in reading goroutine
 		flow:              newFlow(initialWindowSize),
 		doneServing:       make(chan struct{}),
 		advMaxStreams:     srv.maxConcurrentStreams(),
@@ -404,6 +404,11 @@ func (sc *serverConn) readFrames() {
 			return
 		}
 		sc.readFrameCh <- frameAndGate{f, g}
+		// We can't read another frame until this one is
+		// processed, as the ReadFrame interface doesn't copy
+		// memory.  The Frame accessor methods access the last
+		// frame's (shared) buffer. So we wait for the
+		// serve goroutine to tell us it's done:
 		g.Wait()
 	}
 }
@@ -513,7 +518,6 @@ func (sc *serverConn) readPreface() error {
 	go func() {
 		// Read the client preface
 		buf := make([]byte, len(ClientPreface))
-		// TODO: timeout reading from the client
 		if _, err := io.ReadFull(sc.conn, buf); err != nil {
 			errc <- err
 		} else if !bytes.Equal(buf, clientPreface) {
@@ -769,6 +773,9 @@ func (sc *serverConn) writeRSTStreamFrame(streamID uint32, v interface{}) error 
 	return sc.framer.WriteRSTStream(se.StreamID, se.Code)
 }
 
+// curHeaderStreamID returns the stream ID of the header block we're
+// currently in the middle of reading. If this returns non-zero, the
+// next frame must be a CONTINUATION with this stream id.
 func (sc *serverConn) curHeaderStreamID() uint32 {
 	sc.serveG.check()
 	st := sc.req.stream
@@ -962,6 +969,13 @@ func (sc *serverConn) processSettings(f *SettingsFrame) error {
 	sc.serveG.check()
 	if f.IsAck() {
 		// TODO: do we need to do anything?
+		// We might want to keep track of which settings we've sent
+		// vs which settings the client has ACK'd, so we know when to be
+		// strict. Or at least keep track of the count of
+		// our SETTINGS send count vs their ACK count. If they're equal,
+		// then we both have the same view of the world and we can be
+		// stricter in some cases. But currently we don't send SETTINGS
+		// at runtime other than the initial SETTINGS.
 		return nil
 	}
 	if err := f.ForeachSetting(sc.processSetting); err != nil {
@@ -1043,9 +1057,7 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if st.body == nil {
-		// Not expecting data.
-		// TODO: which error code?
-		return StreamError{id, ErrCodeStreamClosed}
+		panic("internal error: should have a body in this state")
 	}
 	data := f.Data()
 
