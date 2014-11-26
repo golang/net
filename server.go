@@ -544,14 +544,15 @@ func (sc *serverConn) readPreface() error {
 // The provided ch is used to avoid allocating new channels for each
 // write operation.  It's expected that the caller reuses req and ch
 // over time.
+//
+// The flow control currently happens in the Handler where it waits
+// for 1 or more bytes to be available to then write here.  So at this
+// point we know that we have flow control. But this might have to
+// change when priority is implemented, so the serve goroutine knows
+// the total amount of bytes waiting to be sent and can can have more
+// scheduling decisions available.
 func (sc *serverConn) writeData(stream *stream, data *dataWriteParams, ch chan error) error {
-	sc.serveG.checkNotOn() // otherwise could deadlock in sc.writeFrame
-
-	// TODO: wait for flow control tokens. instead of writing a
-	// frame directly, add a new "write data" channel to the serve
-	// loop and modify the frame scheduler there to write chunks
-	// of req as tokens allow. Don't necessarily write it all at
-	// once in one frame.
+	sc.serveG.checkNotOn() // NOT on; otherwise could deadlock in sc.writeFrame
 	sc.writeFrameFromHandler(frameWriteMsg{
 		write:     (*serverConn).writeDataFrame,
 		cost:      uint32(len(data.p)),
