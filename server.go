@@ -1234,6 +1234,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		stream:        rp.stream,
 		needsContinue: needsContinue,
 	}
+	// TODO: handle asterisk '*' requests + test
 	url, err := url.ParseRequestURI(rp.path)
 	if err != nil {
 		// TODO: find the right error code?
