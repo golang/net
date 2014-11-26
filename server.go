@@ -1351,16 +1351,34 @@ func (sc *serverConn) writeHeadersFrame(streamID uint32, v interface{}) error {
 	}
 
 	headerBlock := sc.headerWriteBuf.Bytes()
-	if len(headerBlock) > int(sc.maxWriteFrameSize) {
-		// we'll need continuation ones.
-		panic("TODO")
+	if len(headerBlock) == 0 {
+		panic("unexpected empty hpack")
 	}
-	return sc.framer.WriteHeaders(HeadersFrameParam{
-		StreamID:      req.stream.id,
-		BlockFragment: headerBlock,
-		EndStream:     req.endStream,
-		EndHeaders:    true, // no continuation yet
-	})
+	first := true
+	for len(headerBlock) > 0 {
+		frag := headerBlock
+		if len(frag) > int(sc.maxWriteFrameSize) {
+			frag = frag[:sc.maxWriteFrameSize]
+		}
+		headerBlock = headerBlock[len(frag):]
+		endHeaders := len(headerBlock) == 0
+		var err error
+		if first {
+			first = false
+			err = sc.framer.WriteHeaders(HeadersFrameParam{
+				StreamID:      req.stream.id,
+				BlockFragment: frag,
+				EndStream:     req.endStream,
+				EndHeaders:    endHeaders,
+			})
+		} else {
+			err = sc.framer.WriteContinuation(req.stream.id, endHeaders, frag)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // called from handler goroutines.

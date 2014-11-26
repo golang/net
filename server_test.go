@@ -202,6 +202,18 @@ func (st *serverTester) wantHeaders() *HeadersFrame {
 	return hf
 }
 
+func (st *serverTester) wantContinuation() *ContinuationFrame {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatalf("Error while expecting a CONTINUATION frame: %v", err)
+	}
+	cf, ok := f.(*ContinuationFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *ContinuationFrame", f)
+	}
+	return cf
+}
+
 func (st *serverTester) wantData() *DataFrame {
 	f, err := st.readFrame()
 	if err != nil {
@@ -1657,6 +1669,34 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Error("timeout waiting for handler")
 	}
+}
+
+// So many response headers that the server needs to use CONTINUATION frames:
+func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		h := w.Header()
+		for i := 0; i < 5000; i++ {
+			h.Set(fmt.Sprintf("x-header-%d", i), fmt.Sprintf("x-value-%d", i))
+		}
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		if hf.HeadersEnded() {
+			t.Fatal("got unwanted END_HEADERS flag")
+		}
+		n := 0
+		for {
+			n++
+			cf := st.wantContinuation()
+			if cf.HeadersEnded() {
+				break
+			}
+		}
+		if n < 5 {
+			t.Errorf("Only got %d CONTINUATION frames; expected 5+ (currently 6)")
+		}
+	})
 }
 
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
