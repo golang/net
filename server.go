@@ -1666,7 +1666,12 @@ func cloneHeader(h http.Header) http.Header {
 
 // The Life Of A Write is like this:
 //
-// TODO: copy/adapt the similar comment from Go's http server.go
+// * Handler calls w.Write or w.WriteString ->
+// * -> rws.bw (*bufio.Writer) ->
+// * (Handler migth call Flush)
+// * -> chunkWriter{rws}
+// * -> responseWriterState.writeChunk(p []byte)
+// * -> responseWriterState.writeChunk (most of the magic; see comment there)
 func (w *responseWriter) Write(p []byte) (n int, err error) {
 	return w.write(len(p), p, "")
 }
