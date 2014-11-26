@@ -1069,9 +1069,12 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	if len(data) > 0 {
 		// TODO: verify they're allowed to write with the flow control
 		// window we'd advertised to them.
-		// TODO: verify n from Write
-		if _, err := st.body.Write(data); err != nil {
+		wrote, err := st.body.Write(data)
+		if err != nil {
 			return StreamError{id, ErrCodeStreamClosed}
+		}
+		if wrote != len(data) {
+			panic("internal error: bad Writer")
 		}
 		st.bodyBytes += int64(len(data))
 	}
