@@ -7,6 +7,28 @@
 
 package http2
 
+// frameWriteMsg is a request to write a frame.
+type frameWriteMsg struct {
+	// write is the function that does the writing, once the
+	// writeScheduler (below) has decided to select this frame
+	// to write. The write functions are all defined in write.go.
+	write func(ctx writeContext, v interface{}) error
+
+	// v is the argument passed to the write function. See each
+	// function in write.go to see which type they should be,
+	// depending on what write is.
+	v interface{}
+
+	cost      uint32  // if DATA, number of flow control bytes required
+	stream    *stream // used for prioritization
+	endStream bool    // stream is being closed locally
+
+	// done, if non-nil, must be a buffered channel with space for
+	// 1 message and is sent the return value from write (or an
+	// earlier error) when the frame has been written.
+	done chan error
+}
+
 // writeScheduler tracks pending frames to write, priorities, and decides
 // the next one to use. It is not thread-safe.
 type writeScheduler struct {
