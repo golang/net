@@ -962,6 +962,7 @@ func (sc *serverConn) processSettings(f *SettingsFrame) error {
 }
 
 func (sc *serverConn) writeSettingsAck(uint32, interface{}) error {
+	sc.writeG.check()
 	return sc.framer.WriteSettingsAck()
 }
 
