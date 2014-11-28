@@ -9,17 +9,23 @@ package http2
 
 import (
 	"bytes"
+	"net/http"
 	"time"
 
 	"github.com/bradfitz/http2/hpack"
 )
 
-// writeContext is the interface needed by the various frame writing
-// functions below. All the functions below are scheduled via the
+// writeFramer is implemented by any type that is used to write frames.
+type writeFramer interface {
+	writeFrame(writeContext) error
+}
+
+// writeContext is the interface needed by the various frame writer
+// types below. All the writeFrame methods below are scheduled via the
 // frame writing scheduler (see writeScheduler in writesched.go).
 //
 // This interface is implemented by *serverConn.
-// TODO: use it from the client code, once it exists.
+// TODO: use it from the client code too, once it exists.
 type writeContext interface {
 	Framer() *Framer
 	Flush() error
@@ -29,22 +35,36 @@ type writeContext interface {
 	HeaderEncoder() (*hpack.Encoder, *bytes.Buffer)
 }
 
-func flushFrameWriter(ctx writeContext, _ interface{}) error {
+// endsStream reports whether the given frame writer w will locally
+// close the stream.
+func endsStream(w writeFramer) bool {
+	switch v := w.(type) {
+	case *writeData:
+		return v.endStream
+	case *writeResHeaders:
+		return v.endStream
+	}
+	return false
+}
+
+type flushFrameWriter struct{}
+
+func (flushFrameWriter) writeFrame(ctx writeContext) error {
 	return ctx.Flush()
 }
 
-func writeSettings(ctx writeContext, v interface{}) error {
-	settings := v.([]Setting)
-	return ctx.Framer().WriteSettings(settings...)
+type writeSettings []Setting
+
+func (s writeSettings) writeFrame(ctx writeContext) error {
+	return ctx.Framer().WriteSettings([]Setting(s)...)
 }
 
-type goAwayParams struct {
+type writeGoAway struct {
 	maxStreamID uint32
 	code        ErrCode
 }
 
-func writeGoAwayFrame(ctx writeContext, v interface{}) error {
-	p := v.(*goAwayParams)
+func (p *writeGoAway) writeFrame(ctx writeContext) error {
 	err := ctx.Framer().WriteGoAway(p.maxStreamID, p.code, nil)
 	if p.code != 0 {
 		ctx.Flush() // ignore error: we're hanging up on them anyway
@@ -54,32 +74,49 @@ func writeGoAwayFrame(ctx writeContext, v interface{}) error {
 	return err
 }
 
-type dataWriteParams struct {
-	streamID uint32
-	p        []byte
-	end      bool
+type writeData struct {
+	streamID  uint32
+	p         []byte
+	endStream bool
 }
 
-func writeRSTStreamFrame(ctx writeContext, v interface{}) error {
-	se := v.(*StreamError)
+func (w *writeData) writeFrame(ctx writeContext) error {
+	return ctx.Framer().WriteData(w.streamID, w.endStream, w.p)
+}
+
+func (se StreamError) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteRSTStream(se.StreamID, se.Code)
 }
 
-func writePingAck(ctx writeContext, v interface{}) error {
-	pf := v.(*PingFrame) // contains the data we need to write back
-	return ctx.Framer().WritePing(true, pf.Data)
+type writePingAck struct{ pf *PingFrame }
+
+func (w writePingAck) writeFrame(ctx writeContext) error {
+	return ctx.Framer().WritePing(true, w.pf.Data)
 }
 
-func writeSettingsAck(ctx writeContext, _ interface{}) error {
+type writeSettingsAck struct{}
+
+func (writeSettingsAck) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteSettingsAck()
 }
 
-func writeHeadersFrame(ctx writeContext, v interface{}) error {
-	req := v.(headerWriteReq)
+// writeResHeaders is a request to write a HEADERS and 0+ CONTINUATION frames
+// for HTTP response headers from a server handler.
+type writeResHeaders struct {
+	streamID    uint32
+	httpResCode int
+	h           http.Header // may be nil
+	endStream   bool
+
+	contentType   string
+	contentLength string
+}
+
+func (w *writeResHeaders) writeFrame(ctx writeContext) error {
 	enc, buf := ctx.HeaderEncoder()
 	buf.Reset()
-	enc.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(req.httpResCode)})
-	for k, vv := range req.h {
+	enc.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(w.httpResCode)})
+	for k, vv := range w.h {
 		k = lowerHeader(k)
 		for _, v := range vv {
 			// TODO: more of "8.1.2.2 Connection-Specific Header Fields"
@@ -89,11 +126,11 @@ func writeHeadersFrame(ctx writeContext, v interface{}) error {
 			enc.WriteField(hpack.HeaderField{Name: k, Value: v})
 		}
 	}
-	if req.contentType != "" {
-		enc.WriteField(hpack.HeaderField{Name: "content-type", Value: req.contentType})
+	if w.contentType != "" {
+		enc.WriteField(hpack.HeaderField{Name: "content-type", Value: w.contentType})
 	}
-	if req.contentLength != "" {
-		enc.WriteField(hpack.HeaderField{Name: "content-length", Value: req.contentLength})
+	if w.contentLength != "" {
+		enc.WriteField(hpack.HeaderField{Name: "content-length", Value: w.contentLength})
 	}
 
 	headerBlock := buf.Bytes()
@@ -121,13 +158,13 @@ func writeHeadersFrame(ctx writeContext, v interface{}) error {
 		if first {
 			first = false
 			err = ctx.Framer().WriteHeaders(HeadersFrameParam{
-				StreamID:      req.stream.id,
+				StreamID:      w.streamID,
 				BlockFragment: frag,
-				EndStream:     req.endStream,
+				EndStream:     w.endStream,
 				EndHeaders:    endHeaders,
 			})
 		} else {
-			err = ctx.Framer().WriteContinuation(req.stream.id, endHeaders, frag)
+			err = ctx.Framer().WriteContinuation(w.streamID, endHeaders, frag)
 		}
 		if err != nil {
 			return err
@@ -136,31 +173,28 @@ func writeHeadersFrame(ctx writeContext, v interface{}) error {
 	return nil
 }
 
-func write100ContinueHeadersFrame(ctx writeContext, v interface{}) error {
-	st := v.(*stream)
+type write100ContinueHeadersFrame struct {
+	streamID uint32
+}
+
+func (w write100ContinueHeadersFrame) writeFrame(ctx writeContext) error {
 	enc, buf := ctx.HeaderEncoder()
 	buf.Reset()
 	enc.WriteField(hpack.HeaderField{Name: ":status", Value: "100"})
 	return ctx.Framer().WriteHeaders(HeadersFrameParam{
-		StreamID:      st.id,
+		StreamID:      w.streamID,
 		BlockFragment: buf.Bytes(),
 		EndStream:     false,
 		EndHeaders:    true,
 	})
 }
 
-func writeDataFrame(ctx writeContext, v interface{}) error {
-	req := v.(*dataWriteParams)
-	return ctx.Framer().WriteData(req.streamID, req.end, req.p)
-}
-
-type windowUpdateReq struct {
+type writeWindowUpdate struct {
 	streamID uint32
 	n        uint32
 }
 
-func writeWindowUpdate(ctx writeContext, v interface{}) error {
-	wu := v.(windowUpdateReq)
+func (wu writeWindowUpdate) writeFrame(ctx writeContext) error {
 	fr := ctx.Framer()
 	if err := fr.WriteWindowUpdate(0, wu.n); err != nil {
 		return err

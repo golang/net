@@ -9,19 +9,12 @@ package http2
 
 // frameWriteMsg is a request to write a frame.
 type frameWriteMsg struct {
-	// write is the function that does the writing, once the
+	// write is the interface value that does the writing, once the
 	// writeScheduler (below) has decided to select this frame
 	// to write. The write functions are all defined in write.go.
-	write func(ctx writeContext, v interface{}) error
+	write writeFramer
 
-	// v is the argument passed to the write function. See each
-	// function in write.go to see which type they should be,
-	// depending on what write is.
-	v interface{}
-
-	cost      uint32  // if DATA, number of flow control bytes required
-	stream    *stream // used for prioritization
-	endStream bool    // stream is being closed locally
+	stream *stream // used for prioritization. nil for non-stream frames.
 
 	// done, if non-nil, must be a buffered channel with space for
 	// 1 message and is sent the return value from write (or an
@@ -36,6 +29,8 @@ type writeScheduler struct {
 	// They're sent before any stream-specific freams.
 	zero writeQueue
 
+	// sq contains the stream-specific queues, keyed by stream ID.
+	// when a stream is idle, it's deleted from the map.
 	sq map[uint32]*writeQueue
 }
 
@@ -123,4 +118,9 @@ func (q *writeQueue) shift() frameWriteMsg {
 	return wm
 }
 
-func (q *writeQueue) firstIsNoCost() bool { return q.s[0].cost == 0 }
+func (q *writeQueue) firstIsNoCost() bool {
+	if df, ok := q.s[0].write.(*writeData); ok {
+		return len(df.p) == 0
+	}
+	return true
+}
