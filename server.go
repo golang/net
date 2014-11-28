@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	prefaceTimeout        = 5 * time.Second
+	prefaceTimeout        = 10 * time.Second
 	firstSettingsTimeout  = 2 * time.Second // should be in-flight with preface anyway
 	handlerChunkWriteSize = 4 << 10
 	defaultMaxStreams     = 250
