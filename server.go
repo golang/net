@@ -546,7 +546,6 @@ func (sc *serverConn) readPreface() error {
 // the total amount of bytes waiting to be sent and can can have more
 // scheduling decisions available.
 func (sc *serverConn) writeData(stream *stream, data *dataWriteParams, ch chan error) error {
-	sc.serveG.checkNotOn() // NOT on; otherwise could deadlock in sc.writeFrame
 	sc.writeFrameFromHandler(frameWriteMsg{
 		write:     writeDataFrame,
 		cost:      uint32(len(data.p)),
@@ -1271,7 +1270,6 @@ func (sc *serverConn) writeHeaders(req headerWriteReq, tempCh chan error) {
 
 // called from handler goroutines.
 func (sc *serverConn) write100ContinueHeaders(st *stream) {
-	sc.serveG.checkNotOn() // NOT
 	sc.writeFrameFromHandler(frameWriteMsg{
 		write:  write100ContinueHeadersFrame,
 		v:      st,
@@ -1281,7 +1279,6 @@ func (sc *serverConn) write100ContinueHeaders(st *stream) {
 
 // called from handler goroutines
 func (sc *serverConn) sendWindowUpdate(st *stream, n int) {
-	sc.serveG.checkNotOn() // NOT
 	if st == nil {
 		panic("no stream")
 	}
