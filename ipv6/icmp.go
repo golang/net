@@ -4,7 +4,11 @@
 
 package ipv6
 
-import "sync"
+import (
+	"sync"
+
+	"golang.org/x/net/internal/iana"
+)
 
 // An ICMPType represents a type of ICMP message.
 type ICMPType int
@@ -15,6 +19,11 @@ func (typ ICMPType) String() string {
 		return "<nil>"
 	}
 	return s
+}
+
+// Protocol returns the ICMPv6 protocol number.
+func (typ ICMPType) Protocol() int {
+	return iana.ProtocolIPv6ICMP
 }
 
 // An ICMPFilter represents an ICMP message filter for incoming

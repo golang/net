@@ -4,6 +4,8 @@
 
 package ipv4
 
+import "golang.org/x/net/internal/iana"
+
 // An ICMPType represents a type of ICMP message.
 type ICMPType int
 
@@ -13,4 +15,9 @@ func (typ ICMPType) String() string {
 		return "<nil>"
 	}
 	return s
+}
+
+// Protocol returns the ICMPv4 protocol number.
+func (typ ICMPType) Protocol() int {
+	return iana.ProtocolICMP
 }

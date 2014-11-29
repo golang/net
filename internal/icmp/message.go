@@ -17,7 +17,7 @@ import (
 
 // A Type represents an ICMP message type.
 type Type interface {
-	String() string
+	Protocol() int
 }
 
 // A Message represents an ICMP message.
@@ -39,18 +39,16 @@ type Message struct {
 // When psh is not nil, it must be the pseudo header for IPv6.
 func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	var mtype int
-	var icmpv6 bool
 	switch typ := m.Type.(type) {
 	case ipv4.ICMPType:
 		mtype = int(typ)
 	case ipv6.ICMPType:
 		mtype = int(typ)
-		icmpv6 = true
 	default:
 		return nil, errors.New("invalid argument")
 	}
 	b := []byte{byte(mtype), byte(m.Code), 0, 0}
-	if icmpv6 && psh != nil {
+	if m.Type.Protocol() == iana.ProtocolIPv6ICMP && psh != nil {
 		b = append(psh, b...)
 	}
 	if m.Body != nil && m.Body.Len() != 0 {
@@ -60,7 +58,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 		}
 		b = append(b, mb...)
 	}
-	if icmpv6 {
+	if m.Type.Protocol() == iana.ProtocolIPv6ICMP {
 		if psh == nil { // cannot calculate checksum here
 			return b, nil
 		}
