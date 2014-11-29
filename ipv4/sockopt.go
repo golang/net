@@ -15,7 +15,8 @@ const (
 	ssoReceiveDst                // header field on received packet
 	ssoReceiveInterface          // inbound interface on received packet
 	ssoPacketInfo                // incbound or outbound packet path
-	ssoHeaderPrepend             // ipv4 header
+	ssoHeaderPrepend             // ipv4 header prepend
+	ssoStripHeader               // strip ipv4 header
 	ssoJoinGroup                 // any-source multicast
 	ssoLeaveGroup                // any-source multicast
 	ssoJoinSourceGroup           // source-specific multicast

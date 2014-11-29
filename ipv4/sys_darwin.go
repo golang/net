@@ -58,6 +58,8 @@ func init() {
 		ctlOpts[ctlPacketInfo].parse = parsePacketInfo
 		sockOpts[ssoPacketInfo].name = sysIP_RECVPKTINFO
 		sockOpts[ssoPacketInfo].typ = ssoTypeInt
+		sockOpts[ssoStripHeader].name = sysIP_STRIPHDR
+		sockOpts[ssoStripHeader].typ = ssoTypeInt
 		sockOpts[ssoMulticastInterface].typ = ssoTypeIPMreqn
 		sockOpts[ssoJoinGroup].name = sysMCAST_JOIN_GROUP
 		sockOpts[ssoJoinGroup].typ = ssoTypeGroupReq

@@ -27,13 +27,19 @@ func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.
 			return 0, nil, nil, err
 		}
 	case *net.IPConn:
-		nb := make([]byte, maxHeaderLen+len(b))
-		if n, oobn, _, src, err = c.ReadMsgIP(nb, oob); err != nil {
-			return 0, nil, nil, err
+		if sockOpts[ssoStripHeader].name > 0 {
+			if n, oobn, _, src, err = c.ReadMsgIP(b, oob); err != nil {
+				return 0, nil, nil, err
+			}
+		} else {
+			nb := make([]byte, maxHeaderLen+len(b))
+			if n, oobn, _, src, err = c.ReadMsgIP(nb, oob); err != nil {
+				return 0, nil, nil, err
+			}
+			hdrlen := int(nb[0]&0x0f) << 2
+			copy(b, nb[hdrlen:])
+			n -= hdrlen
 		}
-		hdrlen := int(nb[0]&0x0f) << 2
-		copy(b, nb[hdrlen:])
-		n -= hdrlen
 	default:
 		return 0, nil, nil, errInvalidConnType
 	}
