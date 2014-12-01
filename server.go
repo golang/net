@@ -275,6 +275,8 @@ type stream struct {
 	cw   closeWaiter // closed wait stream transitions to closed state
 
 	// owned by serverConn's serve loop:
+	parent        *stream // or nil
+	weight        uint8
 	state         streamState
 	bodyBytes     int64 // body bytes seen so far
 	declBodyBytes int64 // or -1 if undeclared
@@ -816,6 +818,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processData(f)
 	case *RSTStreamFrame:
 		return sc.processResetStream(f)
+	case *PriorityFrame:
+		return sc.processPriority(f)
 	default:
 		log.Printf("Ignoring frame: %v", f.Header())
 		return nil
@@ -1056,6 +1060,9 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		st.state = stateHalfClosedRemote
 	}
 	sc.streams[id] = st
+	if f.HasPriority() {
+		sc.adjustStreamPriority(st.id, f.Priority)
+	}
 	sc.curOpenStreams++
 	sc.req = requestParam{
 		stream: st,
@@ -1102,6 +1109,31 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 	st.declBodyBytes = req.ContentLength
 	go sc.runHandler(rw, req)
 	return nil
+}
+
+func (sc *serverConn) processPriority(f *PriorityFrame) error {
+	sc.adjustStreamPriority(f.StreamID, f.PriorityParam)
+	return nil
+}
+
+func (sc *serverConn) adjustStreamPriority(streamID uint32, priority PriorityParam) {
+	// TODO: untested
+	st, ok := sc.streams[streamID]
+	if !ok {
+		// TODO: not quite correct (this streamID might
+		// already exist in the dep tree, but be closed), but
+		// close enough for now.
+		return
+	}
+	st.weight = priority.Weight
+	st.parent = sc.streams[priority.StreamDep] // might be nil
+	if priority.Exclusive && st.parent != nil {
+		for _, openStream := range sc.streams {
+			if openStream.parent == st.parent {
+				openStream.parent = st
+			}
+		}
+	}
 }
 
 // resetPendingRequest zeros out all state related to a HEADERS frame
