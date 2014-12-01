@@ -270,7 +270,6 @@ type requestParam struct {
 type stream struct {
 	// immutable:
 	id   uint32
-	conn *serverConn
 	flow flow        // limits writing from Handler to client
 	body *pipe       // non-nil if expecting DATA frames
 	cw   closeWaiter // closed wait stream transitions to closed state
@@ -1048,7 +1047,6 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		sc.maxStreamID = id
 	}
 	st := &stream{
-		conn:  sc,
 		id:    id,
 		state: stateOpen,
 	}
@@ -1162,6 +1160,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	}
 	bodyOpen := rp.stream.state == stateOpen
 	body := &requestBody{
+		conn:          sc,
 		stream:        rp.stream,
 		needsContinue: needsContinue,
 	}
@@ -1200,6 +1199,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	rws := responseWriterStatePool.Get().(*responseWriterState)
 	bwSave := rws.bw
 	*rws = responseWriterState{} // zero all the fields
+	rws.conn = sc
 	rws.bw = bwSave
 	rws.bw.Reset(chunkWriter{rws})
 	rws.stream = rp.stream
@@ -1277,6 +1277,7 @@ func (sc *serverConn) sendWindowUpdate(st *stream, n int) {
 
 type requestBody struct {
 	stream        *stream
+	conn          *serverConn
 	closed        bool
 	pipe          *pipe // non-nil if we have a HTTP entity message body
 	needsContinue bool  // need to send a 100-continue
@@ -1293,14 +1294,14 @@ func (b *requestBody) Close() error {
 func (b *requestBody) Read(p []byte) (n int, err error) {
 	if b.needsContinue {
 		b.needsContinue = false
-		b.stream.conn.write100ContinueHeaders(b.stream)
+		b.conn.write100ContinueHeaders(b.stream)
 	}
 	if b.pipe == nil {
 		return 0, io.EOF
 	}
 	n, err = b.pipe.Read(p)
 	if n > 0 {
-		b.stream.conn.sendWindowUpdate(b.stream, n)
+		b.conn.sendWindowUpdate(b.stream, n)
 	}
 	return
 }
@@ -1327,6 +1328,7 @@ type responseWriterState struct {
 	stream *stream
 	req    *http.Request
 	body   *requestBody // to close at end of request, if DATA frames didn't
+	conn   *serverConn
 
 	// TODO: adjust buffer writing sizes based on server config, frame size updates from peer, etc
 	bw *bufio.Writer // writing to a chunkWriter{this *responseWriterState}
@@ -1369,7 +1371,7 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 			ctype = http.DetectContentType(p)
 		}
 		endStream := rws.handlerDone && len(p) == 0
-		rws.stream.conn.writeHeaders(rws.stream, &writeResHeaders{
+		rws.conn.writeHeaders(rws.stream, &writeResHeaders{
 			streamID:      rws.stream.id,
 			httpResCode:   rws.status,
 			h:             rws.snapHeader,
@@ -1388,7 +1390,7 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 	curWrite.streamID = rws.stream.id
 	curWrite.p = p
 	curWrite.endStream = rws.handlerDone
-	if err := rws.stream.conn.writeDataFromHandler(rws.stream, curWrite, rws.frameWriteCh); err != nil {
+	if err := rws.conn.writeDataFromHandler(rws.stream, curWrite, rws.frameWriteCh); err != nil {
 		return 0, err
 	}
 	return len(p), nil
