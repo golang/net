@@ -706,6 +706,10 @@ func (f *HeadersFrame) StreamEnded() bool {
 	return f.FrameHeader.Flags.Has(FlagHeadersEndStream)
 }
 
+func (f *HeadersFrame) HasPriority() bool {
+	return f.FrameHeader.Flags.Has(FlagHeadersPriority)
+}
+
 func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 	hf := &HeadersFrame{
 		FrameHeader: fh,
