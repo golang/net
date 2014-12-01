@@ -29,6 +29,10 @@ type writeScheduler struct {
 	// They're sent before any stream-specific freams.
 	zero writeQueue
 
+	// maxFrameSize is the maximum size of a DATA frame
+	// we'll write.
+	maxFrameSize uint32
+
 	// sq contains the stream-specific queues, keyed by stream ID.
 	// when a stream is idle, it's deleted from the map.
 	sq map[uint32]*writeQueue
@@ -58,16 +62,16 @@ func (ws *writeScheduler) streamQueue(streamID uint32) *writeQueue {
 }
 
 // take returns the most important frame to write and removes it from the scheduler.
-// It is illegal to call this if the scheduler is empty.
-func (ws *writeScheduler) take() frameWriteMsg {
+// It is illegal to call this if the scheduler is empty or if there are no connection-level
+// flow control bytes available.
+func (ws *writeScheduler) take() (wm frameWriteMsg, ok bool) {
 	// If there any frames not associated with streams, prefer those first.
 	// These are usually SETTINGS, etc.
 	if !ws.zero.empty() {
-		return ws.zero.shift()
+		return ws.zero.shift(), true
 	}
-
 	if len(ws.sq) == 0 {
-		panic("internal error: take should only be called if non-empty")
+		return
 	}
 
 	// Next, prioritize frames on streams that aren't DATA frames (no cost).
@@ -80,20 +84,64 @@ func (ws *writeScheduler) take() frameWriteMsg {
 	// Now, all that remains are DATA frames. So pick the best one.
 	// TODO: do that. For now, pick a random one.
 	for id, q := range ws.sq {
-		return ws.takeFrom(id, q)
+		if wm, ok := ws.takeFrom(id, q); ok {
+			return wm, true
+		}
 	}
-	panic("internal error: take should only be called if non-empty")
+	return
 }
 
-func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) frameWriteMsg {
-	wm := q.shift()
+func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, ok bool) {
+	wm = q.head()
+	// If the first item in this queue costs flow control tokens
+	// and we don't have enough, write as much as we can.
+	if wd, ok := wm.write.(*writeData); ok {
+		allowed := wm.stream.flow.available() // max we can write
+		if allowed == 0 {
+			// No quota available. Caller can try the next stream.
+			return wm, false
+		}
+		if int32(ws.maxFrameSize) < allowed {
+			allowed = int32(ws.maxFrameSize)
+		}
+		if allowed == 0 {
+			panic("internal error: ws.maxFrameSize not initialized or invalid")
+		}
+		// TODO: further restrict the allowed size, because even if
+		// the peer says it's okay to write 16MB data frames, we might
+		// want to write smaller ones to properly weight competing
+		// streams' priorities.
+		if len(wd.p) > int(allowed) {
+			wm.stream.flow.take(allowed)
+			chunk := wd.p[:allowed]
+			wd.p = wd.p[allowed:]
+			// Make up a new write message of a valid size, rather
+			// than shifting one off the queue.
+			return frameWriteMsg{
+				stream: wm.stream,
+				write: &writeData{
+					streamID: wd.streamID,
+					p:        chunk,
+					// even if the original was true, there are bytes
+					// remaining because len(wd.p) > allowed, so we
+					// know endStream is false:
+					endStream: false,
+				},
+				// completeness.  our caller is blocking on the final
+				// DATA frame, not these intermediates:
+				done: nil,
+			}, true
+		}
+	}
+
+	q.shift()
 	if q.empty() {
 		// TODO: reclaim its slice and use it for future allocations
 		// in the writeScheduler.streamQueue method above when making
 		// the writeQueue.
 		delete(ws.sq, id)
 	}
-	return wm
+	return wm, true
 }
 
 type writeQueue struct {
@@ -104,6 +152,14 @@ func (q *writeQueue) empty() bool { return len(q.s) == 0 }
 
 func (q *writeQueue) push(wm frameWriteMsg) {
 	q.s = append(q.s, wm)
+}
+
+// head returns the next item that would be removed by shift.
+func (q *writeQueue) head() frameWriteMsg {
+	if len(q.s) == 0 {
+		panic("invalid use of queue")
+	}
+	return q.s[0]
 }
 
 func (q *writeQueue) shift() frameWriteMsg {

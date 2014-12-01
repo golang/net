@@ -5,6 +5,10 @@
 // Licensed under the same terms as Go itself:
 // https://code.google.com/p/go/source/browse/LICENSE
 
+// TODO: replace all <-sc.doneServing with reads from the stream's cw
+// instead, and make sure that on close we close all open
+// streams. then remove doneServing?
+
 package http2
 
 import (
@@ -152,25 +156,27 @@ func ConfigureServer(s *http.Server, conf *Server) {
 
 func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc := &serverConn{
-		srv:               srv,
-		hs:                hs,
-		conn:              c,
-		bw:                newBufferedWriter(c),
-		handler:           h,
-		streams:           make(map[uint32]*stream),
-		readFrameCh:       make(chan frameAndGate),
-		readFrameErrCh:    make(chan error, 1), // must be buffered for 1
-		wantWriteFrameCh:  make(chan frameWriteMsg, 8),
-		wroteFrameCh:      make(chan struct{}, 1), // buffered; one send in reading goroutine
-		flow:              newFlow(initialWindowSize),
-		doneServing:       make(chan struct{}),
-		advMaxStreams:     srv.maxConcurrentStreams(),
-		maxWriteFrameSize: initialMaxFrameSize,
+		srv:              srv,
+		hs:               hs,
+		conn:             c,
+		bw:               newBufferedWriter(c),
+		handler:          h,
+		streams:          make(map[uint32]*stream),
+		readFrameCh:      make(chan frameAndGate),
+		readFrameErrCh:   make(chan error, 1), // must be buffered for 1
+		wantWriteFrameCh: make(chan frameWriteMsg, 8),
+		wroteFrameCh:     make(chan struct{}, 1), // buffered; one send in reading goroutine
+		doneServing:      make(chan struct{}),
+		advMaxStreams:    srv.maxConcurrentStreams(),
+		writeSched: writeScheduler{
+			maxFrameSize: initialMaxFrameSize,
+		},
 		initialWindowSize: initialWindowSize,
 		headerTableSize:   initialHeaderTableSize,
 		serveG:            newGoroutineLock(),
 		pushEnabled:       true,
 	}
+	sc.flow.add(sc.initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
 
@@ -209,7 +215,7 @@ type serverConn struct {
 	wantWriteFrameCh chan frameWriteMsg // from handlers -> serve
 	wroteFrameCh     chan struct{}      // from writeFrameAsync -> serve, tickles more frame writes
 	testHookCh       chan func()        // code to run on the serve loop
-	flow             *flow              // connection-wide (not stream-specific) flow control
+	flow             flow               // connection-wide (not stream-specific) flow control
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                goroutineLock // used to verify funcs are on serve()
@@ -221,7 +227,6 @@ type serverConn struct {
 	curOpenStreams        uint32 // client's number of open streams
 	maxStreamID           uint32 // max ever seen
 	streams               map[uint32]*stream
-	maxWriteFrameSize     uint32
 	initialWindowSize     int32
 	headerTableSize       uint32
 	maxHeaderListSize     uint32            // zero means unknown (default)
@@ -266,7 +271,7 @@ type stream struct {
 	// immutable:
 	id   uint32
 	conn *serverConn
-	flow *flow       // limits writing from Handler to client
+	flow flow        // limits writing from Handler to client
 	body *pipe       // non-nil if expecting DATA frames
 	cw   closeWaiter // closed wait stream transitions to closed state
 
@@ -555,6 +560,8 @@ func (sc *serverConn) writeDataFromHandler(stream *stream, writeData *writeData,
 		return err
 	case <-sc.doneServing:
 		return errClientDisconnected
+	case <-stream.cw:
+		return errStreamBroken
 	}
 }
 
@@ -583,7 +590,7 @@ func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) {
 func (sc *serverConn) writeFrame(wm frameWriteMsg) {
 	sc.serveG.check()
 	// Fast path for common case:
-	if !sc.writingFrame {
+	if !sc.writingFrame && sc.writeSched.empty() {
 		sc.startFrameWrite(wm)
 		return
 	}
@@ -657,28 +664,22 @@ func (sc *serverConn) scheduleFrameWrite() {
 		})
 		return
 	}
-	if sc.writeSched.empty() && sc.needsFrameFlush {
-		sc.startFrameWrite(frameWriteMsg{write: flushFrameWriter{}})
-		sc.needsFrameFlush = false // after startFrameWrite, since it sets this true
-		return
-	}
-	if sc.inGoAway {
-		// No more frames after we've sent GOAWAY.
-		return
-	}
 	if sc.needToSendSettingsAck {
 		sc.needToSendSettingsAck = false
 		sc.startFrameWrite(frameWriteMsg{write: writeSettingsAck{}})
 		return
 	}
-	if sc.writeSched.empty() {
+	if !sc.inGoAway {
+		if wm, ok := sc.writeSched.take(); ok {
+			sc.startFrameWrite(wm)
+			return
+		}
+	}
+	if sc.needsFrameFlush {
+		sc.startFrameWrite(frameWriteMsg{write: flushFrameWriter{}})
+		sc.needsFrameFlush = false // after startFrameWrite, since it sets this true
 		return
 	}
-	// TODO: if wm is a data frame, make sure it's not too big
-	// (because a SETTINGS frame changed our max frame size while
-	// a stream was open and writing) and cut it up into smaller
-	// bits.
-	sc.startFrameWrite(sc.writeSched.take())
 }
 
 func (sc *serverConn) goAway(code ErrCode) {
@@ -862,6 +863,7 @@ func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 			return goAwayFlowError{}
 		}
 	}
+	sc.scheduleFrameWrite()
 	return nil
 }
 
@@ -879,6 +881,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	if ok {
 		st.gotReset = true
 		sc.closeStream(st, StreamError{f.StreamID, f.ErrCode})
+		// XXX TODO drain writeSched for that stream
 	}
 	return nil
 }
@@ -891,11 +894,10 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 	st.state = stateClosed
 	sc.curOpenStreams--
 	delete(sc.streams, st.id)
-	st.flow.close()
 	if p := st.body; p != nil {
 		p.Close(err)
 	}
-	st.cw.Close() // signals Handler's CloseNotifier goroutine (if any) to send
+	st.cw.Close() // signals Handler's CloseNotifier, unblocks writes, etc
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
@@ -936,7 +938,7 @@ func (sc *serverConn) processSetting(s Setting) error {
 	case SettingInitialWindowSize:
 		return sc.processSettingInitialWindowSize(s.Val)
 	case SettingMaxFrameSize:
-		sc.maxWriteFrameSize = s.Val
+		sc.writeSched.maxFrameSize = s.Val
 	case SettingMaxHeaderListSize:
 		sc.maxHeaderListSize = s.Val
 	default:
@@ -1049,8 +1051,8 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		conn:  sc,
 		id:    id,
 		state: stateOpen,
-		flow:  newFlow(sc.initialWindowSize),
 	}
+	st.flow.add(sc.initialWindowSize)
 	st.cw.Init() // make Cond use its Mutex, without heap-promoting them separately
 	if f.StreamEnded() {
 		st.state = stateHalfClosedRemote
@@ -1343,13 +1345,6 @@ type responseWriterState struct {
 	closeNotifierCh chan bool  // nil until first used
 }
 
-func (rws *responseWriterState) writeData(p []byte, end bool) error {
-	rws.curWrite.streamID = rws.stream.id
-	rws.curWrite.p = p
-	rws.curWrite.endStream = end
-	return rws.stream.conn.writeDataFromHandler(rws.stream, &rws.curWrite, rws.frameWriteCh)
-}
-
 type chunkWriter struct{ rws *responseWriterState }
 
 func (cw chunkWriter) Write(p []byte) (n int, err error) { return cw.rws.writeChunk(p) }
@@ -1383,34 +1378,20 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 			contentLength: clen,
 		}, rws.frameWriteCh)
 		if endStream {
-			return
+			return 0, nil
 		}
 	}
-	if len(p) == 0 {
-		if rws.handlerDone {
-			err = rws.writeData(nil, true)
-		}
-		return
+	if len(p) == 0 && !rws.handlerDone {
+		return 0, nil
 	}
-	for len(p) > 0 {
-		chunk := p
-		if len(chunk) > handlerChunkWriteSize {
-			chunk = chunk[:handlerChunkWriteSize]
-		}
-		allowedSize := rws.stream.flow.wait(int32(len(chunk)))
-		if allowedSize == 0 {
-			return n, errStreamBroken
-		}
-		chunk = chunk[:allowedSize]
-		p = p[len(chunk):]
-		isFinal := rws.handlerDone && len(p) == 0
-		err = rws.writeData(chunk, isFinal)
-		if err != nil {
-			break
-		}
-		n += len(chunk)
+	curWrite := &rws.curWrite
+	curWrite.streamID = rws.stream.id
+	curWrite.p = p
+	curWrite.endStream = rws.handlerDone
+	if err := rws.stream.conn.writeDataFromHandler(rws.stream, curWrite, rws.frameWriteCh); err != nil {
+		return 0, err
 	}
-	return
+	return len(p), nil
 }
 
 func (w *responseWriter) Flush() {

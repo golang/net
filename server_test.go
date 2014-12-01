@@ -1383,6 +1383,7 @@ func TestServer_Response_Header_Flush_MidWrite(t *testing.T) {
 
 func TestServer_Response_LargeWrite(t *testing.T) {
 	const size = 1 << 20
+	const maxFrameSize = 16 << 10
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		n, err := w.Write(bytes.Repeat([]byte("a"), size))
 		if err != nil {
@@ -1393,6 +1394,14 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		}
 		return nil
 	}, func(st *serverTester) {
+		if err := st.fr.WriteSettings(
+			Setting{SettingInitialWindowSize, 0},
+			Setting{SettingMaxFrameSize, maxFrameSize},
+		); err != nil {
+			t.Fatal(err)
+		}
+		st.wantSettingsAck()
+
 		getSlash(st) // make the single request
 
 		// Give the handler quota to write:
@@ -1433,7 +1442,7 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		if bytes != size {
 			t.Errorf("Got %d bytes; want %d", bytes, size)
 		}
-		if want := 257; frames != want {
+		if want := int(size / maxFrameSize); frames < want || frames > want*2 {
 			t.Errorf("Got %d frames; want %d", frames, size)
 		}
 	})
@@ -1442,6 +1451,7 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 // Test that the handler can't write more than the client allows
 func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 	const size = 1 << 20
+	const maxFrameSize = 16 << 10
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		w.(http.Flusher).Flush()
 		n, err := w.Write(bytes.Repeat([]byte("a"), size))
@@ -1456,13 +1466,15 @@ func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 		// Set the window size to something explicit for this test.
 		// It's also how much initial data we expect.
 		const initWindowSize = 123
-		if err := st.fr.WriteSettings(Setting{SettingInitialWindowSize, initWindowSize}); err != nil {
+		if err := st.fr.WriteSettings(
+			Setting{SettingInitialWindowSize, initWindowSize},
+			Setting{SettingMaxFrameSize, maxFrameSize},
+		); err != nil {
 			t.Fatal(err)
 		}
 		st.wantSettingsAck()
 
 		getSlash(st) // make the single request
-
 		defer func() { st.fr.WriteRSTStream(1, ErrCodeCancel) }()
 
 		hf := st.wantHeaders()
@@ -1486,6 +1498,51 @@ func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 			if int(quota) != len(df.Data()) {
 				t.Fatalf("read %d bytes after giving %d quota", len(df.Data()), quota)
 			}
+		}
+
+		if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// Test that the handler blocked in a Write is unblocked if the server sends a RST_STREAM.
+func TestServer_Response_RST_Unblocks_LargeWrite(t *testing.T) {
+	const size = 1 << 20
+	const maxFrameSize = 16 << 10
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.(http.Flusher).Flush()
+		errc := make(chan error, 1)
+		go func() {
+			_, err := w.Write(bytes.Repeat([]byte("a"), size))
+			errc <- err
+		}()
+		select {
+		case err := <-errc:
+			if err == nil {
+				return errors.New("unexpected nil error from Write in handler")
+			}
+			return nil
+		case <-time.After(2 * time.Second):
+			return errors.New("timeout waiting for Write in handler")
+		}
+	}, func(st *serverTester) {
+		if err := st.fr.WriteSettings(
+			Setting{SettingInitialWindowSize, 0},
+			Setting{SettingMaxFrameSize, maxFrameSize},
+		); err != nil {
+			t.Fatal(err)
+		}
+		st.wantSettingsAck()
+
+		getSlash(st) // make the single request
+
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("unexpected END_STREAM flag")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
 		}
 
 		if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
