@@ -7,6 +7,8 @@
 
 package http2
 
+import "fmt"
+
 // frameWriteMsg is a request to write a frame.
 type frameWriteMsg struct {
 	// write is the interface value that does the writing, once the
@@ -20,6 +22,21 @@ type frameWriteMsg struct {
 	// 1 message and is sent the return value from write (or an
 	// earlier error) when the frame has been written.
 	done chan error
+}
+
+// for debugging only:
+func (wm frameWriteMsg) String() string {
+	var streamID uint32
+	if wm.stream != nil {
+		streamID = wm.stream.id
+	}
+	var des string
+	if s, ok := wm.write.(fmt.Stringer); ok {
+		des = s.String()
+	} else {
+		des = fmt.Sprintf("%T", wm.write)
+	}
+	return fmt.Sprintf("[frameWriteMsg stream=%d, ch=%v, type: %v]", streamID, wm.done != nil, des)
 }
 
 // writeScheduler tracks pending frames to write, priorities, and decides

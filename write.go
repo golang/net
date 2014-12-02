@@ -9,6 +9,7 @@ package http2
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -78,6 +79,10 @@ type writeData struct {
 	streamID  uint32
 	p         []byte
 	endStream bool
+}
+
+func (w *writeData) String() string {
+	return fmt.Sprintf("writeData(stream=%d, p=%d, endStream=%v)", w.streamID, len(w.p), w.endStream)
 }
 
 func (w *writeData) writeFrame(ctx writeContext) error {
