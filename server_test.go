@@ -1555,6 +1555,38 @@ func TestServer_Response_RST_Unblocks_LargeWrite(t *testing.T) {
 	})
 }
 
+func TestServer_Response_Empty_Data_Not_FlowControlled(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.(http.Flusher).Flush()
+		// Nothing; send empty DATA
+		return nil
+	}, func(st *serverTester) {
+		// Handler gets no data quota:
+		if err := st.fr.WriteSettings(Setting{SettingInitialWindowSize, 0}); err != nil {
+			t.Fatal(err)
+		}
+		st.wantSettingsAck()
+
+		getSlash(st) // make the single request
+
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("unexpected END_STREAM flag")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("want END_HEADERS flag")
+		}
+
+		df := st.wantData()
+		if got := len(df.Data()); got != 0 {
+			t.Fatalf("unexpected %d DATA bytes; want 0", got)
+		}
+		if !df.StreamEnded() {
+			t.Fatal("DATA didn't have END_STREAM")
+		}
+	})
+}
+
 func TestServer_Response_Automatic100Continue(t *testing.T) {
 	const msg = "foo"
 	const reply = "bar"
