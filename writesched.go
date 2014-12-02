@@ -145,14 +145,17 @@ func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, 
 	// and we don't have enough, write as much as we can.
 	if wd, ok := wm.write.(*writeData); ok {
 		allowed := wm.stream.flow.available() // max we can write
-		if allowed == 0 {
+		// We can write 0 byte DATA frame (which usually bears
+		// END_STREAM, i.e., last DATA frame) even if allowed
+		// == 0.
+		if len(wd.p) > 0 && allowed == 0 {
 			// No quota available. Caller can try the next stream.
 			return frameWriteMsg{}, false
 		}
 		if int32(ws.maxFrameSize) < allowed {
 			allowed = int32(ws.maxFrameSize)
 		}
-		if allowed == 0 {
+		if len(wd.p) > 0 && allowed == 0 {
 			panic("internal error: ws.maxFrameSize not initialized or invalid")
 		}
 		// TODO: further restrict the allowed size, because even if
@@ -180,6 +183,7 @@ func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, 
 				done: nil,
 			}, true
 		}
+		wm.stream.flow.take(int32(len(wd.p)))
 	}
 
 	q.shift()
