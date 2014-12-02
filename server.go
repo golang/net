@@ -882,7 +882,6 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	if ok {
 		st.gotReset = true
 		sc.closeStream(st, StreamError{f.StreamID, f.ErrCode})
-		// XXX TODO drain writeSched for that stream
 	}
 	return nil
 }
@@ -899,6 +898,7 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 		p.Close(err)
 	}
 	st.cw.Close() // signals Handler's CloseNotifier, unblocks writes, etc
+	sc.writeSched.forgetStream(st.id)
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {

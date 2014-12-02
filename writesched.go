@@ -59,6 +59,26 @@ type writeScheduler struct {
 	// which have enough flow control data to send. After canSend is
 	// built, the best is selected.
 	canSend []*writeQueue
+
+	// pool of empty queues for reuse.
+	queuePool []*writeQueue
+}
+
+func (ws *writeScheduler) putEmptyQueue(q *writeQueue) {
+	if len(q.s) != 0 {
+		panic("queue must be empty")
+	}
+	ws.queuePool = append(ws.queuePool, q)
+}
+
+func (ws *writeScheduler) getEmptyQueue() *writeQueue {
+	ln := len(ws.queuePool)
+	if ln == 0 {
+		return new(writeQueue)
+	}
+	q := ws.queuePool[ln-1]
+	ws.queuePool = ws.queuePool[:ln-1]
+	return q
 }
 
 func (ws *writeScheduler) empty() bool { return ws.zero.empty() && len(ws.sq) == 0 }
@@ -79,7 +99,7 @@ func (ws *writeScheduler) streamQueue(streamID uint32) *writeQueue {
 	if ws.sq == nil {
 		ws.sq = make(map[uint32]*writeQueue)
 	}
-	q := new(writeQueue)
+	q := ws.getEmptyQueue()
 	ws.sq[streamID] = q
 	return q
 }
@@ -204,12 +224,25 @@ func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, 
 
 	q.shift()
 	if q.empty() {
-		// TODO: reclaim its slice and use it for future allocations
-		// in the writeScheduler.streamQueue method above when making
-		// the writeQueue.
+		ws.putEmptyQueue(q)
 		delete(ws.sq, id)
 	}
 	return wm, true
+}
+
+func (ws *writeScheduler) forgetStream(id uint32) {
+	q, ok := ws.sq[id]
+	if !ok {
+		return
+	}
+	delete(ws.sq, id)
+
+	// But keep it for others later.
+	for i := range q.s {
+		q.s[i] = frameWriteMsg{}
+	}
+	q.s = q.s[:0]
+	ws.putEmptyQueue(q)
 }
 
 type writeQueue struct {
