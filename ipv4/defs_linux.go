@@ -9,7 +9,10 @@
 package ipv4
 
 /*
+#include <time.h>
+
 #include <linux/errqueue.h>
+#include <linux/icmp.h>
 #include <linux/in.h>
 */
 import "C"
@@ -64,6 +67,8 @@ const (
 	//sysIP_PMTUDISC_INTERFACE = C.IP_PMTUDISC_INTERFACE
 	//sysIP_PMTUDISC_OMIT      = C.IP_PMTUDISC_OMIT
 
+	sysICMP_FILTER = C.ICMP_FILTER
+
 	sysSO_EE_ORIGIN_NONE         = C.SO_EE_ORIGIN_NONE
 	sysSO_EE_ORIGIN_LOCAL        = C.SO_EE_ORIGIN_LOCAL
 	sysSO_EE_ORIGIN_ICMP         = C.SO_EE_ORIGIN_ICMP
@@ -81,6 +86,8 @@ const (
 	sysSizeofIPMreqSource   = C.sizeof_struct_ip_mreq_source
 	sysSizeofGroupReq       = C.sizeof_struct_group_req
 	sysSizeofGroupSourceReq = C.sizeof_struct_group_source_req
+
+	sysSizeofICMPFilter = C.sizeof_struct_icmp_filter
 )
 
 type sysKernelSockaddrStorage C.struct___kernel_sockaddr_storage
@@ -100,3 +107,5 @@ type sysIPMreqSource C.struct_ip_mreq_source
 type sysGroupReq C.struct_group_req
 
 type sysGroupSourceReq C.struct_group_source_req
+
+type sysICMPFilter C.struct_icmp_filter

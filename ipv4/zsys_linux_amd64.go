@@ -46,6 +46,8 @@ const (
 	sysMCAST_MSFILTER            = 0x30
 	sysIP_MULTICAST_ALL          = 0x31
 
+	sysICMP_FILTER = 0x1
+
 	sysSO_EE_ORIGIN_NONE         = 0x0
 	sysSO_EE_ORIGIN_LOCAL        = 0x1
 	sysSO_EE_ORIGIN_ICMP         = 0x2
@@ -63,6 +65,8 @@ const (
 	sysSizeofIPMreqSource   = 0xc
 	sysSizeofGroupReq       = 0x88
 	sysSizeofGroupSourceReq = 0x108
+
+	sysSizeofICMPFilter = 0x4
 )
 
 type sysKernelSockaddrStorage struct {
@@ -121,4 +125,8 @@ type sysGroupSourceReq struct {
 	Pad_cgo_0 [4]byte
 	Group     sysKernelSockaddrStorage
 	Source    sysKernelSockaddrStorage
+}
+
+type sysICMPFilter struct {
+	Data uint32
 }
