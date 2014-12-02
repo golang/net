@@ -88,6 +88,10 @@ func (ws *writeScheduler) streamQueue(streamID uint32) *writeQueue {
 // It is illegal to call this if the scheduler is empty or if there are no connection-level
 // flow control bytes available.
 func (ws *writeScheduler) take() (wm frameWriteMsg, ok bool) {
+	if ws.maxFrameSize == 0 {
+		panic("internal error: ws.maxFrameSize not initialized or invalid")
+	}
+
 	// If there any frames not associated with streams, prefer those first.
 	// These are usually SETTINGS, etc.
 	if !ws.zero.empty() {
@@ -160,25 +164,20 @@ func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, 
 	wm = q.head()
 	// If the first item in this queue costs flow control tokens
 	// and we don't have enough, write as much as we can.
-	if wd, ok := wm.write.(*writeData); ok {
+	if wd, ok := wm.write.(*writeData); ok && len(wd.p) > 0 {
 		allowed := wm.stream.flow.available() // max we can write
-		// We can write 0 byte DATA frame (which usually bears
-		// END_STREAM, i.e., last DATA frame) even if allowed
-		// == 0.
-		if len(wd.p) > 0 && allowed == 0 {
+		if allowed == 0 {
 			// No quota available. Caller can try the next stream.
 			return frameWriteMsg{}, false
 		}
 		if int32(ws.maxFrameSize) < allowed {
 			allowed = int32(ws.maxFrameSize)
 		}
-		if len(wd.p) > 0 && allowed == 0 {
-			panic("internal error: ws.maxFrameSize not initialized or invalid")
-		}
 		// TODO: further restrict the allowed size, because even if
 		// the peer says it's okay to write 16MB data frames, we might
 		// want to write smaller ones to properly weight competing
 		// streams' priorities.
+
 		if len(wd.p) > int(allowed) {
 			wm.stream.flow.take(allowed)
 			chunk := wd.p[:allowed]
@@ -190,13 +189,13 @@ func (ws *writeScheduler) takeFrom(id uint32, q *writeQueue) (wm frameWriteMsg, 
 				write: &writeData{
 					streamID: wd.streamID,
 					p:        chunk,
-					// even if the original was true, there are bytes
-					// remaining because len(wd.p) > allowed, so we
-					// know endStream is false:
+					// even if the original had endStream set, there
+					// arebytes remaining because len(wd.p) > allowed,
+					// so we know endStream is false:
 					endStream: false,
 				},
-				// completeness.  our caller is blocking on the final
-				// DATA frame, not these intermediates:
+				// our caller is blocking on the final DATA frame, not
+				// these intermediates, so no need to wait:
 				done: nil,
 			}, true
 		}

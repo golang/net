@@ -582,23 +582,17 @@ func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) {
 	}
 }
 
-// writeFrame either sends wm to the writeFrames goroutine, or
-// enqueues it for the future (with no pushback; the serve goroutine
-// never blocks!), for sending when the currently-being-written frame
-// is done writing.
+// writeFrame schedules a frame to write and sends it if there's nothing
+// already being written.
 //
-// If you're not on the serve goroutine, use writeFrame instead.
+// There is no pushback here (the serve goroutine never blocks). It's
+// the http.Handlers that block, waiting for their previous frames to
+// make it onto the wire
+//
+// If you're not on the serve goroutine, use writeFrameFromHandler instead.
 func (sc *serverConn) writeFrame(wm frameWriteMsg) {
 	sc.serveG.check()
-	// Fast path for common case:
-	if _, ok := wm.write.(*writeData); !ok && !sc.writingFrame && sc.writeSched.empty() {
-		sc.startFrameWrite(wm)
-		return
-	}
 	sc.writeSched.add(wm)
-	// Sometimes no sc.scheduleFrameWrite() is called after we
-	// added wm to sc.writeSched and frames are completely
-	// blocked. To prevent this happing, we call it here.
 	sc.scheduleFrameWrite()
 }
 
@@ -622,7 +616,7 @@ func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
 				sc.wroteFrameCh <- struct{}{}
 				return
 			}
-			panic("internal error: attempt to send a frame on a closed stream")
+			panic(fmt.Sprintf("internal error: attempt to send a write %v on a closed stream", wm))
 		}
 	}
 
