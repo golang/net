@@ -591,11 +591,15 @@ func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) {
 func (sc *serverConn) writeFrame(wm frameWriteMsg) {
 	sc.serveG.check()
 	// Fast path for common case:
-	if !sc.writingFrame && sc.writeSched.empty() {
+	if _, ok := wm.write.(*writeData); !ok && !sc.writingFrame && sc.writeSched.empty() {
 		sc.startFrameWrite(wm)
 		return
 	}
 	sc.writeSched.add(wm)
+	// Sometimes no sc.scheduleFrameWrite() is called after we
+	// added wm to sc.writeSched and frames are completely
+	// blocked. To prevent this happing, we call it here.
+	sc.scheduleFrameWrite()
 }
 
 // startFrameWrite starts a goroutine to write wm (in a separate
@@ -1054,6 +1058,8 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		id:    id,
 		state: stateOpen,
 	}
+	// connection-level flow control is shared by all streams.
+	st.flow.conn = &sc.flow
 	st.flow.add(sc.initialWindowSize)
 	st.cw.Init() // make Cond use its Mutex, without heap-promoting them separately
 	if f.StreamEnded() {

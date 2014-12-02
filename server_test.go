@@ -1408,7 +1408,11 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		if err := st.fr.WriteWindowUpdate(1, size); err != nil {
 			t.Fatal(err)
 		}
-
+		// Give the handler quote to write to connection-level
+		// window as well
+		if err := st.fr.WriteWindowUpdate(0, size); err != nil {
+			t.Fatal(err)
+		}
 		hf := st.wantHeaders()
 		if hf.StreamEnded() {
 			t.Fatal("unexpected END_STREAM flag")
