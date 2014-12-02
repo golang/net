@@ -176,7 +176,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		serveG:            newGoroutineLock(),
 		pushEnabled:       true,
 	}
-	sc.flow.add(sc.initialWindowSize)
+	sc.flow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
 
