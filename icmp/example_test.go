@@ -9,8 +9,8 @@ import (
 	"net"
 	"os"
 
+	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/icmp"
 	"golang.org/x/net/ipv6"
 )
 
