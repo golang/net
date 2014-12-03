@@ -836,8 +836,10 @@ type PriorityParam struct {
 	// Exclusive is whether the dependency is exclusive.
 	Exclusive bool
 
-	// Weight is the stream's weight. It should be set together
-	// with StreamDep, or neither should be set.
+	// Weight is the stream's zero-indexed weight. It should be
+	// set together with StreamDep, or neither should be set.  Per
+	// the spec, "Add one to the value to obtain a weight between
+	// 1 and 256."
 	Weight uint8
 }
 
