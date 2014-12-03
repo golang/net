@@ -222,6 +222,7 @@ type serverConn struct {
 	pushEnabled           bool
 	sawFirstSettings      bool // got the initial SETTINGS frame after the preface
 	needToSendSettingsAck bool
+	unackedSettings       int    // how many SETTINGS have we sent without ACKs?
 	clientMaxStreams      uint32 // SETTINGS_MAX_CONCURRENT_STREAMS from client (our PUSH_PROMISE limit)
 	advMaxStreams         uint32 // our SETTINGS_MAX_CONCURRENT_STREAMS advertised the client
 	curOpenStreams        uint32 // client's number of open streams
@@ -471,6 +472,7 @@ func (sc *serverConn) serve() {
 			/* TODO: more actual settings */
 		},
 	})
+	sc.unackedSettings++
 
 	if err := sc.readPreface(); err != nil {
 		sc.condlogf(err, "error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
@@ -904,14 +906,13 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
 	sc.serveG.check()
 	if f.IsAck() {
-		// TODO: do we need to do anything?
-		// We might want to keep track of which settings we've sent
-		// vs which settings the client has ACK'd, so we know when to be
-		// strict. Or at least keep track of the count of
-		// our SETTINGS send count vs their ACK count. If they're equal,
-		// then we both have the same view of the world and we can be
-		// stricter in some cases. But currently we don't send SETTINGS
-		// at runtime other than the initial SETTINGS.
+		sc.unackedSettings--
+		if sc.unackedSettings < 0 {
+			// Why is the peer ACKing settings we never sent?
+			// The spec doesn't mention this case, but
+			// hang up on them anyway.
+			return ConnectionError(ErrCodeProtocol)
+		}
 		return nil
 	}
 	if err := f.ForeachSetting(sc.processSetting); err != nil {
@@ -1095,10 +1096,22 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 	}
 	defer sc.resetPendingRequest()
 	if sc.curOpenStreams > sc.advMaxStreams {
-		// Too many open streams.
-		// TODO: which error code here? Using ErrCodeProtocol for now.
-		// https://github.com/http2/http2-spec/issues/649
-		return StreamError{st.id, ErrCodeProtocol}
+		// "Endpoints MUST NOT exceed the limit set by their
+		// peer. An endpoint that receives a HEADERS frame
+		// that causes their advertised concurrent stream
+		// limit to be exceeded MUST treat this as a stream
+		// error (Section 5.4.2) of type PROTOCOL_ERROR or
+		// REFUSED_STREAM."
+		if sc.unackedSettings == 0 {
+			// They should know better.
+			return StreamError{st.id, ErrCodeProtocol}
+		}
+		// Assume it's a network race, where they just haven't
+		// received our last SETTINGS update. But actually
+		// this can't happen yet, because we don't yet provide
+		// a way for users to adjust server parameters at
+		// runtime.
+		return StreamError{st.id, ErrCodeRefusedStream}
 	}
 
 	rw, req, err := sc.newWriterAndRequest()
