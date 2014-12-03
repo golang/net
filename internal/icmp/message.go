@@ -9,10 +9,18 @@ package icmp
 import (
 	"errors"
 	"net"
+	"syscall"
 
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
+)
+
+var (
+	errMessageTooShort = errors.New("message too short")
+	errHeaderTooShort  = errors.New("header too short")
+	errBufferTooShort  = errors.New("buffer too short")
+	errOpNoSupport     = errors.New("operation not supported")
 )
 
 // A Type represents an ICMP message type.
@@ -45,7 +53,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	case ipv6.ICMPType:
 		mtype = int(typ)
 	default:
-		return nil, errors.New("invalid argument")
+		return nil, syscall.EINVAL
 	}
 	b := []byte{byte(mtype), byte(m.Code), 0, 0}
 	if m.Type.Protocol() == iana.ProtocolIPv6ICMP && psh != nil {
@@ -82,39 +90,46 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	return b[len(psh):], nil
 }
 
-// ParseMessage parses b as an ICMP message. Proto must be
-// iana.ProtocolICMP or iana.ProtocolIPv6ICMP.
+var parseFns = map[Type]func([]byte) (MessageBody, error){
+	ipv4.ICMPTypeDestinationUnreachable: parseDstUnreach,
+	ipv4.ICMPTypeTimeExceeded:           parseTimeExceeded,
+	ipv4.ICMPTypeParameterProblem:       parseParamProb,
+
+	ipv4.ICMPTypeEcho:      parseEcho,
+	ipv4.ICMPTypeEchoReply: parseEcho,
+
+	ipv6.ICMPTypeDestinationUnreachable: parseDstUnreach,
+	ipv6.ICMPTypePacketTooBig:           parsePacketTooBig,
+	ipv6.ICMPTypeTimeExceeded:           parseTimeExceeded,
+	ipv6.ICMPTypeParameterProblem:       parseParamProb,
+
+	ipv6.ICMPTypeEchoRequest: parseEcho,
+	ipv6.ICMPTypeEchoReply:   parseEcho,
+}
+
+// ParseMessage parses b as an ICMP message.
+// Proto must be either the ICMPv4 or ICMPv6 protocol number.
 func ParseMessage(proto int, b []byte) (*Message, error) {
 	if len(b) < 4 {
-		return nil, errors.New("message too short")
+		return nil, errMessageTooShort
 	}
 	var err error
+	m := &Message{Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
 	switch proto {
 	case iana.ProtocolICMP:
-		m := &Message{Type: ipv4.ICMPType(b[0]), Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
-		switch m.Type {
-		case ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply:
-			m.Body, err = parseEcho(b[4:])
-			if err != nil {
-				return nil, err
-			}
-		default:
-			m.Body = &DefaultMessageBody{Data: b[4:]}
-		}
-		return m, nil
+		m.Type = ipv4.ICMPType(b[0])
 	case iana.ProtocolIPv6ICMP:
-		m := &Message{Type: ipv6.ICMPType(b[0]), Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
-		switch m.Type {
-		case ipv6.ICMPTypeEchoRequest, ipv6.ICMPTypeEchoReply:
-			m.Body, err = parseEcho(b[4:])
-			if err != nil {
-				return nil, err
-			}
-		default:
-			m.Body = &DefaultMessageBody{Data: b[4:]}
-		}
-		return m, nil
+		m.Type = ipv6.ICMPType(b[0])
 	default:
-		return nil, errors.New("unknown protocol")
+		return nil, syscall.EINVAL
 	}
+	if fn, ok := parseFns[m.Type]; !ok {
+		m.Body, err = parseDefaultMessageBody(b[4:])
+	} else {
+		m.Body, err = fn(b[4:])
+	}
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
 }

@@ -1,18 +1,16 @@
-// Copyright 2012 The Go Authors.  All rights reserved.
+// Copyright 2014 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package icmp
 
-// An Echo represents an ICMP echo request or reply message body.
-type Echo struct {
-	ID   int    // identifier
-	Seq  int    // sequence number
+// A TimeExceeded represents an ICMP time exceeded message body.
+type TimeExceeded struct {
 	Data []byte // data
 }
 
 // Len implements the Len method of MessageBody interface.
-func (p *Echo) Len() int {
+func (p *TimeExceeded) Len() int {
 	if p == nil {
 		return 0
 	}
@@ -20,21 +18,19 @@ func (p *Echo) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *Echo) Marshal() ([]byte, error) {
+func (p *TimeExceeded) Marshal() ([]byte, error) {
 	b := make([]byte, 4+len(p.Data))
-	b[0], b[1] = byte(p.ID>>8), byte(p.ID)
-	b[2], b[3] = byte(p.Seq>>8), byte(p.Seq)
 	copy(b[4:], p.Data)
 	return b, nil
 }
 
-// parseEcho parses b as an ICMP echo request or reply message body.
-func parseEcho(b []byte) (MessageBody, error) {
+// parseTimeExceeded parses b as an ICMP time exceeded message body.
+func parseTimeExceeded(b []byte) (MessageBody, error) {
 	bodyLen := len(b)
 	if bodyLen < 4 {
 		return nil, errMessageTooShort
 	}
-	p := &Echo{ID: int(b[0])<<8 | int(b[1]), Seq: int(b[2])<<8 | int(b[3])}
+	p := &TimeExceeded{}
 	if bodyLen > 4 {
 		p.Data = make([]byte, bodyLen-4)
 		copy(p.Data, b[4:])

@@ -30,3 +30,10 @@ func (p *DefaultMessageBody) Len() int {
 func (p *DefaultMessageBody) Marshal() ([]byte, error) {
 	return p.Data, nil
 }
+
+// parseDefaultMessageBody parses b as an ICMP message body.
+func parseDefaultMessageBody(b []byte) (MessageBody, error) {
+	p := &DefaultMessageBody{Data: make([]byte, len(b))}
+	copy(p.Data, b)
+	return p, nil
+}

@@ -17,6 +17,25 @@ import (
 
 var marshalAndParseMessageForIPv4Tests = []icmp.Message{
 	{
+		Type: ipv4.ICMPTypeDestinationUnreachable, Code: 15,
+		Body: &icmp.DstUnreach{
+			Data: []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
+		Type: ipv4.ICMPTypeTimeExceeded, Code: 1,
+		Body: &icmp.TimeExceeded{
+			Data: []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
+		Type: ipv4.ICMPTypeParameterProblem, Code: 2,
+		Body: &icmp.ParamProb{
+			Pointer: 8,
+			Data:    []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
 			ID: 1, Seq: 2,
@@ -51,6 +70,32 @@ func TestMarshalAndParseMessageForIPv4(t *testing.T) {
 }
 
 var marshalAndParseMessageForIPv6Tests = []icmp.Message{
+	{
+		Type: ipv6.ICMPTypeDestinationUnreachable, Code: 6,
+		Body: &icmp.DstUnreach{
+			Data: []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
+		Type: ipv6.ICMPTypePacketTooBig, Code: 0,
+		Body: &icmp.PacketTooBig{
+			MTU:  1<<16 - 1,
+			Data: []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
+		Type: ipv6.ICMPTypeTimeExceeded, Code: 1,
+		Body: &icmp.TimeExceeded{
+			Data: []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
+	{
+		Type: ipv6.ICMPTypeParameterProblem, Code: 2,
+		Body: &icmp.ParamProb{
+			Pointer: 8,
+			Data:    []byte("ERROR-INVOKING-PACKET"),
+		},
+	},
 	{
 		Type: ipv6.ICMPTypeEchoRequest, Code: 0,
 		Body: &icmp.Echo{
