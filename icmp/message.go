@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package icmp provides basic functions for the manipulation of ICMP
-// message.
+// Package icmp provides basic functions for the manipulation of
+// messages used in the Internet Control Message Protocols,
+// ICMPv4 and ICMPv6.
+//
+// ICMPv4 and ICMPv6 are defined in RFC 792 and RFC 4443.
 package icmp
 
 import (
@@ -38,12 +41,12 @@ type Message struct {
 
 // Marshal returns the binary enconding of the ICMP message m.
 //
-// For ICMP for IPv4 message, the returned message always contains the
+// For an ICMPv4 message, the returned message always contains the
 // calculated checksum field.
 //
-// For ICMP for IPv6 message, the returned message contains the
-// calculated checksum field when psh is not nil, otherwise the kernel
-// will compute the checksum field during the message transmission.
+// For an ICMPv6 message, the returned message contains the calculated
+// checksum field when psh is not nil, otherwise the kernel will
+// compute the checksum field during the message transmission.
 // When psh is not nil, it must be the pseudo header for IPv6.
 func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	var mtype int

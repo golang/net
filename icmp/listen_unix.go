@@ -25,7 +25,7 @@ const sysIP_STRIPHDR = 0x17 // for now only darwin supports this option
 // For non-privileged datagram-oriented ICMP endpoints, network must
 // be "udp4" or "udp6". The endpoint allows to read, write a few
 // limited ICMP messages such as echo request and echo reply.
-// Currently only Dariwn and Linux support this.
+// Currently only Darwin and Linux support this.
 //
 // Examples:
 //	ListenPacket("udp4", "192.168.0.1")
