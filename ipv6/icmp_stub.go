@@ -9,7 +9,10 @@ package ipv6
 type sysICMPv6Filter struct {
 }
 
-func (f *sysICMPv6Filter) set(typ ICMPType, block bool) {
+func (f *sysICMPv6Filter) accept(typ ICMPType) {
+}
+
+func (f *sysICMPv6Filter) block(typ ICMPType) {
 }
 
 func (f *sysICMPv6Filter) setAll(block bool) {

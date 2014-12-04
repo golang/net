@@ -197,7 +197,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 
 		var f ipv6.ICMPFilter
 		f.SetAll(true)
-		f.Set(ipv6.ICMPTypeEchoReply, false)
+		f.Accept(ipv6.ICMPTypeEchoReply)
 		if err := p.SetICMPFilter(&f); err != nil {
 			t.Fatal(err)
 		}

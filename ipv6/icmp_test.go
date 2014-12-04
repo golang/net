@@ -9,7 +9,6 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"sync"
 	"testing"
 
 	"golang.org/x/net/ipv6"
@@ -42,27 +41,21 @@ func TestICMPFilter(t *testing.T) {
 	var f ipv6.ICMPFilter
 	for _, toggle := range []bool{false, true} {
 		f.SetAll(toggle)
-		var wg sync.WaitGroup
 		for _, typ := range []ipv6.ICMPType{
 			ipv6.ICMPTypeDestinationUnreachable,
 			ipv6.ICMPTypeEchoReply,
 			ipv6.ICMPTypeNeighborSolicitation,
 			ipv6.ICMPTypeDuplicateAddressConfirmation,
 		} {
-			wg.Add(1)
-			go func(typ ipv6.ICMPType) {
-				defer wg.Done()
-				f.Set(typ, false)
-				if f.WillBlock(typ) {
-					t.Errorf("ipv6.ICMPFilter.Set(%v, false) failed", typ)
-				}
-				f.Set(typ, true)
-				if !f.WillBlock(typ) {
-					t.Errorf("ipv6.ICMPFilter.Set(%v, true) failed", typ)
-				}
-			}(typ)
+			f.Accept(typ)
+			if f.WillBlock(typ) {
+				t.Errorf("ipv6.ICMPFilter.Set(%v, false) failed", typ)
+			}
+			f.Block(typ)
+			if !f.WillBlock(typ) {
+				t.Errorf("ipv6.ICMPFilter.Set(%v, true) failed", typ)
+			}
 		}
-		wg.Wait()
 	}
 }
 
@@ -88,8 +81,8 @@ func TestSetICMPFilter(t *testing.T) {
 
 	var f ipv6.ICMPFilter
 	f.SetAll(true)
-	f.Set(ipv6.ICMPTypeEchoRequest, false)
-	f.Set(ipv6.ICMPTypeEchoReply, false)
+	f.Accept(ipv6.ICMPTypeEchoRequest)
+	f.Accept(ipv6.ICMPTypeEchoReply)
 	if err := p.SetICMPFilter(&f); err != nil {
 		t.Fatal(err)
 	}
