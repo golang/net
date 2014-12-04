@@ -47,6 +47,14 @@ func setInterface(fd syscall.Handle, opt *sockOpt, ifi *net.Interface) error {
 	return setsockoptInterface(fd, opt.name, ifi)
 }
 
+func getICMPFilter(fd syscall.Handle, opt *sockOpt) (*ICMPFilter, error) {
+	return nil, errOpNoSupport
+}
+
+func setICMPFilter(fd syscall.Handle, opt *sockOpt, f *ICMPFilter) error {
+	return errOpNoSupport
+}
+
 func setGroup(fd syscall.Handle, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
 	if opt.name < 1 || opt.typ != ssoTypeIPMreq {
 		return errOpNoSupport

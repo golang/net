@@ -92,3 +92,15 @@ func (c *dgramOpt) ExcludeSourceSpecificGroup(ifi *net.Interface, group, source 
 func (c *dgramOpt) IncludeSourceSpecificGroup(ifi *net.Interface, group, source net.Addr) error {
 	return errOpNoSupport
 }
+
+// ICMPFilter returns an ICMP filter.
+// Currently only Linux supports this.
+func (c *dgramOpt) ICMPFilter() (*ICMPFilter, error) {
+	return nil, errOpNoSupport
+}
+
+// SetICMPFilter deploys the ICMP filter.
+// Currently only Linux supports this.
+func (c *dgramOpt) SetICMPFilter(f *ICMPFilter) error {
+	return errOpNoSupport
+}

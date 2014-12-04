@@ -27,6 +27,7 @@ var (
 		ssoReceiveTTL:         {sysIP_RECVTTL, ssoTypeInt},
 		ssoPacketInfo:         {sysIP_PKTINFO, ssoTypeInt},
 		ssoHeaderPrepend:      {sysIP_HDRINCL, ssoTypeInt},
+		ssoICMPFilter:         {sysICMP_FILTER, ssoTypeICMPFilter},
 		ssoJoinGroup:          {sysMCAST_JOIN_GROUP, ssoTypeGroupReq},
 		ssoLeaveGroup:         {sysMCAST_LEAVE_GROUP, ssoTypeGroupReq},
 		ssoJoinSourceGroup:    {sysMCAST_JOIN_SOURCE_GROUP, ssoTypeGroupSourceReq},

@@ -79,6 +79,25 @@ func setInterface(fd int, opt *sockOpt, ifi *net.Interface) error {
 	}
 }
 
+func getICMPFilter(fd int, opt *sockOpt) (*ICMPFilter, error) {
+	if opt.name < 1 || opt.typ != ssoTypeICMPFilter {
+		return nil, errOpNoSupport
+	}
+	var f ICMPFilter
+	l := sysSockoptLen(sysSizeofICMPFilter)
+	if err := getsockopt(fd, iana.ProtocolReserved, opt.name, unsafe.Pointer(&f.sysICMPFilter), &l); err != nil {
+		return nil, os.NewSyscallError("getsockopt", err)
+	}
+	return &f, nil
+}
+
+func setICMPFilter(fd int, opt *sockOpt, f *ICMPFilter) error {
+	if opt.name < 1 || opt.typ != ssoTypeICMPFilter {
+		return errOpNoSupport
+	}
+	return os.NewSyscallError("setsockopt", setsockopt(fd, iana.ProtocolReserved, opt.name, unsafe.Pointer(&f.sysICMPFilter), sysSizeofICMPFilter))
+}
+
 func setGroup(fd int, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
 	if opt.name < 1 {
 		return errOpNoSupport

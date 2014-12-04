@@ -223,3 +223,29 @@ func (c *dgramOpt) IncludeSourceSpecificGroup(ifi *net.Interface, group, source 
 	}
 	return setSourceGroup(fd, &sockOpts[ssoUnblockSourceGroup], ifi, grp, src)
 }
+
+// ICMPFilter returns an ICMP filter.
+// Currently only Linux supports this.
+func (c *dgramOpt) ICMPFilter() (*ICMPFilter, error) {
+	if !c.ok() {
+		return nil, syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return nil, err
+	}
+	return getICMPFilter(fd, &sockOpts[ssoICMPFilter])
+}
+
+// SetICMPFilter deploys the ICMP filter.
+// Currently only Linux supports this.
+func (c *dgramOpt) SetICMPFilter(f *ICMPFilter) error {
+	if !c.ok() {
+		return syscall.EINVAL
+	}
+	fd, err := c.sysfd()
+	if err != nil {
+		return err
+	}
+	return setICMPFilter(fd, &sockOpts[ssoICMPFilter], f)
+}

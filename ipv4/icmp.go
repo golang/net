@@ -21,3 +21,37 @@ func (typ ICMPType) String() string {
 func (typ ICMPType) Protocol() int {
 	return iana.ProtocolICMP
 }
+
+// An ICMPFilter represents an ICMP message filter for incoming
+// packets. The filter belongs to a packet delivery path on a host and
+// it cannot interact with forwarding packets or tunnel-outer packets.
+//
+// Note: RFC 2460 defines a reasonable role model and it works not
+// only for IPv6 but IPv4. A node means a device that implements IP.
+// A router means a node that forwards IP packets not explicitly
+// addressed to itself, and a host means a node that is not a router.
+type ICMPFilter struct {
+	sysICMPFilter
+}
+
+// Accept accepts incoming ICMP packets including the type field value
+// typ.
+func (f *ICMPFilter) Accept(typ ICMPType) {
+	f.accept(typ)
+}
+
+// Block blocks incoming ICMP packets including the type field value
+// typ.
+func (f *ICMPFilter) Block(typ ICMPType) {
+	f.block(typ)
+}
+
+// SetAll sets the filter action to the filter.
+func (f *ICMPFilter) SetAll(block bool) {
+	f.setAll(block)
+}
+
+// WillBlock reports whether the ICMP type will be blocked.
+func (f *ICMPFilter) WillBlock(typ ICMPType) bool {
+	return f.willBlock(typ)
+}
