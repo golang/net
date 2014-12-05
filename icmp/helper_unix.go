@@ -8,6 +8,7 @@ package icmp
 
 import (
 	"net"
+	"strconv"
 	"syscall"
 )
 
@@ -56,7 +57,10 @@ func zoneToUint32(zone string) uint32 {
 	if ifi, err := net.InterfaceByName(zone); err == nil {
 		return uint32(ifi.Index)
 	}
-	n, _, _ := dtoi(zone, 0)
+	n, err := strconv.Atoi(zone)
+	if err != nil {
+		return 0
+	}
 	return uint32(n)
 }
 
@@ -68,20 +72,4 @@ func last(s string, b byte) int {
 		}
 	}
 	return i
-}
-
-const big = 0xFFFFFF
-
-func dtoi(s string, i0 int) (n int, i int, ok bool) {
-	n = 0
-	for i = i0; i < len(s) && '0' <= s[i] && s[i] <= '9'; i++ {
-		n = n*10 + int(s[i]-'0')
-		if n >= big {
-			return 0, i, false
-		}
-	}
-	if i == i0 {
-		return 0, i, false
-	}
-	return n, i, true
 }
