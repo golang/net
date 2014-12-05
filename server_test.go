@@ -1091,6 +1091,18 @@ func TestServer_Rejects_Continuation0(t *testing.T) {
 	})
 }
 
+func TestServer_Rejects_PushPromise(t *testing.T) {
+	testServerRejects(t, func(st *serverTester) {
+		pp := PushPromiseParam{
+			StreamID:  1,
+			PromiseID: 3,
+		}
+		if err := st.fr.WritePushPromise(pp); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 // testServerRejects tests that the server hangs up with a GOAWAY
 // frame and a server close after the client does something
 // deserving a CONNECTION_ERROR.
