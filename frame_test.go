@@ -501,3 +501,41 @@ func TestWriteGoAway(t *testing.T) {
 		t.Errorf("debug data = %q; want %q", got, debug)
 	}
 }
+
+func TestWritePushPromise(t *testing.T) {
+	pp := PushPromiseParam{
+		StreamID:      42,
+		PromiseID:     42,
+		BlockFragment: []byte("abc"),
+	}
+	fr, buf := testFramer()
+	if err := fr.WritePushPromise(pp); err != nil {
+		t.Fatal(err)
+	}
+	const wantEnc = "\x00\x00\x07\x05\x00\x00\x00\x00*\x00\x00\x00*abc"
+	if buf.String() != wantEnc {
+		t.Errorf("encoded as %q; want %q", buf.Bytes(), wantEnc)
+	}
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ok := f.(*PushPromiseFrame)
+	if !ok {
+		t.Fatalf("got %T; want *PushPromiseFrame", f)
+	}
+	want := &PushPromiseFrame{
+		FrameHeader: FrameHeader{
+			valid:    true,
+			Type:     0x5,
+			Flags:    0x0,
+			Length:   0x7,
+			StreamID: 42,
+		},
+		PromiseID:     42,
+		headerFragBuf: []byte("abc"),
+	}
+	if !reflect.DeepEqual(f, want) {
+		t.Fatalf("parsed back:\n%#v\nwant:\n%#v", f, want)
+	}
+}
