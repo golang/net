@@ -820,6 +820,10 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processResetStream(f)
 	case *PriorityFrame:
 		return sc.processPriority(f)
+	case *PushPromiseFrame:
+		// A client cannot push. Thus, servers MUST treat the receipt of a PUSH_PROMISE
+		// frame as a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+		return ConnectionError(ErrCodeProtocol)
 	default:
 		log.Printf("Ignoring frame: %v", f.Header())
 		return nil
