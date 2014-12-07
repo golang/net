@@ -469,7 +469,11 @@ func (sc *serverConn) serve() {
 		write: writeSettings{
 			{SettingMaxFrameSize, sc.srv.maxReadFrameSize()},
 			{SettingMaxConcurrentStreams, sc.advMaxStreams},
-			/* TODO: more actual settings */
+
+			// TODO: more actual settings, notably
+			// SettingInitialWindowSize, but then we also
+			// want to bump up the conn window size the
+			// same amount here right after the settings
 		},
 	})
 	sc.unackedSettings++
@@ -1234,7 +1238,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	}
 	if bodyOpen {
 		body.pipe = &pipe{
-			b: buffer{buf: make([]byte, 65536)}, // TODO: share/remove
+			b: buffer{buf: make([]byte, initialWindowSize)}, // TODO: share/remove XXX
 		}
 		body.pipe.c.L = &body.pipe.m
 
