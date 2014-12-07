@@ -1804,6 +1804,38 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 	})
 }
 
+func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
+	condSkipFailingTest(t)
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		// nothing
+		return nil
+	}, func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1,
+			BlockFragment: encodeHeader(st.t),
+			EndStream:     false, // DATA is coming
+			EndHeaders:    true,
+		})
+		hf := st.wantHeaders()
+		if !hf.HeadersEnded() || !hf.StreamEnded() {
+			t.Fatalf("want END_HEADERS+END_STREAM, got %v", hf)
+		}
+		// Now the handler has ended, so it's ended its
+		// stream, but the client hasn't closed its side
+		// (stateClosedLocal).  So send more data and verify
+		// it doesn't crash with an internal invariant panic, like
+		// it did before.
+		st.writeData(1, true, []byte("foo"))
+		st.cc.Close()
+		select {
+		case <-st.sc.doneServing:
+			// Loop has exited.
+		case <-time.After(5 * time.Second):
+			t.Error("timeout")
+		}
+	})
+}
+
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})

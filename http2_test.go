@@ -21,6 +21,14 @@ import (
 	"github.com/bradfitz/http2/hpack"
 )
 
+var knownFailing = flag.Bool("known_failing", false, "Run known-failing tests.")
+
+func condSkipFailingTest(t *testing.T) {
+	if !*knownFailing {
+		t.Skip("Skipping known-failing test without --known_failing")
+	}
+}
+
 func init() {
 	DebugGoroutines = true
 	flag.BoolVar(&VerboseLogs, "verboseh2", false, "Verbose HTTP/2 debug logging")
