@@ -135,6 +135,31 @@ func ConfigureServer(s *http.Server, conf *Server) {
 	if s.TLSConfig == nil {
 		s.TLSConfig = new(tls.Config)
 	}
+
+	// Note: not setting MinVersion to tls.VersionTLS12,
+	// as we don't want to interfere with HTTP/1.1 traffic
+	// on the user's server. We enforce TLS 1.2 later once
+	// we accept a connection. Ideally this should be done
+	// during next-proto selection, but using TLS <1.2 with
+	// HTTP/2 is still the client's bug.
+
+	// Be sure we advertise tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	// at least.
+	// TODO: enable PreferServerCipherSuites?
+	if s.TLSConfig.CipherSuites != nil {
+		const requiredCipher = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+		haveRequired := false
+		for _, v := range s.TLSConfig.CipherSuites {
+			if v == requiredCipher {
+				haveRequired = true
+				break
+			}
+		}
+		if !haveRequired {
+			s.TLSConfig.CipherSuites = append(s.TLSConfig.CipherSuites, requiredCipher)
+		}
+	}
+
 	haveNPN := false
 	for _, p := range s.TLSConfig.NextProtos {
 		if p == NextProtoTLS {
@@ -212,13 +237,50 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 			return
 		}
 
-		// TODO: verify cipher suites. (9.2.1, 9.2.2)
+		if isBadCipher(sc.tlsState.CipherSuite) {
+			// "Endpoints MAY choose to generate a connection error
+			// (Section 5.4.1) of type INADEQUATE_SECURITY if one of
+			// the prohibited cipher suites are negotiated."
+			//
+			// We choose that. In my opinion, the spec is weak
+			// here. It also says both parties must support at least
+			// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 so there's no
+			// excuses here. If we really must, we could allow an
+			// "AllowInsecureWeakCiphers" option on the server later.
+			// Let's see how it plays out first.
+			sc.rejectConn(ErrCodeInadequateSecurity, "Prohibited TLS 1.2 Cipher Suite")
+			return
+		}
 	}
 
 	if hook := testHookGetServerConn; hook != nil {
 		hook(sc)
 	}
 	sc.serve()
+}
+
+// isBadCipher reports whether the cipher is blacklisted by the HTTP/2 spec.
+func isBadCipher(cipher uint16) bool {
+	switch cipher {
+	case tls.TLS_RSA_WITH_RC4_128_SHA,
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+		tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
+		// Reject cipher suites from Appendix A.
+		// "This list includes those cipher suites that do not
+		// offer an ephemeral key exchange and those that are
+		// based on the TLS null, stream or block cipher type"
+		return true
+	default:
+		return false
+	}
 }
 
 func (sc *serverConn) rejectConn(err ErrCode, debug string) {

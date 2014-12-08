@@ -65,20 +65,24 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 
 	logBuf := new(bytes.Buffer)
 	ts := httptest.NewUnstartedServer(handler)
-	ConfigureServer(ts.Config, &Server{})
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{NextProtoTLS},
 	}
+
 	for _, opt := range opts {
 		switch v := opt.(type) {
-		case func(c *tls.Config):
+		case func(*tls.Config):
 			v(tlsConfig)
+		case func(*httptest.Server):
+			v(ts)
 		default:
 			t.Fatalf("unknown newServerTester option type %T", v)
 		}
 	}
+
+	ConfigureServer(ts.Config, &Server{})
 
 	st := &serverTester{
 		t:      t,
@@ -1972,6 +1976,48 @@ func testRejectTLS(t *testing.T, max uint16) {
 	if got, want := gf.ErrCode, ErrCodeInadequateSecurity; got != want {
 		t.Errorf("Got error code %v; want %v", got, want)
 	}
+}
+
+func TestServer_Rejects_TLSBadCipher(t *testing.T) {
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		// Only list bad ones:
+		c.CipherSuites = []uint16{
+			tls.TLS_RSA_WITH_RC4_128_SHA,
+			tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		}
+	})
+	defer st.Close()
+	gf := st.wantGoAway()
+	if got, want := gf.ErrCode, ErrCodeInadequateSecurity; got != want {
+		t.Errorf("Got error code %v; want %v", got, want)
+	}
+}
+
+func TestServer_Advertises_Common_Cipher(t *testing.T) {
+	const requiredSuite = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		// Have the client only support the one required by the spec.
+		c.CipherSuites = []uint16{requiredSuite}
+	}, func(ts *httptest.Server) {
+		var srv *http.Server = ts.Config
+		// Have the server configured with one specific cipher suite
+		// which is banned. This tests that ConfigureServer ends up
+		// adding the good one to this list.
+		srv.TLSConfig = &tls.Config{
+			CipherSuites: []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA}, // just a banned one
+		}
+	})
+	defer st.Close()
+	st.greet()
 }
 
 // TODO: move this onto *serverTester, and re-use the same hpack
