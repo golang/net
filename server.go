@@ -202,11 +202,16 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		// this section with a connection error (Section
 		// 5.4.1) of type INADEQUATE_SECURITY.
 		if sc.tlsState.Version < tls.VersionTLS12 {
-			fr.WriteGoAway(0, ErrCodeInadequateSecurity, nil)
-			sc.bw.Flush() // ignoring errors. hanging up anyway.
-			c.Close()
+			sc.rejectConn(ErrCodeInadequateSecurity, "TLS version too low")
 			return
 		}
+
+		// Client must use SNI:
+		if sc.tlsState.ServerName == "" {
+			sc.rejectConn(ErrCodeProtocol, "client didn't use SNI")
+			return
+		}
+
 		// TODO: verify cipher suites. (9.2.1, 9.2.2)
 	}
 
@@ -214,6 +219,13 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		hook(sc)
 	}
 	sc.serve()
+}
+
+func (sc *serverConn) rejectConn(err ErrCode, debug string) {
+	// ignoring errors. hanging up anyway.
+	sc.framer.WriteGoAway(0, err, []byte(debug))
+	sc.bw.Flush()
+	sc.conn.Close()
 }
 
 // frameAndGates coordinates the readFrames and serve
