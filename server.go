@@ -1012,8 +1012,13 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if len(data) > 0 {
-		// TODO: verify they're allowed to write with the flow control
-		// window we'd advertised to them.
+		// TODO: verify they're allowed to write with the flow
+		// control window we'd advertised to them. (currently
+		// this is fails elsewhere, in that the body buffer is
+		// always 65k, the default initial window size, but
+		// once that's fixed to grow and shrink on demand,
+		// we'll need to be stricter before that, or in the
+		// buffer code)
 		wrote, err := st.body.Write(data)
 		if err != nil {
 			return StreamError{id, ErrCodeStreamClosed}
