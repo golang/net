@@ -41,8 +41,15 @@ type serverTester struct {
 	logFilter []string // substrings to filter out
 }
 
+func init() {
+	testHookOnPanicMu = new(sync.Mutex)
+}
+
 func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
+	testHookOnPanicMu.Lock()
 	testHookOnPanic = nil
+	testHookOnPanicMu.Unlock()
+
 	logBuf := new(bytes.Buffer)
 	ts := httptest.NewUnstartedServer(handler)
 	ConfigureServer(ts.Config, &Server{})
@@ -1792,9 +1799,14 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 	})
 }
 
+// This previously crashed (reported by Mathieu Lonjaret as observed
+// while using Camlistore) because we got a DATA frame from the client
+// after the handler exited and our logic at the time was wrong,
+// keeping a stream in the map in stateClosed, which tickled an
+// invariant check later when we tried to remove that stream (via
+// defer sc.closeAllStreamsOnConnClose) when the serverConn serve loop
+// ended.
 func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
-	condSkipFailingTest(t)
-
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		// nothing
 		return nil
@@ -1809,6 +1821,11 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		if !hf.HeadersEnded() || !hf.StreamEnded() {
 			t.Fatalf("want END_HEADERS+END_STREAM, got %v", hf)
 		}
+
+		// Sent when the a Handler closes while a client has
+		// indicated it's still sending DATA:
+		st.wantRSTStream(1, ErrCodeCancel)
+
 		// Now the handler has ended, so it's ended its
 		// stream, but the client hasn't closed its side
 		// (stateClosedLocal).  So send more data and verify
@@ -1816,17 +1833,29 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		// it did before.
 		st.writeData(1, true, []byte("foo"))
 
+		// Sent after a peer sends data anyway (admittedly the
+		// previous RST_STREAM might've still been in-flight),
+		// but they'll get the more friendly 'cancel' code
+		// first.
+		st.wantRSTStream(1, ErrCodeStreamClosed)
+
+		// Set up a bunch of machinery to record the panic we saw
+		// previously.
 		var (
 			panMu    sync.Mutex
 			panicVal interface{}
 		)
+
+		testHookOnPanicMu.Lock()
 		testHookOnPanic = func(sc *serverConn, pv interface{}) bool {
 			panMu.Lock()
 			panicVal = pv
 			panMu.Unlock()
 			return true
 		}
+		testHookOnPanicMu.Unlock()
 
+		// Now force the serve loop to end, via closing the connection.
 		st.cc.Close()
 		select {
 		case <-st.sc.doneServing:

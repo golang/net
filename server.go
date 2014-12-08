@@ -55,6 +55,7 @@ var responseWriterStatePool = sync.Pool{
 var (
 	testHookOnConn        func()
 	testHookGetServerConn func(*serverConn)
+	testHookOnPanicMu     *sync.Mutex // nil except in tests
 	testHookOnPanic       func(sc *serverConn, panicVal interface{}) (rePanic bool)
 )
 
@@ -75,6 +76,15 @@ var (
 // as normal. The serve loop would then exit in most cases (if no
 // Handlers running) and not be woken up again until the PING packet
 // returns.
+
+// TODO (maybe): add a mechanism for Handlers to going into
+// half-closed-local mode (rw.(io.Closer) test?) but not exit their
+// handler, and continue to be able to read from the
+// Request.Body. This would be a somewhat semantic change from HTTP/1
+// (or at least what we expose in net/http), so I'd probably want to
+// add it there too. For now, this package says that returning from
+// the Handler ServeHTTP function means you're both done reading and
+// done writing, without a way to stop just one or the other.
 
 // Server is an HTTP/2 server.
 type Server struct {
@@ -452,6 +462,10 @@ func (sc *serverConn) stopShutdownTimer() {
 }
 
 func (sc *serverConn) notePanic() {
+	if testHookOnPanicMu != nil {
+		testHookOnPanicMu.Lock()
+		defer testHookOnPanicMu.Unlock()
+	}
 	if testHookOnPanic != nil {
 		if e := recover(); e != nil {
 			if testHookOnPanic(sc, e) {
@@ -642,7 +656,17 @@ func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
 		}
 		switch st.state {
 		case stateOpen:
-			st.state = stateHalfClosedLocal
+			// Here we would go to stateHalfClosedLocal in
+			// theory, but since our handler is done and
+			// the net/http package provides no mechanism
+			// for finishing writing to a ResponseWriter
+			// while still reading data (see possible TODO
+			// at top of this file), we go into closed
+			// state here anyway, after telling the peer
+			// we're hanging up on them.
+			st.state = stateHalfClosedLocal // won't last long, but necessary for closeStream via resetStream
+			errCancel := StreamError{st.id, ErrCodeCancel}
+			sc.resetStream(errCancel)
 		case stateHalfClosedRemote:
 			sc.closeStream(st, nil)
 		}
@@ -720,13 +744,11 @@ func (sc *serverConn) shutDownIn(d time.Duration) {
 
 func (sc *serverConn) resetStream(se StreamError) {
 	sc.serveG.check()
-	st, ok := sc.streams[se.StreamID]
-	if !ok {
-		panic("internal package error; resetStream called on non-existent stream")
-	}
 	sc.writeFrame(frameWriteMsg{write: se})
-	st.sentReset = true
-	sc.closeStream(st, se)
+	if st, ok := sc.streams[se.StreamID]; ok {
+		st.sentReset = true
+		sc.closeStream(st, se)
+	}
 }
 
 // curHeaderStreamID returns the stream ID of the header block we're
@@ -911,7 +933,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 func (sc *serverConn) closeStream(st *stream, err error) {
 	sc.serveG.check()
 	if st.state == stateIdle || st.state == stateClosed {
-		panic("invariant")
+		panic(fmt.Sprintf("invariant; can't close stream in state %v", st.state))
 	}
 	st.state = stateClosed
 	sc.curOpenStreams--
@@ -1006,7 +1028,12 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
 	id := f.Header().StreamID
 	st, ok := sc.streams[id]
-	if !ok || (st.state != stateOpen && st.state != stateHalfClosedLocal) {
+	if !ok || st.state != stateOpen {
+		// This includes sending a RST_STREAM if the stream is
+		// in stateHalfClosedLocal (which currently means that
+		// the http.Handler returned, so it's done reading &
+		// done writing). Try to stop the client from sending
+		// more DATA.
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if st.body == nil {
@@ -1043,15 +1070,7 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		} else {
 			st.body.Close(io.EOF)
 		}
-		switch st.state {
-		case stateOpen:
-			st.state = stateHalfClosedRemote
-		case stateHalfClosedLocal:
-			// TODO: this causes a known crash (currently skipped
-			// test in server_test.go). We shouldn't leave
-			// streams in the map in stateClosed.
-			st.state = stateClosed
-		}
+		st.state = stateHalfClosedRemote
 	}
 	return nil
 }
