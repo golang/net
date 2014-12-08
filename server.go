@@ -55,6 +55,7 @@ var responseWriterStatePool = sync.Pool{
 var (
 	testHookOnConn        func()
 	testHookGetServerConn func(*serverConn)
+	testHookOnPanic       func(sc *serverConn, panicVal interface{}) (rePanic bool)
 )
 
 // TODO: finish GOAWAY support. Consider each incoming frame type and
@@ -450,8 +451,19 @@ func (sc *serverConn) stopShutdownTimer() {
 	}
 }
 
+func (sc *serverConn) notePanic() {
+	if testHookOnPanic != nil {
+		if e := recover(); e != nil {
+			if testHookOnPanic(sc, e) {
+				panic(e)
+			}
+		}
+	}
+}
+
 func (sc *serverConn) serve() {
 	sc.serveG.check()
+	defer sc.notePanic()
 	defer sc.conn.Close()
 	defer sc.closeAllStreamsOnConnClose()
 	defer sc.stopShutdownTimer()

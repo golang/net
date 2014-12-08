@@ -42,6 +42,7 @@ type serverTester struct {
 }
 
 func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
+	testHookOnPanic = nil
 	logBuf := new(bytes.Buffer)
 	ts := httptest.NewUnstartedServer(handler)
 	ConfigureServer(ts.Config, &Server{})
@@ -1793,6 +1794,7 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 
 func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 	condSkipFailingTest(t)
+
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		// nothing
 		return nil
@@ -1813,10 +1815,28 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		// it doesn't crash with an internal invariant panic, like
 		// it did before.
 		st.writeData(1, true, []byte("foo"))
+
+		var (
+			panMu    sync.Mutex
+			panicVal interface{}
+		)
+		testHookOnPanic = func(sc *serverConn, pv interface{}) bool {
+			panMu.Lock()
+			panicVal = pv
+			panMu.Unlock()
+			return true
+		}
+
 		st.cc.Close()
 		select {
 		case <-st.sc.doneServing:
 			// Loop has exited.
+			panMu.Lock()
+			got := panicVal
+			panMu.Unlock()
+			if got != nil {
+				t.Errorf("Got panic: %v", got)
+			}
 		case <-time.After(5 * time.Second):
 			t.Error("timeout")
 		}
