@@ -62,8 +62,9 @@ var (
 // TODO: finish GOAWAY support. Consider each incoming frame type and
 // whether it should be ignored during a shutdown race.
 
-// TODO: send PING frames to idle clients and disconnect them if no
-// reply
+// TODO: disconnect idle clients. GFE seems to do 4 minutes. make
+// configurable?  or maximum number of idle clients and remove the
+// oldest?
 
 // TODO: turn off the serve goroutine when idle, so
 // an idle conn only has the readFrames goroutine active. (which could
