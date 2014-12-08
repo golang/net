@@ -282,7 +282,7 @@ func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 func (st *serverTester) wantWindowUpdate(streamID, incr uint32) {
 	f, err := st.readFrame()
 	if err != nil {
-		st.t.Fatalf("Error while expecting an RSTStream frame: %v", err)
+		st.t.Fatalf("Error while expecting a WINDOW_UPDATE frame: %v", err)
 	}
 	wu, ok := f.(*WindowUpdateFrame)
 	if !ok {
