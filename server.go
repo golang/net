@@ -188,6 +188,28 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
 	sc.framer = fr
 
+	if tc, ok := c.(*tls.Conn); ok {
+		sc.tlsState = new(tls.ConnectionState)
+		*sc.tlsState = tc.ConnectionState()
+		// 9.2 Use of TLS Features
+		// An implementation of HTTP/2 over TLS MUST use TLS
+		// 1.2 or higher with the restrictions on feature set
+		// and cipher suite described in this section. Due to
+		// implementation limitations, it might not be
+		// possible to fail TLS negotiation. An endpoint MUST
+		// immediately terminate an HTTP/2 connection that
+		// does not meet the TLS requirements described in
+		// this section with a connection error (Section
+		// 5.4.1) of type INADEQUATE_SECURITY.
+		if sc.tlsState.Version < tls.VersionTLS12 {
+			fr.WriteGoAway(0, ErrCodeInadequateSecurity, nil)
+			sc.bw.Flush() // ignoring errors. hanging up anyway.
+			c.Close()
+			return
+		}
+		// TODO: verify cipher suites. (9.2.1, 9.2.2)
+	}
+
 	if hook := testHookGetServerConn; hook != nil {
 		hook(sc)
 	}
@@ -216,11 +238,12 @@ type serverConn struct {
 	doneServing      chan struct{}     // closed when serverConn.serve ends
 	readFrameCh      chan frameAndGate // written by serverConn.readFrames
 	readFrameErrCh   chan error
-	wantWriteFrameCh chan frameWriteMsg // from handlers -> serve
-	wroteFrameCh     chan struct{}      // from writeFrameAsync -> serve, tickles more frame writes
-	bodyReadCh       chan bodyReadMsg   // from handlers -> serve
-	testHookCh       chan func()        // code to run on the serve loop
-	flow             flow               // connection-wide (not stream-specific) flow control
+	wantWriteFrameCh chan frameWriteMsg   // from handlers -> serve
+	wroteFrameCh     chan struct{}        // from writeFrameAsync -> serve, tickles more frame writes
+	bodyReadCh       chan bodyReadMsg     // from handlers -> serve
+	testHookCh       chan func()          // code to run on the serve loop
+	flow             flow                 // connection-wide (not stream-specific) flow control
+	tlsState         *tls.ConnectionState // shared by all handlers, like net/http
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                goroutineLock // used to verify funcs are on serve()
@@ -1221,26 +1244,9 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		// pseudo-header fields"
 		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
 	}
-	var tlsState *tls.ConnectionState // make this non-nil if https
+	var tlsState *tls.ConnectionState // nil if not scheme https
 	if rp.scheme == "https" {
-		tlsState = &tls.ConnectionState{}
-		if tc, ok := sc.conn.(*tls.Conn); ok {
-			*tlsState = tc.ConnectionState()
-			if tlsState.Version < tls.VersionTLS12 {
-				// 9.2 Use of TLS Features
-				// An implementation of HTTP/2 over TLS MUST use TLS
-				// 1.2 or higher with the restrictions on feature set
-				// and cipher suite described in this section. Due to
-				// implementation limitations, it might not be
-				// possible to fail TLS negotiation. An endpoint MUST
-				// immediately terminate an HTTP/2 connection that
-				// does not meet the TLS requirements described in
-				// this section with a connection error (Section
-				// 5.4.1) of type INADEQUATE_SECURITY.
-				return nil, nil, ConnectionError(ErrCodeInadequateSecurity)
-			}
-			// TODO: verify cipher suites. (9.2.1, 9.2.2)
-		}
+		tlsState = sc.tlsState
 	}
 	authority := rp.authority
 	if authority == "" {
