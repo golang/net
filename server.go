@@ -188,6 +188,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		srv:              srv,
 		hs:               hs,
 		conn:             c,
+		remoteAddrStr:    c.RemoteAddr().String(),
 		bw:               newBufferedWriter(c),
 		handler:          h,
 		streams:          make(map[uint32]*stream),
@@ -321,6 +322,7 @@ type serverConn struct {
 	flow             flow                 // conn-wide (not stream-specific) outbound flow control
 	inflow           flow                 // conn-wide inbound flow control
 	tlsState         *tls.ConnectionState // shared by all handlers, like net/http
+	remoteAddrStr    string
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                goroutineLock // used to verify funcs are on serve()
@@ -1350,7 +1352,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	req := &http.Request{
 		Method:     rp.method,
 		URL:        url,
-		RemoteAddr: sc.conn.RemoteAddr().String(),
+		RemoteAddr: sc.remoteAddrStr,
 		Header:     rp.header,
 		RequestURI: rp.path,
 		Proto:      "HTTP/2.0",
