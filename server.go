@@ -60,18 +60,10 @@ var (
 // TODO: finish GOAWAY support. Consider each incoming frame type and
 // whether it should be ignored during a shutdown race.
 
-// TODO: (edge case?) if peer sends a SETTINGS frame with e.g. a
-// SETTINGS_MAX_FRAME_SIZE that's lower than what we had before,
-// before we ACK it we have to make sure all currently-active streams
-// know about that and don't have existing too-large frames in flight?
-// Perhaps the settings processing should just wait for new frame to
-// be in-flight and then the frame scheduler in the serve goroutine
-// will be responsible for splitting things.
-
 // TODO: send PING frames to idle clients and disconnect them if no
 // reply
 
-// TODO: for bonus points: turn off the serve goroutine when idle, so
+// TODO: turn off the serve goroutine when idle, so
 // an idle conn only has the readFrames goroutine active. (which could
 // also be optimized probably to pin less memory in crypto/tls). This
 // would involve tracking when the serve goroutine is active (atomic
