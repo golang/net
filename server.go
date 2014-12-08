@@ -1039,6 +1039,9 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		case stateOpen:
 			st.state = stateHalfClosedRemote
 		case stateHalfClosedLocal:
+			// TODO: this causes a known crash (currently skipped
+			// test in server_test.go). We shouldn't leave
+			// streams in the map in stateClosed.
 			st.state = stateClosed
 		}
 	}
