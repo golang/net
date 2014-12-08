@@ -749,6 +749,9 @@ func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool
 			// (e.g. CloseWrite) because they're done
 			// sending frames but they're still wanting
 			// our open replies?  Investigate.
+			// TODO: add CloseWrite to crypto/tls.Conn first
+			// so we have a way to test this? I suppose
+			// just for testing we could have a non-TLS mode.
 			return false
 		}
 	}
