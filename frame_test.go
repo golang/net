@@ -8,11 +8,19 @@ import (
 	"bytes"
 	"reflect"
 	"testing"
+	"unsafe"
 )
 
 func testFramer() (*Framer, *bytes.Buffer) {
 	buf := new(bytes.Buffer)
 	return NewFramer(buf, buf), buf
+}
+
+func TestFrameSizes(t *testing.T) {
+	// Catch people rearranging the FrameHeader fields.
+	if got, want := int(unsafe.Sizeof(FrameHeader{})), 12; got != want {
+		t.Errorf("FrameHeader size = %d; want %d", got, want)
+	}
 }
 
 func TestWriteRST(t *testing.T) {
