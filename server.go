@@ -1337,10 +1337,11 @@ func (sc *serverConn) noteBodyReadFromHandler(st *stream, n int) {
 func (sc *serverConn) noteBodyRead(st *stream, n int) {
 	sc.serveG.check()
 	sc.sendWindowUpdate(nil, n) // conn-level
-	// TODO: don't send this WINDOW_UPDATE if the stream is in
-	// stateClosedRemote.  No need to tell them they can send more
-	// if they've already said they're done.
-	sc.sendWindowUpdate(st, n)
+	if st.state != stateHalfClosedRemote && st.state != stateClosed {
+		// Don't send this WINDOW_UPDATE if the stream is closed
+		// remotely.
+		sc.sendWindowUpdate(st, n)
+	}
 }
 
 // st may be nil for conn-level

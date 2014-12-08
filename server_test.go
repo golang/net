@@ -785,33 +785,20 @@ func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
 		EndStream:     false, // data coming
 		EndHeaders:    true,
 	})
-	st.writeData(1, true, []byte("abcdef"))
-	puppet.do(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 3)
-		_, err := io.ReadFull(r.Body, buf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if string(buf) != "abc" {
-			t.Errorf("read %q; want abc", buf)
-		}
-	})
+	st.writeData(1, false, []byte("abcdef"))
+	puppet.do(readBodyHandler(t, "abc"))
 	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
-	puppet.do(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 3)
-		_, err := io.ReadFull(r.Body, buf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if string(buf) != "def" {
-			t.Errorf("read %q; want abc", buf)
-		}
-	})
+
+	puppet.do(readBodyHandler(t, "def"))
 	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
+
+	st.writeData(1, true, []byte("ghijkl")) // END_STREAM here
+	puppet.do(readBodyHandler(t, "ghi"))
+	puppet.do(readBodyHandler(t, "jkl"))
+	st.wantWindowUpdate(0, 3)
+	st.wantWindowUpdate(0, 3) // no more stream-level, since END_STREAM
 }
 
 func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
@@ -1640,7 +1627,6 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		st.writeData(1, true, []byte(msg))
 
 		st.wantWindowUpdate(0, uint32(len(msg)))
-		st.wantWindowUpdate(1, uint32(len(msg)))
 
 		hf = st.wantHeaders()
 		if hf.StreamEnded() {
@@ -1886,6 +1872,23 @@ func testServerResponse(t *testing.T,
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("timeout waiting for handler to finish")
+	}
+}
+
+// readBodyHandler returns an http Handler func that reads len(want)
+// bytes from r.Body and fails t if the contents read were not
+// the value of want.
+func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if string(buf) != want {
+			t.Errorf("read %q; want %q", buf, want)
+		}
 	}
 }
 
