@@ -202,7 +202,12 @@ func (st *serverTester) encodeHeaderField(k, v string) {
 // multiple pairs for keys (e.g. "cookie").  The :method, :path, and
 // :scheme headers default to GET, / and https.
 func (st *serverTester) encodeHeader(headers ...string) []byte {
+	if len(headers)%2 == 1 {
+		panic("odd number of kv args")
+	}
+
 	st.headerBuf.Reset()
+
 	if len(headers) == 0 {
 		// Fast path, mostly for benchmarks, so test code doesn't pollute
 		// profiles when we're looking to improve server allocations.
@@ -212,10 +217,15 @@ func (st *serverTester) encodeHeader(headers ...string) []byte {
 		return st.headerBuf.Bytes()
 	}
 
-	pseudoCount := map[string]int{}
-	if len(headers)%2 == 1 {
-		panic("odd number of kv args")
+	if len(headers) == 2 && headers[0] == ":method" {
+		// Another fast path for benchmarks.
+		st.encodeHeaderField(":method", headers[1])
+		st.encodeHeaderField(":path", "/")
+		st.encodeHeaderField(":scheme", "https")
+		return st.headerBuf.Bytes()
 	}
+
+	pseudoCount := map[string]int{}
 	keys := []string{":method", ":path", ":scheme"}
 	vals := map[string][]string{
 		":method": {"GET"},
@@ -2168,6 +2178,38 @@ func BenchmarkServerGets(b *testing.B) {
 			EndStream:     true,
 			EndHeaders:    true,
 		})
+		st.wantHeaders()
+		df := st.wantData()
+		if !df.StreamEnded() {
+			b.Fatalf("DATA didn't have END_STREAM; got %v", df)
+		}
+	}
+}
+
+func BenchmarkServerPosts(b *testing.B) {
+	b.ReportAllocs()
+
+	const msg = "Hello, world"
+	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, msg)
+	})
+	defer st.Close()
+	st.greet()
+
+	// Give the server quota to reply. (plus it has the the 64KB)
+	if err := st.fr.WriteWindowUpdate(0, uint32(b.N*len(msg))); err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		id := 1 + uint32(i)*2
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      id,
+			BlockFragment: st.encodeHeader(":method", "POST"),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		st.writeData(id, true, nil)
 		st.wantHeaders()
 		df := st.wantData()
 		if !df.StreamEnded() {
