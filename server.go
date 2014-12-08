@@ -286,11 +286,11 @@ func (sc *serverConn) HeaderEncoder() (*hpack.Encoder, *bytes.Buffer) {
 	return sc.hpackEncoder, &sc.headerWriteBuf
 }
 
-func (sc *serverConn) state(streamID uint32) streamState {
+func (sc *serverConn) state(streamID uint32) (streamState, *stream) {
 	sc.serveG.check()
 	// http://http2.github.io/http2-spec/#rfc.section.5.1
 	if st, ok := sc.streams[streamID]; ok {
-		return st.state
+		return st.state, st
 	}
 	// "The first use of a new stream identifier implicitly closes all
 	// streams in the "idle" state that might have been initiated by
@@ -299,9 +299,9 @@ func (sc *serverConn) state(streamID uint32) streamState {
 	// frame on stream 5, then stream 5 transitions to the "closed"
 	// state when the first frame for stream 7 is sent or received."
 	if streamID <= sc.maxStreamID {
-		return stateClosed
+		return stateClosed, nil
 	}
-	return stateIdle
+	return stateIdle, nil
 }
 
 func (sc *serverConn) vlogf(format string, args ...interface{}) {
@@ -879,7 +879,9 @@ func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 
 func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	sc.serveG.check()
-	if sc.state(f.StreamID) == stateIdle {
+
+	state, st := sc.state(f.StreamID)
+	if state == stateIdle {
 		// 6.4 "RST_STREAM frames MUST NOT be sent for a
 		// stream in the "idle" state. If a RST_STREAM frame
 		// identifying an idle stream is received, the
@@ -887,8 +889,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 		// (Section 5.4.1) of type PROTOCOL_ERROR.
 		return ConnectionError(ErrCodeProtocol)
 	}
-	st, ok := sc.streams[f.StreamID]
-	if ok {
+	if st != nil {
 		st.gotReset = true
 		sc.closeStream(st, StreamError{f.StreamID, f.ErrCode})
 	}

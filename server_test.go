@@ -102,7 +102,8 @@ func (st *serverTester) stream(id uint32) *stream {
 func (st *serverTester) streamState(id uint32) streamState {
 	ch := make(chan streamState, 1)
 	st.sc.testHookCh <- func() {
-		ch <- st.sc.state(id)
+		state, _ := st.sc.state(id)
+		ch <- state
 	}
 	return <-ch
 }
