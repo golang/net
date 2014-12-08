@@ -54,14 +54,31 @@ func init() {
 	testHookOnPanicMu = new(sync.Mutex)
 }
 
-func newServerTester(t testing.TB, handler http.HandlerFunc) *serverTester {
+func resetHooks() {
 	testHookOnPanicMu.Lock()
 	testHookOnPanic = nil
 	testHookOnPanicMu.Unlock()
+}
+
+func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
+	resetHooks()
 
 	logBuf := new(bytes.Buffer)
 	ts := httptest.NewUnstartedServer(handler)
 	ConfigureServer(ts.Config, &Server{})
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{NextProtoTLS},
+	}
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case func(c *tls.Config):
+			v(tlsConfig)
+		default:
+			t.Fatalf("unknown newServerTester option type %T", v)
+		}
+	}
 
 	st := &serverTester{
 		t:      t,
@@ -89,10 +106,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc) *serverTester {
 		sc = v
 		sc.testHookCh = make(chan func())
 	}
-	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{NextProtoTLS},
-	})
+	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1946,6 +1960,23 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 	})
 }
 
+func TestServer_Rejects_TLS10(t *testing.T) { testRejectTLS(t, tls.VersionTLS10) }
+func TestServer_Rejects_TLS11(t *testing.T) { testRejectTLS(t, tls.VersionTLS11) }
+
+func testRejectTLS(t *testing.T, max uint16) {
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		c.MaxVersion = max
+	})
+	defer st.Close()
+	gf := st.wantGoAway()
+	if got, want := gf.ErrCode, ErrCodeInadequateSecurity; got != want {
+		t.Errorf("Got error code %v; want %v", got, want)
+	}
+}
+
+// TODO: move this onto *serverTester, and re-use the same hpack
+// decoding context throughout.  We're just getting lucky here with
+// creating a new decoder each time.
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})
