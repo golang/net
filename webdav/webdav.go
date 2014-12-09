@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package webdav etc etc TODO.
-package webdav
+package webdav // import "golang.org/x/net/webdav"
 
 // TODO: ETag, properties.
 

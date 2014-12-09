@@ -7,7 +7,7 @@
 // ICMPv4 and ICMPv6.
 //
 // ICMPv4 and ICMPv6 are defined in RFC 792 and RFC 4443.
-package icmp
+package icmp // import "golang.org/x/net/icmp"
 
 import (
 	"errors"

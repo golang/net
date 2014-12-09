@@ -5,7 +5,7 @@
 // Package publicsuffix provides a public suffix list based on data from
 // http://publicsuffix.org/. A public suffix is one under which Internet users
 // can directly register names.
-package publicsuffix
+package publicsuffix // import "golang.org/x/net/publicsuffix"
 
 // TODO: specify case sensitivity and leading/trailing dot behavior for
 // func PublicSuffix and func EffectiveTLDPlusOne.

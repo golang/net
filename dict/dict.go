@@ -4,7 +4,7 @@
 
 // Package dict implements the Dictionary Server Protocol
 // as defined in RFC 2229.
-package dict
+package dict // import "golang.org/x/net/dict"
 
 import (
 	"net/textproto"

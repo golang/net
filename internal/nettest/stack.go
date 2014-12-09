@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package nettest provides utilities for IP testing.
-package nettest
+package nettest // import "golang.org/x/net/internal/nettest"
 
 import "net"
 
