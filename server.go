@@ -1213,7 +1213,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 
 	sc.streams[id] = st
 	if f.HasPriority() {
-		sc.adjustStreamPriority(st.id, f.Priority)
+		adjustStreamPriority(sc.streams, st.id, f.Priority)
 	}
 	sc.curOpenStreams++
 	sc.req = requestParam{
@@ -1276,13 +1276,12 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 }
 
 func (sc *serverConn) processPriority(f *PriorityFrame) error {
-	sc.adjustStreamPriority(f.StreamID, f.PriorityParam)
+	adjustStreamPriority(sc.streams, f.StreamID, f.PriorityParam)
 	return nil
 }
 
-func (sc *serverConn) adjustStreamPriority(streamID uint32, priority PriorityParam) {
-	// TODO: untested
-	st, ok := sc.streams[streamID]
+func adjustStreamPriority(streams map[uint32]*stream, streamID uint32, priority PriorityParam) {
+	st, ok := streams[streamID]
 	if !ok {
 		// TODO: not quite correct (this streamID might
 		// already exist in the dep tree, but be closed), but
@@ -1290,10 +1289,27 @@ func (sc *serverConn) adjustStreamPriority(streamID uint32, priority PriorityPar
 		return
 	}
 	st.weight = priority.Weight
-	st.parent = sc.streams[priority.StreamDep] // might be nil
-	if priority.Exclusive && st.parent != nil {
-		for _, openStream := range sc.streams {
-			if openStream.parent == st.parent {
+	parent := streams[priority.StreamDep] // might be nil
+	if parent == st {
+		// if client tries to set this stream to be the parent of itself
+		// ignore and keep going
+		return
+	}
+
+	// section 5.3.3: If a stream is made dependent on one of its
+	// own dependencies, the formerly dependent stream is first
+	// moved to be dependent on the reprioritized stream's previous
+	// parent. The moved dependency retains its weight.
+	for piter := parent; piter != nil; piter = piter.parent {
+		if piter == st {
+			parent.parent = st.parent
+			break
+		}
+	}
+	st.parent = parent
+	if priority.Exclusive && (st.parent != nil || priority.StreamDep == 0) {
+		for _, openStream := range streams {
+			if openStream != st && openStream.parent == st.parent {
 				openStream.parent = st
 			}
 		}
