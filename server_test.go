@@ -505,7 +505,7 @@ func TestServer_Request_Get_PathSlashes(t *testing.T) {
 		})
 	}, func(r *http.Request) {
 		if r.RequestURI != "/%2f/" {
-			t.Errorf("RequestURI = %q; want /%2f/", r.RequestURI)
+			t.Errorf("RequestURI = %q; want /%%2f/", r.RequestURI)
 		}
 		if r.URL.Path != "///" {
 			t.Errorf("URL.Path = %q; want ///", r.URL.Path)
@@ -1896,7 +1896,7 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 			}
 		}
 		if n < 5 {
-			t.Errorf("Only got %d CONTINUATION frames; expected 5+ (currently 6)")
+			t.Errorf("Only got %d CONTINUATION frames; expected 5+ (currently 6)", n)
 		}
 	})
 }
