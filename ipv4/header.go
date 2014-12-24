@@ -40,18 +40,6 @@ const (
 	maxHeaderLen = 60 // sensible default, revisit if later RFCs define new usage of version and header length fields
 )
 
-const (
-	posTOS      = 1  // type-of-service
-	posTotalLen = 2  // packet total length
-	posID       = 4  // identification
-	posFragOff  = 6  // fragment offset
-	posTTL      = 8  // time-to-live
-	posProtocol = 9  // next protocol
-	posChecksum = 10 // checksum
-	posSrc      = 12 // source address
-	posDst      = 16 // destination address
-)
-
 type HeaderFlags int
 
 const (
@@ -83,10 +71,6 @@ func (h *Header) String() string {
 	return fmt.Sprintf("ver: %v, hdrlen: %v, tos: %#x, totallen: %v, id: %#x, flags: %#x, fragoff: %#x, ttl: %v, proto: %v, cksum: %#x, src: %v, dst: %v", h.Version, h.Len, h.TOS, h.TotalLen, h.ID, h.Flags, h.FragOff, h.TTL, h.Protocol, h.Checksum, h.Src, h.Dst)
 }
 
-// Please refer to the online manual; IP(4) on Darwin, FreeBSD and
-// OpenBSD.  IP(7) on Linux.
-const supportsNewIPInput = runtime.GOOS == "linux" || runtime.GOOS == "openbsd"
-
 // Marshal returns the binary encoding of the IPv4 header h.
 func (h *Header) Marshal() ([]byte, error) {
 	if h == nil {
@@ -98,25 +82,26 @@ func (h *Header) Marshal() ([]byte, error) {
 	hdrlen := HeaderLen + len(h.Options)
 	b := make([]byte, hdrlen)
 	b[0] = byte(Version<<4 | (hdrlen >> 2 & 0x0f))
-	b[posTOS] = byte(h.TOS)
+	b[1] = byte(h.TOS)
 	flagsAndFragOff := (h.FragOff & 0x1fff) | int(h.Flags<<13)
-	if supportsNewIPInput {
-		b[posTotalLen], b[posTotalLen+1] = byte(h.TotalLen>>8), byte(h.TotalLen)
-		b[posFragOff], b[posFragOff+1] = byte(flagsAndFragOff>>8), byte(flagsAndFragOff)
-	} else {
+	switch runtime.GOOS {
+	case "darwin", "dragonfly", "freebsd", "netbsd":
 		// TODO(mikio): fix potential misaligned memory access
-		*(*uint16)(unsafe.Pointer(&b[posTotalLen : posTotalLen+1][0])) = uint16(h.TotalLen)
-		*(*uint16)(unsafe.Pointer(&b[posFragOff : posFragOff+1][0])) = uint16(flagsAndFragOff)
+		*(*uint16)(unsafe.Pointer(&b[2:3][0])) = uint16(h.TotalLen)
+		*(*uint16)(unsafe.Pointer(&b[6:7][0])) = uint16(flagsAndFragOff)
+	default:
+		b[2], b[3] = byte(h.TotalLen>>8), byte(h.TotalLen)
+		b[6], b[7] = byte(flagsAndFragOff>>8), byte(flagsAndFragOff)
 	}
-	b[posID], b[posID+1] = byte(h.ID>>8), byte(h.ID)
-	b[posTTL] = byte(h.TTL)
-	b[posProtocol] = byte(h.Protocol)
-	b[posChecksum], b[posChecksum+1] = byte(h.Checksum>>8), byte(h.Checksum)
+	b[4], b[5] = byte(h.ID>>8), byte(h.ID)
+	b[8] = byte(h.TTL)
+	b[9] = byte(h.Protocol)
+	b[10], b[11] = byte(h.Checksum>>8), byte(h.Checksum)
 	if ip := h.Src.To4(); ip != nil {
-		copy(b[posSrc:posSrc+net.IPv4len], ip[:net.IPv4len])
+		copy(b[12:16], ip[:net.IPv4len])
 	}
 	if ip := h.Dst.To4(); ip != nil {
-		copy(b[posDst:posDst+net.IPv4len], ip[:net.IPv4len])
+		copy(b[16:20], ip[:net.IPv4len])
 	} else {
 		return nil, errMissingAddress
 	}
@@ -138,30 +123,37 @@ func ParseHeader(b []byte) (*Header, error) {
 	if hdrlen > len(b) {
 		return nil, errBufferTooShort
 	}
-	h := &Header{}
-	h.Version = int(b[0] >> 4)
-	h.Len = hdrlen
-	h.TOS = int(b[posTOS])
-	if supportsNewIPInput {
-		h.TotalLen = int(b[posTotalLen])<<8 | int(b[posTotalLen+1])
-		h.FragOff = int(b[posFragOff])<<8 | int(b[posFragOff+1])
-	} else {
+	h := &Header{
+		Version:  int(b[0] >> 4),
+		Len:      hdrlen,
+		TOS:      int(b[1]),
+		ID:       int(b[4])<<8 | int(b[5]),
+		TTL:      int(b[8]),
+		Protocol: int(b[9]),
+		Checksum: int(b[10])<<8 | int(b[11]),
+		Src:      net.IPv4(b[12], b[13], b[14], b[15]),
+		Dst:      net.IPv4(b[16], b[17], b[18], b[19]),
+	}
+	switch runtime.GOOS {
+	case "darwin", "dragonfly", "netbsd":
 		// TODO(mikio): fix potential misaligned memory access
-		h.TotalLen = int(*(*uint16)(unsafe.Pointer(&b[posTotalLen : posTotalLen+1][0])))
-		if runtime.GOOS != "freebsd" || freebsdVersion < 1000000 {
+		h.TotalLen = int(*(*uint16)(unsafe.Pointer(&b[2:3][0]))) + hdrlen
+		// TODO(mikio): fix potential misaligned memory access
+		h.FragOff = int(*(*uint16)(unsafe.Pointer(&b[6:7][0])))
+	case "freebsd":
+		// TODO(mikio): fix potential misaligned memory access
+		h.TotalLen = int(*(*uint16)(unsafe.Pointer(&b[2:3][0])))
+		if freebsdVersion < 1000000 {
 			h.TotalLen += hdrlen
 		}
 		// TODO(mikio): fix potential misaligned memory access
-		h.FragOff = int(*(*uint16)(unsafe.Pointer(&b[posFragOff : posFragOff+1][0])))
+		h.FragOff = int(*(*uint16)(unsafe.Pointer(&b[6:7][0])))
+	default:
+		h.TotalLen = int(b[2])<<8 | int(b[3])
+		h.FragOff = int(b[6])<<8 | int(b[7])
 	}
 	h.Flags = HeaderFlags(h.FragOff&0xe000) >> 13
 	h.FragOff = h.FragOff & 0x1fff
-	h.ID = int(b[posID])<<8 | int(b[posID+1])
-	h.TTL = int(b[posTTL])
-	h.Protocol = int(b[posProtocol])
-	h.Checksum = int(b[posChecksum])<<8 | int(b[posChecksum+1])
-	h.Src = net.IPv4(b[posSrc], b[posSrc+1], b[posSrc+2], b[posSrc+3])
-	h.Dst = net.IPv4(b[posDst], b[posDst+1], b[posDst+2], b[posDst+3])
 	if hdrlen-HeaderLen > 0 {
 		h.Options = make([]byte, hdrlen-HeaderLen)
 		copy(h.Options, b[HeaderLen:])

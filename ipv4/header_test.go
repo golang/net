@@ -73,10 +73,17 @@ func TestMarshalHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wh []byte
-	if supportsNewIPInput {
-		wh = wireHeaderToKernel[:]
-	} else {
+	switch runtime.GOOS {
+	case "darwin", "dragonfly", "netbsd":
 		wh = wireHeaderToTradBSDKernel[:]
+	case "freebsd":
+		if freebsdVersion < 1000000 {
+			wh = wireHeaderToTradBSDKernel[:]
+		} else {
+			wh = wireHeaderFromFreeBSD10Kernel[:]
+		}
+	default:
+		wh = wireHeaderToKernel[:]
 	}
 	if !bytes.Equal(b, wh) {
 		t.Fatalf("got %#v; want %#v", b, wh)
@@ -85,14 +92,17 @@ func TestMarshalHeader(t *testing.T) {
 
 func TestParseHeader(t *testing.T) {
 	var wh []byte
-	if supportsNewIPInput {
-		wh = wireHeaderFromKernel[:]
-	} else {
-		if runtime.GOOS == "freebsd" && freebsdVersion >= 1000000 {
-			wh = wireHeaderFromFreeBSD10Kernel[:]
-		} else {
+	switch runtime.GOOS {
+	case "darwin", "dragonfly", "netbsd":
+		wh = wireHeaderFromTradBSDKernel[:]
+	case "freebsd":
+		if freebsdVersion < 1000000 {
 			wh = wireHeaderFromTradBSDKernel[:]
+		} else {
+			wh = wireHeaderFromFreeBSD10Kernel[:]
 		}
+	default:
+		wh = wireHeaderFromKernel[:]
 	}
 	h, err := ParseHeader(wh)
 	if err != nil {
