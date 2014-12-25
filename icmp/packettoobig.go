@@ -19,7 +19,7 @@ func (p *PacketTooBig) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *PacketTooBig) Marshal() ([]byte, error) {
+func (p *PacketTooBig) Marshal(proto int) ([]byte, error) {
 	b := make([]byte, 4+len(p.Data))
 	b[0], b[1], b[2], b[3] = byte(p.MTU>>24), byte(p.MTU>>16), byte(p.MTU>>8), byte(p.MTU)
 	copy(b[4:], p.Data)
@@ -27,7 +27,7 @@ func (p *PacketTooBig) Marshal() ([]byte, error) {
 }
 
 // parsePacketTooBig parses b as an ICMP packet too big message body.
-func parsePacketTooBig(b []byte) (MessageBody, error) {
+func parsePacketTooBig(proto int, b []byte) (MessageBody, error) {
 	bodyLen := len(b)
 	if bodyLen < 4 {
 		return nil, errMessageTooShort

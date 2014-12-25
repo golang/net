@@ -19,7 +19,7 @@ func (p *DstUnreach) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *DstUnreach) Marshal() ([]byte, error) {
+func (p *DstUnreach) Marshal(proto int) ([]byte, error) {
 	b := make([]byte, 4+len(p.Data))
 	copy(b[4:], p.Data)
 	return b, nil
@@ -27,7 +27,7 @@ func (p *DstUnreach) Marshal() ([]byte, error) {
 
 // parseDstUnreach parses b as an ICMP destination unreachable message
 // body.
-func parseDstUnreach(b []byte) (MessageBody, error) {
+func parseDstUnreach(proto int, b []byte) (MessageBody, error) {
 	bodyLen := len(b)
 	if bodyLen < 4 {
 		return nil, errMessageTooShort
