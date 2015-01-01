@@ -63,7 +63,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 		b = append(psh, b...)
 	}
 	if m.Body != nil && m.Body.Len() != 0 {
-		mb, err := m.Body.Marshal()
+		mb, err := m.Body.Marshal(m.Type.Protocol())
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +93,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	return b[len(psh):], nil
 }
 
-var parseFns = map[Type]func([]byte) (MessageBody, error){
+var parseFns = map[Type]func(int, []byte) (MessageBody, error){
 	ipv4.ICMPTypeDestinationUnreachable: parseDstUnreach,
 	ipv4.ICMPTypeTimeExceeded:           parseTimeExceeded,
 	ipv4.ICMPTypeParameterProblem:       parseParamProb,
@@ -127,9 +127,9 @@ func ParseMessage(proto int, b []byte) (*Message, error) {
 		return nil, syscall.EINVAL
 	}
 	if fn, ok := parseFns[m.Type]; !ok {
-		m.Body, err = parseDefaultMessageBody(b[4:])
+		m.Body, err = parseDefaultMessageBody(proto, b[4:])
 	} else {
-		m.Body, err = fn(b[4:])
+		m.Body, err = fn(proto, b[4:])
 	}
 	if err != nil {
 		return nil, err

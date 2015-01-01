@@ -10,7 +10,8 @@ type MessageBody interface {
 	Len() int
 
 	// Marshal returns the binary enconding of ICMP message body.
-	Marshal() ([]byte, error)
+	// Proto must be either the ICMPv4 or ICMPv6 protocol number.
+	Marshal(proto int) ([]byte, error)
 }
 
 // A DefaultMessageBody represents the default message body.
@@ -27,12 +28,12 @@ func (p *DefaultMessageBody) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *DefaultMessageBody) Marshal() ([]byte, error) {
+func (p *DefaultMessageBody) Marshal(proto int) ([]byte, error) {
 	return p.Data, nil
 }
 
 // parseDefaultMessageBody parses b as an ICMP message body.
-func parseDefaultMessageBody(b []byte) (MessageBody, error) {
+func parseDefaultMessageBody(proto int, b []byte) (MessageBody, error) {
 	p := &DefaultMessageBody{Data: make([]byte, len(b))}
 	copy(p.Data, b)
 	return p, nil

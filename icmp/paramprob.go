@@ -4,6 +4,8 @@
 
 package icmp
 
+import "golang.org/x/net/internal/iana"
+
 // A ParamProb represents an ICMP parameter problem message body.
 type ParamProb struct {
 	Pointer uintptr // offset within the data where the error was detected
@@ -19,20 +21,31 @@ func (p *ParamProb) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *ParamProb) Marshal() ([]byte, error) {
+func (p *ParamProb) Marshal(proto int) ([]byte, error) {
 	b := make([]byte, 4+len(p.Data))
-	b[0], b[1], b[2], b[3] = byte(p.Pointer>>24), byte(p.Pointer>>16), byte(p.Pointer>>8), byte(p.Pointer)
+	switch proto {
+	case iana.ProtocolICMP:
+		b[0] = byte(p.Pointer)
+	case iana.ProtocolIPv6ICMP:
+		b[0], b[1], b[2], b[3] = byte(p.Pointer>>24), byte(p.Pointer>>16), byte(p.Pointer>>8), byte(p.Pointer)
+	}
 	copy(b[4:], p.Data)
 	return b, nil
 }
 
 // parseParamProb parses b as an ICMP parameter problem message body.
-func parseParamProb(b []byte) (MessageBody, error) {
+func parseParamProb(proto int, b []byte) (MessageBody, error) {
 	bodyLen := len(b)
 	if bodyLen < 4 {
 		return nil, errMessageTooShort
 	}
-	p := &ParamProb{Pointer: uintptr(b[0])<<24 | uintptr(b[1])<<16 | uintptr(b[2])<<8 | uintptr(b[3])}
+	p := &ParamProb{}
+	switch proto {
+	case iana.ProtocolICMP:
+		p.Pointer = uintptr(b[0])
+	case iana.ProtocolIPv6ICMP:
+		p.Pointer = uintptr(b[0])<<24 | uintptr(b[1])<<16 | uintptr(b[2])<<8 | uintptr(b[3])
+	}
 	if bodyLen > 4 {
 		p.Data = make([]byte, bodyLen-4)
 		copy(p.Data, b[4:])

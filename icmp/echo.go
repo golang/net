@@ -20,7 +20,7 @@ func (p *Echo) Len() int {
 }
 
 // Marshal implements the Marshal method of MessageBody interface.
-func (p *Echo) Marshal() ([]byte, error) {
+func (p *Echo) Marshal(proto int) ([]byte, error) {
 	b := make([]byte, 4+len(p.Data))
 	b[0], b[1] = byte(p.ID>>8), byte(p.ID)
 	b[2], b[3] = byte(p.Seq>>8), byte(p.Seq)
@@ -29,7 +29,7 @@ func (p *Echo) Marshal() ([]byte, error) {
 }
 
 // parseEcho parses b as an ICMP echo request or reply message body.
-func parseEcho(b []byte) (MessageBody, error) {
+func parseEcho(proto int, b []byte) (MessageBody, error) {
 	bodyLen := len(b)
 	if bodyLen < 4 {
 		return nil, errMessageTooShort
