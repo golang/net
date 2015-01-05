@@ -26,7 +26,7 @@ type Handler struct {
 	// PropSystem is an optional property management system. If non-nil, TODO.
 	PropSystem PropSystem
 	// Logger is an optional error logger. If non-nil, it will be called
-	// whenever handling a http.Request results in an error.
+	// for all HTTP requests.
 	Logger func(*http.Request, error)
 }
 
@@ -37,8 +37,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if h.LockSystem == nil {
 		status, err = http.StatusInternalServerError, errNoLockSystem
 	} else {
-		// TODO: COPY, MOVE, PROPFIND, PROPPATCH methods. Also, OPTIONS??
+		// TODO: COPY, MOVE, PROPFIND, PROPPATCH methods.
 		switch r.Method {
+		case "OPTIONS":
+			status, err = h.handleOptions(w, r)
 		case "GET", "HEAD", "POST":
 			status, err = h.handleGetHeadPost(w, r)
 		case "DELETE":
@@ -60,13 +62,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(StatusText(status)))
 		}
 	}
-	if h.Logger != nil && err != nil {
+	if h.Logger != nil {
 		h.Logger(r, err)
 	}
 }
 
+type nopCloser struct{}
+
+func (nopCloser) Close() error {
+	return nil
+}
+
 func (h *Handler) confirmLocks(r *http.Request) (closer io.Closer, status int, err error) {
-	ih, ok := parseIfHeader(r.Header.Get("If"))
+	hdr := r.Header.Get("If")
+	if hdr == "" {
+		return nopCloser{}, 0, nil
+	}
+	ih, ok := parseIfHeader(hdr)
 	if !ok {
 		return nil, http.StatusBadRequest, errInvalidIfHeader
 	}
@@ -86,6 +98,24 @@ func (h *Handler) confirmLocks(r *http.Request) (closer io.Closer, status int, e
 		return closer, 0, nil
 	}
 	return nil, http.StatusPreconditionFailed, errLocked
+}
+
+func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status int, err error) {
+	allow := "OPTIONS, LOCK, PUT, MKCOL"
+	if fi, err := h.FileSystem.Stat(r.URL.Path); err == nil {
+		if fi.IsDir() {
+			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, TRACE, PROPPATCH, COPY, MOVE, UNLOCK, PUT, PROPFIND"
+		} else {
+			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, TRACE, PROPPATCH, COPY, MOVE, UNLOCK"
+		}
+	}
+
+	// http://www.webdav.org/specs/rfc4918.html#dav.compliance.classes
+	w.Header().Set("DAV", "1, 2")
+	// http://msdn.microsoft.com/en-au/library/cc250217.aspx
+	w.Header().Set("MS-Author-Via", "DAV")
+	w.Header().Set("Allow", allow)
+	return 0, nil
 }
 
 func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (status int, err error) {
@@ -111,6 +141,9 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 	defer closer.Close()
 
 	if err := h.FileSystem.RemoveAll(r.URL.Path); err != nil {
+		if os.IsNotExist(err) {
+			return http.StatusNotFound, err
+		}
 		// TODO: MultiStatus.
 		return http.StatusMethodNotAllowed, err
 	}
@@ -142,6 +175,9 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 	}
 	defer closer.Close()
 
+	if r.ContentLength > 0 {
+		return http.StatusUnsupportedMediaType, nil
+	}
 	if err := h.FileSystem.Mkdir(r.URL.Path, 0777); err != nil {
 		if os.IsNotExist(err) {
 			return http.StatusConflict, err
