@@ -413,6 +413,7 @@ func (f *memFile) Write(p []byte) (int, error) {
 		f.n.data = d
 	}
 	copy(f.n.data[f.pos:], p)
+	f.pos = epos
 	f.n.modTime = time.Now()
 	return len(p), nil
 }
