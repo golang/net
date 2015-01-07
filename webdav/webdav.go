@@ -67,16 +67,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type nopCloser struct{}
+type nopReleaser struct{}
 
-func (nopCloser) Close() error {
-	return nil
-}
+func (nopReleaser) Release() {}
 
-func (h *Handler) confirmLocks(r *http.Request) (closer io.Closer, status int, err error) {
+func (h *Handler) confirmLocks(r *http.Request) (releaser Releaser, status int, err error) {
 	hdr := r.Header.Get("If")
 	if hdr == "" {
-		return nopCloser{}, 0, nil
+		return nopReleaser{}, 0, nil
 	}
 	ih, ok := parseIfHeader(hdr)
 	if !ok {
@@ -88,16 +86,16 @@ func (h *Handler) confirmLocks(r *http.Request) (closer io.Closer, status int, e
 		if path == "" {
 			path = r.URL.Path
 		}
-		closer, err = h.LockSystem.Confirm(path, l.conditions...)
+		releaser, err = h.LockSystem.Confirm(time.Now(), path, l.conditions...)
 		if err == ErrConfirmationFailed {
 			continue
 		}
 		if err != nil {
 			return nil, http.StatusInternalServerError, err
 		}
-		return closer, 0, nil
+		return releaser, 0, nil
 	}
-	return nil, http.StatusPreconditionFailed, errLocked
+	return nil, http.StatusPreconditionFailed, ErrLocked
 }
 
 func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status int, err error) {
@@ -134,11 +132,11 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	closer, status, err := h.confirmLocks(r)
+	releaser, status, err := h.confirmLocks(r)
 	if err != nil {
 		return status, err
 	}
-	defer closer.Close()
+	defer releaser.Release()
 
 	if err := h.FileSystem.RemoveAll(r.URL.Path); err != nil {
 		if os.IsNotExist(err) {
@@ -151,11 +149,11 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 }
 
 func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	closer, status, err := h.confirmLocks(r)
+	releaser, status, err := h.confirmLocks(r)
 	if err != nil {
 		return status, err
 	}
-	defer closer.Close()
+	defer releaser.Release()
 
 	f, err := h.FileSystem.OpenFile(r.URL.Path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
@@ -169,11 +167,11 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 }
 
 func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	closer, status, err := h.confirmLocks(r)
+	releaser, status, err := h.confirmLocks(r)
 	if err != nil {
 		return status, err
 	}
-	defer closer.Close()
+	defer releaser.Release()
 
 	if r.ContentLength > 0 {
 		return http.StatusUnsupportedMediaType, nil
@@ -197,7 +195,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 		return status, err
 	}
 
-	token, ld := "", LockDetails{}
+	token, ld, now := "", LockDetails{}, time.Now()
 	if li == (lockInfo{}) {
 		// An empty lockInfo means to refresh the lock.
 		ih, ok := parseIfHeader(r.Header.Get("If"))
@@ -210,38 +208,42 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 		if token == "" {
 			return http.StatusBadRequest, errInvalidLockToken
 		}
-		var closer io.Closer
-		ld, closer, err = h.LockSystem.Refresh(token, time.Now(), duration)
+		ld, err = h.LockSystem.Refresh(now, token, duration)
 		if err != nil {
 			if err == ErrNoSuchLock {
 				return http.StatusPreconditionFailed, err
 			}
 			return http.StatusInternalServerError, err
 		}
-		defer closer.Close()
 
 	} else {
 		depth, err := parseDepth(r.Header.Get("Depth"))
 		if err != nil {
 			return http.StatusBadRequest, err
 		}
+		if depth > 0 {
+			// Section 9.10.3 says that "Values other than 0 or infinity must not be
+			// used with the Depth header on a LOCK method".
+			return http.StatusBadRequest, errInvalidDepth
+		}
 		ld = LockDetails{
 			Depth:    depth,
 			Duration: duration,
 			OwnerXML: li.Owner.InnerXML,
-			Path:     r.URL.Path,
+			Root:     r.URL.Path,
 		}
-		var closer io.Closer
-		token, closer, err = h.LockSystem.Create(r.URL.Path, time.Now(), ld)
+		token, err = h.LockSystem.Create(now, ld)
 		if err != nil {
+			if err == ErrLocked {
+				return StatusLocked, err
+			}
 			return http.StatusInternalServerError, err
 		}
 		defer func() {
 			if retErr != nil {
-				h.LockSystem.Unlock(token)
+				h.LockSystem.Unlock(now, token)
 			}
 		}()
-		defer closer.Close()
 
 		// Create the resource if it didn't previously exist.
 		if _, err := h.FileSystem.Stat(r.URL.Path); err != nil {
@@ -272,11 +274,13 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) (status i
 	}
 	t = t[1 : len(t)-1]
 
-	switch err = h.LockSystem.Unlock(t); err {
+	switch err = h.LockSystem.Unlock(time.Now(), t); err {
 	case nil:
 		return http.StatusNoContent, err
 	case ErrForbidden:
 		return http.StatusForbidden, err
+	case ErrLocked:
+		return StatusLocked, err
 	case ErrNoSuchLock:
 		return http.StatusConflict, err
 	default:
@@ -320,10 +324,10 @@ func StatusText(code int) string {
 }
 
 var (
+	errInvalidDepth        = errors.New("webdav: invalid depth")
 	errInvalidIfHeader     = errors.New("webdav: invalid If header")
 	errInvalidLockInfo     = errors.New("webdav: invalid lock info")
 	errInvalidLockToken    = errors.New("webdav: invalid lock token")
-	errLocked              = errors.New("webdav: locked")
 	errNoFileSystem        = errors.New("webdav: no file system")
 	errNoLockSystem        = errors.New("webdav: no lock system")
 	errUnsupportedLockInfo = errors.New("webdav: unsupported lock info")

@@ -79,7 +79,7 @@ func writeLockInfo(w io.Writer, token string, ld LockDetails) (int, error) {
 		"	<D:locktoken><D:href>%s</D:href></D:locktoken>\n"+
 		"	<D:lockroot><D:href>%s</D:href></D:lockroot>\n"+
 		"</D:activelock></D:lockdiscovery></D:prop>",
-		depth, ld.OwnerXML, timeout, escape(token), escape(ld.Path),
+		depth, ld.OwnerXML, timeout, escape(token), escape(ld.Root),
 	)
 }
 
