@@ -404,16 +404,36 @@ func (f *memFile) Stat() (os.FileInfo, error) {
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
+	lenp := len(p)
 	f.n.mu.Lock()
 	defer f.n.mu.Unlock()
-	epos := len(p) + f.pos
-	if epos > len(f.n.data) {
-		d := make([]byte, epos)
-		copy(d, f.n.data)
-		f.n.data = d
+
+	if f.pos < len(f.n.data) {
+		n := copy(f.n.data[f.pos:], p)
+		f.pos += n
+		p = p[n:]
+	} else if f.pos > len(f.n.data) {
+		// Write permits the creation of holes, if we've seek'ed past the
+		// existing end of file.
+		if f.pos <= cap(f.n.data) {
+			oldLen := len(f.n.data)
+			f.n.data = f.n.data[:f.pos]
+			hole := f.n.data[oldLen:]
+			for i := range hole {
+				hole[i] = 0
+			}
+		} else {
+			d := make([]byte, f.pos, f.pos+len(p))
+			copy(d, f.n.data)
+			f.n.data = d
+		}
 	}
-	copy(f.n.data[f.pos:], p)
-	f.pos = epos
+
+	if len(p) > 0 {
+		// We should only get here if f.pos == len(f.n.data).
+		f.n.data = append(f.n.data, p...)
+		f.pos = len(f.n.data)
+	}
 	f.n.modTime = time.Now()
-	return len(p), nil
+	return lenp, nil
 }

@@ -252,9 +252,12 @@ func TestMemFile(t *testing.T) {
 		"write C",
 		"wantData abcdEFghijkyyyzzstsZZAAAABBBBB..........C",
 		"wantSize 41",
-		"seek set 43 want 43",
 		"write D",
-		"wantData abcdEFghijkyyyzzstsZZAAAABBBBB..........C..D",
+		"wantData abcdEFghijkyyyzzstsZZAAAABBBBB..........CD",
+		"wantSize 42",
+		"seek set 43 want 43",
+		"write E",
+		"wantData abcdEFghijkyyyzzstsZZAAAABBBBB..........CD.E",
 		"wantSize 44",
 		"seek set 0 want 0",
 		"write 5*123456789_",
@@ -393,6 +396,57 @@ func TestMemFile(t *testing.T) {
 			if got, want := fi.Size(), int64(n); got != want {
 				t.Fatalf("test case #%d %q: got %d, want %d", i, tc, got, want)
 			}
+		}
+	}
+}
+
+// TestMemFileWriteAllocs tests that writing N consecutive 1KiB chunks to a
+// memFile doesn't allocate a new buffer for each of those N times. Otherwise,
+// calling io.Copy(aMemFile, src) is likely to have quadratic complexity.
+func TestMemFileWriteAllocs(t *testing.T) {
+	fs := NewMemFS()
+	f, err := fs.OpenFile("/xxx", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	defer f.Close()
+
+	xxx := make([]byte, 1024)
+	for i := range xxx {
+		xxx[i] = 'x'
+	}
+
+	a := testing.AllocsPerRun(100, func() {
+		f.Write(xxx)
+	})
+	// AllocsPerRun returns an integral value, so we compare the rounded-down
+	// number to zero.
+	if a > 0 {
+		t.Fatalf("%v allocs per run, want 0", a)
+	}
+}
+
+func BenchmarkMemFileWrite(b *testing.B) {
+	fs := NewMemFS()
+	xxx := make([]byte, 1024)
+	for i := range xxx {
+		xxx[i] = 'x'
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f, err := fs.OpenFile("/xxx", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+		if err != nil {
+			b.Fatalf("OpenFile: %v", err)
+		}
+		for j := 0; j < 100; j++ {
+			f.Write(xxx)
+		}
+		if err := f.Close(); err != nil {
+			b.Fatalf("Close: %v", err)
+		}
+		if err := fs.RemoveAll("/xxx"); err != nil {
+			b.Fatalf("RemoveAll: %v", err)
 		}
 	}
 }
