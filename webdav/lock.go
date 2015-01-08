@@ -103,13 +103,6 @@ type LockDetails struct {
 	// Root is the root resource name being locked. For a zero-depth lock, the
 	// root is the only resource being locked.
 	Root string
-	// Depth is the lock depth. A negative depth means infinite.
-	//
-	// TODO: should depth be restricted to just "0 or infinite" (i.e. change
-	// this field to "Recursive bool") or just "0 or 1 or infinite"? Is
-	// validating that the responsibility of the Handler or the LockSystem
-	// implementations?
-	Depth int
 	// Duration is the lock timeout. A negative duration means infinite.
 	Duration time.Duration
 	// OwnerXML is the verbatim <owner> XML given in a LOCK HTTP request.
@@ -118,6 +111,9 @@ type LockDetails struct {
 	// Does the OwnerXML field need to have more structure? See
 	// https://codereview.appspot.com/175140043/#msg2
 	OwnerXML string
+	// ZeroDepth is whether the lock has zero depth. If it does not have zero
+	// depth, it has infinite depth.
+	ZeroDepth bool
 }
 
 // NewMemLS returns a new in-memory LockSystem.
@@ -161,7 +157,7 @@ func (m *memLS) Create(now time.Time, details LockDetails) (string, error) {
 	m.collectExpiredNodes(now)
 	name := path.Clean("/" + details.Root)
 
-	if !m.canCreate(name, details.Depth) {
+	if !m.canCreate(name, details.ZeroDepth) {
 		return "", ErrLocked
 	}
 	n := m.create(name)
@@ -205,7 +201,7 @@ func (m *memLS) Unlock(now time.Time, token string) error {
 	return nil
 }
 
-func (m *memLS) canCreate(name string, depth int) bool {
+func (m *memLS) canCreate(name string, zeroDepth bool) bool {
 	return walkToRoot(name, func(name0 string, first bool) bool {
 		n := m.byName[name0]
 		if n == nil {
@@ -216,12 +212,12 @@ func (m *memLS) canCreate(name string, depth int) bool {
 				// The target node is already locked.
 				return false
 			}
-			if depth < 0 {
+			if !zeroDepth {
 				// The requested lock depth is infinite, and the fact that n exists
 				// (n != nil) means that a descendent of the target node is locked.
 				return false
 			}
-		} else if n.token != "" && n.details.Depth < 0 {
+		} else if n.token != "" && !n.details.ZeroDepth {
 			// An ancestor of the target node is locked with infinite depth.
 			return false
 		}

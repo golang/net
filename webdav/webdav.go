@@ -38,6 +38,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, err = http.StatusInternalServerError, errNoLockSystem
 	} else {
 		// TODO: COPY, MOVE, PROPFIND, PROPPATCH methods.
+		// MOVE needs to enforce its Depth constraint. See the parseDepth comment.
 		switch r.Method {
 		case "OPTIONS":
 			status, err = h.handleOptions(w, r)
@@ -217,20 +218,22 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 		}
 
 	} else {
-		depth, err := parseDepth(r.Header.Get("Depth"))
-		if err != nil {
-			return http.StatusBadRequest, err
-		}
-		if depth > 0 {
-			// Section 9.10.3 says that "Values other than 0 or infinity must not be
-			// used with the Depth header on a LOCK method".
-			return http.StatusBadRequest, errInvalidDepth
+		// Section 9.10.3 says that "If no Depth header is submitted on a LOCK request,
+		// then the request MUST act as if a "Depth:infinity" had been submitted."
+		depth := infiniteDepth
+		if hdr := r.Header.Get("Depth"); hdr != "" {
+			depth = parseDepth(hdr)
+			if depth != 0 && depth != infiniteDepth {
+				// Section 9.10.3 says that "Values other than 0 or infinity must not be
+				// used with the Depth header on a LOCK method".
+				return http.StatusBadRequest, errInvalidDepth
+			}
 		}
 		ld = LockDetails{
-			Depth:    depth,
-			Duration: duration,
-			OwnerXML: li.Owner.InnerXML,
-			Root:     r.URL.Path,
+			Root:      r.URL.Path,
+			Duration:  duration,
+			OwnerXML:  li.Owner.InnerXML,
+			ZeroDepth: depth == 0,
 		}
 		token, err = h.LockSystem.Create(now, ld)
 		if err != nil {
@@ -288,9 +291,29 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) (status i
 	}
 }
 
-func parseDepth(s string) (int, error) {
-	// TODO: implement.
-	return -1, nil
+const (
+	infiniteDepth = -1
+	invalidDepth  = -2
+)
+
+// parseDepth maps the strings "0", "1" and "infinity" to 0, 1 and
+// infiniteDepth. Parsing any other string returns invalidDepth.
+//
+// Different WebDAV methods have further constraints on valid depths:
+//	- PROPFIND has no further restrictions, as per section 9.1.
+//	- MOVE accepts only "infinity", as per section 9.2.2.
+//	- LOCK accepts only "0" or "infinity", as per section 9.10.3.
+// These constraints are enforced by the handleXxx methods.
+func parseDepth(s string) int {
+	switch s {
+	case "0":
+		return 0
+	case "1":
+		return 1
+	case "infinity":
+		return infiniteDepth
+	}
+	return invalidDepth
 }
 
 func parseTimeout(s string) (time.Duration, error) {

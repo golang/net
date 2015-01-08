@@ -78,12 +78,12 @@ var lockTestNames = []string{
 	"/z/_/z",
 }
 
-func lockTestDepth(name string) int {
+func lockTestZeroDepth(name string) bool {
 	switch name[len(name)-1] {
 	case 'i':
-		return -1
+		return false
 	case 'z':
-		return 0
+		return true
 	}
 	panic(fmt.Sprintf("lock name %q did not end with 'i' or 'z'", name))
 }
@@ -94,16 +94,16 @@ func TestMemLSCanCreate(t *testing.T) {
 
 	for _, name := range lockTestNames {
 		_, err := m.Create(now, LockDetails{
-			Depth:    lockTestDepth(name),
-			Duration: -1,
-			Root:     name,
+			Root:      name,
+			Duration:  -1,
+			ZeroDepth: lockTestZeroDepth(name),
 		})
 		if err != nil {
 			t.Fatalf("creating lock for %q: %v", name, err)
 		}
 	}
 
-	wantCanCreate := func(name string, depth int) bool {
+	wantCanCreate := func(name string, zeroDepth bool) bool {
 		for _, n := range lockTestNames {
 			switch {
 			case n == name:
@@ -112,7 +112,7 @@ func TestMemLSCanCreate(t *testing.T) {
 			case strings.HasPrefix(n, name):
 				// An existing lock would be a child of the proposed lock,
 				// which conflicts if the proposed lock has infinite depth.
-				if depth < 0 {
+				if !zeroDepth {
 					return false
 				}
 			case strings.HasPrefix(name, n):
@@ -128,11 +128,11 @@ func TestMemLSCanCreate(t *testing.T) {
 
 	var check func(int, string)
 	check = func(recursion int, name string) {
-		for _, depth := range []int{-1, 0} {
-			got := m.canCreate(name, depth)
-			want := wantCanCreate(name, depth)
+		for _, zeroDepth := range []bool{false, true} {
+			got := m.canCreate(name, zeroDepth)
+			want := wantCanCreate(name, zeroDepth)
 			if got != want {
-				t.Errorf("canCreate name=%q depth=%d: got %t, want %t", name, depth, got, want)
+				t.Errorf("canCreate name=%q zeroDepth=%d: got %t, want %t", name, zeroDepth, got, want)
 			}
 		}
 		if recursion == 6 {
@@ -162,9 +162,9 @@ func TestMemLSCreateUnlock(t *testing.T) {
 			tokens[name] = ""
 		} else {
 			token, err := m.Create(now, LockDetails{
-				Depth:    lockTestDepth(name),
-				Duration: -1,
-				Root:     name,
+				Root:      name,
+				Duration:  -1,
+				ZeroDepth: lockTestZeroDepth(name),
 			})
 			if err != nil {
 				t.Fatalf("iteration #%d: create %q: %v", i, name, err)
