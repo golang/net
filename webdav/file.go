@@ -126,6 +126,8 @@ type memFS struct {
 //   - "/", "foo", false
 //   - "/foo/", "bar", false
 //   - "/foo/bar/", "x", true
+// The frag argument will be empty only if dir is the root node and the walk
+// ends at that root node.
 func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, final bool) error) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -146,6 +148,9 @@ func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, f
 		final := i < 0
 		if !final {
 			frag, remaining = fullname[:i], fullname[i+1:]
+		}
+		if frag == "" && dir != &fs.root {
+			panic("webdav: empty path fragment for a clean path")
 		}
 		if err := f(dir, frag, final); err != nil {
 			return &os.PathError{
@@ -204,32 +209,38 @@ func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error)
 		if !final {
 			return nil
 		}
+		var n *memFSNode
 		if frag == "" {
-			return os.ErrInvalid
-		}
-		if flag&(os.O_SYNC|os.O_APPEND) != 0 {
-			return os.ErrInvalid
-		}
-		n := dir.children[frag]
-		if flag&os.O_CREATE != 0 {
-			if flag&os.O_EXCL != 0 && n != nil {
-				return os.ErrExist
+			if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
+				return os.ErrPermission
+			}
+			n = &fs.root
+
+		} else {
+			n = dir.children[frag]
+			if flag&(os.O_SYNC|os.O_APPEND) != 0 {
+				return os.ErrInvalid
+			}
+			if flag&os.O_CREATE != 0 {
+				if flag&os.O_EXCL != 0 && n != nil {
+					return os.ErrExist
+				}
+				if n == nil {
+					n = &memFSNode{
+						name: frag,
+						mode: perm.Perm(),
+					}
+					dir.children[frag] = n
+				}
 			}
 			if n == nil {
-				n = &memFSNode{
-					name: frag,
-					mode: perm.Perm(),
-				}
-				dir.children[frag] = n
+				return os.ErrNotExist
 			}
-		}
-		if n == nil {
-			return os.ErrNotExist
-		}
-		if flag&(os.O_WRONLY|os.O_RDWR) != 0 && flag&os.O_TRUNC != 0 {
-			n.mu.Lock()
-			n.data = nil
-			n.mu.Unlock()
+			if flag&(os.O_WRONLY|os.O_RDWR) != 0 && flag&os.O_TRUNC != 0 {
+				n.mu.Lock()
+				n.data = nil
+				n.mu.Unlock()
+			}
 		}
 
 		children := make([]os.FileInfo, 0, len(n.children))
@@ -271,7 +282,8 @@ func (fs *memFS) Stat(name string) (os.FileInfo, error) {
 			return nil
 		}
 		if frag == "" {
-			return os.ErrInvalid
+			n = &fs.root
+			return nil
 		}
 		n = dir.children[frag]
 		if n == nil {
@@ -342,11 +354,11 @@ func (f *memFile) Close() error {
 }
 
 func (f *memFile) Read(p []byte) (int, error) {
-	if f.n.IsDir() {
-		return 0, os.ErrInvalid
-	}
 	f.n.mu.Lock()
 	defer f.n.mu.Unlock()
+	if f.n.mode.IsDir() {
+		return 0, os.ErrInvalid
+	}
 	if f.pos >= len(f.n.data) {
 		return 0, io.EOF
 	}
@@ -356,14 +368,19 @@ func (f *memFile) Read(p []byte) (int, error) {
 }
 
 func (f *memFile) Readdir(count int) ([]os.FileInfo, error) {
-	if !f.n.IsDir() {
-		return nil, os.ErrInvalid
-	}
 	f.n.mu.Lock()
 	defer f.n.mu.Unlock()
+	if !f.n.mode.IsDir() {
+		return nil, os.ErrInvalid
+	}
 	old := f.pos
 	if old >= len(f.children) {
-		return nil, io.EOF
+		// The os.File Readdir docs say that at the end of a directory,
+		// the error is io.EOF if count > 0 and nil if count <= 0.
+		if count > 0 {
+			return nil, io.EOF
+		}
+		return nil, nil
 	}
 	if count > 0 {
 		f.pos += count
@@ -408,6 +425,9 @@ func (f *memFile) Write(p []byte) (int, error) {
 	f.n.mu.Lock()
 	defer f.n.mu.Unlock()
 
+	if f.n.mode.IsDir() {
+		return 0, os.ErrInvalid
+	}
 	if f.pos < len(f.n.data) {
 		n := copy(f.n.data[f.pos:], p)
 		f.pos += n

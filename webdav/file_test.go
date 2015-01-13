@@ -198,6 +198,61 @@ func TestWalk(t *testing.T) {
 	}
 }
 
+func TestMemFSRoot(t *testing.T) {
+	fs := NewMemFS()
+	for i := 0; i < 5; i++ {
+		stat, err := fs.Stat("/")
+		if err != nil {
+			t.Fatalf("i=%d: Stat: %v", i, err)
+		}
+		if !stat.IsDir() {
+			t.Fatalf("i=%d: Stat.IsDir is false, want true", i)
+		}
+
+		f, err := fs.OpenFile("/", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("i=%d: OpenFile: %v", i, err)
+		}
+		defer f.Close()
+		children, err := f.Readdir(-1)
+		if err != nil {
+			t.Fatalf("i=%d: Readdir: %v", i, err)
+		}
+		if len(children) != i {
+			t.Fatalf("i=%d: got %d children, want %d", i, len(children), i)
+		}
+
+		if _, err := f.Write(make([]byte, 1)); err == nil {
+			t.Fatalf("i=%d: Write: got nil error, want non-nil", i)
+		}
+
+		if err := fs.Mkdir(fmt.Sprintf("/dir%d", i), 0777); err != nil {
+			t.Fatalf("i=%d: Mkdir: %v", i, err)
+		}
+	}
+}
+
+func TestMemFileReaddir(t *testing.T) {
+	fs := NewMemFS()
+	if err := fs.Mkdir("/foo", 0777); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	readdir := func(count int) ([]os.FileInfo, error) {
+		f, err := fs.OpenFile("/foo", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile: %v", err)
+		}
+		defer f.Close()
+		return f.Readdir(count)
+	}
+	if got, err := readdir(-1); len(got) != 0 || err != nil {
+		t.Fatalf("readdir(-1): got %d fileInfos with err=%v, want 0, <nil>", len(got), err)
+	}
+	if got, err := readdir(+1); len(got) != 0 || err != io.EOF {
+		t.Fatalf("readdir(+1): got %d fileInfos with err=%v, want 0, EOF", len(got), err)
+	}
+}
+
 func TestMemFile(t *testing.T) {
 	testCases := []string{
 		"wantData ",
