@@ -359,6 +359,7 @@ var (
 	errInvalidIfHeader     = errors.New("webdav: invalid If header")
 	errInvalidLockInfo     = errors.New("webdav: invalid lock info")
 	errInvalidLockToken    = errors.New("webdav: invalid lock token")
+	errInvalidPropfind     = errors.New("webdav: invalid propfind")
 	errNoFileSystem        = errors.New("webdav: no file system")
 	errNoLockSystem        = errors.New("webdav: no lock system")
 	errNotADirectory       = errors.New("webdav: not a directory")

@@ -93,3 +93,93 @@ func escape(s string) string {
 	}
 	return s
 }
+
+// Next returns the next token, if any, in the XML stream of d.
+// RFC 4918 requires to ignore comments, processing instructions
+// and directives.
+// http://www.webdav.org/specs/rfc4918.html#property_values
+// http://www.webdav.org/specs/rfc4918.html#xml-extensibility
+func next(d *xml.Decoder) (xml.Token, error) {
+	for {
+		t, err := d.Token()
+		if err != nil {
+			return t, err
+		}
+		switch t.(type) {
+		case xml.Comment, xml.Directive, xml.ProcInst:
+			continue
+		default:
+			return t, nil
+		}
+	}
+}
+
+type propnames []xml.Name
+
+// UnmarshalXML appends the property names enclosed within start to pn.
+//
+// It returns an error if start does not contain any properties or if
+// properties contain values. Character data between properties is ignored.
+func (pn *propnames) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for {
+		t, err := next(d)
+		if err != nil {
+			return err
+		}
+		switch t.(type) {
+		case xml.EndElement:
+			if len(*pn) == 0 {
+				return fmt.Errorf("%s must not be empty", start.Name.Local)
+			}
+			return nil
+		case xml.StartElement:
+			name := t.(xml.StartElement).Name
+			t, err = next(d)
+			if err != nil {
+				return err
+			}
+			if _, ok := t.(xml.EndElement); !ok {
+				return fmt.Errorf("unexpected token %T", t)
+			}
+			*pn = append(*pn, name)
+		}
+	}
+}
+
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_propfind
+type propfind struct {
+	XMLName  xml.Name  `xml:"DAV: propfind"`
+	Allprop  *struct{} `xml:"DAV: allprop"`
+	Propname *struct{} `xml:"DAV: propname"`
+	Prop     propnames `xml:"DAV: prop"`
+	Include  propnames `xml:"DAV: include"`
+}
+
+func readPropfind(r io.Reader) (pf propfind, status int, err error) {
+	c := countingReader{r: r}
+	if err = xml.NewDecoder(&c).Decode(&pf); err != nil {
+		if err == io.EOF {
+			if c.n == 0 {
+				// An empty body means to propfind allprop.
+				// http://www.webdav.org/specs/rfc4918.html#METHOD_PROPFIND
+				return propfind{Allprop: new(struct{})}, 0, nil
+			}
+			err = errInvalidPropfind
+		}
+		return propfind{}, http.StatusBadRequest, err
+	}
+
+	if pf.Allprop == nil && pf.Include != nil {
+		return propfind{}, http.StatusBadRequest, errInvalidPropfind
+	}
+	if pf.Allprop != nil && (pf.Prop != nil || pf.Propname != nil) {
+		return propfind{}, http.StatusBadRequest, errInvalidPropfind
+	}
+	if pf.Prop != nil && pf.Propname != nil {
+		return propfind{}, http.StatusBadRequest, errInvalidPropfind
+	}
+	if pf.Propname == nil && pf.Allprop == nil && pf.Prop == nil {
+		return propfind{}, http.StatusBadRequest, errInvalidPropfind
+	}
+	return pf, 0, nil
+}
