@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestDir(t *testing.T) {
+func TestDirResolve(t *testing.T) {
 	testCases := []struct {
 		dir, name, want string
 	}{
@@ -196,6 +196,149 @@ func TestWalk(t *testing.T) {
 			t.Errorf("tc.dir=%q: %v", tc.dir, err)
 		}
 	}
+}
+
+func testFS(t *testing.T, fs FileSystem) {
+	errStr := func(err error) string {
+		switch {
+		case os.IsExist(err):
+			return "errExist"
+		case os.IsNotExist(err):
+			return "errNotExist"
+		case err != nil:
+			return "err"
+		}
+		return "ok"
+	}
+
+	// The non-"stat" test cases should change the file system state. The
+	// indentation of the "stat"s helps distinguish such test cases.
+	testCases := []string{
+		"  stat / want dir",
+		"  stat /a want errNotExist",
+		"  stat /d want errNotExist",
+		"  stat /d/e want errNotExist",
+		"create /a A want ok",
+		"  stat /a want 1",
+		"create /d/e EEE want errNotExist",
+		"mk-dir /a want errExist",
+		"mk-dir /d/m want errNotExist",
+		"mk-dir /d want ok",
+		"  stat /d want dir",
+		"create /d/e EEE want ok",
+		"  stat /d/e want 3",
+		"create /d/f FFFF want ok",
+		"create /d/g GGGGGGG want ok",
+		"mk-dir /d/m want ok",
+		"mk-dir /d/m want errExist",
+		"create /d/m/p PPPPP want ok",
+		"  stat /d/e want 3",
+		"  stat /d/f want 4",
+		"  stat /d/g want 7",
+		"  stat /d/h want errNotExist",
+		"  stat /d/m want dir",
+		"  stat /d/m/p want 5",
+		"rm-all /d want ok",
+		"  stat /a want 1",
+		"  stat /d want errNotExist",
+		"  stat /d/e want errNotExist",
+		"  stat /d/f want errNotExist",
+		"  stat /d/g want errNotExist",
+		"  stat /d/m want errNotExist",
+		"  stat /d/m/p want errNotExist",
+		"mk-dir /d/m want errNotExist",
+		"mk-dir /d want ok",
+		"create /d/f FFFF want ok",
+		"rm-all /d/f want ok",
+		"mk-dir /d/m want ok",
+		"rm-all /z want ok",
+		"rm-all / want err",
+		"create /b BB want ok",
+		"  stat / want dir",
+		"  stat /a want 1",
+		"  stat /b want 2",
+		"  stat /c want errNotExist",
+		"  stat /d want dir",
+		"  stat /d/m want dir",
+	}
+
+	for i, tc := range testCases {
+		tc = strings.TrimSpace(tc)
+		j := strings.IndexByte(tc, ' ')
+		if j < 0 {
+			t.Fatalf("test case #%d %q: invalid command", i, tc)
+		}
+		op, arg := tc[:j], tc[j+1:]
+
+		switch op {
+		default:
+			t.Fatalf("test case #%d %q: invalid operation %q", i, tc, op)
+
+		case "create":
+			parts := strings.Split(arg, " ")
+			if len(parts) != 4 || parts[2] != "want" {
+				t.Fatalf("test case #%d %q: invalid write", i, tc)
+			}
+			f, opErr := fs.OpenFile(parts[0], os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+			if got := errStr(opErr); got != parts[3] {
+				t.Fatalf("test case #%d %q: OpenFile: got %q (%v), want %q", i, tc, got, opErr, parts[3])
+			}
+			if f != nil {
+				if _, err := f.Write([]byte(parts[1])); err != nil {
+					t.Fatalf("test case #%d %q: Write: %v", i, tc, err)
+				}
+				if err := f.Close(); err != nil {
+					t.Fatalf("test case #%d %q: Close: %v", i, tc, err)
+				}
+			}
+
+		case "mk-dir", "rm-all", "stat":
+			parts := strings.Split(arg, " ")
+			if len(parts) != 3 {
+				t.Fatalf("test case #%d %q: invalid %s", i, tc, op)
+			}
+
+			got, opErr := "", error(nil)
+			switch op {
+			case "mk-dir":
+				opErr = fs.Mkdir(parts[0], 0777)
+			case "rm-all":
+				opErr = fs.RemoveAll(parts[0])
+			case "stat":
+				var stat os.FileInfo
+				if stat, opErr = fs.Stat(parts[0]); opErr == nil {
+					if stat.IsDir() {
+						got = "dir"
+					} else {
+						got = strconv.Itoa(int(stat.Size()))
+					}
+				}
+			}
+			if got == "" {
+				got = errStr(opErr)
+			}
+
+			if parts[1] != "want" {
+				t.Fatalf("test case #%d %q: invalid %s", i, tc, op)
+			}
+			if want := parts[2]; got != want {
+				t.Fatalf("test case #%d %q: got %q (%v), want %q", i, tc, got, opErr, want)
+			}
+		}
+	}
+}
+
+func TestDir(t *testing.T) {
+	td, err := ioutil.TempDir("", "webdav-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(td)
+	testFS(t, Dir(td))
+}
+
+func TestMemFS(t *testing.T) {
+	testFS(t, NewMemFS())
 }
 
 func TestMemFSRoot(t *testing.T) {

@@ -69,7 +69,11 @@ func (d Dir) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	if name = d.resolve(name); name == "" {
 		return nil, os.ErrNotExist
 	}
-	return os.OpenFile(name, flag, perm)
+	f, err := os.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 func (d Dir) RemoveAll(name string) error {
@@ -266,9 +270,6 @@ func (fs *memFS) RemoveAll(name string) error {
 		}
 		if frag == "" {
 			return os.ErrInvalid
-		}
-		if _, ok := dir.children[frag]; !ok {
-			return os.ErrNotExist
 		}
 		delete(dir.children, frag)
 		return nil
