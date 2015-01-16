@@ -33,24 +33,65 @@ import (
 
 type serverTester struct {
 	cc        net.Conn // client conn
-	t         *testing.T
+	t         testing.TB
 	ts        *httptest.Server
 	fr        *Framer
 	logBuf    *bytes.Buffer
 	sc        *serverConn
 	logFilter []string // substrings to filter out
+
+	// writing headers:
+	headerBuf bytes.Buffer
+	hpackEnc  *hpack.Encoder
+
+	// reading frames:
+	frc       chan Frame
+	frErrc    chan error
+	readTimer *time.Timer
 }
 
-func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
+func init() {
+	testHookOnPanicMu = new(sync.Mutex)
+}
+
+func resetHooks() {
+	testHookOnPanicMu.Lock()
+	testHookOnPanic = nil
+	testHookOnPanicMu.Unlock()
+}
+
+func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
+	resetHooks()
+
 	logBuf := new(bytes.Buffer)
 	ts := httptest.NewUnstartedServer(handler)
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{NextProtoTLS},
+	}
+
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case func(*tls.Config):
+			v(tlsConfig)
+		case func(*httptest.Server):
+			v(ts)
+		default:
+			t.Fatalf("unknown newServerTester option type %T", v)
+		}
+	}
+
 	ConfigureServer(ts.Config, &Server{})
 
 	st := &serverTester{
 		t:      t,
 		ts:     ts,
 		logBuf: logBuf,
+		frc:    make(chan Frame, 1),
+		frErrc: make(chan error, 1),
 	}
+	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.Config.ErrorLog = log.New(io.MultiWriter(twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
@@ -69,10 +110,7 @@ func newServerTester(t *testing.T, handler http.HandlerFunc) *serverTester {
 		sc = v
 		sc.testHookCh = make(chan func())
 	}
-	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{NextProtoTLS},
-	})
+	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +140,8 @@ func (st *serverTester) stream(id uint32) *stream {
 func (st *serverTester) streamState(id uint32) streamState {
 	ch := make(chan streamState, 1)
 	st.sc.testHookCh <- func() {
-		ch <- st.sc.state(id)
+		state, _ := st.sc.state(id)
+		ch <- state
 	}
 	return <-ch
 }
@@ -151,11 +190,80 @@ func (st *serverTester) writeHeaders(p HeadersFrameParam) {
 	}
 }
 
+func (st *serverTester) encodeHeaderField(k, v string) {
+	err := st.hpackEnc.WriteField(hpack.HeaderField{Name: k, Value: v})
+	if err != nil {
+		st.t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
+	}
+}
+
+// encodeHeader encodes headers and returns their HPACK bytes. headers
+// must contain an even number of key/value pairs.  There may be
+// multiple pairs for keys (e.g. "cookie").  The :method, :path, and
+// :scheme headers default to GET, / and https.
+func (st *serverTester) encodeHeader(headers ...string) []byte {
+	if len(headers)%2 == 1 {
+		panic("odd number of kv args")
+	}
+
+	st.headerBuf.Reset()
+
+	if len(headers) == 0 {
+		// Fast path, mostly for benchmarks, so test code doesn't pollute
+		// profiles when we're looking to improve server allocations.
+		st.encodeHeaderField(":method", "GET")
+		st.encodeHeaderField(":path", "/")
+		st.encodeHeaderField(":scheme", "https")
+		return st.headerBuf.Bytes()
+	}
+
+	if len(headers) == 2 && headers[0] == ":method" {
+		// Another fast path for benchmarks.
+		st.encodeHeaderField(":method", headers[1])
+		st.encodeHeaderField(":path", "/")
+		st.encodeHeaderField(":scheme", "https")
+		return st.headerBuf.Bytes()
+	}
+
+	pseudoCount := map[string]int{}
+	keys := []string{":method", ":path", ":scheme"}
+	vals := map[string][]string{
+		":method": {"GET"},
+		":path":   {"/"},
+		":scheme": {"https"},
+	}
+	for len(headers) > 0 {
+		k, v := headers[0], headers[1]
+		headers = headers[2:]
+		if _, ok := vals[k]; !ok {
+			keys = append(keys, k)
+		}
+		if strings.HasPrefix(k, ":") {
+			pseudoCount[k]++
+			if pseudoCount[k] == 1 {
+				vals[k] = []string{v}
+			} else {
+				// Allows testing of invalid headers w/ dup pseudo fields.
+				vals[k] = append(vals[k], v)
+			}
+		} else {
+			vals[k] = append(vals[k], v)
+		}
+	}
+	st.headerBuf.Reset()
+	for _, k := range keys {
+		for _, v := range vals[k] {
+			st.encodeHeaderField(k, v)
+		}
+	}
+	return st.headerBuf.Bytes()
+}
+
 // bodylessReq1 writes a HEADERS frames with StreamID 1 and EndStream and EndHeaders set.
 func (st *serverTester) bodylessReq1(headers ...string) {
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
-		BlockFragment: encodeHeader(st.t, headers...),
+		BlockFragment: st.encodeHeader(headers...),
 		EndStream:     true,
 		EndHeaders:    true,
 	})
@@ -168,22 +276,25 @@ func (st *serverTester) writeData(streamID uint32, endStream bool, data []byte) 
 }
 
 func (st *serverTester) readFrame() (Frame, error) {
-	frc := make(chan Frame, 1)
-	errc := make(chan error, 1)
 	go func() {
 		fr, err := st.fr.ReadFrame()
 		if err != nil {
-			errc <- err
+			st.frErrc <- err
 		} else {
-			frc <- fr
+			st.frc <- fr
 		}
 	}()
-	t := time.NewTimer(2 * time.Second)
+	t := st.readTimer
+	if t == nil {
+		t = time.NewTimer(2 * time.Second)
+		st.readTimer = t
+	}
+	t.Reset(2 * time.Second)
 	defer t.Stop()
 	select {
-	case f := <-frc:
+	case f := <-st.frc:
 		return f, nil
-	case err := <-errc:
+	case err := <-st.frErrc:
 		return nil, err
 	case <-t.C:
 		return nil, errors.New("timeout waiting for frame")
@@ -282,7 +393,7 @@ func (st *serverTester) wantRSTStream(streamID uint32, errCode ErrCode) {
 func (st *serverTester) wantWindowUpdate(streamID, incr uint32) {
 	f, err := st.readFrame()
 	if err != nil {
-		st.t.Fatalf("Error while expecting an RSTStream frame: %v", err)
+		st.t.Fatalf("Error while expecting a WINDOW_UPDATE frame: %v", err)
 	}
 	wu, ok := f.(*WindowUpdateFrame)
 	if !ok {
@@ -333,7 +444,7 @@ func TestServer(t *testing.T) {
 
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
-		BlockFragment: encodeHeader(t),
+		BlockFragment: st.encodeHeader(),
 		EndStream:     true, // no DATA frames
 		EndHeaders:    true,
 	})
@@ -349,7 +460,7 @@ func TestServer_Request_Get(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, "foo-bar", "some-value"),
+			BlockFragment: st.encodeHeader("foo-bar", "some-value"),
 			EndStream:     true, // no DATA frames
 			EndHeaders:    true,
 		})
@@ -388,13 +499,13 @@ func TestServer_Request_Get_PathSlashes(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":path", "/%2f/"),
+			BlockFragment: st.encodeHeader(":path", "/%2f/"),
 			EndStream:     true, // no DATA frames
 			EndHeaders:    true,
 		})
 	}, func(r *http.Request) {
 		if r.RequestURI != "/%2f/" {
-			t.Errorf("RequestURI = %q; want /%2f/", r.RequestURI)
+			t.Errorf("RequestURI = %q; want /%%2f/", r.RequestURI)
 		}
 		if r.URL.Path != "///" {
 			t.Errorf("URL.Path = %q; want ///", r.URL.Path)
@@ -410,7 +521,7 @@ func TestServer_Request_Post_NoContentLength_EndStream(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":method", "POST"),
+			BlockFragment: st.encodeHeader(":method", "POST"),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -431,7 +542,7 @@ func TestServer_Request_Post_Body_ImmediateEOF(t *testing.T) {
 	testBodyContents(t, -1, "", func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":method", "POST"),
+			BlockFragment: st.encodeHeader(":method", "POST"),
 			EndStream:     false, // to say DATA frames are coming
 			EndHeaders:    true,
 		})
@@ -444,7 +555,7 @@ func TestServer_Request_Post_Body_OneData(t *testing.T) {
 	testBodyContents(t, -1, content, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":method", "POST"),
+			BlockFragment: st.encodeHeader(":method", "POST"),
 			EndStream:     false, // to say DATA frames are coming
 			EndHeaders:    true,
 		})
@@ -457,7 +568,7 @@ func TestServer_Request_Post_Body_TwoData(t *testing.T) {
 	testBodyContents(t, -1, content, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":method", "POST"),
+			BlockFragment: st.encodeHeader(":method", "POST"),
 			EndStream:     false, // to say DATA frames are coming
 			EndHeaders:    true,
 		})
@@ -471,7 +582,7 @@ func TestServer_Request_Post_Body_ContentLength_Correct(t *testing.T) {
 	testBodyContents(t, int64(len(content)), content, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID: 1, // clients send odd numbers
-			BlockFragment: encodeHeader(t,
+			BlockFragment: st.encodeHeader(
 				":method", "POST",
 				"content-length", strconv.Itoa(len(content)),
 			),
@@ -487,7 +598,7 @@ func TestServer_Request_Post_Body_ContentLength_TooLarge(t *testing.T) {
 		func(st *serverTester) {
 			st.writeHeaders(HeadersFrameParam{
 				StreamID: 1, // clients send odd numbers
-				BlockFragment: encodeHeader(t,
+				BlockFragment: st.encodeHeader(
 					":method", "POST",
 					"content-length", "3",
 				),
@@ -503,7 +614,7 @@ func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
 		func(st *serverTester) {
 			st.writeHeaders(HeadersFrameParam{
 				StreamID: 1, // clients send odd numbers
-				BlockFragment: encodeHeader(t,
+				BlockFragment: st.encodeHeader(
 					":method", "POST",
 					"content-length", "4",
 				),
@@ -563,7 +674,7 @@ func TestServer_Request_Get_Host(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, "host", host),
+			BlockFragment: st.encodeHeader("host", host),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -580,7 +691,7 @@ func TestServer_Request_Get_Authority(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(t, ":authority", host),
+			BlockFragment: st.encodeHeader(":authority", host),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -598,7 +709,7 @@ func TestServer_Request_WithContinuation(t *testing.T) {
 		"Foo-Three": []string{"value-three"},
 	}
 	testServerRequest(t, func(st *serverTester) {
-		fullHeaders := encodeHeader(t,
+		fullHeaders := st.encodeHeader(
 			"foo-one", "value-one",
 			"foo-two", "value-two",
 			"foo-three", "value-three",
@@ -781,37 +892,24 @@ func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
 
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
-		BlockFragment: encodeHeader(t, ":method", "POST"),
+		BlockFragment: st.encodeHeader(":method", "POST"),
 		EndStream:     false, // data coming
 		EndHeaders:    true,
 	})
-	st.writeData(1, true, []byte("abcdef"))
-	puppet.do(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 3)
-		_, err := io.ReadFull(r.Body, buf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if string(buf) != "abc" {
-			t.Errorf("read %q; want abc", buf)
-		}
-	})
+	st.writeData(1, false, []byte("abcdef"))
+	puppet.do(readBodyHandler(t, "abc"))
 	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
-	puppet.do(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 3)
-		_, err := io.ReadFull(r.Body, buf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if string(buf) != "def" {
-			t.Errorf("read %q; want abc", buf)
-		}
-	})
+
+	puppet.do(readBodyHandler(t, "def"))
 	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
+
+	st.writeData(1, true, []byte("ghijkl")) // END_STREAM here
+	puppet.do(readBodyHandler(t, "ghi"))
+	puppet.do(readBodyHandler(t, "jkl"))
+	st.wantWindowUpdate(0, 3)
+	st.wantWindowUpdate(0, 3) // no more stream-level, since END_STREAM
 }
 
 func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
@@ -842,7 +940,7 @@ func TestServer_Send_RstStream_After_Bogus_WindowUpdate(t *testing.T) {
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		BlockFragment: st.encodeHeader(":method", "POST"),
 		EndStream:     false, // keep it open
 		EndHeaders:    true,
 	})
@@ -871,7 +969,7 @@ func testServerPostUnblock(t *testing.T,
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: encodeHeader(st.t, append([]string{":method", "POST"}, otherHeaders...)...),
+		BlockFragment: st.encodeHeader(append([]string{":method", "POST"}, otherHeaders...)...),
 		EndStream:     false, // keep it open
 		EndHeaders:    true,
 	})
@@ -982,7 +1080,7 @@ func TestServer_StateTransitions(t *testing.T) {
 
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
-		BlockFragment: encodeHeader(st.t, ":method", "POST"),
+		BlockFragment: st.encodeHeader(":method", "POST"),
 		EndStream:     false, // keep it open
 		EndHeaders:    true,
 	})
@@ -1009,13 +1107,13 @@ func TestServer_Rejects_HeadersNoEnd_Then_Headers(t *testing.T) {
 	testServerRejects(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    false,
 		})
 		st.writeHeaders(HeadersFrameParam{ // Not a continuation.
 			StreamID:      3, // different stream.
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -1027,7 +1125,7 @@ func TestServer_Rejects_HeadersNoEnd_Then_Ping(t *testing.T) {
 	testServerRejects(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    false,
 		})
@@ -1042,7 +1140,7 @@ func TestServer_Rejects_HeadersEnd_Then_Continuation(t *testing.T) {
 	testServerRejects(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -1058,7 +1156,7 @@ func TestServer_Rejects_HeadersNoEnd_Then_ContinuationWrongStream(t *testing.T) 
 	testServerRejects(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    false,
 		})
@@ -1074,7 +1172,7 @@ func TestServer_Rejects_Headers0(t *testing.T) {
 		st.fr.AllowIllegalWrites = true
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      0,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -1085,7 +1183,7 @@ func TestServer_Rejects_Headers0(t *testing.T) {
 func TestServer_Rejects_Continuation0(t *testing.T) {
 	testServerRejects(t, func(st *serverTester) {
 		st.fr.AllowIllegalWrites = true
-		if err := st.fr.WriteContinuation(0, true, encodeHeader(t)); err != nil {
+		if err := st.fr.WriteContinuation(0, true, st.encodeHeader()); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -1616,7 +1714,7 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 	}, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: encodeHeader(st.t, ":method", "POST", "expect", "100-continue"),
+			BlockFragment: st.encodeHeader(":method", "POST", "expect", "100-continue"),
 			EndStream:     false,
 			EndHeaders:    true,
 		})
@@ -1640,7 +1738,6 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		st.writeData(1, true, []byte(msg))
 
 		st.wantWindowUpdate(0, uint32(len(msg)))
-		st.wantWindowUpdate(1, uint32(len(msg)))
 
 		hf = st.wantHeaders()
 		if hf.StreamEnded() {
@@ -1683,7 +1780,7 @@ func TestServer_HandlerWriteErrorOnDisconnect(t *testing.T) {
 	}, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     false,
 			EndHeaders:    true,
 		})
@@ -1727,7 +1824,7 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	sendReq := func(id uint32, headers ...string) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      id,
-			BlockFragment: encodeHeader(st.t, headers...),
+			BlockFragment: st.encodeHeader(headers...),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -1746,7 +1843,7 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	// (It's also sent as a CONTINUATION, to verify we still track the decoder context,
 	// even if we're rejecting it)
 	rejectID := streamID()
-	headerBlock := encodeHeader(st.t, ":path", testPath)
+	headerBlock := st.encodeHeader(":path", testPath)
 	frag1, frag2 := headerBlock[:3], headerBlock[3:]
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      rejectID,
@@ -1799,20 +1896,26 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 			}
 		}
 		if n < 5 {
-			t.Errorf("Only got %d CONTINUATION frames; expected 5+ (currently 6)")
+			t.Errorf("Only got %d CONTINUATION frames; expected 5+ (currently 6)", n)
 		}
 	})
 }
 
+// This previously crashed (reported by Mathieu Lonjaret as observed
+// while using Camlistore) because we got a DATA frame from the client
+// after the handler exited and our logic at the time was wrong,
+// keeping a stream in the map in stateClosed, which tickled an
+// invariant check later when we tried to remove that stream (via
+// defer sc.closeAllStreamsOnConnClose) when the serverConn serve loop
+// ended.
 func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
-	condSkipFailingTest(t)
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		// nothing
 		return nil
 	}, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
-			BlockFragment: encodeHeader(st.t),
+			BlockFragment: st.encodeHeader(),
 			EndStream:     false, // DATA is coming
 			EndHeaders:    true,
 		})
@@ -1820,22 +1923,116 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		if !hf.HeadersEnded() || !hf.StreamEnded() {
 			t.Fatalf("want END_HEADERS+END_STREAM, got %v", hf)
 		}
+
+		// Sent when the a Handler closes while a client has
+		// indicated it's still sending DATA:
+		st.wantRSTStream(1, ErrCodeCancel)
+
 		// Now the handler has ended, so it's ended its
 		// stream, but the client hasn't closed its side
 		// (stateClosedLocal).  So send more data and verify
 		// it doesn't crash with an internal invariant panic, like
 		// it did before.
 		st.writeData(1, true, []byte("foo"))
+
+		// Sent after a peer sends data anyway (admittedly the
+		// previous RST_STREAM might've still been in-flight),
+		// but they'll get the more friendly 'cancel' code
+		// first.
+		st.wantRSTStream(1, ErrCodeStreamClosed)
+
+		// Set up a bunch of machinery to record the panic we saw
+		// previously.
+		var (
+			panMu    sync.Mutex
+			panicVal interface{}
+		)
+
+		testHookOnPanicMu.Lock()
+		testHookOnPanic = func(sc *serverConn, pv interface{}) bool {
+			panMu.Lock()
+			panicVal = pv
+			panMu.Unlock()
+			return true
+		}
+		testHookOnPanicMu.Unlock()
+
+		// Now force the serve loop to end, via closing the connection.
 		st.cc.Close()
 		select {
 		case <-st.sc.doneServing:
 			// Loop has exited.
+			panMu.Lock()
+			got := panicVal
+			panMu.Unlock()
+			if got != nil {
+				t.Errorf("Got panic: %v", got)
+			}
 		case <-time.After(5 * time.Second):
 			t.Error("timeout")
 		}
 	})
 }
 
+func TestServer_Rejects_TLS10(t *testing.T) { testRejectTLS(t, tls.VersionTLS10) }
+func TestServer_Rejects_TLS11(t *testing.T) { testRejectTLS(t, tls.VersionTLS11) }
+
+func testRejectTLS(t *testing.T, max uint16) {
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		c.MaxVersion = max
+	})
+	defer st.Close()
+	gf := st.wantGoAway()
+	if got, want := gf.ErrCode, ErrCodeInadequateSecurity; got != want {
+		t.Errorf("Got error code %v; want %v", got, want)
+	}
+}
+
+func TestServer_Rejects_TLSBadCipher(t *testing.T) {
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		// Only list bad ones:
+		c.CipherSuites = []uint16{
+			tls.TLS_RSA_WITH_RC4_128_SHA,
+			tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		}
+	})
+	defer st.Close()
+	gf := st.wantGoAway()
+	if got, want := gf.ErrCode, ErrCodeInadequateSecurity; got != want {
+		t.Errorf("Got error code %v; want %v", got, want)
+	}
+}
+
+func TestServer_Advertises_Common_Cipher(t *testing.T) {
+	const requiredSuite = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	st := newServerTester(t, nil, func(c *tls.Config) {
+		// Have the client only support the one required by the spec.
+		c.CipherSuites = []uint16{requiredSuite}
+	}, func(ts *httptest.Server) {
+		var srv *http.Server = ts.Config
+		// Have the server configured with one specific cipher suite
+		// which is banned. This tests that ConfigureServer ends up
+		// adding the good one to this list.
+		srv.TLSConfig = &tls.Config{
+			CipherSuites: []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA}, // just a banned one
+		}
+	})
+	defer st.Close()
+	st.greet()
+}
+
+// TODO: move this onto *serverTester, and re-use the same hpack
+// decoding context throughout.  We're just getting lucky here with
+// creating a new decoder each time.
 func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
 		pairs = append(pairs, [2]string{f.Name, f.Value})
@@ -1852,7 +2049,7 @@ func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
 // testServerResponse sets up an idle HTTP/2 connection and lets you
 // write a single request with writeReq, and then reply to it in some way with the provided handler,
 // and then verify the output with the serverTester again (assuming the handler returns nil)
-func testServerResponse(t *testing.T,
+func testServerResponse(t testing.TB,
 	handler func(http.ResponseWriter, *http.Request) error,
 	client func(*serverTester),
 ) {
@@ -1886,6 +2083,23 @@ func testServerResponse(t *testing.T,
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("timeout waiting for handler to finish")
+	}
+}
+
+// readBodyHandler returns an http Handler func that reads len(want)
+// bytes from r.Body and fails t if the contents read were not
+// the value of want.
+func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if string(buf) != want {
+			t.Errorf("read %q; want %q", buf, want)
+		}
 	}
 }
 
@@ -1938,5 +2152,68 @@ func TestServerWithCurl(t *testing.T) {
 
 	if atomic.LoadInt32(&gotConn) == 0 {
 		t.Error("never saw an http2 connection")
+	}
+}
+
+func BenchmarkServerGets(b *testing.B) {
+	b.ReportAllocs()
+
+	const msg = "Hello, world"
+	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, msg)
+	})
+	defer st.Close()
+	st.greet()
+
+	// Give the server quota to reply. (plus it has the the 64KB)
+	if err := st.fr.WriteWindowUpdate(0, uint32(b.N*len(msg))); err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		id := 1 + uint32(i)*2
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      id,
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+		st.wantHeaders()
+		df := st.wantData()
+		if !df.StreamEnded() {
+			b.Fatalf("DATA didn't have END_STREAM; got %v", df)
+		}
+	}
+}
+
+func BenchmarkServerPosts(b *testing.B) {
+	b.ReportAllocs()
+
+	const msg = "Hello, world"
+	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, msg)
+	})
+	defer st.Close()
+	st.greet()
+
+	// Give the server quota to reply. (plus it has the the 64KB)
+	if err := st.fr.WriteWindowUpdate(0, uint32(b.N*len(msg))); err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		id := 1 + uint32(i)*2
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      id,
+			BlockFragment: st.encodeHeader(":method", "POST"),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		st.writeData(id, true, nil)
+		st.wantHeaders()
+		df := st.wantData()
+		if !df.StreamEnded() {
+			b.Fatalf("DATA didn't have END_STREAM; got %v", df)
+		}
 	}
 }

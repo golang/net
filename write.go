@@ -195,17 +195,10 @@ func (w write100ContinueHeadersFrame) writeFrame(ctx writeContext) error {
 }
 
 type writeWindowUpdate struct {
-	streamID uint32
+	streamID uint32 // or 0 for conn-level
 	n        uint32
 }
 
 func (wu writeWindowUpdate) writeFrame(ctx writeContext) error {
-	fr := ctx.Framer()
-	if err := fr.WriteWindowUpdate(0, wu.n); err != nil {
-		return err
-	}
-	if err := fr.WriteWindowUpdate(wu.streamID, wu.n); err != nil {
-		return err
-	}
-	return nil
+	return ctx.Framer().WriteWindowUpdate(wu.streamID, wu.n)
 }

@@ -8,11 +8,19 @@ import (
 	"bytes"
 	"reflect"
 	"testing"
+	"unsafe"
 )
 
 func testFramer() (*Framer, *bytes.Buffer) {
 	buf := new(bytes.Buffer)
 	return NewFramer(buf, buf), buf
+}
+
+func TestFrameSizes(t *testing.T) {
+	// Catch people rearranging the FrameHeader fields.
+	if got, want := int(unsafe.Sizeof(FrameHeader{})), 12; got != want {
+		t.Errorf("FrameHeader size = %d; want %d", got, want)
+	}
 }
 
 func TestWriteRST(t *testing.T) {
@@ -61,7 +69,7 @@ func TestWriteData(t *testing.T) {
 		t.Fatalf("got %T; want *DataFrame", f)
 	}
 	if !bytes.Equal(df.Data(), data) {
-		t.Errorf("got %q; want %q", df.Data, data)
+		t.Errorf("got %q; want %q", df.Data(), data)
 	}
 	if f.Header().Flags&1 == 0 {
 		t.Errorf("didn't see END_STREAM flag")
@@ -336,7 +344,7 @@ func TestWriteSettings(t *testing.T) {
 		got = append(got, s)
 		valBack, ok := sf.Value(s.ID)
 		if !ok || valBack != s.Val {
-			t.Errorf("Value(%d) = %v, %v; want %v, true", s.ID, valBack, ok)
+			t.Errorf("Value(%d) = %v, %v; want %v, true", s.ID, valBack, ok, s.Val)
 		}
 		return nil
 	})

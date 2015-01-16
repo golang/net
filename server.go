@@ -9,6 +9,34 @@
 // instead, and make sure that on close we close all open
 // streams. then remove doneServing?
 
+// TODO: finish GOAWAY support. Consider each incoming frame type and
+// whether it should be ignored during a shutdown race.
+
+// TODO: disconnect idle clients. GFE seems to do 4 minutes. make
+// configurable?  or maximum number of idle clients and remove the
+// oldest?
+
+// TODO: turn off the serve goroutine when idle, so
+// an idle conn only has the readFrames goroutine active. (which could
+// also be optimized probably to pin less memory in crypto/tls). This
+// would involve tracking when the serve goroutine is active (atomic
+// int32 read/CAS probably?) and starting it up when frames arrive,
+// and shutting it down when all handlers exit. the occasional PING
+// packets could use time.AfterFunc to call sc.wakeStartServeLoop()
+// (which is a no-op if already running) and then queue the PING write
+// as normal. The serve loop would then exit in most cases (if no
+// Handlers running) and not be woken up again until the PING packet
+// returns.
+
+// TODO (maybe): add a mechanism for Handlers to going into
+// half-closed-local mode (rw.(io.Closer) test?) but not exit their
+// handler, and continue to be able to read from the
+// Request.Body. This would be a somewhat semantic change from HTTP/1
+// (or at least what we expose in net/http), so I'd probably want to
+// add it there too. For now, this package says that returning from
+// the Handler ServeHTTP function means you're both done reading and
+// done writing, without a way to stop just one or the other.
+
 package http2
 
 import (
@@ -34,7 +62,7 @@ const (
 	prefaceTimeout        = 10 * time.Second
 	firstSettingsTimeout  = 2 * time.Second // should be in-flight with preface anyway
 	handlerChunkWriteSize = 4 << 10
-	defaultMaxStreams     = 250
+	defaultMaxStreams     = 250 // TODO: make this 100 as the GFE seems to?
 )
 
 var (
@@ -55,33 +83,9 @@ var responseWriterStatePool = sync.Pool{
 var (
 	testHookOnConn        func()
 	testHookGetServerConn func(*serverConn)
+	testHookOnPanicMu     *sync.Mutex // nil except in tests
+	testHookOnPanic       func(sc *serverConn, panicVal interface{}) (rePanic bool)
 )
-
-// TODO: finish GOAWAY support. Consider each incoming frame type and
-// whether it should be ignored during a shutdown race.
-
-// TODO: (edge case?) if peer sends a SETTINGS frame with e.g. a
-// SETTINGS_MAX_FRAME_SIZE that's lower than what we had before,
-// before we ACK it we have to make sure all currently-active streams
-// know about that and don't have existing too-large frames in flight?
-// Perhaps the settings processing should just wait for new frame to
-// be in-flight and then the frame scheduler in the serve goroutine
-// will be responsible for splitting things.
-
-// TODO: send PING frames to idle clients and disconnect them if no
-// reply
-
-// TODO: for bonus points: turn off the serve goroutine when idle, so
-// an idle conn only has the readFrames goroutine active. (which could
-// also be optimized probably to pin less memory in crypto/tls). This
-// would involve tracking when the serve goroutine is active (atomic
-// int32 read/CAS probably?) and starting it up when frames arrive,
-// and shutting it down when all handlers exit. the occasional PING
-// packets could use time.AfterFunc to call sc.wakeStartServeLoop()
-// (which is a no-op if already running) and then queue the PING write
-// as normal. The serve loop would then exit in most cases (if no
-// Handlers running) and not be woken up again until the PING packet
-// returns.
 
 // Server is an HTTP/2 server.
 type Server struct {
@@ -132,6 +136,31 @@ func ConfigureServer(s *http.Server, conf *Server) {
 	if s.TLSConfig == nil {
 		s.TLSConfig = new(tls.Config)
 	}
+
+	// Note: not setting MinVersion to tls.VersionTLS12,
+	// as we don't want to interfere with HTTP/1.1 traffic
+	// on the user's server. We enforce TLS 1.2 later once
+	// we accept a connection. Ideally this should be done
+	// during next-proto selection, but using TLS <1.2 with
+	// HTTP/2 is still the client's bug.
+
+	// Be sure we advertise tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	// at least.
+	// TODO: enable PreferServerCipherSuites?
+	if s.TLSConfig.CipherSuites != nil {
+		const requiredCipher = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+		haveRequired := false
+		for _, v := range s.TLSConfig.CipherSuites {
+			if v == requiredCipher {
+				haveRequired = true
+				break
+			}
+		}
+		if !haveRequired {
+			s.TLSConfig.CipherSuites = append(s.TLSConfig.CipherSuites, requiredCipher)
+		}
+	}
+
 	haveNPN := false
 	for _, p := range s.TLSConfig.NextProtos {
 		if p == NextProtoTLS {
@@ -159,6 +188,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		srv:              srv,
 		hs:               hs,
 		conn:             c,
+		remoteAddrStr:    c.RemoteAddr().String(),
 		bw:               newBufferedWriter(c),
 		handler:          h,
 		streams:          make(map[uint32]*stream),
@@ -166,6 +196,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		readFrameErrCh:   make(chan error, 1), // must be buffered for 1
 		wantWriteFrameCh: make(chan frameWriteMsg, 8),
 		wroteFrameCh:     make(chan struct{}, 1), // buffered; one send in reading goroutine
+		bodyReadCh:       make(chan bodyReadMsg), // buffering doesn't matter either way
 		doneServing:      make(chan struct{}),
 		advMaxStreams:    srv.maxConcurrentStreams(),
 		writeSched: writeScheduler{
@@ -177,6 +208,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 		pushEnabled:       true,
 	}
 	sc.flow.add(initialWindowSize)
+	sc.inflow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
 
@@ -184,10 +216,81 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
 	sc.framer = fr
 
+	if tc, ok := c.(*tls.Conn); ok {
+		sc.tlsState = new(tls.ConnectionState)
+		*sc.tlsState = tc.ConnectionState()
+		// 9.2 Use of TLS Features
+		// An implementation of HTTP/2 over TLS MUST use TLS
+		// 1.2 or higher with the restrictions on feature set
+		// and cipher suite described in this section. Due to
+		// implementation limitations, it might not be
+		// possible to fail TLS negotiation. An endpoint MUST
+		// immediately terminate an HTTP/2 connection that
+		// does not meet the TLS requirements described in
+		// this section with a connection error (Section
+		// 5.4.1) of type INADEQUATE_SECURITY.
+		if sc.tlsState.Version < tls.VersionTLS12 {
+			sc.rejectConn(ErrCodeInadequateSecurity, "TLS version too low")
+			return
+		}
+
+		// Client must use SNI:
+		if sc.tlsState.ServerName == "" {
+			sc.rejectConn(ErrCodeProtocol, "client didn't use SNI")
+			return
+		}
+
+		if isBadCipher(sc.tlsState.CipherSuite) {
+			// "Endpoints MAY choose to generate a connection error
+			// (Section 5.4.1) of type INADEQUATE_SECURITY if one of
+			// the prohibited cipher suites are negotiated."
+			//
+			// We choose that. In my opinion, the spec is weak
+			// here. It also says both parties must support at least
+			// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 so there's no
+			// excuses here. If we really must, we could allow an
+			// "AllowInsecureWeakCiphers" option on the server later.
+			// Let's see how it plays out first.
+			sc.rejectConn(ErrCodeInadequateSecurity, "Prohibited TLS 1.2 Cipher Suite")
+			return
+		}
+	}
+
 	if hook := testHookGetServerConn; hook != nil {
 		hook(sc)
 	}
 	sc.serve()
+}
+
+// isBadCipher reports whether the cipher is blacklisted by the HTTP/2 spec.
+func isBadCipher(cipher uint16) bool {
+	switch cipher {
+	case tls.TLS_RSA_WITH_RC4_128_SHA,
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+		tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
+		// Reject cipher suites from Appendix A.
+		// "This list includes those cipher suites that do not
+		// offer an ephemeral key exchange and those that are
+		// based on the TLS null, stream or block cipher type"
+		return true
+	default:
+		return false
+	}
+}
+
+func (sc *serverConn) rejectConn(err ErrCode, debug string) {
+	// ignoring errors. hanging up anyway.
+	sc.framer.WriteGoAway(0, err, []byte(debug))
+	sc.bw.Flush()
+	sc.conn.Close()
 }
 
 // frameAndGates coordinates the readFrames and serve
@@ -212,10 +315,14 @@ type serverConn struct {
 	doneServing      chan struct{}     // closed when serverConn.serve ends
 	readFrameCh      chan frameAndGate // written by serverConn.readFrames
 	readFrameErrCh   chan error
-	wantWriteFrameCh chan frameWriteMsg // from handlers -> serve
-	wroteFrameCh     chan struct{}      // from writeFrameAsync -> serve, tickles more frame writes
-	testHookCh       chan func()        // code to run on the serve loop
-	flow             flow               // connection-wide (not stream-specific) flow control
+	wantWriteFrameCh chan frameWriteMsg   // from handlers -> serve
+	wroteFrameCh     chan struct{}        // from writeFrameAsync -> serve, tickles more frame writes
+	bodyReadCh       chan bodyReadMsg     // from handlers -> serve
+	testHookCh       chan func()          // code to run on the serve loop
+	flow             flow                 // conn-wide (not stream-specific) outbound flow control
+	inflow           flow                 // conn-wide inbound flow control
+	tlsState         *tls.ConnectionState // shared by all handlers, like net/http
+	remoteAddrStr    string
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                goroutineLock // used to verify funcs are on serve()
@@ -271,18 +378,19 @@ type requestParam struct {
 type stream struct {
 	// immutable:
 	id   uint32
-	flow flow        // limits writing from Handler to client
 	body *pipe       // non-nil if expecting DATA frames
 	cw   closeWaiter // closed wait stream transitions to closed state
 
 	// owned by serverConn's serve loop:
+	bodyBytes     int64   // body bytes seen so far
+	declBodyBytes int64   // or -1 if undeclared
+	flow          flow    // limits writing from Handler to client
+	inflow        flow    // what the client is allowed to POST/etc to us
 	parent        *stream // or nil
 	weight        uint8
 	state         streamState
-	bodyBytes     int64 // body bytes seen so far
-	declBodyBytes int64 // or -1 if undeclared
-	sentReset     bool  // only true once detached from streams map
-	gotReset      bool  // only true once detacted from streams map
+	sentReset     bool // only true once detached from streams map
+	gotReset      bool // only true once detacted from streams map
 }
 
 func (sc *serverConn) Framer() *Framer  { return sc.framer }
@@ -292,11 +400,11 @@ func (sc *serverConn) HeaderEncoder() (*hpack.Encoder, *bytes.Buffer) {
 	return sc.hpackEncoder, &sc.headerWriteBuf
 }
 
-func (sc *serverConn) state(streamID uint32) streamState {
+func (sc *serverConn) state(streamID uint32) (streamState, *stream) {
 	sc.serveG.check()
 	// http://http2.github.io/http2-spec/#rfc.section.5.1
 	if st, ok := sc.streams[streamID]; ok {
-		return st.state
+		return st.state, st
 	}
 	// "The first use of a new stream identifier implicitly closes all
 	// streams in the "idle" state that might have been initiated by
@@ -305,9 +413,9 @@ func (sc *serverConn) state(streamID uint32) streamState {
 	// frame on stream 5, then stream 5 transitions to the "closed"
 	// state when the first frame for stream 7 is sent or received."
 	if streamID <= sc.maxStreamID {
-		return stateClosed
+		return stateClosed, nil
 	}
-	return stateIdle
+	return stateIdle, nil
 }
 
 func (sc *serverConn) vlogf(format string, args ...interface{}) {
@@ -456,8 +564,23 @@ func (sc *serverConn) stopShutdownTimer() {
 	}
 }
 
+func (sc *serverConn) notePanic() {
+	if testHookOnPanicMu != nil {
+		testHookOnPanicMu.Lock()
+		defer testHookOnPanicMu.Unlock()
+	}
+	if testHookOnPanic != nil {
+		if e := recover(); e != nil {
+			if testHookOnPanic(sc, e) {
+				panic(e)
+			}
+		}
+	}
+}
+
 func (sc *serverConn) serve() {
 	sc.serveG.check()
+	defer sc.notePanic()
 	defer sc.conn.Close()
 	defer sc.closeAllStreamsOnConnClose()
 	defer sc.stopShutdownTimer()
@@ -504,6 +627,8 @@ func (sc *serverConn) serve() {
 				settingsTimer.Stop()
 				settingsTimer.C = nil
 			}
+		case m := <-sc.bodyReadCh:
+			sc.noteBodyRead(m.st, m.n)
 		case <-settingsTimer.C:
 			sc.logf("timeout waiting for SETTINGS frames from %v", sc.conn.RemoteAddr())
 			return
@@ -531,7 +656,7 @@ func (sc *serverConn) readPreface() error {
 			errc <- nil
 		}
 	}()
-	timer := time.NewTimer(5 * time.Second) // TODO: configurable on *Server?
+	timer := time.NewTimer(prefaceTimeout) // TODO: configurable on *Server?
 	defer timer.Stop()
 	select {
 	case <-timer.C:
@@ -634,7 +759,17 @@ func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
 		}
 		switch st.state {
 		case stateOpen:
-			st.state = stateHalfClosedLocal
+			// Here we would go to stateHalfClosedLocal in
+			// theory, but since our handler is done and
+			// the net/http package provides no mechanism
+			// for finishing writing to a ResponseWriter
+			// while still reading data (see possible TODO
+			// at top of this file), we go into closed
+			// state here anyway, after telling the peer
+			// we're hanging up on them.
+			st.state = stateHalfClosedLocal // won't last long, but necessary for closeStream via resetStream
+			errCancel := StreamError{st.id, ErrCodeCancel}
+			sc.resetStream(errCancel)
 		case stateHalfClosedRemote:
 			sc.closeStream(st, nil)
 		}
@@ -712,13 +847,11 @@ func (sc *serverConn) shutDownIn(d time.Duration) {
 
 func (sc *serverConn) resetStream(se StreamError) {
 	sc.serveG.check()
-	st, ok := sc.streams[se.StreamID]
-	if !ok {
-		panic("internal package error; resetStream called on non-existent stream")
-	}
 	sc.writeFrame(frameWriteMsg{write: se})
-	st.sentReset = true
-	sc.closeStream(st, se)
+	if st, ok := sc.streams[se.StreamID]; ok {
+		st.sentReset = true
+		sc.closeStream(st, se)
+	}
 }
 
 // curHeaderStreamID returns the stream ID of the header block we're
@@ -753,6 +886,9 @@ func (sc *serverConn) processFrameFromReader(fg frameAndGate, fgValid bool) bool
 			// (e.g. CloseWrite) because they're done
 			// sending frames but they're still wanting
 			// our open replies?  Investigate.
+			// TODO: add CloseWrite to crypto/tls.Conn first
+			// so we have a way to test this? I suppose
+			// just for testing we could have a non-TLS mode.
 			return false
 		}
 	}
@@ -880,7 +1016,9 @@ func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 
 func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	sc.serveG.check()
-	if sc.state(f.StreamID) == stateIdle {
+
+	state, st := sc.state(f.StreamID)
+	if state == stateIdle {
 		// 6.4 "RST_STREAM frames MUST NOT be sent for a
 		// stream in the "idle" state. If a RST_STREAM frame
 		// identifying an idle stream is received, the
@@ -888,8 +1026,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 		// (Section 5.4.1) of type PROTOCOL_ERROR.
 		return ConnectionError(ErrCodeProtocol)
 	}
-	st, ok := sc.streams[f.StreamID]
-	if ok {
+	if st != nil {
 		st.gotReset = true
 		sc.closeStream(st, StreamError{f.StreamID, f.ErrCode})
 	}
@@ -899,7 +1036,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 func (sc *serverConn) closeStream(st *stream, err error) {
 	sc.serveG.check()
 	if st.state == stateIdle || st.state == stateClosed {
-		panic("invariant")
+		panic(fmt.Sprintf("invariant; can't close stream in state %v", st.state))
 	}
 	st.state = stateClosed
 	sc.curOpenStreams--
@@ -994,7 +1131,12 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
 	id := f.Header().StreamID
 	st, ok := sc.streams[id]
-	if !ok || (st.state != stateOpen && st.state != stateHalfClosedLocal) {
+	if !ok || st.state != stateOpen {
+		// This includes sending a RST_STREAM if the stream is
+		// in stateHalfClosedLocal (which currently means that
+		// the http.Handler returned, so it's done reading &
+		// done writing). Try to stop the client from sending
+		// more DATA.
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if st.body == nil {
@@ -1008,8 +1150,11 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if len(data) > 0 {
-		// TODO: verify they're allowed to write with the flow control
-		// window we'd advertised to them.
+		// Check whether the client has flow control quota.
+		if int(st.inflow.available()) < len(data) {
+			return StreamError{id, ErrCodeFlowControl}
+		}
+		st.inflow.take(int32(len(data)))
 		wrote, err := st.body.Write(data)
 		if err != nil {
 			return StreamError{id, ErrCodeStreamClosed}
@@ -1026,12 +1171,7 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		} else {
 			st.body.Close(io.EOF)
 		}
-		switch st.state {
-		case stateOpen:
-			st.state = stateHalfClosedRemote
-		case stateHalfClosedLocal:
-			st.state = stateClosed
-		}
+		st.state = stateHalfClosedRemote
 	}
 	return nil
 }
@@ -1061,16 +1201,19 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		id:    id,
 		state: stateOpen,
 	}
-	// connection-level flow control is shared by all streams.
-	st.flow.conn = &sc.flow
-	st.flow.add(sc.initialWindowSize)
-	st.cw.Init() // make Cond use its Mutex, without heap-promoting them separately
 	if f.StreamEnded() {
 		st.state = stateHalfClosedRemote
 	}
+	st.cw.Init()
+
+	st.flow.conn = &sc.flow // link to conn-level counter
+	st.flow.add(sc.initialWindowSize)
+	st.inflow.conn = &sc.inflow      // link to conn-level counter
+	st.inflow.add(initialWindowSize) // TODO: update this when we send a higher initial window size in the initial settings
+
 	sc.streams[id] = st
 	if f.HasPriority() {
-		sc.adjustStreamPriority(st.id, f.Priority)
+		adjustStreamPriority(sc.streams, st.id, f.Priority)
 	}
 	sc.curOpenStreams++
 	sc.req = requestParam{
@@ -1133,13 +1276,12 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 }
 
 func (sc *serverConn) processPriority(f *PriorityFrame) error {
-	sc.adjustStreamPriority(f.StreamID, f.PriorityParam)
+	adjustStreamPriority(sc.streams, f.StreamID, f.PriorityParam)
 	return nil
 }
 
-func (sc *serverConn) adjustStreamPriority(streamID uint32, priority PriorityParam) {
-	// TODO: untested
-	st, ok := sc.streams[streamID]
+func adjustStreamPriority(streams map[uint32]*stream, streamID uint32, priority PriorityParam) {
+	st, ok := streams[streamID]
 	if !ok {
 		// TODO: not quite correct (this streamID might
 		// already exist in the dep tree, but be closed), but
@@ -1147,10 +1289,27 @@ func (sc *serverConn) adjustStreamPriority(streamID uint32, priority PriorityPar
 		return
 	}
 	st.weight = priority.Weight
-	st.parent = sc.streams[priority.StreamDep] // might be nil
-	if priority.Exclusive && st.parent != nil {
-		for _, openStream := range sc.streams {
-			if openStream.parent == st.parent {
+	parent := streams[priority.StreamDep] // might be nil
+	if parent == st {
+		// if client tries to set this stream to be the parent of itself
+		// ignore and keep going
+		return
+	}
+
+	// section 5.3.3: If a stream is made dependent on one of its
+	// own dependencies, the formerly dependent stream is first
+	// moved to be dependent on the reprioritized stream's previous
+	// parent. The moved dependency retains its weight.
+	for piter := parent; piter != nil; piter = piter.parent {
+		if piter == st {
+			parent.parent = st.parent
+			break
+		}
+	}
+	st.parent = parent
+	if priority.Exclusive && (st.parent != nil || priority.StreamDep == 0) {
+		for _, openStream := range streams {
+			if openStream != st && openStream.parent == st.parent {
 				openStream.parent = st
 			}
 		}
@@ -1182,26 +1341,9 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		// pseudo-header fields"
 		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
 	}
-	var tlsState *tls.ConnectionState // make this non-nil if https
+	var tlsState *tls.ConnectionState // nil if not scheme https
 	if rp.scheme == "https" {
-		tlsState = &tls.ConnectionState{}
-		if tc, ok := sc.conn.(*tls.Conn); ok {
-			*tlsState = tc.ConnectionState()
-			if tlsState.Version < tls.VersionTLS12 {
-				// 9.2 Use of TLS Features
-				// An implementation of HTTP/2 over TLS MUST use TLS
-				// 1.2 or higher with the restrictions on feature set
-				// and cipher suite described in this section. Due to
-				// implementation limitations, it might not be
-				// possible to fail TLS negotiation. An endpoint MUST
-				// immediately terminate an HTTP/2 connection that
-				// does not meet the TLS requirements described in
-				// this section with a connection error (Section
-				// 5.4.1) of type INADEQUATE_SECURITY.
-				return nil, nil, ConnectionError(ErrCodeInadequateSecurity)
-			}
-			// TODO: verify cipher suites. (9.2.1, 9.2.2)
-		}
+		tlsState = sc.tlsState
 	}
 	authority := rp.authority
 	if authority == "" {
@@ -1226,7 +1368,7 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 	req := &http.Request{
 		Method:     rp.method,
 		URL:        url,
-		RemoteAddr: sc.conn.RemoteAddr().String(),
+		RemoteAddr: sc.remoteAddrStr,
 		Header:     rp.header,
 		RequestURI: rp.path,
 		Proto:      "HTTP/2.0",
@@ -1307,24 +1449,72 @@ func (sc *serverConn) write100ContinueHeaders(st *stream) {
 	})
 }
 
-// called from handler goroutines
+// A bodyReadMsg tells the server loop that the http.Handler read n
+// bytes of the DATA from the client on the given stream.
+type bodyReadMsg struct {
+	st *stream
+	n  int
+}
+
+// called from handler goroutines.
+// Notes that the handler for the given stream ID read n bytes of its body
+// and schedules flow control tokens to be sent.
+func (sc *serverConn) noteBodyReadFromHandler(st *stream, n int) {
+	sc.serveG.checkNotOn() // NOT on
+	sc.bodyReadCh <- bodyReadMsg{st, n}
+}
+
+func (sc *serverConn) noteBodyRead(st *stream, n int) {
+	sc.serveG.check()
+	sc.sendWindowUpdate(nil, n) // conn-level
+	if st.state != stateHalfClosedRemote && st.state != stateClosed {
+		// Don't send this WINDOW_UPDATE if the stream is closed
+		// remotely.
+		sc.sendWindowUpdate(st, n)
+	}
+}
+
+// st may be nil for conn-level
 func (sc *serverConn) sendWindowUpdate(st *stream, n int) {
+	sc.serveG.check()
+	// "The legal range for the increment to the flow control
+	// window is 1 to 2^31-1 (2,147,483,647) octets."
+	// A Go Read call on 64-bit machines could in theory read
+	// a larger Read than this. Very unlikely, but we handle it here
+	// rather than elsewhere for now.
+	const maxUint31 = 1<<31 - 1
+	for n >= maxUint31 {
+		sc.sendWindowUpdate32(st, maxUint31)
+		n -= maxUint31
+	}
+	sc.sendWindowUpdate32(st, int32(n))
+}
+
+// st may be nil for conn-level
+func (sc *serverConn) sendWindowUpdate32(st *stream, n int32) {
+	sc.serveG.check()
+	if n == 0 {
+		return
+	}
+	if n < 0 {
+		panic("negative update")
+	}
+	var streamID uint32
+	if st != nil {
+		streamID = st.id
+	}
+	sc.writeFrame(frameWriteMsg{
+		write:  writeWindowUpdate{streamID: streamID, n: uint32(n)},
+		stream: st,
+	})
+	var ok bool
 	if st == nil {
-		panic("no stream")
+		ok = sc.inflow.add(n)
+	} else {
+		ok = st.inflow.add(n)
 	}
-	const maxUint32 = 2147483647
-	for n >= maxUint32 {
-		sc.writeFrameFromHandler(frameWriteMsg{
-			write:  writeWindowUpdate{streamID: st.id, n: maxUint32},
-			stream: st,
-		})
-		n -= maxUint32
-	}
-	if n > 0 {
-		sc.writeFrameFromHandler(frameWriteMsg{
-			write:  writeWindowUpdate{streamID: st.id, n: uint32(n)},
-			stream: st,
-		})
+	if !ok {
+		panic("internal error; sent too many window updates without decrements?")
 	}
 }
 
@@ -1354,7 +1544,7 @@ func (b *requestBody) Read(p []byte) (n int, err error) {
 	}
 	n, err = b.pipe.Read(p)
 	if n > 0 {
-		b.conn.sendWindowUpdate(b.stream, n)
+		b.conn.noteBodyReadFromHandler(b.stream, n)
 	}
 	return
 }

@@ -146,9 +146,22 @@ func typeFrameParser(t FrameType) frameParser {
 type FrameHeader struct {
 	valid bool // caller can access []byte fields in the Frame
 
-	Type     FrameType
-	Flags    Flags
-	Length   uint32 // actually a uint24 max; default is uint16 max
+	// Type is the 1 byte frame type. There are ten standard frame
+	// types, but extension frame types may be written by WriteRawFrame
+	// and will be returned by ReadFrame (as UnknownFrame).
+	Type FrameType
+
+	// Flags are the 1 byte of 8 potential bit flags per frame.
+	// They are specific to the frame type.
+	Flags Flags
+
+	// Length is the length of the frame, not including the 9 byte header.
+	// The maximum size is one byte less than 16MB (uint24), but only
+	// frames up to 16KB are allowed without peer agreement.
+	Length uint32
+
+	// StreamID is which stream this frame is for. Certain frames
+	// are not stream-specific, in which case this field is 0.
 	StreamID uint32
 }
 
@@ -633,9 +646,11 @@ type UnknownFrame struct {
 	p []byte
 }
 
-// Payload returns the frame's payload (after the header).
-// It is not valid to call this method after a subsequent
-// call to Framer.ReadFrame.
+// Payload returns the frame's payload (after the header).  It is not
+// valid to call this method after a subsequent call to
+// Framer.ReadFrame, nor is it valid to retain the returned slice.
+// The memory is owned by the Framer and is invalidated when the next
+// frame is read.
 func (f *UnknownFrame) Payload() []byte {
 	f.checkValid()
 	return f.p
