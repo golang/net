@@ -3,6 +3,8 @@
 // Licensed under the same terms as Go itself:
 // https://code.google.com/p/go/source/browse/LICENSE
 
+// +build h2demo
+
 package main
 
 import (
