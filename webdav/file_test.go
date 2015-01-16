@@ -9,11 +9,36 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestSlashClean(t *testing.T) {
+	testCases := []string{
+		"",
+		".",
+		"/",
+		"/./",
+		"//",
+		"//.",
+		"//a",
+		"/a",
+		"/a/b/c",
+		"/a//b/./../c/d/",
+		"a",
+		"a/b/c",
+	}
+	for _, tc := range testCases {
+		got := slashClean(tc)
+		want := path.Clean("/" + tc)
+		if got != want {
+			t.Errorf("tc=%q: got %q, want %q", tc, got, want)
+		}
+	}
+}
 
 func TestDirResolve(t *testing.T) {
 	testCases := []struct {
@@ -260,6 +285,41 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /c want errNotExist",
 		"  stat /d want dir",
 		"  stat /d/m want dir",
+		"rename /b /b want ok",
+		"  stat /b want 2",
+		"  stat /c want errNotExist",
+		"rename /b /c want ok",
+		"  stat /b want errNotExist",
+		"  stat /c want 2",
+		"  stat /d/m want dir",
+		"  stat /d/n want errNotExist",
+		"rename /d/m /d/n want ok",
+		"create /d/n/q QQQQ want ok",
+		"  stat /d/m want errNotExist",
+		"  stat /d/n want dir",
+		"  stat /d/n/q want 4",
+		"rename /d /d/n/x want err",
+		"rename /c /d/n/q want ok",
+		"  stat /c want errNotExist",
+		"  stat /d/n/q want 2",
+		"create /d/n/r RRRRR want ok",
+		"mk-dir /u want ok",
+		"mk-dir /u/v want ok",
+		"rename /d/n /u want err",
+		"create /t TTTTTT want ok",
+		"rename /d/n /t want err",
+		"rm-all /t want ok",
+		"rename /d/n /t want ok",
+		"  stat /d want dir",
+		"  stat /d/n want errNotExist",
+		"  stat /d/n/r want errNotExist",
+		"  stat /t want dir",
+		"  stat /t/q want 2",
+		"  stat /t/r want 5",
+		"rename /t / want err",
+		"rename /t /u/v want ok",
+		"  stat /u/v/r want 5",
+		"rename / /x want err",
 	}
 
 	for i, tc := range testCases {
@@ -292,9 +352,13 @@ func testFS(t *testing.T, fs FileSystem) {
 				}
 			}
 
-		case "mk-dir", "rm-all", "stat":
+		case "mk-dir", "rename", "rm-all", "stat":
+			nParts := 3
+			if op == "rename" {
+				nParts = 4
+			}
 			parts := strings.Split(arg, " ")
-			if len(parts) != 3 {
+			if len(parts) != nParts {
 				t.Fatalf("test case #%d %q: invalid %s", i, tc, op)
 			}
 
@@ -302,6 +366,8 @@ func testFS(t *testing.T, fs FileSystem) {
 			switch op {
 			case "mk-dir":
 				opErr = fs.Mkdir(parts[0], 0777)
+			case "rename":
+				opErr = fs.Rename(parts[0], parts[1])
 			case "rm-all":
 				opErr = fs.RemoveAll(parts[0])
 			case "stat":
@@ -318,10 +384,10 @@ func testFS(t *testing.T, fs FileSystem) {
 				got = errStr(opErr)
 			}
 
-			if parts[1] != "want" {
+			if parts[len(parts)-2] != "want" {
 				t.Fatalf("test case #%d %q: invalid %s", i, tc, op)
 			}
-			if want := parts[2]; got != want {
+			if want := parts[len(parts)-1]; got != want {
 				t.Fatalf("test case #%d %q: got %q (%v), want %q", i, tc, got, opErr, want)
 			}
 		}

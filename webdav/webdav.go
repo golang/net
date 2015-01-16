@@ -354,11 +354,13 @@ func StatusText(code int) string {
 }
 
 var (
+	errDirectoryNotEmpty   = errors.New("webdav: directory not empty")
 	errInvalidDepth        = errors.New("webdav: invalid depth")
 	errInvalidIfHeader     = errors.New("webdav: invalid If header")
 	errInvalidLockInfo     = errors.New("webdav: invalid lock info")
 	errInvalidLockToken    = errors.New("webdav: invalid lock token")
 	errNoFileSystem        = errors.New("webdav: no file system")
 	errNoLockSystem        = errors.New("webdav: no lock system")
+	errNotADirectory       = errors.New("webdav: not a directory")
 	errUnsupportedLockInfo = errors.New("webdav: unsupported lock info")
 )

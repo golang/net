@@ -15,6 +15,15 @@ import (
 	"time"
 )
 
+// slashClean is equivalent to but slightly more efficient than
+// path.Clean("/" + name).
+func slashClean(name string) string {
+	if name == "" || name[0] != '/' {
+		name = "/" + name
+	}
+	return path.Clean(name)
+}
+
 // A FileSystem implements access to a collection of named files. The elements
 // in a file path are separated by slash ('/', U+002F) characters, regardless
 // of host operating system convention.
@@ -25,6 +34,7 @@ type FileSystem interface {
 	Mkdir(name string, perm os.FileMode) error
 	OpenFile(name string, flag int, perm os.FileMode) (File, error)
 	RemoveAll(name string) error
+	Rename(oldName, newName string) error
 	Stat(name string) (os.FileInfo, error)
 }
 
@@ -55,7 +65,7 @@ func (d Dir) resolve(name string) string {
 	if dir == "" {
 		dir = "."
 	}
-	return filepath.Join(dir, filepath.FromSlash(path.Clean("/"+name)))
+	return filepath.Join(dir, filepath.FromSlash(slashClean(name)))
 }
 
 func (d Dir) Mkdir(name string, perm os.FileMode) error {
@@ -85,6 +95,20 @@ func (d Dir) RemoveAll(name string) error {
 		return os.ErrInvalid
 	}
 	return os.RemoveAll(name)
+}
+
+func (d Dir) Rename(oldName, newName string) error {
+	if oldName = d.resolve(oldName); oldName == "" {
+		return os.ErrNotExist
+	}
+	if newName = d.resolve(newName); newName == "" {
+		return os.ErrNotExist
+	}
+	if root := filepath.Clean(string(d)); root == oldName || root == newName {
+		// Prohibit renaming from or to the virtual root directory.
+		return os.ErrInvalid
+	}
+	return os.Rename(oldName, newName)
 }
 
 func (d Dir) Stat(name string) (os.FileInfo, error) {
@@ -118,11 +142,10 @@ type memFS struct {
 	root memFSNode
 }
 
+// TODO: clean up and rationalize the walk/find code.
+
 // walk walks the directory tree for the fullname, calling f at each step. If f
 // returns an error, the walk will be aborted and return that same error.
-//
-// Each walk is atomic: fs's mutex is held for the entire operation, including
-// all calls to f.
 //
 // dir is the directory at that step, frag is the name fragment, and final is
 // whether it is the final step. For example, walking "/foo/bar/x" will result
@@ -133,11 +156,8 @@ type memFS struct {
 // The frag argument will be empty only if dir is the root node and the walk
 // ends at that root node.
 func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, final bool) error) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-
 	original := fullname
-	fullname = path.Clean("/" + fullname)
+	fullname = slashClean(fullname)
 
 	// Strip any leading "/"s to make fullname a relative path, as the walk
 	// starts at fs.root.
@@ -186,116 +206,193 @@ func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, f
 	return nil
 }
 
-func (fs *memFS) Mkdir(name string, perm os.FileMode) error {
-	return fs.walk("mkdir", name, func(dir *memFSNode, frag string, final bool) error {
+// find returns the parent of the named node and the relative name fragment
+// from the parent to the child. For example, if finding "/foo/bar/baz" then
+// parent will be the node for "/foo/bar" and frag will be "baz".
+//
+// If the fullname names the root node, then parent, frag and err will be zero.
+//
+// find returns an error if the parent does not already exist or the parent
+// isn't a directory, but it will not return an error per se if the child does
+// not already exist. The error returned is either nil or an *os.PathError
+// whose Op is op.
+func (fs *memFS) find(op, fullname string) (parent *memFSNode, frag string, err error) {
+	err = fs.walk(op, fullname, func(parent0 *memFSNode, frag0 string, final bool) error {
 		if !final {
 			return nil
 		}
-		if frag == "" {
-			return os.ErrInvalid
-		}
-		if _, ok := dir.children[frag]; ok {
-			return os.ErrExist
-		}
-		dir.children[frag] = &memFSNode{
-			name:     frag,
-			children: make(map[string]*memFSNode),
-			mode:     perm.Perm() | os.ModeDir,
-			modTime:  time.Now(),
+		if frag0 != "" {
+			parent, frag = parent0, frag0
 		}
 		return nil
 	})
+	return parent, frag, err
+}
+
+func (fs *memFS) Mkdir(name string, perm os.FileMode) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	dir, frag, err := fs.find("mkdir", name)
+	if err != nil {
+		return err
+	}
+	if dir == nil {
+		// We can't create the root.
+		return os.ErrInvalid
+	}
+	if _, ok := dir.children[frag]; ok {
+		return os.ErrExist
+	}
+	dir.children[frag] = &memFSNode{
+		name:     frag,
+		children: make(map[string]*memFSNode),
+		mode:     perm.Perm() | os.ModeDir,
+		modTime:  time.Now(),
+	}
+	return nil
 }
 
 func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	var ret *memFile
-	err := fs.walk("open", name, func(dir *memFSNode, frag string, final bool) error {
-		if !final {
-			return nil
-		}
-		var n *memFSNode
-		if frag == "" {
-			if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
-				return os.ErrPermission
-			}
-			n = &fs.root
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 
-		} else {
-			n = dir.children[frag]
-			if flag&(os.O_SYNC|os.O_APPEND) != 0 {
-				return os.ErrInvalid
-			}
-			if flag&os.O_CREATE != 0 {
-				if flag&os.O_EXCL != 0 && n != nil {
-					return os.ErrExist
-				}
-				if n == nil {
-					n = &memFSNode{
-						name: frag,
-						mode: perm.Perm(),
-					}
-					dir.children[frag] = n
-				}
-			}
-			if n == nil {
-				return os.ErrNotExist
-			}
-			if flag&(os.O_WRONLY|os.O_RDWR) != 0 && flag&os.O_TRUNC != 0 {
-				n.mu.Lock()
-				n.data = nil
-				n.mu.Unlock()
-			}
-		}
-
-		children := make([]os.FileInfo, 0, len(n.children))
-		for _, c := range n.children {
-			children = append(children, c)
-		}
-		ret = &memFile{
-			n:        n,
-			children: children,
-		}
-		return nil
-	})
+	dir, frag, err := fs.find("open", name)
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	var n *memFSNode
+	if dir == nil {
+		// We're opening the root.
+		if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
+			return nil, os.ErrPermission
+		}
+		n = &fs.root
+
+	} else {
+		n = dir.children[frag]
+		if flag&(os.O_SYNC|os.O_APPEND) != 0 {
+			// memFile doesn't support these flags yet.
+			return nil, os.ErrInvalid
+		}
+		if flag&os.O_CREATE != 0 {
+			if flag&os.O_EXCL != 0 && n != nil {
+				return nil, os.ErrExist
+			}
+			if n == nil {
+				n = &memFSNode{
+					name: frag,
+					mode: perm.Perm(),
+				}
+				dir.children[frag] = n
+			}
+		}
+		if n == nil {
+			return nil, os.ErrNotExist
+		}
+		if flag&(os.O_WRONLY|os.O_RDWR) != 0 && flag&os.O_TRUNC != 0 {
+			n.mu.Lock()
+			n.data = nil
+			n.mu.Unlock()
+		}
+	}
+
+	children := make([]os.FileInfo, 0, len(n.children))
+	for _, c := range n.children {
+		children = append(children, c)
+	}
+	return &memFile{
+		n:                n,
+		childrenSnapshot: children,
+	}, nil
 }
 
 func (fs *memFS) RemoveAll(name string) error {
-	return fs.walk("remove", name, func(dir *memFSNode, frag string, final bool) error {
-		if !final {
-			return nil
-		}
-		if frag == "" {
-			return os.ErrInvalid
-		}
-		delete(dir.children, frag)
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	dir, frag, err := fs.find("remove", name)
+	if err != nil {
+		return err
+	}
+	if dir == nil {
+		// We can't remove the root.
+		return os.ErrInvalid
+	}
+	delete(dir.children, frag)
+	return nil
+}
+
+func (fs *memFS) Rename(oldName, newName string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	oldName = slashClean(oldName)
+	newName = slashClean(newName)
+	if oldName == newName {
 		return nil
-	})
+	}
+	if strings.HasPrefix(newName, oldName+"/") {
+		// We can't rename oldName to be a sub-directory of itself.
+		return os.ErrInvalid
+	}
+
+	oDir, oFrag, err := fs.find("rename", oldName)
+	if err != nil {
+		return err
+	}
+	if oDir == nil {
+		// We can't rename from the root.
+		return os.ErrInvalid
+	}
+
+	nDir, nFrag, err := fs.find("rename", newName)
+	if err != nil {
+		return err
+	}
+	if nDir == nil {
+		// We can't rename to the root.
+		return os.ErrInvalid
+	}
+
+	oNode, ok := oDir.children[oFrag]
+	if !ok {
+		return os.ErrNotExist
+	}
+	if oNode.IsDir() {
+		if nNode, ok := nDir.children[nFrag]; ok {
+			nNode.mu.Lock()
+			isDir := nNode.mode.IsDir()
+			nNode.mu.Unlock()
+			if !isDir {
+				return errNotADirectory
+			}
+			if len(nNode.children) != 0 {
+				return errDirectoryNotEmpty
+			}
+		}
+	}
+	delete(oDir.children, oFrag)
+	nDir.children[nFrag] = oNode
+	return nil
 }
 
 func (fs *memFS) Stat(name string) (os.FileInfo, error) {
-	var n *memFSNode
-	err := fs.walk("stat", name, func(dir *memFSNode, frag string, final bool) error {
-		if !final {
-			return nil
-		}
-		if frag == "" {
-			n = &fs.root
-			return nil
-		}
-		n = dir.children[frag]
-		if n == nil {
-			return os.ErrNotExist
-		}
-		return nil
-	})
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	dir, frag, err := fs.find("stat", name)
 	if err != nil {
 		return nil, err
 	}
-	return n, nil
+	if dir == nil {
+		// We're stat'ting the root.
+		return &fs.root, nil
+	}
+	if n, ok := dir.children[frag]; ok {
+		return n, nil
+	}
+	return nil, os.ErrNotExist
 }
 
 // A memFSNode represents a single entry in the in-memory filesystem and also
@@ -303,11 +400,13 @@ func (fs *memFS) Stat(name string) (os.FileInfo, error) {
 type memFSNode struct {
 	name string
 
-	mu       sync.Mutex
-	modTime  time.Time
-	mode     os.FileMode
+	// children is protected by memFS.mu.
 	children map[string]*memFSNode
-	data     []byte
+
+	mu      sync.Mutex
+	modTime time.Time
+	mode    os.FileMode
+	data    []byte
 }
 
 func (n *memFSNode) Name() string {
@@ -344,9 +443,10 @@ func (n *memFSNode) Sys() interface{} {
 // per-node) read/write position, and if the node is a directory, a snapshot of
 // that node's children.
 type memFile struct {
-	n        *memFSNode
-	children []os.FileInfo
-	// Changes to pos are guarded by n.mu.
+	n *memFSNode
+	// childrenSnapshot is a snapshot of n.children.
+	childrenSnapshot []os.FileInfo
+	// pos is protected by n.mu.
 	pos int
 }
 
@@ -375,7 +475,7 @@ func (f *memFile) Readdir(count int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	old := f.pos
-	if old >= len(f.children) {
+	if old >= len(f.childrenSnapshot) {
 		// The os.File Readdir docs say that at the end of a directory,
 		// the error is io.EOF if count > 0 and nil if count <= 0.
 		if count > 0 {
@@ -385,14 +485,14 @@ func (f *memFile) Readdir(count int) ([]os.FileInfo, error) {
 	}
 	if count > 0 {
 		f.pos += count
-		if f.pos > len(f.children) {
-			f.pos = len(f.children)
+		if f.pos > len(f.childrenSnapshot) {
+			f.pos = len(f.childrenSnapshot)
 		}
 	} else {
-		f.pos = len(f.children)
+		f.pos = len(f.childrenSnapshot)
 		old = 0
 	}
-	return f.children[old:f.pos], nil
+	return f.childrenSnapshot[old:f.pos], nil
 }
 
 func (f *memFile) Seek(offset int64, whence int) (int64, error) {

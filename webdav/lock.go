@@ -6,7 +6,6 @@ package webdav
 
 import (
 	"errors"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -145,7 +144,7 @@ func (m *memLS) Confirm(now time.Time, name string, conditions ...Condition) (Re
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.collectExpiredNodes(now)
-	name = path.Clean("/" + name)
+	name = slashClean(name)
 
 	// TODO: touch n.held.
 	panic("TODO")
@@ -155,7 +154,7 @@ func (m *memLS) Create(now time.Time, details LockDetails) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.collectExpiredNodes(now)
-	name := path.Clean("/" + details.Root)
+	name := slashClean(details.Root)
 
 	if !m.canCreate(name, details.ZeroDepth) {
 		return "", ErrLocked
