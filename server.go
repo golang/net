@@ -251,7 +251,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 			// excuses here. If we really must, we could allow an
 			// "AllowInsecureWeakCiphers" option on the server later.
 			// Let's see how it plays out first.
-			sc.rejectConn(ErrCodeInadequateSecurity, "Prohibited TLS 1.2 Cipher Suite")
+			sc.rejectConn(ErrCodeInadequateSecurity, fmt.Sprintf("Prohibited TLS 1.2 Cipher Suite: %x", sc.tlsState.CipherSuite))
 			return
 		}
 	}
@@ -287,6 +287,7 @@ func isBadCipher(cipher uint16) bool {
 }
 
 func (sc *serverConn) rejectConn(err ErrCode, debug string) {
+	log.Printf("REJECTING conn: %v, %s", err, debug)
 	// ignoring errors. hanging up anyway.
 	sc.framer.WriteGoAway(0, err, []byte(debug))
 	sc.bw.Flush()
