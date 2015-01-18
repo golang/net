@@ -108,6 +108,10 @@ type Server struct {
 	// 16k and 16M, inclusive. If zero or otherwise invalid, a
 	// default value is used.
 	MaxReadFrameSize uint32
+
+	// PermitProhibitedCipherSuites, if true, permits the use of
+	// cipher suites prohibited by the HTTP/2 spec.
+	PermitProhibitedCipherSuites bool
 }
 
 func (s *Server) maxReadFrameSize() uint32 {
@@ -246,7 +250,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 			// So for now, do nothing here again.
 		}
 
-		if isBadCipher(sc.tlsState.CipherSuite) {
+		if !srv.PermitProhibitedCipherSuites && isBadCipher(sc.tlsState.CipherSuite) {
 			// "Endpoints MAY choose to generate a connection error
 			// (Section 5.4.1) of type INADEQUATE_SECURITY if one of
 			// the prohibited cipher suites are negotiated."

@@ -2103,17 +2103,26 @@ func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *h
 	}
 }
 
-func TestServerWithCurl(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("skipping Docker test on Darwin; requires --net which won't work with boot2docker anyway")
+// TestServerWithCurl currently fails, hence the LenientCipherSuites test. See:
+//   https://github.com/tatsuhiro-t/nghttp2/issues/140 &
+//   http://sourceforge.net/p/curl/bugs/1472/
+func TestServerWithCurl(t *testing.T)                     { testServerWithCurl(t, false) }
+func TestServerWithCurl_LenientCipherSuites(t *testing.T) { testServerWithCurl(t, true) }
+
+func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
+	if runtime.GOOS != "linux" {
+		t.Skip("skipping Docker test when not on Linux; requires --net which won't work with boot2docker anyway")
 	}
 	requireCurl(t)
 	const msg = "Hello from curl!\n"
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Foo", "Bar")
+		w.Header().Set("Client-Proto", r.Proto)
 		io.WriteString(w, msg)
 	}))
-	ConfigureServer(ts.Config, &Server{})
+	ConfigureServer(ts.Config, &Server{
+		PermitProhibitedCipherSuites: permitProhibitedCipherSuites,
+	})
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.StartTLS()
 	defer ts.Close()
@@ -2138,8 +2147,12 @@ func TestServerWithCurl(t *testing.T) {
 		if err, ok := res.(error); ok {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(res.([]byte)), "< foo:Bar") {
-			t.Errorf("didn't see foo:Bar header")
+		if !strings.Contains(string(res.([]byte)), "foo: Bar") {
+			t.Errorf("didn't see foo: Bar header")
+			t.Logf("Got: %s", res)
+		}
+		if !strings.Contains(string(res.([]byte)), "client-proto: HTTP/2") {
+			t.Errorf("didn't see client-proto: HTTP/2 header")
 			t.Logf("Got: %s", res)
 		}
 		if !strings.Contains(string(res.([]byte)), msg) {
