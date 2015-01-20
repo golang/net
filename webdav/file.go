@@ -194,7 +194,7 @@ func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, f
 				Err:  os.ErrNotExist,
 			}
 		}
-		if !child.IsDir() {
+		if !child.mode.IsDir() {
 			return &os.PathError{
 				Op:   op,
 				Path: original,
@@ -245,7 +245,6 @@ func (fs *memFS) Mkdir(name string, perm os.FileMode) error {
 		return os.ErrExist
 	}
 	dir.children[frag] = &memFSNode{
-		name:     frag,
 		children: make(map[string]*memFSNode),
 		mode:     perm.Perm() | os.ModeDir,
 		modTime:  time.Now(),
@@ -267,7 +266,7 @@ func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error)
 		if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
 			return nil, os.ErrPermission
 		}
-		n = &fs.root
+		n, frag = &fs.root, "/"
 
 	} else {
 		n = dir.children[frag]
@@ -281,7 +280,6 @@ func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error)
 			}
 			if n == nil {
 				n = &memFSNode{
-					name: frag,
 					mode: perm.Perm(),
 				}
 				dir.children[frag] = n
@@ -298,11 +296,12 @@ func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error)
 	}
 
 	children := make([]os.FileInfo, 0, len(n.children))
-	for _, c := range n.children {
-		children = append(children, c)
+	for cName, c := range n.children {
+		children = append(children, c.stat(cName))
 	}
 	return &memFile{
 		n:                n,
+		nameSnapshot:     frag,
 		childrenSnapshot: children,
 	}, nil
 }
@@ -359,12 +358,9 @@ func (fs *memFS) Rename(oldName, newName string) error {
 	if !ok {
 		return os.ErrNotExist
 	}
-	if oNode.IsDir() {
+	if oNode.children != nil {
 		if nNode, ok := nDir.children[nFrag]; ok {
-			nNode.mu.Lock()
-			isDir := nNode.mode.IsDir()
-			nNode.mu.Unlock()
-			if !isDir {
+			if nNode.children == nil {
 				return errNotADirectory
 			}
 			if len(nNode.children) != 0 {
@@ -387,10 +383,10 @@ func (fs *memFS) Stat(name string) (os.FileInfo, error) {
 	}
 	if dir == nil {
 		// We're stat'ting the root.
-		return &fs.root, nil
+		return fs.root.stat("/"), nil
 	}
 	if n, ok := dir.children[frag]; ok {
-		return n, nil
+		return n.stat(path.Base(name)), nil
 	}
 	return nil, os.ErrNotExist
 }
@@ -398,53 +394,46 @@ func (fs *memFS) Stat(name string) (os.FileInfo, error) {
 // A memFSNode represents a single entry in the in-memory filesystem and also
 // implements os.FileInfo.
 type memFSNode struct {
-	name string
-
 	// children is protected by memFS.mu.
 	children map[string]*memFSNode
 
 	mu      sync.Mutex
-	modTime time.Time
-	mode    os.FileMode
 	data    []byte
+	mode    os.FileMode
+	modTime time.Time
 }
 
-func (n *memFSNode) Name() string {
-	return n.name
-}
-
-func (n *memFSNode) Size() int64 {
+func (n *memFSNode) stat(name string) *memFileInfo {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return int64(len(n.data))
+	return &memFileInfo{
+		name:    name,
+		size:    int64(len(n.data)),
+		mode:    n.mode,
+		modTime: n.modTime,
+	}
 }
 
-func (n *memFSNode) Mode() os.FileMode {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return n.mode
+type memFileInfo struct {
+	name    string
+	size    int64
+	mode    os.FileMode
+	modTime time.Time
 }
 
-func (n *memFSNode) ModTime() time.Time {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return n.modTime
-}
-
-func (n *memFSNode) IsDir() bool {
-	return n.Mode().IsDir()
-}
-
-func (n *memFSNode) Sys() interface{} {
-	return nil
-}
+func (f *memFileInfo) Name() string       { return f.name }
+func (f *memFileInfo) Size() int64        { return f.size }
+func (f *memFileInfo) Mode() os.FileMode  { return f.mode }
+func (f *memFileInfo) ModTime() time.Time { return f.modTime }
+func (f *memFileInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f *memFileInfo) Sys() interface{}   { return nil }
 
 // A memFile is a File implementation for a memFSNode. It is a per-file (not
-// per-node) read/write position, and if the node is a directory, a snapshot of
-// that node's children.
+// per-node) read/write position, and a snapshot of the memFS' tree structure
+// (a node's name and children) for that node.
 type memFile struct {
-	n *memFSNode
-	// childrenSnapshot is a snapshot of n.children.
+	n                *memFSNode
+	nameSnapshot     string
 	childrenSnapshot []os.FileInfo
 	// pos is protected by n.mu.
 	pos int
@@ -518,7 +507,7 @@ func (f *memFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (f *memFile) Stat() (os.FileInfo, error) {
-	return f.n, nil
+	return f.n.stat(f.nameSnapshot), nil
 }
 
 func (f *memFile) Write(p []byte) (int, error) {

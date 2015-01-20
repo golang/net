@@ -11,6 +11,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -202,10 +204,10 @@ func TestWalk(t *testing.T) {
 			}
 		}
 
-		i := 0
+		i, prevFrag := 0, ""
 		err := fs.walk("test", tc.dir, func(dir *memFSNode, frag string, final bool) error {
 			got := walkStep{
-				name:  dir.name,
+				name:  prevFrag,
 				frag:  frag,
 				final: final,
 			}
@@ -214,13 +216,43 @@ func TestWalk(t *testing.T) {
 			if got != want {
 				return fmt.Errorf("got %+v, want %+v", got, want)
 			}
-			i++
+			i, prevFrag = i+1, frag
 			return nil
 		})
 		if err != nil {
 			t.Errorf("tc.dir=%q: %v", tc.dir, err)
 		}
 	}
+}
+
+// find appends to ss the names of the named file and its children. It is
+// analogous to the Unix find command.
+//
+// The returned strings are not guaranteed to be in any particular order.
+func find(ss []string, fs FileSystem, name string) ([]string, error) {
+	stat, err := fs.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+	ss = append(ss, name)
+	if stat.IsDir() {
+		f, err := fs.OpenFile(name, os.O_RDONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		children, err := f.Readdir(-1)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range children {
+			ss, err = find(ss, fs, path.Join(name, c.Name()))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return ss, nil
 }
 
 func testFS(t *testing.T, fs FileSystem) {
@@ -236,8 +268,8 @@ func testFS(t *testing.T, fs FileSystem) {
 		return "ok"
 	}
 
-	// The non-"stat" test cases should change the file system state. The
-	// indentation of the "stat"s helps distinguish such test cases.
+	// The non-"find" non-"stat" test cases should change the file system state. The
+	// indentation of the "find"s and "stat"s helps distinguish such test cases.
 	testCases := []string{
 		"  stat / want dir",
 		"  stat /a want errNotExist",
@@ -252,6 +284,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /d want dir",
 		"create /d/e EEE want ok",
 		"  stat /d/e want 3",
+		"  find / /a /d /d/e",
 		"create /d/f FFFF want ok",
 		"create /d/g GGGGGGG want ok",
 		"mk-dir /d/m want ok",
@@ -263,6 +296,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /d/h want errNotExist",
 		"  stat /d/m want dir",
 		"  stat /d/m/p want 5",
+		"  find / /a /d /d/e /d/f /d/g /d/m /d/m/p",
 		"rm-all /d want ok",
 		"  stat /a want 1",
 		"  stat /d want errNotExist",
@@ -271,6 +305,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /d/g want errNotExist",
 		"  stat /d/m want errNotExist",
 		"  stat /d/m/p want errNotExist",
+		"  find / /a",
 		"mk-dir /d/m want errNotExist",
 		"mk-dir /d want ok",
 		"create /d/f FFFF want ok",
@@ -285,6 +320,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /c want errNotExist",
 		"  stat /d want dir",
 		"  stat /d/m want dir",
+		"  find / /a /b /d /d/m",
 		"rename /b /b want ok",
 		"  stat /b want 2",
 		"  stat /c want errNotExist",
@@ -293,6 +329,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /c want 2",
 		"  stat /d/m want dir",
 		"  stat /d/n want errNotExist",
+		"  find / /a /c /d /d/m",
 		"rename /d/m /d/n want ok",
 		"create /d/n/q QQQQ want ok",
 		"  stat /d/m want errNotExist",
@@ -302,6 +339,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"rename /c /d/n/q want ok",
 		"  stat /c want errNotExist",
 		"  stat /d/n/q want 2",
+		"  find / /a /d /d/n /d/n/q",
 		"create /d/n/r RRRRR want ok",
 		"mk-dir /u want ok",
 		"mk-dir /u/v want ok",
@@ -316,10 +354,12 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /t want dir",
 		"  stat /t/q want 2",
 		"  stat /t/r want 5",
+		"  find / /a /d /t /t/q /t/r /u /u/v",
 		"rename /t / want err",
 		"rename /t /u/v want ok",
 		"  stat /u/v/r want 5",
 		"rename / /x want err",
+		"  find / /a /d /u /u/v /u/v/q /u/v/r",
 	}
 
 	for i, tc := range testCases {
@@ -352,6 +392,17 @@ func testFS(t *testing.T, fs FileSystem) {
 				}
 			}
 
+		case "find":
+			got, err := find(nil, fs, "/")
+			if err != nil {
+				t.Fatalf("test case #%d %q: find: %v", i, tc, err)
+			}
+			sort.Strings(got)
+			want := strings.Split(arg, " ")
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("test case #%d %q:\ngot  %s\nwant %s", i, tc, got, want)
+			}
+
 		case "mk-dir", "rename", "rm-all", "stat":
 			nParts := 3
 			if op == "rename" {
@@ -372,11 +423,21 @@ func testFS(t *testing.T, fs FileSystem) {
 				opErr = fs.RemoveAll(parts[0])
 			case "stat":
 				var stat os.FileInfo
-				if stat, opErr = fs.Stat(parts[0]); opErr == nil {
+				fileName := parts[0]
+				if stat, opErr = fs.Stat(fileName); opErr == nil {
 					if stat.IsDir() {
 						got = "dir"
 					} else {
 						got = strconv.Itoa(int(stat.Size()))
+					}
+
+					if fileName == "/" {
+						// For a Dir FileSystem, the virtual file system root maps to a
+						// real file system name like "/tmp/webdav-test012345", which does
+						// not end with "/". We skip such cases.
+					} else if statName := stat.Name(); path.Base(fileName) != statName {
+						t.Fatalf("test case #%d %q: file name %q inconsistent with stat name %q",
+							i, tc, fileName, statName)
 					}
 				}
 			}
