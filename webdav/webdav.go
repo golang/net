@@ -323,11 +323,6 @@ func parseDepth(s string) int {
 	return invalidDepth
 }
 
-func parseTimeout(s string) (time.Duration, error) {
-	// TODO: implement.
-	return 1 * time.Second, nil
-}
-
 // http://www.webdav.org/specs/rfc4918.html#status.code.extensions.to.http11
 const (
 	StatusMulti               = 207
@@ -360,6 +355,7 @@ var (
 	errInvalidLockInfo     = errors.New("webdav: invalid lock info")
 	errInvalidLockToken    = errors.New("webdav: invalid lock token")
 	errInvalidPropfind     = errors.New("webdav: invalid propfind")
+	errInvalidTimeout      = errors.New("webdav: invalid timeout")
 	errNoFileSystem        = errors.New("webdav: no file system")
 	errNoLockSystem        = errors.New("webdav: no lock system")
 	errNotADirectory       = errors.New("webdav: not a directory")

@@ -251,3 +251,100 @@ func (m *memLS) consistent() error {
 	}
 	return nil
 }
+
+func TestParseTimeout(t *testing.T) {
+	testCases := []struct {
+		s       string
+		want    time.Duration
+		wantErr error
+	}{{
+		"",
+		infiniteTimeout,
+		nil,
+	}, {
+		"Infinite",
+		infiniteTimeout,
+		nil,
+	}, {
+		"Infinitesimal",
+		0,
+		errInvalidTimeout,
+	}, {
+		"infinite",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second-0",
+		0 * time.Second,
+		nil,
+	}, {
+		"Second-123",
+		123 * time.Second,
+		nil,
+	}, {
+		"  Second-456    ",
+		456 * time.Second,
+		nil,
+	}, {
+		"Second-4100000000",
+		4100000000 * time.Second,
+		nil,
+	}, {
+		"junk",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second-",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second--1",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second--123",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second-+123",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second-0x123",
+		0,
+		errInvalidTimeout,
+	}, {
+		"second-123",
+		0,
+		errInvalidTimeout,
+	}, {
+		"Second-4294967295",
+		4294967295 * time.Second,
+		nil,
+	}, {
+		// Section 10.7 says that "The timeout value for TimeType "Second"
+		// must not be greater than 2^32-1."
+		"Second-4294967296",
+		0,
+		errInvalidTimeout,
+	}, {
+		// This test case comes from section 9.10.9 of the spec. It says,
+		//
+		// "In this request, the client has specified that it desires an
+		// infinite-length lock, if available, otherwise a timeout of 4.1
+		// billion seconds, if available."
+		//
+		// The Go WebDAV package always supports infinite length locks,
+		// and ignores the fallback after the comma.
+		"Infinite, Second-4100000000",
+		infiniteTimeout,
+		nil,
+	}}
+
+	for _, tc := range testCases {
+		got, gotErr := parseTimeout(tc.s)
+		if got != tc.want || gotErr != tc.wantErr {
+			t.Errorf("parsing %q:\ngot  %v, %v\nwant %v, %v", tc.s, got, gotErr, tc.want, tc.wantErr)
+		}
+	}
+}
