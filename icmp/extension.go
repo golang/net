@@ -74,6 +74,12 @@ func parseExtensions(b []byte, l int) ([]Extension, int, error) {
 				return nil, -1, err
 			}
 			exts = append(exts, ext)
+		case classInterfaceInfo:
+			ext, err := parseInterfaceInfo(b[:ol])
+			if err != nil {
+				return nil, -1, err
+			}
+			exts = append(exts, ext)
 		}
 		b = b[ol:]
 	}

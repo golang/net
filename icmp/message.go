@@ -9,6 +9,8 @@
 // ICMPv4 and ICMPv6 are defined in RFC 792 and RFC 4443.
 // Multi-part message support for ICMP is defined in RFC 4884.
 // ICMP extensions for MPLS are defined in RFC 4950.
+// ICMP extensions for interface and next-hop identification are
+// defined in RFC 5837.
 package icmp // import "golang.org/x/net/icmp"
 
 import (

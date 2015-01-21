@@ -5,6 +5,7 @@
 package icmp
 
 import (
+	"net"
 	"reflect"
 	"testing"
 
@@ -90,6 +91,78 @@ var marshalAndParseExtensionTests = []struct {
 			},
 		},
 	},
+	// Interface information with no attribute
+	{
+		proto: iana.ProtocolICMP,
+		hdr: []byte{
+			0x20, 0x00, 0x00, 0x00,
+		},
+		obj: []byte{
+			0x00, 0x04, 0x02, 0x00,
+		},
+		exts: []Extension{
+			&InterfaceInfo{
+				Class: classInterfaceInfo,
+			},
+		},
+	},
+	// Interface information with ifIndex and name
+	{
+		proto: iana.ProtocolICMP,
+		hdr: []byte{
+			0x20, 0x00, 0x00, 0x00,
+		},
+		obj: []byte{
+			0x00, 0x10, 0x02, 0x0a,
+			0x00, 0x00, 0x00, 0x10,
+			0x08, byte('e'), byte('n'), byte('1'),
+			byte('0'), byte('1'), 0x00, 0x00,
+		},
+		exts: []Extension{
+			&InterfaceInfo{
+				Class: classInterfaceInfo,
+				Type:  0x0a,
+				Interface: &net.Interface{
+					Index: 16,
+					Name:  "en101",
+				},
+			},
+		},
+	},
+	// Interface information with ifIndex, IPAddr, name and MTU
+	{
+		proto: iana.ProtocolIPv6ICMP,
+		hdr: []byte{
+			0x20, 0x00, 0x00, 0x00,
+		},
+		obj: []byte{
+			0x00, 0x28, 0x02, 0x0f,
+			0x00, 0x00, 0x00, 0x0f,
+			0x00, 0x02, 0x00, 0x00,
+			0xfe, 0x80, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x01,
+			0x08, byte('e'), byte('n'), byte('1'),
+			byte('0'), byte('1'), 0x00, 0x00,
+			0x00, 0x00, 0x20, 0x00,
+		},
+		exts: []Extension{
+			&InterfaceInfo{
+				Class: classInterfaceInfo,
+				Type:  0x0f,
+				Interface: &net.Interface{
+					Index: 15,
+					Name:  "en101",
+					MTU:   8192,
+				},
+				Addr: &net.IPAddr{
+					IP:   net.ParseIP("fe80::1"),
+					Zone: "en101",
+				},
+			},
+		},
+	},
 }
 
 func TestMarshalAndParseExtension(t *testing.T) {
@@ -99,6 +172,12 @@ func TestMarshalAndParseExtension(t *testing.T) {
 			var b []byte
 			switch ext := ext.(type) {
 			case *MPLSLabelStack:
+				b, err = ext.Marshal(tt.proto)
+				if err != nil {
+					t.Errorf("#%v/%v: %v", i, j, err)
+					continue
+				}
+			case *InterfaceInfo:
 				b, err = ext.Marshal(tt.proto)
 				if err != nil {
 					t.Errorf("#%v/%v: %v", i, j, err)
@@ -148,6 +227,9 @@ func TestMarshalAndParseExtension(t *testing.T) {
 					switch ext := ext.(type) {
 					case *MPLSLabelStack:
 						want := tt.exts[j].(*MPLSLabelStack)
+						t.Errorf("#%v/%v: got %#v; want %#v", i, j, ext, want)
+					case *InterfaceInfo:
+						want := tt.exts[j].(*InterfaceInfo)
 						t.Errorf("#%v/%v: got %#v; want %#v", i, j, ext, want)
 					}
 				}

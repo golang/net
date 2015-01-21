@@ -65,6 +65,12 @@ func marshalMultipartMessageBody(proto int, data []byte, exts []Extension) ([]by
 					return nil, err
 				}
 				off += ext.Len(proto)
+			case *InterfaceInfo:
+				attrs, l := ext.attrsAndLen(proto)
+				if err := ext.marshal(proto, b[off:], attrs, l); err != nil {
+					return nil, err
+				}
+				off += ext.Len(proto)
 			}
 		}
 		s := checksum(b[dataLen+4:])

@@ -34,6 +34,18 @@ var marshalAndParseMultipartMessageForIPv4Tests = []icmp.Message{
 						},
 					},
 				},
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x0f,
+					Interface: &net.Interface{
+						Index: 15,
+						Name:  "en101",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP: net.IPv4(192, 168, 0, 1).To4(),
+					},
+				},
 			},
 		},
 	},
@@ -42,6 +54,18 @@ var marshalAndParseMultipartMessageForIPv4Tests = []icmp.Message{
 		Body: &icmp.TimeExceeded{
 			Data: []byte("ERROR-INVOKING-PACKET"),
 			Extensions: []icmp.Extension{
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x0f,
+					Interface: &net.Interface{
+						Index: 15,
+						Name:  "en101",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP: net.IPv4(192, 168, 0, 1).To4(),
+					},
+				},
 				&icmp.MPLSLabelStack{
 					Class: 1,
 					Type:  1,
@@ -75,6 +99,30 @@ var marshalAndParseMultipartMessageForIPv4Tests = []icmp.Message{
 						},
 					},
 				},
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x0f,
+					Interface: &net.Interface{
+						Index: 15,
+						Name:  "en101",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP: net.IPv4(192, 168, 0, 1).To4(),
+					},
+				},
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x2f,
+					Interface: &net.Interface{
+						Index: 16,
+						Name:  "en102",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP: net.IPv4(192, 168, 0, 2).To4(),
+					},
+				},
 			},
 		},
 	},
@@ -100,7 +148,7 @@ func TestMarshalAndParseMultipartMessageForIPv4(t *testing.T) {
 		case ipv4.ICMPTypeDestinationUnreachable:
 			got, want := m.Body.(*icmp.DstUnreach), tt.Body.(*icmp.DstUnreach)
 			if !reflect.DeepEqual(got.Extensions, want.Extensions) {
-				t.Errorf("#%v: got %#v; want %#v", i, got.Extensions, want.Extensions)
+				t.Error(dumpExtensions(i, got.Extensions, want.Extensions))
 			}
 			if len(got.Data) != 128 {
 				t.Errorf("#%v: got %v; want 128", i, len(got.Data))
@@ -143,6 +191,19 @@ var marshalAndParseMultipartMessageForIPv6Tests = []icmp.Message{
 						},
 					},
 				},
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x0f,
+					Interface: &net.Interface{
+						Index: 15,
+						Name:  "en101",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP:   net.ParseIP("fe80::1"),
+						Zone: "en101",
+					},
+				},
 			},
 		},
 	},
@@ -151,6 +212,19 @@ var marshalAndParseMultipartMessageForIPv6Tests = []icmp.Message{
 		Body: &icmp.TimeExceeded{
 			Data: []byte("ERROR-INVOKING-PACKET"),
 			Extensions: []icmp.Extension{
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x0f,
+					Interface: &net.Interface{
+						Index: 15,
+						Name:  "en101",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP:   net.ParseIP("fe80::1"),
+						Zone: "en101",
+					},
+				},
 				&icmp.MPLSLabelStack{
 					Class: 1,
 					Type:  1,
@@ -161,6 +235,19 @@ var marshalAndParseMultipartMessageForIPv6Tests = []icmp.Message{
 							S:     true,
 							TTL:   255,
 						},
+					},
+				},
+				&icmp.InterfaceInfo{
+					Class: 2,
+					Type:  0x2f,
+					Interface: &net.Interface{
+						Index: 16,
+						Name:  "en102",
+						MTU:   8192,
+					},
+					Addr: &net.IPAddr{
+						IP:   net.ParseIP("fe80::1"),
+						Zone: "en102",
 					},
 				},
 			},
@@ -216,6 +303,11 @@ func dumpExtensions(i int, gotExts, wantExts []icmp.Extension) string {
 			want := wantExts[j].(*icmp.MPLSLabelStack)
 			if !reflect.DeepEqual(got, want) {
 				s += fmt.Sprintf("#%v/%v: got %#v; want %#v\n", i, j, got, want)
+			}
+		case *icmp.InterfaceInfo:
+			want := wantExts[j].(*icmp.InterfaceInfo)
+			if !reflect.DeepEqual(got, want) {
+				s += fmt.Sprintf("#%v/%v: got %#v, %#v, %#v; want %#v, %#v, %#v\n", i, j, got, got.Interface, got.Addr, want, want.Interface, want.Addr)
 			}
 		}
 	}
