@@ -183,3 +183,120 @@ func readPropfind(r io.Reader) (pf propfind, status int, err error) {
 	}
 	return pf, 0, nil
 }
+
+// Property represents a single DAV resource property as defined in RFC 4918.
+// See http://www.webdav.org/specs/rfc4918.html#data.model.for.resource.properties
+type Property struct {
+	// XMLName is the fully qualified name that identifies this property.
+	XMLName xml.Name
+
+	// Lang is an optional xml:lang attribute.
+	Lang string `xml:"xml:lang,attr,omitempty"`
+
+	// InnerXML contains the XML representation of the property value.
+	// See http://www.webdav.org/specs/rfc4918.html#property_values
+	//
+	// Property values of complex type or mixed-content must have fully
+	// expanded XML namespaces or be self-contained with according
+	// XML namespace declarations. They must not rely on any XML
+	// namespace declarations within the scope of the XML document,
+	// even including the DAV: namespace.
+	InnerXML []byte `xml:",innerxml"`
+}
+
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_error
+type xmlError struct {
+	XMLName  xml.Name `xml:"DAV: error"`
+	InnerXML []byte   `xml:",innerxml"`
+}
+
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_propstat
+type propstat struct {
+	// Prop requires DAV: to be the default namespace in the enclosing
+	// XML. This is due to the standard encoding/xml package currently
+	// not honoring namespace declarations inside a xmltag with a
+	// parent element for anonymous slice elements.
+	// Use of multistatusWriter takes care of this.
+	Prop                []Property `xml:"prop>_ignored_"`
+	Status              string     `xml:"DAV: status"`
+	Error               *xmlError  `xml:"DAV: error"`
+	ResponseDescription string     `xml:"DAV: responsedescription,omitempty"`
+}
+
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_response
+type response struct {
+	XMLName             xml.Name   `xml:"DAV: response"`
+	Href                []string   `xml:"DAV: href"`
+	Propstat            []propstat `xml:"DAV: propstat"`
+	Status              string     `xml:"DAV: status,omitempty"`
+	Error               *xmlError  `xml:"DAV: error"`
+	ResponseDescription string     `xml:"DAV: responsedescription,omitempty"`
+}
+
+// MultistatusWriter marshals one or more Responses into a XML
+// multistatus response.
+// See http://www.webdav.org/specs/rfc4918.html#ELEMENT_multistatus
+type multistatusWriter struct {
+	// ResponseDescription contains the optional responsedescription
+	// of the multistatus XML element. Only the latest content before
+	// close will be emitted. Empty response descriptions are not
+	// written.
+	responseDescription string
+
+	w   http.ResponseWriter
+	enc *xml.Encoder
+}
+
+// Write validates and emits a DAV response as part of a multistatus response
+// element.
+//
+// It sets the HTTP status code of its underlying http.ResponseWriter to 207
+// (Multi-Status) and populates the Content-Type header. If r is the
+// first, valid response to be written, Write prepends the XML representation
+// of r with a multistatus tag. Callers must call close after the last response
+// has been written.
+func (w *multistatusWriter) write(r *response) error {
+	switch len(r.Href) {
+	case 0:
+		return errInvalidResponse
+	case 1:
+		if len(r.Propstat) > 0 != (r.Status == "") {
+			return errInvalidResponse
+		}
+	default:
+		if len(r.Propstat) > 0 || r.Status == "" {
+			return errInvalidResponse
+		}
+	}
+	if w.enc == nil {
+		w.w.WriteHeader(StatusMulti)
+		w.w.Header().Add("Content-Type", "text/xml; charset=utf-8")
+		_, err := fmt.Fprintf(w.w, `<?xml version="1.0" encoding="UTF-8"?>`+
+			`<D:multistatus xmlns:D="DAV:">`)
+		if err != nil {
+			return err
+		}
+		w.enc = xml.NewEncoder(w.w)
+	}
+	return w.enc.Encode(r)
+}
+
+// Close completes the marshalling of the multistatus response. It returns
+// an error if the multistatus response could not be completed. If both the
+// return value and field enc of w are nil, then no multistatus response has
+// been written.
+func (w *multistatusWriter) close() error {
+	if w.enc == nil {
+		return nil
+	}
+	if w.responseDescription != "" {
+		_, err := fmt.Fprintf(w.w,
+			"<D:responsedescription>%s</D:responsedescription>",
+			w.responseDescription)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(w.w, "</D:multistatus>")
+	return err
+}
