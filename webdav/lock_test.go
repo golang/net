@@ -10,6 +10,7 @@ import (
 	"path"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,12 @@ func TestWalkToRoot(t *testing.T) {
 			t.Errorf("name=%q:\ngot  %q\nwant %q", tc.name, got, tc.want)
 		}
 	}
+}
+
+var lockTestDurations = []time.Duration{
+	-1,              // A negative duration means to never expire.
+	0,               // A zero duration means to expire immediately.
+	100 * time.Hour, // A very large duration will not expire in these tests.
 }
 
 // lockTestNames are the names of a set of mutually compatible locks. For each
@@ -148,32 +155,198 @@ func TestMemLSCanCreate(t *testing.T) {
 	check(0, "/")
 }
 
-func TestMemLSCreateUnlock(t *testing.T) {
+func TestMemLSExpiry(t *testing.T) {
+	m := NewMemLS().(*memLS)
+	testCases := []string{
+		"setNow 0",
+		"create /a.5",
+		"want /a.5",
+		"create /c.6",
+		"want /a.5 /c.6",
+		"create /a/b.7",
+		"want /a.5 /a/b.7 /c.6",
+		"setNow 4",
+		"want /a.5 /a/b.7 /c.6",
+		"setNow 5",
+		"want /a/b.7 /c.6",
+		"setNow 6",
+		"want /a/b.7",
+		"setNow 7",
+		"want ",
+		"setNow 8",
+		"want ",
+		"create /a.12",
+		"create /b.13",
+		"create /c.15",
+		"create /a/d.16",
+		"want /a.12 /a/d.16 /b.13 /c.15",
+		"refresh /a.14",
+		"want /a.14 /a/d.16 /b.13 /c.15",
+		"setNow 12",
+		"want /a.14 /a/d.16 /b.13 /c.15",
+		"setNow 13",
+		"want /a.14 /a/d.16 /c.15",
+		"setNow 14",
+		"want /a/d.16 /c.15",
+		"refresh /a/d.20",
+		"refresh /c.20",
+		"want /a/d.20 /c.20",
+		"setNow 20",
+		"want ",
+	}
+
+	tokens := map[string]string{}
+	zTime := time.Unix(0, 0)
+	now := zTime
+	for i, tc := range testCases {
+		j := strings.IndexByte(tc, ' ')
+		if j < 0 {
+			t.Fatalf("test case #%d %q: invalid command", i, tc)
+		}
+		op, arg := tc[:j], tc[j+1:]
+		switch op {
+		default:
+			t.Fatalf("test case #%d %q: invalid operation %q", i, tc, op)
+
+		case "create", "refresh":
+			parts := strings.Split(arg, ".")
+			if len(parts) != 2 {
+				t.Fatalf("test case #%d %q: invalid create", i, tc)
+			}
+			root := parts[0]
+			d, err := strconv.Atoi(parts[1])
+			if err != nil {
+				t.Fatalf("test case #%d %q: invalid duration", i, tc)
+			}
+			dur := time.Unix(0, 0).Add(time.Duration(d) * time.Second).Sub(now)
+
+			switch op {
+			case "create":
+				token, err := m.Create(now, LockDetails{
+					Root:      root,
+					Duration:  dur,
+					ZeroDepth: true,
+				})
+				if err != nil {
+					t.Fatalf("test case #%d %q: Create: %v", i, tc, err)
+				}
+				tokens[root] = token
+
+			case "refresh":
+				token := tokens[root]
+				if token == "" {
+					t.Fatalf("test case #%d %q: no token for %q", i, tc, root)
+				}
+				got, err := m.Refresh(now, token, dur)
+				if err != nil {
+					t.Fatalf("test case #%d %q: Refresh: %v", i, tc, err)
+				}
+				want := LockDetails{
+					Root:      root,
+					Duration:  dur,
+					ZeroDepth: true,
+				}
+				if got != want {
+					t.Fatalf("test case #%d %q:\ngot  %v\nwant %v", i, tc, got, want)
+				}
+			}
+
+		case "setNow":
+			d, err := strconv.Atoi(arg)
+			if err != nil {
+				t.Fatalf("test case #%d %q: invalid duration", i, tc)
+			}
+			now = time.Unix(0, 0).Add(time.Duration(d) * time.Second)
+
+		case "want":
+			m.mu.Lock()
+			m.collectExpiredNodes(now)
+			got := make([]string, 0, len(m.byToken))
+			for _, n := range m.byToken {
+				got = append(got, fmt.Sprintf("%s.%d",
+					n.details.Root, n.expiry.Sub(zTime)/time.Second))
+			}
+			m.mu.Unlock()
+			sort.Strings(got)
+			want := []string{}
+			if arg != "" {
+				want = strings.Split(arg, " ")
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("test case #%d %q:\ngot  %q\nwant %q", i, tc, got, want)
+			}
+		}
+
+		if err := m.consistent(); err != nil {
+			t.Fatalf("test case #%d %q: inconsistent state: %v", i, tc, err)
+		}
+	}
+}
+
+func TestMemLSCreateRefreshUnlock(t *testing.T) {
 	now := time.Unix(0, 0)
 	m := NewMemLS().(*memLS)
 	rng := rand.New(rand.NewSource(0))
 	tokens := map[string]string{}
-	for i := 0; i < 1000; i++ {
+	nCreate, nRefresh, nUnlock := 0, 0, 0
+	const N = 2000
+
+	for i := 0; i < N; i++ {
 		name := lockTestNames[rng.Intn(len(lockTestNames))]
-		if token := tokens[name]; token != "" {
-			if err := m.Unlock(now, token); err != nil {
-				t.Fatalf("iteration #%d: unlock %q: %v", i, name, err)
+		duration := lockTestDurations[rng.Intn(len(lockTestDurations))]
+		unlocked := false
+
+		// If the name was already locked, there's a 50-50 chance that
+		// we refresh or unlock it. Otherwise, we create a lock.
+		token := tokens[name]
+		if token != "" {
+			if rng.Intn(2) == 0 {
+				nRefresh++
+				if _, err := m.Refresh(now, token, duration); err != nil {
+					t.Fatalf("iteration #%d: Refresh %q: %v", i, name, err)
+				}
+			} else {
+				unlocked = true
+				nUnlock++
+				if err := m.Unlock(now, token); err != nil {
+					t.Fatalf("iteration #%d: Unlock %q: %v", i, name, err)
+				}
 			}
-			tokens[name] = ""
+
 		} else {
-			token, err := m.Create(now, LockDetails{
+			nCreate++
+			var err error
+			token, err = m.Create(now, LockDetails{
 				Root:      name,
-				Duration:  -1,
+				Duration:  duration,
 				ZeroDepth: lockTestZeroDepth(name),
 			})
 			if err != nil {
-				t.Fatalf("iteration #%d: create %q: %v", i, name, err)
+				t.Fatalf("iteration #%d: Create %q: %v", i, name, err)
 			}
+		}
+
+		if duration == 0 || unlocked {
+			// A zero-duration lock should expire immediately and is
+			// effectively equivalent to being unlocked.
+			tokens[name] = ""
+		} else {
 			tokens[name] = token
 		}
+
 		if err := m.consistent(); err != nil {
 			t.Fatalf("iteration #%d: inconsistent state: %v", i, err)
 		}
+	}
+
+	if nCreate < N/10 {
+		t.Fatalf("too few Create calls: got %d, want >= %d", nCreate, N/10)
+	}
+	if nRefresh < N/10 {
+		t.Fatalf("too few Refresh calls: got %d, want >= %d", nRefresh, N/10)
+	}
+	if nUnlock < N/10 {
+		t.Fatalf("too few Unlock calls: got %d, want >= %d", nUnlock, N/10)
 	}
 }
 
@@ -236,6 +409,16 @@ func (m *memLS) consistent() error {
 				return fmt.Errorf("node at name %q has token %q but not in m.byToken", name, n.token)
 			}
 		}
+
+		// A node n is in m.byExpiry if it has a non-negative byExpiryIndex.
+		if n.byExpiryIndex >= 0 {
+			if n.byExpiryIndex >= len(m.byExpiry) {
+				return fmt.Errorf("node at name %q has byExpiryIndex %d but m.byExpiry has length %d", name, n.byExpiryIndex, len(m.byExpiry))
+			}
+			if n != m.byExpiry[n.byExpiryIndex] {
+				return fmt.Errorf("node at name %q has byExpiryIndex %d but that indexes a different node", name, n.byExpiryIndex)
+			}
+		}
 	}
 
 	for token, n := range m.byToken {
@@ -247,6 +430,18 @@ func (m *memLS) consistent() error {
 		// Every node in m.byToken is in m.byName.
 		if _, ok := m.byName[n.details.Root]; !ok {
 			return fmt.Errorf("node at name %q in m.byToken but not in m.byName", n.details.Root)
+		}
+	}
+
+	for i, n := range m.byExpiry {
+		// The slice indices should be consistent with the node's copy of the index.
+		if n.byExpiryIndex != i {
+			return fmt.Errorf("node byExpiryIndex %d != byExpiry slice index %d", n.byExpiryIndex, i)
+		}
+
+		// Every node in m.byExpiry is in m.byName.
+		if _, ok := m.byName[n.details.Root]; !ok {
+			return fmt.Errorf("node at name %q in m.byExpiry but not in m.byName", n.details.Root)
 		}
 	}
 	return nil

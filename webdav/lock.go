@@ -5,6 +5,7 @@
 package webdav
 
 import (
+	"container/heap"
 	"errors"
 	"strconv"
 	"strings"
@@ -129,6 +130,9 @@ type memLS struct {
 	byName  map[string]*memLSNode
 	byToken map[string]*memLSNode
 	gen     uint64
+	// byExpiry only contains those nodes whose LockDetails have a finite
+	// Duration and are yet to expire.
+	byExpiry byExpiry
 }
 
 func (m *memLS) nextToken() string {
@@ -137,7 +141,12 @@ func (m *memLS) nextToken() string {
 }
 
 func (m *memLS) collectExpiredNodes(now time.Time) {
-	// TODO: implement.
+	for len(m.byExpiry) > 0 {
+		if now.Before(m.byExpiry[0].expiry) {
+			break
+		}
+		m.remove(m.byExpiry[0])
+	}
 }
 
 func (m *memLS) Confirm(now time.Time, name string, conditions ...Condition) (Releaser, error) {
@@ -163,7 +172,10 @@ func (m *memLS) Create(now time.Time, details LockDetails) (string, error) {
 	n.token = m.nextToken()
 	m.byToken[n.token] = n
 	n.details = details
-	// TODO: set n.expiry.
+	if n.details.Duration >= 0 {
+		n.expiry = now.Add(n.details.Duration)
+		heap.Push(&m.byExpiry, n)
+	}
 	return n.token, nil
 }
 
@@ -179,8 +191,15 @@ func (m *memLS) Refresh(now time.Time, token string, duration time.Duration) (Lo
 	if n.held {
 		return LockDetails{}, ErrLocked
 	}
+	if n.byExpiryIndex >= 0 {
+		heap.Remove(&m.byExpiry, n.byExpiryIndex)
+		n.byExpiryIndex = -1
+	}
 	n.details.Duration = duration
-	// TODO: update n.expiry.
+	if n.details.Duration >= 0 {
+		n.expiry = now.Add(n.details.Duration)
+		heap.Push(&m.byExpiry, n)
+	}
 	return n.details, nil
 }
 
@@ -232,6 +251,7 @@ func (m *memLS) create(name string) (ret *memLSNode) {
 				details: LockDetails{
 					Root: name0,
 				},
+				byExpiryIndex: -1,
 			}
 			m.byName[name0] = n
 		}
@@ -255,6 +275,10 @@ func (m *memLS) remove(n *memLSNode) {
 		}
 		return true
 	})
+	if n.byExpiryIndex >= 0 {
+		heap.Remove(&m.byExpiry, n.byExpiryIndex)
+		n.byExpiryIndex = -1
+	}
 }
 
 func walkToRoot(name string, f func(name0 string, first bool) bool) bool {
@@ -284,8 +308,42 @@ type memLSNode struct {
 	refCount int
 	// expiry is when this node's lock expires.
 	expiry time.Time
+	// byExpiryIndex is the index of this node in memLS.byExpiry. It is -1
+	// if this node does not expire, or has expired.
+	byExpiryIndex int
 	// held is whether this node's lock is actively held by a Confirm call.
 	held bool
+}
+
+type byExpiry []*memLSNode
+
+func (b *byExpiry) Len() int {
+	return len(*b)
+}
+
+func (b *byExpiry) Less(i, j int) bool {
+	return (*b)[i].expiry.Before((*b)[j].expiry)
+}
+
+func (b *byExpiry) Swap(i, j int) {
+	(*b)[i], (*b)[j] = (*b)[j], (*b)[i]
+	(*b)[i].byExpiryIndex = i
+	(*b)[j].byExpiryIndex = j
+}
+
+func (b *byExpiry) Push(x interface{}) {
+	n := x.(*memLSNode)
+	n.byExpiryIndex = len(*b)
+	*b = append(*b, n)
+}
+
+func (b *byExpiry) Pop() interface{} {
+	i := len(*b) - 1
+	n := (*b)[i]
+	(*b)[i] = nil
+	n.byExpiryIndex = -1
+	*b = (*b)[:i]
+	return n
 }
 
 const infiniteTimeout = -1
