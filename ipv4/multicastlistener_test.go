@@ -6,7 +6,6 @@ package ipv4_test
 
 import (
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
@@ -163,8 +162,8 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0") // wildcard address
@@ -208,8 +207,8 @@ func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	gaddr := net.IPAddr{IP: net.IPv4(224, 0, 0, 254)} // see RFC 4727

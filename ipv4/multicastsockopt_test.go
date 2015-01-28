@@ -6,7 +6,6 @@ package ipv4_test
 
 import (
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
@@ -35,9 +34,10 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
+	m, ok := nettest.SupportsRawIPSocket()
 	for _, tt := range packetConnMulticastSocketOptionTests {
-		if tt.net == "ip4" && os.Getuid() != 0 {
-			t.Log("must be root")
+		if tt.net == "ip4" && !ok {
+			t.Log(m)
 			continue
 		}
 		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
@@ -69,8 +69,8 @@ func TestRawConnMulticastSocketOptions(t *testing.T) {
 	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {

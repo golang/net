@@ -122,8 +122,8 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
@@ -229,8 +229,8 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
