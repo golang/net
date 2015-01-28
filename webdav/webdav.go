@@ -9,6 +9,7 @@ package webdav // import "golang.org/x/net/webdav"
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,15 +17,12 @@ import (
 	"time"
 )
 
-// TODO: define the PropSystem interface.
-type PropSystem interface{}
-
 type Handler struct {
 	// FileSystem is the virtual file system.
 	FileSystem FileSystem
 	// LockSystem is the lock management system.
 	LockSystem LockSystem
-	// PropSystem is an optional property management system. If non-nil, TODO.
+	// PropSystem is the property management system.
 	PropSystem PropSystem
 	// Logger is an optional error logger. If non-nil, it will be called
 	// for all HTTP requests.
@@ -37,8 +35,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, err = http.StatusInternalServerError, errNoFileSystem
 	} else if h.LockSystem == nil {
 		status, err = http.StatusInternalServerError, errNoLockSystem
+	} else if h.PropSystem == nil {
+		status, err = http.StatusInternalServerError, errNoPropSystem
 	} else {
-		// TODO: PROPFIND, PROPPATCH methods.
 		switch r.Method {
 		case "OPTIONS":
 			status, err = h.handleOptions(w, r)
@@ -56,6 +55,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status, err = h.handleLock(w, r)
 		case "UNLOCK":
 			status, err = h.handleUnlock(w, r)
+		case "PROPFIND":
+			status, err = h.handlePropfind(w, r)
 		}
 	}
 
@@ -429,6 +430,88 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) (status i
 	}
 }
 
+func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status int, err error) {
+	fi, err := h.FileSystem.Stat(r.URL.Path)
+	if err != nil {
+		if err == os.ErrNotExist {
+			return http.StatusNotFound, err
+		}
+		return http.StatusMethodNotAllowed, err
+	}
+	depth := infiniteDepth
+	if hdr := r.Header.Get("Depth"); hdr != "" {
+		depth = parseDepth(hdr)
+		if depth == invalidDepth {
+			return http.StatusBadRequest, errInvalidDepth
+		}
+	}
+	pf, status, err := readPropfind(r.Body)
+	if err != nil {
+		return status, err
+	}
+
+	mw := multistatusWriter{w: w}
+
+	walkFn := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		var pstats []Propstat
+		if pf.Propname != nil {
+			propnames, err := h.PropSystem.Propnames(path)
+			if err != nil {
+				return err
+			}
+			pstat := Propstat{Status: http.StatusOK}
+			for _, xmlname := range propnames {
+				pstat.Props = append(pstat.Props, Property{XMLName: xmlname})
+			}
+			pstats = append(pstats, pstat)
+		} else if pf.Allprop != nil {
+			pstats, err = h.PropSystem.Allprop(path, pf.Prop)
+		} else {
+			pstats, err = h.PropSystem.Find(path, pf.Prop)
+		}
+		if err != nil {
+			return err
+		}
+		return mw.write(makePropstatResponse(path, pstats))
+	}
+
+	err = walkFS(h.FileSystem, depth, r.URL.Path, fi, walkFn)
+	if mw.enc == nil {
+		if err == nil {
+			err = errEmptyMultistatus
+		}
+		// Not a single response has been written.
+		return http.StatusInternalServerError, err
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 0, mw.close()
+}
+
+func makePropstatResponse(href string, pstats []Propstat) *response {
+	resp := response{
+		Href:     []string{href},
+		Propstat: make([]propstat, 0, len(pstats)),
+	}
+	for _, p := range pstats {
+		var xmlErr *xmlError
+		if p.XMLError != "" {
+			xmlErr = &xmlError{InnerXML: []byte(p.XMLError)}
+		}
+		resp.Propstat = append(resp.Propstat, propstat{
+			Status:              fmt.Sprintf("HTTP/1.1 %d %s", p.Status, StatusText(p.Status)),
+			Prop:                p.Props,
+			ResponseDescription: p.ResponseDescription,
+			Error:               xmlErr,
+		})
+	}
+	return &resp
+}
+
 const (
 	infiniteDepth = -1
 	invalidDepth  = -2
@@ -483,6 +566,7 @@ func StatusText(code int) string {
 var (
 	errDestinationEqualsSource = errors.New("webdav: destination equals source")
 	errDirectoryNotEmpty       = errors.New("webdav: directory not empty")
+	errEmptyMultistatus        = errors.New("webdav: empty multistatus response")
 	errInvalidDepth            = errors.New("webdav: invalid depth")
 	errInvalidDestination      = errors.New("webdav: invalid destination")
 	errInvalidIfHeader         = errors.New("webdav: invalid If header")
@@ -493,6 +577,7 @@ var (
 	errInvalidTimeout          = errors.New("webdav: invalid timeout")
 	errNoFileSystem            = errors.New("webdav: no file system")
 	errNoLockSystem            = errors.New("webdav: no lock system")
+	errNoPropSystem            = errors.New("webdav: no property system")
 	errNotADirectory           = errors.New("webdav: not a directory")
 	errRecursionTooDeep        = errors.New("webdav: recursion too deep")
 	errUnsupportedLockInfo     = errors.New("webdav: unsupported lock info")

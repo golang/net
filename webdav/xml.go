@@ -114,6 +114,7 @@ func next(d *xml.Decoder) (xml.Token, error) {
 	}
 }
 
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_prop (for propfind)
 type propnames []xml.Name
 
 // UnmarshalXML appends the property names enclosed within start to pn.

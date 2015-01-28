@@ -32,9 +32,12 @@ var port = flag.Int("port", 9999, "server port")
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
+	fs := webdav.NewMemFS()
+	ls := webdav.NewMemLS()
 	http.Handle("/", &webdav.Handler{
-		FileSystem: webdav.NewMemFS(),
-		LockSystem: webdav.NewMemLS(),
+		FileSystem: fs,
+		LockSystem: ls,
+		PropSystem: webdav.NewMemPS(fs, ls),
 		Logger: func(r *http.Request, err error) {
 			litmus := r.Header.Get("X-Litmus")
 			if len(litmus) > 19 {

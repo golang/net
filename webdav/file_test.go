@@ -823,3 +823,226 @@ func BenchmarkMemFileWrite(b *testing.B) {
 		}
 	}
 }
+
+func TestWalkFS(t *testing.T) {
+	testCases := []struct {
+		desc    string
+		buildfs []string
+		startAt string
+		depth   int
+		walkFn  filepath.WalkFunc
+		want    []string
+	}{{
+		"just root",
+		[]string{},
+		"/",
+		infiniteDepth,
+		nil,
+		[]string{
+			"/",
+		},
+	}, {
+		"infinite walk from root",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/d",
+			"mkdir /e",
+			"touch /f",
+		},
+		"/",
+		infiniteDepth,
+		nil,
+		[]string{
+			"/",
+			"/a",
+			"/a/b",
+			"/a/b/c",
+			"/a/d",
+			"/e",
+			"/f",
+		},
+	}, {
+		"infinite walk from subdir",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/d",
+			"mkdir /e",
+			"touch /f",
+		},
+		"/a",
+		infiniteDepth,
+		nil,
+		[]string{
+			"/a",
+			"/a/b",
+			"/a/b/c",
+			"/a/d",
+		},
+	}, {
+		"depth 1 walk from root",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/d",
+			"mkdir /e",
+			"touch /f",
+		},
+		"/",
+		1,
+		nil,
+		[]string{
+			"/",
+			"/a",
+			"/e",
+			"/f",
+		},
+	}, {
+		"depth 1 walk from subdir",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/b/g",
+			"mkdir /a/b/g/h",
+			"touch /a/b/g/i",
+			"touch /a/b/g/h/j",
+		},
+		"/a/b",
+		1,
+		nil,
+		[]string{
+			"/a/b",
+			"/a/b/c",
+			"/a/b/g",
+		},
+	}, {
+		"depth 0 walk from subdir",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/b/g",
+			"mkdir /a/b/g/h",
+			"touch /a/b/g/i",
+			"touch /a/b/g/h/j",
+		},
+		"/a/b",
+		0,
+		nil,
+		[]string{
+			"/a/b",
+		},
+	}, {
+		"infinite walk from file",
+		[]string{
+			"mkdir /a",
+			"touch /a/b",
+			"touch /a/c",
+		},
+		"/a/b",
+		0,
+		nil,
+		[]string{
+			"/a/b",
+		},
+	}, {
+		"infinite walk with skipped subdir",
+		[]string{
+			"mkdir /a",
+			"mkdir /a/b",
+			"touch /a/b/c",
+			"mkdir /a/b/g",
+			"mkdir /a/b/g/h",
+			"touch /a/b/g/i",
+			"touch /a/b/g/h/j",
+			"touch /a/b/z",
+		},
+		"/",
+		infiniteDepth,
+		func(path string, info os.FileInfo, err error) error {
+			if path == "/a/b/g" {
+				return filepath.SkipDir
+			}
+			return nil
+		},
+		[]string{
+			"/",
+			"/a",
+			"/a/b",
+			"/a/b/c",
+			"/a/b/z",
+		},
+	}}
+	for _, tc := range testCases {
+		fs, err := buildTestFS(tc.buildfs)
+		if err != nil {
+			t.Fatalf("%s: cannot create test filesystem: %v", tc.desc, err)
+		}
+		var got []string
+		traceFn := func(path string, info os.FileInfo, err error) error {
+			if tc.walkFn != nil {
+				err = tc.walkFn(path, info, err)
+				if err != nil {
+					return err
+				}
+			}
+			got = append(got, path)
+			return nil
+		}
+		fi, err := fs.Stat(tc.startAt)
+		if err != nil {
+			t.Fatalf("%s: cannot stat: %v", tc.desc, err)
+		}
+		err = walkFS(fs, tc.depth, tc.startAt, fi, traceFn)
+		if err != nil {
+			t.Errorf("%s:\ngot error %v, want nil", tc.desc, err)
+			continue
+		}
+		sort.Strings(got)
+		sort.Strings(tc.want)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.desc, got, tc.want)
+			continue
+		}
+	}
+}
+
+func buildTestFS(buildfs []string) (FileSystem, error) {
+	// TODO: Could this be merged with the build logic in TestFS?
+
+	fs := NewMemFS()
+	for _, b := range buildfs {
+		op := strings.Split(b, " ")
+		switch op[0] {
+		case "mkdir":
+			err := fs.Mkdir(op[1], os.ModeDir|0777)
+			if err != nil {
+				return nil, err
+			}
+		case "touch":
+			f, err := fs.OpenFile(op[1], os.O_RDWR|os.O_CREATE, 0666)
+			if err != nil {
+				return nil, err
+			}
+			f.Close()
+		case "write":
+			f, err := fs.OpenFile(op[1], os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+			if err != nil {
+				return nil, err
+			}
+			_, err = f.Write([]byte(op[2]))
+			f.Close()
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unknown file operation %q", op[0])
+		}
+	}
+	return fs, nil
+}
