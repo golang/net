@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
@@ -72,8 +73,10 @@ func TestPingGoogle(t *testing.T) {
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 
+	m, ok := nettest.SupportsRawIPSocket()
 	for i, tt := range pingGoogleTests {
-		if tt.network[:2] == "ip" && os.Getuid() != 0 {
+		if tt.network[:2] == "ip" && !ok {
+			t.Log(m)
 			continue
 		}
 		c, err := icmp.ListenPacket(tt.network, tt.address)
