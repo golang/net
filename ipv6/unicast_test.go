@@ -89,8 +89,8 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::1")

@@ -7,7 +7,6 @@ package ipv6_test
 import (
 	"fmt"
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
@@ -164,8 +163,8 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::") // wildcard address
@@ -208,8 +207,8 @@ func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	gaddr := net.IPAddr{IP: net.ParseIP("ff02::114")} // see RFC 4727

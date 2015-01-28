@@ -7,7 +7,6 @@ package ipv6_test
 import (
 	"fmt"
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
@@ -102,8 +101,8 @@ func TestPacketConnChecksum(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	c, err := net.ListenPacket(fmt.Sprintf("ip6:%d", iana.ProtocolOSPFIGP), "::") // OSPF for IPv6

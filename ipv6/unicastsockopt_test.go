@@ -6,11 +6,11 @@ package ipv6_test
 
 import (
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
 	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv6"
 )
 
@@ -59,9 +59,11 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 		t.Skip("ipv6 is not supported")
 	}
 
+	m, ok := nettest.SupportsRawIPSocket()
 	for _, tt := range packetConnUnicastSocketOptionTests {
-		if tt.net == "ip6" && os.Getuid() != 0 {
-			t.Skip("must be root")
+		if tt.net == "ip6" && !ok {
+			t.Log(m)
+			continue
 		}
 		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
 		if err != nil {

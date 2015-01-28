@@ -6,11 +6,11 @@ package ipv6_test
 
 import (
 	"net"
-	"os"
 	"reflect"
 	"runtime"
 	"testing"
 
+	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv6"
 )
 
@@ -67,8 +67,8 @@ func TestSetICMPFilter(t *testing.T) {
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	if os.Getuid() != 0 {
-		t.Skip("must be root")
+	if m, ok := nettest.SupportsRawIPSocket(); !ok {
+		t.Skip(m)
 	}
 
 	c, err := net.ListenPacket("ip6:ipv6-icmp", "::1")

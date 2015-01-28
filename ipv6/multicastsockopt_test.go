@@ -6,7 +6,6 @@ package ipv6_test
 
 import (
 	"net"
-	"os"
 	"runtime"
 	"testing"
 
@@ -38,9 +37,10 @@ func TestPacketConnMulticastSocketOptions(t *testing.T) {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
 
+	m, ok := nettest.SupportsRawIPSocket()
 	for _, tt := range packetConnMulticastSocketOptionTests {
-		if tt.net == "ip6" && os.Getuid() != 0 {
-			t.Log("must be root")
+		if tt.net == "ip6" && !ok {
+			t.Log(m)
 			continue
 		}
 		c, err := net.ListenPacket(tt.net+tt.proto, tt.addr)
