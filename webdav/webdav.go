@@ -105,17 +105,16 @@ func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status 
 	allow := "OPTIONS, LOCK, PUT, MKCOL"
 	if fi, err := h.FileSystem.Stat(r.URL.Path); err == nil {
 		if fi.IsDir() {
-			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, TRACE, PROPPATCH, COPY, MOVE, UNLOCK, PUT, PROPFIND"
+			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, PROPPATCH, COPY, MOVE, UNLOCK, PROPFIND"
 		} else {
-			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, TRACE, PROPPATCH, COPY, MOVE, UNLOCK"
+			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, PROPPATCH, COPY, MOVE, UNLOCK, PROPFIND, PUT"
 		}
 	}
-
+	w.Header().Set("Allow", allow)
 	// http://www.webdav.org/specs/rfc4918.html#dav.compliance.classes
 	w.Header().Set("DAV", "1, 2")
 	// http://msdn.microsoft.com/en-au/library/cc250217.aspx
 	w.Header().Set("MS-Author-Via", "DAV")
-	w.Header().Set("Allow", allow)
 	return 0, nil
 }
 
