@@ -138,7 +138,7 @@ func (s SettingID) String() string {
 	if v, ok := settingName[s]; ok {
 		return v
 	}
-	return fmt.Sprintf("UNKNOWN_SETTING_%d", uint8(s))
+	return fmt.Sprintf("UNKNOWN_SETTING_%d", uint16(s))
 }
 
 func validHeader(v string) bool {
