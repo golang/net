@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -37,8 +38,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if h.LockSystem == nil {
 		status, err = http.StatusInternalServerError, errNoLockSystem
 	} else {
-		// TODO: COPY, MOVE, PROPFIND, PROPPATCH methods.
-		// MOVE needs to enforce its Depth constraint. See the parseDepth comment.
+		// TODO: PROPFIND, PROPPATCH methods.
 		switch r.Method {
 		case "OPTIONS":
 			status, err = h.handleOptions(w, r)
@@ -50,6 +50,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status, err = h.handlePut(w, r)
 		case "MKCOL":
 			status, err = h.handleMkcol(w, r)
+		case "COPY", "MOVE":
+			status, err = h.handleCopyMove(w, r)
 		case "LOCK":
 			status, err = h.handleLock(w, r)
 		case "UNLOCK":
@@ -193,6 +195,91 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 	return http.StatusCreated, nil
 }
 
+func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status int, err error) {
+	// TODO: COPY/MOVE for Properties, as per sections 9.8.2 and 9.9.1.
+
+	hdr := r.Header.Get("Destination")
+	if hdr == "" {
+		return http.StatusBadRequest, errInvalidDestination
+	}
+	u, err := url.Parse(hdr)
+	if err != nil {
+		return http.StatusBadRequest, errInvalidDestination
+	}
+	if u.Host != r.Host {
+		return http.StatusBadGateway, errInvalidDestination
+	}
+	// TODO: do we need a webdav.StripPrefix HTTP handler that's like the
+	// standard library's http.StripPrefix handler, but also strips the
+	// prefix in the Destination header?
+
+	dst, src := u.Path, r.URL.Path
+	if dst == src {
+		return http.StatusForbidden, errDestinationEqualsSource
+	}
+
+	// TODO: confirmLocks should also check dst.
+	releaser, status, err := h.confirmLocks(r)
+	if err != nil {
+		return status, err
+	}
+	defer releaser.Release()
+
+	if r.Method == "COPY" {
+		// Section 9.8.3 says that "The COPY method on a collection without a Depth
+		// header must act as if a Depth header with value "infinity" was included".
+		depth := infiniteDepth
+		if hdr := r.Header.Get("Depth"); hdr != "" {
+			depth = parseDepth(hdr)
+			if depth != 0 && depth != infiniteDepth {
+				// Section 9.8.3 says that "A client may submit a Depth header on a
+				// COPY on a collection with a value of "0" or "infinity"."
+				return http.StatusBadRequest, errInvalidDepth
+			}
+		}
+		return copyFiles(h.FileSystem, src, dst, r.Header.Get("Overwrite") != "F", depth, 0)
+	}
+
+	// Section 9.9.2 says that "The MOVE method on a collection must act as if
+	// a "Depth: infinity" header was used on it. A client must not submit a
+	// Depth header on a MOVE on a collection with any value but "infinity"."
+	if hdr := r.Header.Get("Depth"); hdr != "" {
+		if parseDepth(hdr) != infiniteDepth {
+			return http.StatusBadRequest, errInvalidDepth
+		}
+	}
+
+	created := false
+	if _, err := h.FileSystem.Stat(dst); err != nil {
+		if !os.IsNotExist(err) {
+			return http.StatusForbidden, err
+		}
+		created = true
+	} else {
+		switch r.Header.Get("Overwrite") {
+		case "T":
+			// Section 9.9.3 says that "If a resource exists at the destination
+			// and the Overwrite header is "T", then prior to performing the move,
+			// the server must perform a DELETE with "Depth: infinity" on the
+			// destination resource.
+			if err := h.FileSystem.RemoveAll(dst); err != nil {
+				return http.StatusForbidden, err
+			}
+		case "F":
+			return http.StatusPreconditionFailed, os.ErrExist
+		default:
+			return http.StatusBadRequest, errInvalidOverwrite
+		}
+	}
+	if err := h.FileSystem.Rename(src, dst); err != nil {
+		return http.StatusForbidden, err
+	}
+	if created {
+		return http.StatusCreated, nil
+	}
+	return http.StatusNoContent, nil
+}
+
 func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus int, retErr error) {
 	duration, err := parseTimeout(r.Header.Get("Timeout"))
 	if err != nil {
@@ -308,7 +395,8 @@ const (
 //
 // Different WebDAV methods have further constraints on valid depths:
 //	- PROPFIND has no further restrictions, as per section 9.1.
-//	- MOVE accepts only "infinity", as per section 9.2.2.
+//	- COPY accepts only "0" or "infinity", as per section 9.8.3.
+//	- MOVE accepts only "infinity", as per section 9.9.2.
 //	- LOCK accepts only "0" or "infinity", as per section 9.10.3.
 // These constraints are enforced by the handleXxx methods.
 func parseDepth(s string) int {
@@ -349,16 +437,20 @@ func StatusText(code int) string {
 }
 
 var (
-	errDirectoryNotEmpty   = errors.New("webdav: directory not empty")
-	errInvalidDepth        = errors.New("webdav: invalid depth")
-	errInvalidIfHeader     = errors.New("webdav: invalid If header")
-	errInvalidLockInfo     = errors.New("webdav: invalid lock info")
-	errInvalidLockToken    = errors.New("webdav: invalid lock token")
-	errInvalidPropfind     = errors.New("webdav: invalid propfind")
-	errInvalidResponse     = errors.New("webdav: invalid response")
-	errInvalidTimeout      = errors.New("webdav: invalid timeout")
-	errNoFileSystem        = errors.New("webdav: no file system")
-	errNoLockSystem        = errors.New("webdav: no lock system")
-	errNotADirectory       = errors.New("webdav: not a directory")
-	errUnsupportedLockInfo = errors.New("webdav: unsupported lock info")
+	errDestinationEqualsSource = errors.New("webdav: destination equals source")
+	errDirectoryNotEmpty       = errors.New("webdav: directory not empty")
+	errInvalidDepth            = errors.New("webdav: invalid depth")
+	errInvalidDestination      = errors.New("webdav: invalid destination")
+	errInvalidIfHeader         = errors.New("webdav: invalid If header")
+	errInvalidLockInfo         = errors.New("webdav: invalid lock info")
+	errInvalidLockToken        = errors.New("webdav: invalid lock token")
+	errInvalidOverwrite        = errors.New("webdav: invalid overwrite")
+	errInvalidPropfind         = errors.New("webdav: invalid propfind")
+	errInvalidResponse         = errors.New("webdav: invalid response")
+	errInvalidTimeout          = errors.New("webdav: invalid timeout")
+	errNoFileSystem            = errors.New("webdav: no file system")
+	errNoLockSystem            = errors.New("webdav: no lock system")
+	errNotADirectory           = errors.New("webdav: not a directory")
+	errRecursionTooDeep        = errors.New("webdav: recursion too deep")
+	errUnsupportedLockInfo     = errors.New("webdav: unsupported lock info")
 )

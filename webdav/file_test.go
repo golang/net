@@ -335,7 +335,7 @@ func testFS(t *testing.T, fs FileSystem) {
 		"  stat /d/m want errNotExist",
 		"  stat /d/n want dir",
 		"  stat /d/n/q want 4",
-		"rename /d /d/n/x want err",
+		"rename /d /d/n/z want err",
 		"rename /c /d/n/q want ok",
 		"  stat /c want errNotExist",
 		"  stat /d/n/q want 2",
@@ -358,8 +358,50 @@ func testFS(t *testing.T, fs FileSystem) {
 		"rename /t / want err",
 		"rename /t /u/v want ok",
 		"  stat /u/v/r want 5",
-		"rename / /x want err",
+		"rename / /z want err",
 		"  find / /a /d /u /u/v /u/v/q /u/v/r",
+		"  stat /a want 1",
+		"  stat /b want errNotExist",
+		"  stat /c want errNotExist",
+		"  stat /u/v/r want 5",
+		"copy__ o=F d=0 /a /b want ok",
+		"copy__ o=T d=0 /a /c want ok",
+		"  stat /a want 1",
+		"  stat /b want 1",
+		"  stat /c want 1",
+		"  stat /u/v/r want 5",
+		"copy__ o=F d=0 /u/v/r /b want errExist",
+		"  stat /b want 1",
+		"copy__ o=T d=0 /u/v/r /b want ok",
+		"  stat /a want 1",
+		"  stat /b want 5",
+		"  stat /u/v/r want 5",
+		"rm-all /a want ok",
+		"rm-all /b want ok",
+		"mk-dir /u/v/w want ok",
+		"create /u/v/w/s SSSSSSSS want ok",
+		"  stat /d want dir",
+		"  stat /d/x want errNotExist",
+		"  stat /d/y want errNotExist",
+		"  stat /u/v/r want 5",
+		"  stat /u/v/w/s want 8",
+		"  find / /c /d /u /u/v /u/v/q /u/v/r /u/v/w /u/v/w/s",
+		"copy__ o=T d=0 /u/v /d/x want ok",
+		"copy__ o=T d=∞ /u/v /d/y want ok",
+		"rm-all /u want ok",
+		"  stat /d/x want dir",
+		"  stat /d/x/q want errNotExist",
+		"  stat /d/x/r want errNotExist",
+		"  stat /d/x/w want errNotExist",
+		"  stat /d/x/w/s want errNotExist",
+		"  stat /d/y want dir",
+		"  stat /d/y/q want 2",
+		"  stat /d/y/r want 5",
+		"  stat /d/y/w want dir",
+		"  stat /d/y/w/s want 8",
+		"  stat /u want errNotExist",
+		"  find / /c /d /d/x /d/y /d/y/q /d/y/r /d/y/w /d/y/w/s",
+		"copy__ o=F d=∞ /d/y /d/x want errExist",
 	}
 
 	for i, tc := range testCases {
@@ -403,9 +445,12 @@ func testFS(t *testing.T, fs FileSystem) {
 				t.Fatalf("test case #%d %q:\ngot  %s\nwant %s", i, tc, got, want)
 			}
 
-		case "mk-dir", "rename", "rm-all", "stat":
+		case "copy__", "mk-dir", "rename", "rm-all", "stat":
 			nParts := 3
-			if op == "rename" {
+			switch op {
+			case "copy__":
+				nParts = 6
+			case "rename":
 				nParts = 4
 			}
 			parts := strings.Split(arg, " ")
@@ -415,6 +460,15 @@ func testFS(t *testing.T, fs FileSystem) {
 
 			got, opErr := "", error(nil)
 			switch op {
+			case "copy__":
+				overwrite, depth := false, 0
+				if parts[0] == "o=T" {
+					overwrite = true
+				}
+				if parts[1] == "d=∞" {
+					depth = infiniteDepth
+				}
+				_, opErr = copyFiles(fs, parts[2], parts[3], overwrite, depth, 0)
 			case "mk-dir":
 				opErr = fs.Mkdir(parts[0], 0777)
 			case "rename":

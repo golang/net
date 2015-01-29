@@ -18,6 +18,8 @@ make URL=http://localhost:9999/ check
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -25,7 +27,10 @@ import (
 	"golang.org/x/net/webdav"
 )
 
+var port = flag.Int("port", 9999, "server port")
+
 func main() {
+	flag.Parse()
 	http.Handle("/", &webdav.Handler{
 		FileSystem: webdav.NewMemFS(),
 		LockSystem: webdav.NewMemLS(),
@@ -36,15 +41,15 @@ func main() {
 				if u, err := url.Parse(r.Header.Get("Destination")); err == nil {
 					dst = u.Path
 				}
-				ow := r.Header.Get("Overwrite")
-				log.Printf("%-8s%-25s%-25sow=%-2s%v", r.Method, r.URL.Path, dst, ow, err)
+				o := r.Header.Get("Overwrite")
+				log.Printf("%-10s%-25s%-25so=%-2s%v", r.Method, r.URL.Path, dst, o, err)
 			default:
-				log.Printf("%-8s%-30s%v", r.Method, r.URL.Path, err)
+				log.Printf("%-10s%-30s%v", r.Method, r.URL.Path, err)
 			}
 		},
 	})
 
-	const addr = ":9999"
+	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Serving %v", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
