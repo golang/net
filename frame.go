@@ -255,7 +255,6 @@ type Frame interface {
 // A Framer reads and writes Frames.
 type Framer struct {
 	r         io.Reader
-	lr        io.LimitedReader
 	lastFrame Frame
 
 	maxReadSize uint32
