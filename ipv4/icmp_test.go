@@ -36,7 +36,7 @@ func TestICMPFilter(t *testing.T) {
 	switch runtime.GOOS {
 	case "linux":
 	default:
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
 	var f ipv4.ICMPFilter
@@ -64,7 +64,7 @@ func TestSetICMPFilter(t *testing.T) {
 	switch runtime.GOOS {
 	case "linux":
 	default:
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if m, ok := nettest.SupportsRawIPSocket(); !ok {
 		t.Skip(m)

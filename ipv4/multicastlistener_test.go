@@ -22,7 +22,7 @@ var udpMultipleGroupListenerTests = []net.Addr{
 func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
@@ -62,7 +62,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
@@ -114,7 +114,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
@@ -157,7 +157,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
@@ -202,7 +202,7 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
