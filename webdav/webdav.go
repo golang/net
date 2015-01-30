@@ -351,10 +351,11 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 			}
 			f.Close()
 			w.WriteHeader(http.StatusCreated)
-			// http://www.webdav.org/specs/rfc4918.html#HEADER_Lock-Token says that the
-			// Lock-Token value is a Coded-URL. We add angle brackets.
-			w.Header().Set("Lock-Token", "<"+token+">")
 		}
+
+		// http://www.webdav.org/specs/rfc4918.html#HEADER_Lock-Token says that the
+		// Lock-Token value is a Coded-URL. We add angle brackets.
+		w.Header().Set("Lock-Token", "<"+token+">")
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
