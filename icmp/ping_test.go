@@ -70,7 +70,7 @@ func TestPingGoogle(t *testing.T) {
 	case "linux":
 		t.Log("you may need to adjust the net.ipv4.ping_group_range kernel state")
 	default:
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
 	m, ok := nettest.SupportsRawIPSocket()
