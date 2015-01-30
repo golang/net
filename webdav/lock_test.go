@@ -155,6 +155,27 @@ func TestMemLSCanCreate(t *testing.T) {
 	check(0, "/")
 }
 
+func TestMemLSNonCanonicalRoot(t *testing.T) {
+	now := time.Unix(0, 0)
+	m := NewMemLS().(*memLS)
+	token, err := m.Create(now, LockDetails{
+		Root:     "/foo/./bar//",
+		Duration: 1 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Create: inconsistent state: %v", err)
+	}
+	if err := m.Unlock(now, token); err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Unlock: inconsistent state: %v", err)
+	}
+}
+
 func TestMemLSExpiry(t *testing.T) {
 	m := NewMemLS().(*memLS)
 	testCases := []string{

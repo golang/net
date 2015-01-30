@@ -163,12 +163,12 @@ func (m *memLS) Create(now time.Time, details LockDetails) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.collectExpiredNodes(now)
-	name := slashClean(details.Root)
+	details.Root = slashClean(details.Root)
 
-	if !m.canCreate(name, details.ZeroDepth) {
+	if !m.canCreate(details.Root, details.ZeroDepth) {
 		return "", ErrLocked
 	}
-	n := m.create(name)
+	n := m.create(details.Root)
 	n.token = m.nextToken()
 	m.byToken[n.token] = n
 	n.details = details
