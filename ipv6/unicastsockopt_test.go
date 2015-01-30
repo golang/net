@@ -17,7 +17,7 @@ import (
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
@@ -53,7 +53,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
@@ -87,7 +87,7 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 	if err := c.SetTrafficClass(tclass); err != nil {
 		switch runtime.GOOS {
 		case "darwin": // older darwin kernels don't support IPV6_TCLASS option
-			t.Logf("not supported on %q", runtime.GOOS)
+			t.Logf("not supported on %s", runtime.GOOS)
 			goto next
 		}
 		t.Fatal(err)

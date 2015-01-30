@@ -27,14 +27,14 @@ var packetConnMulticastSocketOptionTests = []struct {
 func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
 	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
-		t.Skipf("not available on %q", runtime.GOOS)
+		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
 	m, ok := nettest.SupportsRawIPSocket()
@@ -120,7 +120,7 @@ func testSourceSpecificMulticastSocketOptions(t *testing.T, c testIPv6MulticastC
 		switch runtime.GOOS {
 		case "freebsd", "linux":
 		default: // platforms that don't support MLDv2 fail here
-			t.Logf("not supported on %q", runtime.GOOS)
+			t.Logf("not supported on %s", runtime.GOOS)
 			return
 		}
 		t.Error(err)

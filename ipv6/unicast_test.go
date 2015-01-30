@@ -21,7 +21,7 @@ import (
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
@@ -54,7 +54,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			if nettest.ProtocolNotSupported(err) {
-				t.Skipf("not supported on %q", runtime.GOOS)
+				t.Skipf("not supported on %s", runtime.GOOS)
 			}
 			t.Fatal(err)
 		}
@@ -84,7 +84,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
 	case "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %q", runtime.GOOS)
+		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
@@ -149,7 +149,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			if nettest.ProtocolNotSupported(err) {
-				t.Skipf("not supported on %q", runtime.GOOS)
+				t.Skipf("not supported on %s", runtime.GOOS)
 			}
 			t.Fatal(err)
 		}
@@ -169,7 +169,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
 			switch runtime.GOOS {
 			case "darwin": // older darwin kernels have some limitation on receiving icmp packet through raw socket
-				t.Logf("not supported on %q", runtime.GOOS)
+				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}
 			t.Fatal(err)
