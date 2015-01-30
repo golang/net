@@ -193,7 +193,6 @@ func (m *memLS) Refresh(now time.Time, token string, duration time.Duration) (Lo
 	}
 	if n.byExpiryIndex >= 0 {
 		heap.Remove(&m.byExpiry, n.byExpiryIndex)
-		n.byExpiryIndex = -1
 	}
 	n.details.Duration = duration
 	if n.details.Duration >= 0 {
@@ -277,7 +276,6 @@ func (m *memLS) remove(n *memLSNode) {
 	})
 	if n.byExpiryIndex >= 0 {
 		heap.Remove(&m.byExpiry, n.byExpiryIndex)
-		n.byExpiryIndex = -1
 	}
 }
 
