@@ -946,6 +946,10 @@ func parseContinuationFrame(fh FrameHeader, p []byte) (Frame, error) {
 	return &ContinuationFrame{fh, p}, nil
 }
 
+func (f *ContinuationFrame) StreamEnded() bool {
+	return f.FrameHeader.Flags.Has(FlagDataEndStream)
+}
+
 func (f *ContinuationFrame) HeaderBlockFragment() []byte {
 	f.checkValid()
 	return f.headerFragBuf
