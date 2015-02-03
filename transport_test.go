@@ -12,15 +12,17 @@ import (
 	"testing"
 )
 
-var extNet = flag.Bool("extnet", false, "do external network tests")
+var (
+	extNet        = flag.Bool("extnet", false, "do external network tests")
+	transportHost = flag.String("transporthost", "http2.golang.org", "hostname to use for TestTransport")
+)
 
 func TestTransport(t *testing.T) {
 	if !*extNet {
 		t.Skip("skipping external network test")
 	}
-	req, _ := http.NewRequest("GET", "https://http2.golang.org/", nil)
-	var rt http.RoundTripper = &Transport{}
-	//rt = http.DefaultTransport
+	req, _ := http.NewRequest("GET", "https://"+*transportHost+"/", nil)
+	rt := &Transport{}
 	res, err := rt.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("%v", err)
