@@ -31,10 +31,16 @@ var port = flag.Int("port", 9999, "server port")
 
 func main() {
 	flag.Parse()
+	log.SetFlags(0)
 	http.Handle("/", &webdav.Handler{
 		FileSystem: webdav.NewMemFS(),
 		LockSystem: webdav.NewMemLS(),
 		Logger: func(r *http.Request, err error) {
+			litmus := r.Header.Get("X-Litmus")
+			if len(litmus) > 19 {
+				litmus = litmus[:16] + "..."
+			}
+
 			switch r.Method {
 			case "COPY", "MOVE":
 				dst := ""
@@ -42,9 +48,9 @@ func main() {
 					dst = u.Path
 				}
 				o := r.Header.Get("Overwrite")
-				log.Printf("%-10s%-25s%-25so=%-2s%v", r.Method, r.URL.Path, dst, o, err)
+				log.Printf("%-20s%-10s%-30s%-30so=%-2s%v", litmus, r.Method, r.URL.Path, dst, o, err)
 			default:
-				log.Printf("%-10s%-30s%v", r.Method, r.URL.Path, err)
+				log.Printf("%-20s%-10s%-30s%v", litmus, r.Method, r.URL.Path, err)
 			}
 		},
 	})
