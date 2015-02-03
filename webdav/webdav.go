@@ -289,7 +289,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 		return status, err
 	}
 
-	token, ld, now := "", LockDetails{}, time.Now()
+	token, ld, now, created := "", LockDetails{}, time.Now(), false
 	if li == (lockInfo{}) {
 		// An empty lockInfo means to refresh the lock.
 		ih, ok := parseIfHeader(r.Header.Get("If"))
@@ -349,7 +349,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 				return http.StatusInternalServerError, err
 			}
 			f.Close()
-			w.WriteHeader(http.StatusCreated)
+			created = true
 		}
 
 		// http://www.webdav.org/specs/rfc4918.html#HEADER_Lock-Token says that the
@@ -358,6 +358,12 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	if created {
+		// This is "w.WriteHeader(http.StatusCreated)" and not "return
+		// http.StatusCreated, nil" because we write our own (XML) response to w
+		// and Handler.ServeHTTP would otherwise write "Created".
+		w.WriteHeader(http.StatusCreated)
+	}
 	writeLockInfo(w, token, ld)
 	return 0, nil
 }

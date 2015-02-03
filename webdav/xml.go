@@ -269,8 +269,8 @@ func (w *multistatusWriter) write(r *response) error {
 		}
 	}
 	if w.enc == nil {
-		w.w.WriteHeader(StatusMulti)
 		w.w.Header().Add("Content-Type", "text/xml; charset=utf-8")
+		w.w.WriteHeader(StatusMulti)
 		_, err := fmt.Fprintf(w.w, `<?xml version="1.0" encoding="UTF-8"?>`+
 			`<D:multistatus xmlns:D="DAV:">`)
 		if err != nil {
