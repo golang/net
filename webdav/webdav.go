@@ -70,34 +70,88 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type nopReleaser struct{}
+func (h *Handler) lock(now time.Time, root string) (token string, status int, err error) {
+	token, err = h.LockSystem.Create(now, LockDetails{
+		Root:      root,
+		Duration:  infiniteTimeout,
+		ZeroDepth: true,
+	})
+	if err != nil {
+		if err == ErrLocked {
+			return "", StatusLocked, err
+		}
+		return "", http.StatusInternalServerError, err
+	}
+	return token, 0, nil
+}
 
-func (nopReleaser) Release() {}
-
-func (h *Handler) confirmLocks(r *http.Request) (releaser Releaser, status int, err error) {
+func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func(), status int, err error) {
 	hdr := r.Header.Get("If")
 	if hdr == "" {
-		return nopReleaser{}, 0, nil
+		// An empty If header means that the client hasn't previously created locks.
+		// Even if this client doesn't care about locks, we still need to check that
+		// the resources aren't locked by another client, so we create temporary
+		// locks that would conflict with another client's locks. These temporary
+		// locks are unlocked at the end of the HTTP request.
+		now, srcToken, dstToken := time.Now(), "", ""
+		if src != "" {
+			srcToken, status, err = h.lock(now, src)
+			if err != nil {
+				return nil, status, err
+			}
+		}
+		if dst != "" {
+			dstToken, status, err = h.lock(now, dst)
+			if err != nil {
+				if srcToken != "" {
+					h.LockSystem.Unlock(now, srcToken)
+				}
+				return nil, status, err
+			}
+		}
+
+		return func() {
+			if dstToken != "" {
+				h.LockSystem.Unlock(now, dstToken)
+			}
+			if srcToken != "" {
+				h.LockSystem.Unlock(now, srcToken)
+			}
+		}, 0, nil
 	}
+
 	ih, ok := parseIfHeader(hdr)
 	if !ok {
 		return nil, http.StatusBadRequest, errInvalidIfHeader
 	}
 	// ih is a disjunction (OR) of ifLists, so any ifList will do.
 	for _, l := range ih.lists {
-		path := l.resourceTag
-		if path == "" {
-			path = r.URL.Path
+		lsrc := l.resourceTag
+		if lsrc == "" {
+			lsrc = src
+		} else {
+			u, err := url.Parse(lsrc)
+			if err != nil {
+				continue
+			}
+			if u.Host != r.Host {
+				continue
+			}
+			lsrc = u.Path
 		}
-		releaser, err = h.LockSystem.Confirm(time.Now(), path, l.conditions...)
+		release, err = h.LockSystem.Confirm(time.Now(), lsrc, dst, l.conditions...)
 		if err == ErrConfirmationFailed {
 			continue
 		}
 		if err != nil {
 			return nil, http.StatusInternalServerError, err
 		}
-		return releaser, 0, nil
+		return release, 0, nil
 	}
+	// Section 10.4.1 says that "If this header is evaluated and all state lists
+	// fail, then the request must fail with a 412 (Precondition Failed) status."
+	// We follow the spec even though the cond_put_corrupt_token test case from
+	// the litmus test warns on seeing a 412 instead of a 423 (Locked).
 	return nil, http.StatusPreconditionFailed, ErrLocked
 }
 
@@ -134,11 +188,11 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	releaser, status, err := h.confirmLocks(r)
+	release, status, err := h.confirmLocks(r, r.URL.Path, "")
 	if err != nil {
 		return status, err
 	}
-	defer releaser.Release()
+	defer release()
 
 	// TODO: return MultiStatus where appropriate.
 
@@ -158,11 +212,11 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 }
 
 func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	releaser, status, err := h.confirmLocks(r)
+	release, status, err := h.confirmLocks(r, r.URL.Path, "")
 	if err != nil {
 		return status, err
 	}
-	defer releaser.Release()
+	defer release()
 
 	f, err := h.FileSystem.OpenFile(r.URL.Path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
@@ -176,11 +230,11 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 }
 
 func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	releaser, status, err := h.confirmLocks(r)
+	release, status, err := h.confirmLocks(r, r.URL.Path, "")
 	if err != nil {
 		return status, err
 	}
-	defer releaser.Release()
+	defer release()
 
 	if r.ContentLength > 0 {
 		return http.StatusUnsupportedMediaType, nil
@@ -213,18 +267,25 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 	// prefix in the Destination header?
 
 	dst, src := u.Path, r.URL.Path
+	if dst == "" {
+		return http.StatusBadGateway, errInvalidDestination
+	}
 	if dst == src {
 		return http.StatusForbidden, errDestinationEqualsSource
 	}
 
-	// TODO: confirmLocks should also check dst.
-	releaser, status, err := h.confirmLocks(r)
-	if err != nil {
-		return status, err
-	}
-	defer releaser.Release()
-
 	if r.Method == "COPY" {
+		// Section 7.5.1 says that a COPY only needs to lock the destination,
+		// not both destination and source. Strictly speaking, this is racy,
+		// even though a COPY doesn't modify the source, if a concurrent
+		// operation modifies the source. However, the litmus test explicitly
+		// checks that COPYing a locked-by-another source is OK.
+		release, status, err := h.confirmLocks(r, "", dst)
+		if err != nil {
+			return status, err
+		}
+		defer release()
+
 		// Section 9.8.3 says that "The COPY method on a collection without a Depth
 		// header must act as if a Depth header with value "infinity" was included".
 		depth := infiniteDepth
@@ -238,6 +299,12 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 		}
 		return copyFiles(h.FileSystem, src, dst, r.Header.Get("Overwrite") != "F", depth, 0)
 	}
+
+	release, status, err := h.confirmLocks(r, src, dst)
+	if err != nil {
+		return status, err
+	}
+	defer release()
 
 	// Section 9.9.2 says that "The MOVE method on a collection must act as if
 	// a "Depth: infinity" header was used on it. A client must not submit a

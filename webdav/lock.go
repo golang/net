@@ -32,31 +32,26 @@ type Condition struct {
 	ETag  string
 }
 
-// Releaser releases previously confirmed lock claims.
-//
-// Calling Release does not unlock the lock, in the WebDAV UNLOCK sense, but
-// once LockSystem.Confirm has confirmed that a lock claim is valid, that lock
-// cannot be Confirmed again until it has been Released.
-type Releaser interface {
-	Release()
-}
-
 // LockSystem manages access to a collection of named resources. The elements
 // in a lock name are separated by slash ('/', U+002F) characters, regardless
 // of host operating system convention.
 type LockSystem interface {
 	// Confirm confirms that the caller can claim all of the locks specified by
 	// the given conditions, and that holding the union of all of those locks
-	// gives exclusive access to the named resource.
+	// gives exclusive access to all of the named resources. Up to two resources
+	// can be named. Empty names are ignored.
 	//
-	// Exactly one of r and err will be non-nil. If r is non-nil, all of the
-	// requested locks are held until r.Release is called.
+	// Exactly one of release and err will be non-nil. If release is non-nil,
+	// all of the requested locks are held until release is called. Calling
+	// release does not unlock the lock, in the WebDAV UNLOCK sense, but once
+	// Confirm has confirmed that a lock claim is valid, that lock cannot be
+	// Confirmed again until it has been released.
 	//
 	// If Confirm returns ErrConfirmationFailed then the Handler will continue
 	// to try any other set of locks presented (a WebDAV HTTP request can
 	// present more than one set of locks). If it returns any other non-nil
 	// error, the Handler will write a "500 Internal Server Error" HTTP status.
-	Confirm(now time.Time, name string, conditions ...Condition) (r Releaser, err error)
+	Confirm(now time.Time, name0, name1 string, conditions ...Condition) (release func(), err error)
 
 	// Create creates a lock with the given depth, duration, owner and root
 	// (name). The depth will either be negative (meaning infinite) or zero.
@@ -149,14 +144,89 @@ func (m *memLS) collectExpiredNodes(now time.Time) {
 	}
 }
 
-func (m *memLS) Confirm(now time.Time, name string, conditions ...Condition) (Releaser, error) {
+func (m *memLS) Confirm(now time.Time, name0, name1 string, conditions ...Condition) (func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.collectExpiredNodes(now)
-	name = slashClean(name)
 
-	// TODO: touch n.held.
-	panic("TODO")
+	var n0, n1 *memLSNode
+	if name0 != "" {
+		if n0 = m.lookup(slashClean(name0), conditions...); n0 == nil {
+			return nil, ErrConfirmationFailed
+		}
+	}
+	if name1 != "" {
+		if n1 = m.lookup(slashClean(name1), conditions...); n1 == nil {
+			return nil, ErrConfirmationFailed
+		}
+	}
+
+	// Don't hold the same node twice.
+	if n1 == n0 {
+		n1 = nil
+	}
+
+	if n0 != nil {
+		m.hold(n0)
+	}
+	if n1 != nil {
+		m.hold(n1)
+	}
+	return func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if n1 != nil {
+			m.unhold(n1)
+		}
+		if n0 != nil {
+			m.unhold(n0)
+		}
+	}, nil
+}
+
+// lookup returns the node n that locks the named resource, provided that n
+// matches at least one of the given conditions and that lock isn't held by
+// another party. Otherwise, it returns nil.
+//
+// n may be a parent of the named resource, if n is an infinite depth lock.
+func (m *memLS) lookup(name string, conditions ...Condition) (n *memLSNode) {
+	// TODO: support Condition.Not and Condition.ETag.
+	for _, c := range conditions {
+		n = m.byToken[c.Token]
+		if n == nil || n.held {
+			continue
+		}
+		if name == n.details.Root {
+			return n
+		}
+		if n.details.ZeroDepth {
+			continue
+		}
+		if n.details.Root == "/" || strings.HasPrefix(name, n.details.Root+"/") {
+			return n
+		}
+	}
+	return nil
+}
+
+func (m *memLS) hold(n *memLSNode) {
+	if n.held {
+		panic("webdav: memLS inconsistent held state")
+	}
+	n.held = true
+	if n.details.Duration >= 0 && n.byExpiryIndex >= 0 {
+		heap.Remove(&m.byExpiry, n.byExpiryIndex)
+	}
+}
+
+func (m *memLS) unhold(n *memLSNode) {
+	if !n.held {
+		panic("webdav: memLS inconsistent held state")
+	}
+	n.held = false
+	if n.details.Duration >= 0 {
+		heap.Push(&m.byExpiry, n)
+	}
 }
 
 func (m *memLS) Create(now time.Time, details LockDetails) (string, error) {

@@ -61,7 +61,7 @@ func TestWalkToRoot(t *testing.T) {
 }
 
 var lockTestDurations = []time.Duration{
-	-1,              // A negative duration means to never expire.
+	infiniteTimeout, // infiniteTimeout means to never expire.
 	0,               // A zero duration means to expire immediately.
 	100 * time.Hour, // A very large duration will not expire in these tests.
 }
@@ -102,7 +102,7 @@ func TestMemLSCanCreate(t *testing.T) {
 	for _, name := range lockTestNames {
 		_, err := m.Create(now, LockDetails{
 			Root:      name,
-			Duration:  -1,
+			Duration:  infiniteTimeout,
 			ZeroDepth: lockTestZeroDepth(name),
 		})
 		if err != nil {
@@ -153,6 +153,147 @@ func TestMemLSCanCreate(t *testing.T) {
 		}
 	}
 	check(0, "/")
+}
+
+func TestMemLSLookup(t *testing.T) {
+	now := time.Unix(0, 0)
+	m := NewMemLS().(*memLS)
+
+	badToken := m.nextToken()
+	t.Logf("badToken=%q", badToken)
+
+	for _, name := range lockTestNames {
+		token, err := m.Create(now, LockDetails{
+			Root:      name,
+			Duration:  infiniteTimeout,
+			ZeroDepth: lockTestZeroDepth(name),
+		})
+		if err != nil {
+			t.Fatalf("creating lock for %q: %v", name, err)
+		}
+		t.Logf("%-15q -> node=%p token=%q", name, m.byName[name], token)
+	}
+
+	baseNames := append([]string{"/a", "/b/c"}, lockTestNames...)
+	for _, baseName := range baseNames {
+		for _, suffix := range []string{"", "/0", "/1/2/3"} {
+			name := baseName + suffix
+
+			goodToken := ""
+			base := m.byName[baseName]
+			if base != nil && (suffix == "" || !lockTestZeroDepth(baseName)) {
+				goodToken = base.token
+			}
+
+			for _, token := range []string{badToken, goodToken} {
+				if token == "" {
+					continue
+				}
+
+				got := m.lookup(name, Condition{Token: token})
+				want := base
+				if token == badToken {
+					want = nil
+				}
+				if got != want {
+					t.Errorf("name=%-20qtoken=%q (bad=%t): got %p, want %p",
+						name, token, token == badToken, got, want)
+				}
+			}
+		}
+	}
+}
+
+func TestMemLSConfirm(t *testing.T) {
+	now := time.Unix(0, 0)
+	m := NewMemLS().(*memLS)
+	alice, err := m.Create(now, LockDetails{
+		Root:      "/alice",
+		Duration:  infiniteTimeout,
+		ZeroDepth: false,
+	})
+	tweedle, err := m.Create(now, LockDetails{
+		Root:      "/tweedle",
+		Duration:  infiniteTimeout,
+		ZeroDepth: false,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Create: inconsistent state: %v", err)
+	}
+
+	// Test a mismatch between name and condition.
+	_, err = m.Confirm(now, "/tweedle/dee", "", Condition{Token: alice})
+	if err != ErrConfirmationFailed {
+		t.Fatalf("Confirm (mismatch): got %v, want ErrConfirmationFailed", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Confirm (mismatch): inconsistent state: %v", err)
+	}
+
+	// Test two names (that fall under the same lock) in the one Confirm call.
+	release, err := m.Confirm(now, "/tweedle/dee", "/tweedle/dum", Condition{Token: tweedle})
+	if err != nil {
+		t.Fatalf("Confirm (twins): %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Confirm (twins): inconsistent state: %v", err)
+	}
+	release()
+	if err := m.consistent(); err != nil {
+		t.Fatalf("release (twins): inconsistent state: %v", err)
+	}
+
+	// Test the same two names in overlapping Confirm / release calls.
+	releaseDee, err := m.Confirm(now, "/tweedle/dee", "", Condition{Token: tweedle})
+	if err != nil {
+		t.Fatalf("Confirm (sequence #0): %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Confirm (sequence #0): inconsistent state: %v", err)
+	}
+
+	_, err = m.Confirm(now, "/tweedle/dum", "", Condition{Token: tweedle})
+	if err != ErrConfirmationFailed {
+		t.Fatalf("Confirm (sequence #1): got %v, want ErrConfirmationFailed", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Confirm (sequence #1): inconsistent state: %v", err)
+	}
+
+	releaseDee()
+	if err := m.consistent(); err != nil {
+		t.Fatalf("release (sequence #2): inconsistent state: %v", err)
+	}
+
+	releaseDum, err := m.Confirm(now, "/tweedle/dum", "", Condition{Token: tweedle})
+	if err != nil {
+		t.Fatalf("Confirm (sequence #3): %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Confirm (sequence #3): inconsistent state: %v", err)
+	}
+
+	// Test that you can't unlock a held lock.
+	err = m.Unlock(now, tweedle)
+	if err != ErrLocked {
+		t.Fatalf("Unlock (sequence #4): got %v, want ErrLocked", err)
+	}
+
+	releaseDum()
+	if err := m.consistent(); err != nil {
+		t.Fatalf("release (sequence #5): inconsistent state: %v", err)
+	}
+
+	err = m.Unlock(now, tweedle)
+	if err != nil {
+		t.Fatalf("Unlock (sequence #6): %v", err)
+	}
+	if err := m.consistent(); err != nil {
+		t.Fatalf("Unlock (sequence #6): inconsistent state: %v", err)
+	}
 }
 
 func TestMemLSNonCanonicalRoot(t *testing.T) {
@@ -304,29 +445,43 @@ func TestMemLSExpiry(t *testing.T) {
 	}
 }
 
-func TestMemLSCreateRefreshUnlock(t *testing.T) {
+func TestMemLS(t *testing.T) {
 	now := time.Unix(0, 0)
 	m := NewMemLS().(*memLS)
 	rng := rand.New(rand.NewSource(0))
 	tokens := map[string]string{}
-	nCreate, nRefresh, nUnlock := 0, 0, 0
+	nConfirm, nCreate, nRefresh, nUnlock := 0, 0, 0, 0
 	const N = 2000
 
 	for i := 0; i < N; i++ {
 		name := lockTestNames[rng.Intn(len(lockTestNames))]
 		duration := lockTestDurations[rng.Intn(len(lockTestDurations))]
-		unlocked := false
+		confirmed, unlocked := false, false
 
-		// If the name was already locked, there's a 50-50 chance that
-		// we refresh or unlock it. Otherwise, we create a lock.
+		// If the name was already locked, we randomly confirm/release, refresh
+		// or unlock it. Otherwise, we create a lock.
 		token := tokens[name]
 		if token != "" {
-			if rng.Intn(2) == 0 {
+			switch rng.Intn(3) {
+			case 0:
+				confirmed = true
+				nConfirm++
+				release, err := m.Confirm(now, name, "", Condition{Token: token})
+				if err != nil {
+					t.Fatalf("iteration #%d: Confirm %q: %v", i, name, err)
+				}
+				if err := m.consistent(); err != nil {
+					t.Fatalf("iteration #%d: inconsistent state: %v", i, err)
+				}
+				release()
+
+			case 1:
 				nRefresh++
 				if _, err := m.Refresh(now, token, duration); err != nil {
 					t.Fatalf("iteration #%d: Refresh %q: %v", i, name, err)
 				}
-			} else {
+
+			case 2:
 				unlocked = true
 				nUnlock++
 				if err := m.Unlock(now, token); err != nil {
@@ -347,12 +502,14 @@ func TestMemLSCreateRefreshUnlock(t *testing.T) {
 			}
 		}
 
-		if duration == 0 || unlocked {
-			// A zero-duration lock should expire immediately and is
-			// effectively equivalent to being unlocked.
-			tokens[name] = ""
-		} else {
-			tokens[name] = token
+		if !confirmed {
+			if duration == 0 || unlocked {
+				// A zero-duration lock should expire immediately and is
+				// effectively equivalent to being unlocked.
+				tokens[name] = ""
+			} else {
+				tokens[name] = token
+			}
 		}
 
 		if err := m.consistent(); err != nil {
@@ -360,6 +517,9 @@ func TestMemLSCreateRefreshUnlock(t *testing.T) {
 		}
 	}
 
+	if nConfirm < N/10 {
+		t.Fatalf("too few Confirm calls: got %d, want >= %d", nConfirm, N/10)
+	}
 	if nCreate < N/10 {
 		t.Fatalf("too few Create calls: got %d, want >= %d", nCreate, N/10)
 	}
@@ -463,6 +623,11 @@ func (m *memLS) consistent() error {
 		// Every node in m.byExpiry is in m.byName.
 		if _, ok := m.byName[n.details.Root]; !ok {
 			return fmt.Errorf("node at name %q in m.byExpiry but not in m.byName", n.details.Root)
+		}
+
+		// No node in m.byExpiry should be held.
+		if n.held {
+			return fmt.Errorf("node at name %q in m.byExpiry is held", n.details.Root)
 		}
 	}
 	return nil
