@@ -32,7 +32,7 @@ type Handler struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	status, err := http.StatusBadRequest, error(nil)
+	status, err := http.StatusBadRequest, errUnsupportedMethod
 	if h.FileSystem == nil {
 		status, err = http.StatusInternalServerError, errNoFileSystem
 	} else if h.LockSystem == nil {
@@ -459,4 +459,5 @@ var (
 	errNotADirectory           = errors.New("webdav: not a directory")
 	errRecursionTooDeep        = errors.New("webdav: recursion too deep")
 	errUnsupportedLockInfo     = errors.New("webdav: unsupported lock info")
+	errUnsupportedMethod       = errors.New("webdav: unsupported method")
 )
