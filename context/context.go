@@ -262,6 +262,19 @@ func parentCancelCtx(parent Context) (*cancelCtx, bool) {
 	}
 }
 
+// removeChild removes a context from its parent.
+func removeChild(parent Context, child canceler) {
+	p, ok := parentCancelCtx(parent)
+	if !ok {
+		return
+	}
+	p.mu.Lock()
+	if p.children != nil {
+		delete(p.children, child)
+	}
+	p.mu.Unlock()
+}
+
 // A canceler is a context type that can be canceled directly.  The
 // implementations are *cancelCtx and *timerCtx.
 type canceler interface {
@@ -316,13 +329,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.mu.Unlock()
 
 	if removeFromParent {
-		if p, ok := parentCancelCtx(c.Context); ok {
-			p.mu.Lock()
-			if p.children != nil {
-				delete(p.children, c)
-			}
-			p.mu.Unlock()
-		}
+		removeChild(c.Context, c)
 	}
 }
 
@@ -380,7 +387,11 @@ func (c *timerCtx) String() string {
 }
 
 func (c *timerCtx) cancel(removeFromParent bool, err error) {
-	c.cancelCtx.cancel(removeFromParent, err)
+	c.cancelCtx.cancel(false, err)
+	if removeFromParent {
+		// Remove this timerCtx from its parent cancelCtx's children.
+		removeChild(c.cancelCtx.Context, c)
+	}
 	c.mu.Lock()
 	if c.timer != nil {
 		c.timer.Stop()
