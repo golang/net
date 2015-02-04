@@ -562,12 +562,18 @@ func copyFiles(fs FileSystem, src, dst string, overwrite bool, depth int, recurs
 
 	srcFile, err := fs.OpenFile(src, os.O_RDONLY, 0)
 	if err != nil {
-		return http.StatusNotFound, err
+		if os.IsNotExist(err) {
+			return http.StatusNotFound, err
+		}
+		return http.StatusInternalServerError, err
 	}
 	defer srcFile.Close()
 	srcStat, err := srcFile.Stat()
 	if err != nil {
-		return http.StatusNotFound, err
+		if os.IsNotExist(err) {
+			return http.StatusNotFound, err
+		}
+		return http.StatusInternalServerError, err
 	}
 	srcPerm := srcStat.Mode() & os.ModePerm
 
@@ -620,10 +626,10 @@ func copyFiles(fs FileSystem, src, dst string, overwrite bool, depth int, recurs
 		_, copyErr := io.Copy(dstFile, srcFile)
 		closeErr := dstFile.Close()
 		if copyErr != nil {
-			return http.StatusForbidden, copyErr
+			return http.StatusInternalServerError, copyErr
 		}
 		if closeErr != nil {
-			return http.StatusForbidden, closeErr
+			return http.StatusInternalServerError, closeErr
 		}
 	}
 
