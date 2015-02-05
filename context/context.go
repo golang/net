@@ -64,11 +64,11 @@ type Context interface {
 	//
 	// Done is provided for use in select statements:
 	//
-	// 	// DoSomething calls DoSomethingSlow and returns as soon as
+	// 	// CancelableOperation calls UncancelableOperation and returns as soon as
 	// 	// it returns or ctx.Done is closed.
-	// 	func DoSomething(ctx context.Context) (Result, error) {
+	// 	func CancelableOperation(ctx context.Context) (Result, error) {
 	// 		c := make(chan Result, 1)
-	// 		go func() { c <- DoSomethingSlow(ctx) }()
+	// 		go func() { c <- UncancelableOperation() }()
 	// 		select {
 	// 		case res := <-c:
 	// 			return res, nil
