@@ -139,7 +139,7 @@ func TestMemLSCanCreate(t *testing.T) {
 			got := m.canCreate(name, zeroDepth)
 			want := wantCanCreate(name, zeroDepth)
 			if got != want {
-				t.Errorf("canCreate name=%q zeroDepth=%d: got %t, want %t", name, zeroDepth, got, want)
+				t.Errorf("canCreate name=%q zeroDepth=%t: got %t, want %t", name, zeroDepth, got, want)
 			}
 		}
 		if recursion == 6 {
