@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 var (
@@ -117,5 +118,51 @@ func TestTransportReusesConns(t *testing.T) {
 	second := get()
 	if first != second {
 		t.Errorf("first and second responses were on different connections: %q vs %q", first, second)
+	}
+}
+
+func TestTransportAbortClosesPipes(t *testing.T) {
+	shutdown := make(chan struct{})
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.(http.Flusher).Flush()
+			<-shutdown
+		},
+		optOnlyServer,
+	)
+	defer st.Close()
+	defer close(shutdown) // we must shutdown before st.Close() to avoid hanging
+
+	done := make(chan struct{})
+	requestMade := make(chan struct{})
+	go func() {
+		defer close(done)
+		tr := &Transport{
+			InsecureTLSDial: true,
+		}
+		req, err := http.NewRequest("GET", st.ts.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		close(requestMade)
+		_, err = ioutil.ReadAll(res.Body)
+		if err == nil {
+			t.Error("expected error from res.Body.Read")
+		}
+	}()
+
+	<-requestMade
+	// Now force the serve loop to end, via closing the connection.
+	st.closeConn()
+	// deadlock? that's a bug.
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout")
 	}
 }
