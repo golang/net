@@ -63,6 +63,10 @@ func resetHooks() {
 	testHookOnPanicMu.Unlock()
 }
 
+type serverTesterOpt string
+
+var optOnlyServer = serverTesterOpt("only_server")
+
 func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
 	resetHooks()
 
@@ -74,12 +78,15 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		NextProtos:         []string{NextProtoTLS},
 	}
 
+	onlyServer := false
 	for _, opt := range opts {
 		switch v := opt.(type) {
 		case func(*tls.Config):
 			v(tlsConfig)
 		case func(*httptest.Server):
 			v(ts)
+		case serverTesterOpt:
+			onlyServer = (v == optOnlyServer)
 		default:
 			t.Fatalf("unknown newServerTester option type %T", v)
 		}
@@ -118,14 +125,15 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		sc = v
 		sc.testHookCh = make(chan func())
 	}
-	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
 	log.SetOutput(io.MultiWriter(stderrv, twriter{t: t, st: st}))
-
-	st.cc = cc
-	st.fr = NewFramer(cc, cc)
+	if !onlyServer {
+		cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.cc = cc
+		st.fr = NewFramer(cc, cc)
+	}
 
 	mu.Lock()
 	st.sc = sc
