@@ -164,7 +164,9 @@ func (st *serverTester) streamState(id uint32) streamState {
 
 func (st *serverTester) Close() {
 	st.ts.Close()
-	st.cc.Close()
+	if st.cc != nil {
+		st.cc.Close()
+	}
 	log.SetOutput(os.Stderr)
 }
 
