@@ -23,6 +23,9 @@ import (
 
 type Transport struct {
 	Fallback http.RoundTripper
+
+	// TODO: remove this and make more general with a TLS dial hook, like http
+	InsecureTLSDial bool
 }
 
 type clientConn struct {
@@ -86,8 +89,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		port = "443"
 	}
 	cfg := &tls.Config{
-		ServerName: host,
-		NextProtos: []string{NextProtoTLS},
+		ServerName:         host,
+		NextProtos:         []string{NextProtoTLS},
+		InsecureSkipVerify: t.InsecureTLSDial,
 	}
 	tconn, err := tls.Dial("tcp", host+":"+port, cfg)
 	if err != nil {
@@ -96,8 +100,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := tconn.Handshake(); err != nil {
 		return nil, err
 	}
-	if err := tconn.VerifyHostname(cfg.ServerName); err != nil {
-		return nil, err
+	if !t.InsecureTLSDial {
+		if err := tconn.VerifyHostname(cfg.ServerName); err != nil {
+			return nil, err
+		}
 	}
 	state := tconn.ConnectionState()
 	if p := state.NegotiatedProtocol; p != NextProtoTLS {
@@ -123,6 +129,8 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cc.henc = hpack.NewEncoder(&cc.hbuf)
 
 	cc.fr.WriteSettings()
+	// TODO: re-send more conn-level flow control tokens when server uses all these.
+	cc.fr.WriteWindowUpdate(0, 1<<30) // um, 0x7fffffff doesn't work to Google? it hangs?
 	cc.bw.Flush()
 	if cc.werr != nil {
 		return nil, cc.werr
@@ -197,20 +205,20 @@ func (cc *clientConn) encodeHeaders(req *http.Request) []byte {
 		host = req.URL.Host
 	}
 
-	cc.writeHeader(":method", req.Method)
-	cc.writeHeader(":scheme", "https")
 	cc.writeHeader(":authority", host) // probably not right for all sites
+	cc.writeHeader(":method", req.Method)
 	cc.writeHeader(":path", req.URL.Path)
+	cc.writeHeader(":scheme", "https")
 
 	for k, vv := range req.Header {
+		lowKey := strings.ToLower(k)
+		if lowKey == "host" {
+			continue
+		}
 		for _, v := range vv {
-			cc.writeHeader(strings.ToLower(k), v)
+			cc.writeHeader(lowKey, v)
 		}
 	}
-	if _, ok := req.Header["Host"]; !ok {
-		cc.writeHeader("host", host)
-	}
-
 	return cc.hbuf.Bytes()
 }
 
