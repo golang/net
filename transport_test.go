@@ -18,7 +18,7 @@ var (
 	insecure      = flag.Bool("insecure", false, "insecure TLS dials")
 )
 
-func TestTransport(t *testing.T) {
+func TestTransportExternal(t *testing.T) {
 	if !*extNet {
 		t.Skip("skipping external network test")
 	}
