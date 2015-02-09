@@ -458,6 +458,7 @@ func (sc *serverConn) condlogf(err error, format string, args ...interface{}) {
 
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	sc.serveG.check()
+	sc.vlogf("got header field %+v", f)
 	switch {
 	case !validHeader(f.Name):
 		sc.req.invalidHeader = true
