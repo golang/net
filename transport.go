@@ -205,9 +205,14 @@ func (cc *clientConn) encodeHeaders(req *http.Request) []byte {
 		host = req.URL.Host
 	}
 
+	path := req.URL.Path
+	if path == "" {
+		path = "/"
+	}
+
 	cc.writeHeader(":authority", host) // probably not right for all sites
 	cc.writeHeader(":method", req.Method)
-	cc.writeHeader(":path", req.URL.Path)
+	cc.writeHeader(":path", path)
 	cc.writeHeader(":scheme", "https")
 
 	for k, vv := range req.Header {
@@ -261,7 +266,7 @@ func (cc *clientConn) readLoop() {
 		}
 		cs := cc.streamByID(f.Header().StreamID)
 
-		log.Printf("Read %v: %#v", f.Header(), f)
+		log.Printf("Transport received %v: %#v", f.Header(), f)
 		headersEnded := false
 		streamEnded := false
 		if ff, ok := f.(interface {
