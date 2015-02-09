@@ -1103,3 +1103,7 @@ func readUint32(p []byte) (remain []byte, v uint32, err error) {
 	}
 	return p[4:], binary.BigEndian.Uint32(p[:4]), nil
 }
+
+type streamEnder interface {
+	StreamEnded() bool
+}
