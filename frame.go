@@ -1107,3 +1107,7 @@ func readUint32(p []byte) (remain []byte, v uint32, err error) {
 type streamEnder interface {
 	StreamEnded() bool
 }
+
+type headersEnder interface {
+	HeadersEnded() bool
+}

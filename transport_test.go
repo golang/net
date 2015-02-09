@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -43,9 +44,9 @@ func TestTransport(t *testing.T) {
 	})
 	defer st.Close()
 
-	tr := &Transport{
-		InsecureTLSDial: true,
-	}
+	tr := &Transport{InsecureTLSDial: true}
+	defer tr.CloseIdleConnections()
+
 	req, err := http.NewRequest("GET", st.ts.URL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -83,4 +84,38 @@ func TestTransport(t *testing.T) {
 		t.Errorf("Body = %q; want %q", slurp, body)
 	}
 
+}
+
+func TestTransportReusesConns(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.RemoteAddr)
+	}, optOnlyServer)
+	defer st.Close()
+	tr := &Transport{InsecureTLSDial: true}
+	defer tr.CloseIdleConnections()
+	get := func() string {
+		req, err := http.NewRequest("GET", st.ts.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		slurp, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			t.Fatalf("Body read: %v", err)
+		}
+		addr := strings.TrimSpace(string(slurp))
+		if addr == "" {
+			t.Fatalf("didn't get an addr in response")
+		}
+		return addr
+	}
+	first := get()
+	second := get()
+	if first != second {
+		t.Errorf("first and second responses were on different connections: %q vs %q", first, second)
+	}
 }
