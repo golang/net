@@ -194,7 +194,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, cc.werr
 	}
 
-	return <-cs.resc, nil
+	resp := <-cs.resc
+	resp.Request = req
+	resp.TLS = &state
+	return resp, nil
 }
 
 func (cc *clientConn) encodeHeaders(req *http.Request) []byte {

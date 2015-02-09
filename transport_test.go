@@ -37,7 +37,6 @@ func TestTransportExternal(t *testing.T) {
 }
 
 func TestTransport(t *testing.T) {
-	condSkipFailingTest(t)
 	const body = "sup"
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, body)
