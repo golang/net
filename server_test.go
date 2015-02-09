@@ -40,8 +40,9 @@ type serverTester struct {
 	ts        *httptest.Server
 	fr        *Framer
 	logBuf    *bytes.Buffer
+	logFilter []string   // substrings to filter out
+	scMu      sync.Mutex // guards sc
 	sc        *serverConn
-	logFilter []string // substrings to filter out
 
 	// writing headers:
 	headerBuf bytes.Buffer
@@ -115,15 +116,11 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	if VerboseLogs {
 		t.Logf("Running test server at: %s", ts.URL)
 	}
-	var (
-		mu sync.Mutex
-		sc *serverConn
-	)
 	testHookGetServerConn = func(v *serverConn) {
-		mu.Lock()
-		defer mu.Unlock()
-		sc = v
-		sc.testHookCh = make(chan func())
+		st.scMu.Lock()
+		defer st.scMu.Unlock()
+		st.sc = v
+		st.sc.testHookCh = make(chan func())
 	}
 	log.SetOutput(io.MultiWriter(stderrv, twriter{t: t, st: st}))
 	if !onlyServer {
@@ -135,10 +132,13 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		st.fr = NewFramer(cc, cc)
 	}
 
-	mu.Lock()
-	st.sc = sc
-	mu.Unlock() // unnecessary, but looks weird without.
 	return st
+}
+
+func (st *serverTester) closeConn() {
+	st.scMu.Lock()
+	defer st.scMu.Unlock()
+	st.sc.conn.Close()
 }
 
 func (st *serverTester) addLogFilter(phrase string) {
