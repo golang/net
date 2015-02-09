@@ -8,6 +8,7 @@ package http2
 import (
 	"flag"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"reflect"
@@ -36,16 +37,21 @@ func TestTransportExternal(t *testing.T) {
 }
 
 func TestTransport(t *testing.T) {
+	condSkipFailingTest(t)
+	const body = "sup"
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "sup")
+		io.WriteString(w, body)
 	})
 	defer st.Close()
 
 	tr := &Transport{
 		InsecureTLSDial: true,
 	}
-	cl := &http.Client{Transport: tr}
-	res, err := cl.Get(st.ts.URL)
+	req, err := http.NewRequest("GET", st.ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tr.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +70,18 @@ func TestTransport(t *testing.T) {
 	}
 	if !reflect.DeepEqual(res.Header, wantHeader) {
 		t.Errorf("res Header = %v; want %v", res.Header, wantHeader)
+	}
+	if res.Request != req {
+		t.Errorf("Response.Request = %p; want %p", res.Request, req)
+	}
+	if res.TLS == nil {
+		t.Errorf("Response.TLS = nil; want non-nil", res.TLS)
+	}
+	slurp, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Error("Body read: %v", err)
+	} else if string(slurp) != body {
+		t.Errorf("Body = %q; want %q", slurp, body)
 	}
 
 }
