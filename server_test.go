@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,6 +31,8 @@ import (
 
 	"github.com/bradfitz/http2/hpack"
 )
+
+var stderrVerbose = flag.Bool("stderr_verbose", false, "Mirror verbosity to stderr, unbuffered")
 
 type serverTester struct {
 	cc        net.Conn // client conn
@@ -93,8 +96,13 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 
+	var stderrv io.Writer = ioutil.Discard
+	if *stderrVerbose {
+		stderrv = os.Stderr
+	}
+
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
-	ts.Config.ErrorLog = log.New(io.MultiWriter(twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
+	ts.Config.ErrorLog = log.New(io.MultiWriter(stderrv, twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
 	ts.StartTLS()
 
 	if VerboseLogs {
@@ -114,7 +122,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.SetOutput(twriter{t: t, st: st})
+	log.SetOutput(io.MultiWriter(stderrv, twriter{t: t, st: st}))
 
 	st.cc = cc
 	st.fr = NewFramer(cc, cc)
