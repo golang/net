@@ -15,6 +15,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -44,7 +45,7 @@ type clientConn struct {
 
 	hdec *hpack.Decoder
 
-	nextRes http.Header
+	nextRes *http.Response
 
 	// Settings from peer:
 	maxFrameSize uint32
@@ -276,7 +277,13 @@ func (cc *clientConn) readLoop() {
 		}
 		switch f := f.(type) {
 		case *HeadersFrame:
-			cc.nextRes = make(http.Header)
+			cc.nextRes = &http.Response{
+				Proto:      "HTTP/2.0",
+				ProtoMajor: 2,
+				Header:     make(http.Header),
+				Request:    nil, // TODO: set this
+				TLS:        nil, // TODO: set this
+			}
 			cs.pr, cs.pw = io.Pipe()
 			cc.hdec.Write(f.HeaderBlockFragment())
 			headersEnded = f.HeadersEnded()
@@ -296,15 +303,29 @@ func (cc *clientConn) readLoop() {
 			if cs == nil {
 				panic("couldn't find stream") // TODO be graceful
 			}
-			cs.resc <- &http.Response{
-				Header: cc.nextRes,
-				Body:   cs.pr,
-			}
+			cc.nextRes.Body = cs.pr
+			cs.resc <- cc.nextRes
 		}
 	}
 }
 
 func (cc *clientConn) onNewHeaderField(f hpack.HeaderField) {
+	// TODO: verifiy pseudo headers come before non-pseudo headers
+	// TODO: verifiy the status is set
 	log.Printf("Header field: %+v", f)
-	cc.nextRes.Add(http.CanonicalHeaderKey(f.Name), f.Value)
+	if f.Name == ":status" {
+		code, err := strconv.Atoi(f.Value)
+		if err != nil {
+			panic("TODO: be graceful")
+		}
+		cc.nextRes.Status = f.Value + " " + http.StatusText(code)
+		cc.nextRes.StatusCode = code
+		return
+	}
+	if strings.HasPrefix(f.Name, ":") {
+		// "Endpoints MUST NOT generate pseudo-header fields other than those defined in this document."
+		// TODO: treat as invalid?
+		return
+	}
+	cc.nextRes.Header.Add(http.CanonicalHeaderKey(f.Name), f.Value)
 }

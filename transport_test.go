@@ -36,11 +36,7 @@ func TestTransportExternal(t *testing.T) {
 }
 
 func TestTransport(t *testing.T) {
-	condSkipFailingTest(t)
-
-	VerboseLogs = true
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		println("in handler")
 		io.WriteString(w, "sup")
 	})
 	defer st.Close()
