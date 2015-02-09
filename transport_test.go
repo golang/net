@@ -7,8 +7,10 @@ package http2
 
 import (
 	"flag"
+	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -31,4 +33,41 @@ func TestTransportExternal(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	res.Write(os.Stdout)
+}
+
+func TestTransport(t *testing.T) {
+	condSkipFailingTest(t)
+
+	VerboseLogs = true
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		println("in handler")
+		io.WriteString(w, "sup")
+	})
+	defer st.Close()
+
+	tr := &Transport{
+		InsecureTLSDial: true,
+	}
+	cl := &http.Client{Transport: tr}
+	res, err := cl.Get(st.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	t.Logf("Got res: %+v", res)
+	if g, w := res.StatusCode, 200; g != w {
+		t.Errorf("StatusCode = %v; want %v", g, w)
+	}
+	if g, w := res.Status, "200 OK"; g != w {
+		t.Errorf("Status = %q; want %q", g, w)
+	}
+	wantHeader := http.Header{
+		"Content-Length": []string{"3"},
+		"Content-Type":   []string{"text/plain; charset=utf-8"},
+	}
+	if !reflect.DeepEqual(res.Header, wantHeader) {
+		t.Errorf("res Header = %v; want %v", res.Header, wantHeader)
+	}
+
 }
