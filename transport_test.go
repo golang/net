@@ -15,6 +15,7 @@ import (
 var (
 	extNet        = flag.Bool("extnet", false, "do external network tests")
 	transportHost = flag.String("transporthost", "http2.golang.org", "hostname to use for TestTransport")
+	insecure      = flag.Bool("insecure", false, "insecure TLS dials")
 )
 
 func TestTransport(t *testing.T) {
@@ -22,7 +23,9 @@ func TestTransport(t *testing.T) {
 		t.Skip("skipping external network test")
 	}
 	req, _ := http.NewRequest("GET", "https://"+*transportHost+"/", nil)
-	rt := &Transport{}
+	rt := &Transport{
+		InsecureTLSDial: *insecure,
+	}
 	res, err := rt.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("%v", err)
