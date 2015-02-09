@@ -44,6 +44,7 @@ type clientConn struct {
 	nextRes    *http.Response
 
 	mu           sync.Mutex
+	closed       bool
 	goAway       *GoAwayFrame // if non-nil, the GoAwayFrame we received
 	streams      map[uint32]*clientStream
 	nextStreamID uint32
@@ -100,7 +101,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 		res, err := cc.roundTrip(req)
-		if isShutdownError(err) { // TODO: or clientconn is overloaded (too many outstanding requests)?
+		if shouldRetryRequest(err) { // TODO: or clientconn is overloaded (too many outstanding requests)?
 			continue
 		}
 		if err != nil {
@@ -123,9 +124,11 @@ func (t *Transport) CloseIdleConnections() {
 	}
 }
 
-func isShutdownError(err error) bool {
-	// TODO: implement
-	return false
+var errClientConnClosed = errors.New("http2: client conn is closed")
+
+func shouldRetryRequest(err error) bool {
+	// TODO: or GOAWAY graceful shutdown stuff
+	return err == errClientConnClosed
 }
 
 func (t *Transport) removeClientConn(cc *clientConn) {
@@ -136,7 +139,12 @@ func (t *Transport) removeClientConn(cc *clientConn) {
 		if !ok {
 			continue
 		}
-		t.conns[key] = filterOutClientConn(vv, cc)
+		newList := filterOutClientConn(vv, cc)
+		if len(newList) > 0 {
+			t.conns[key] = newList
+		} else {
+			delete(t.conns, key)
+		}
 	}
 }
 
@@ -269,19 +277,31 @@ func (cc *clientConn) setGoAway(f *GoAwayFrame) {
 func (cc *clientConn) canTakeNewRequest() bool {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	return cc.goAway == nil && int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams)
+	return cc.goAway == nil &&
+		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
+		cc.nextStreamID < 2147483647
 }
 
 func (cc *clientConn) closeIfIdle() {
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
 	if len(cc.streams) > 0 {
+		cc.mu.Unlock()
 		return
 	}
+	cc.closed = true
+	// TODO: do clients send GOAWAY too? maybe? Just Close:
+	cc.mu.Unlock()
+
+	cc.tconn.Close()
 }
 
 func (cc *clientConn) roundTrip(req *http.Request) (*http.Response, error) {
 	cc.mu.Lock()
+
+	if cc.closed {
+		cc.mu.Unlock()
+		return nil, errClientConnClosed
+	}
 
 	cs := cc.newStream()
 	hasBody := false // TODO
@@ -412,8 +432,6 @@ func (cc *clientConn) readLoop() {
 			cs.pw.CloseWithError(err)
 		}
 	}()
-
-	defer println("Transport readLoop returning")
 
 	// continueStreamID is the stream ID we're waiting for
 	// continuation frames for.
