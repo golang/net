@@ -64,18 +64,21 @@ type Context interface {
 	//
 	// Done is provided for use in select statements:
 	//
-	// 	// CancelableOperation calls UncancelableOperation and returns as soon as
-	// 	// it returns or ctx.Done is closed.
-	// 	func CancelableOperation(ctx context.Context) (Result, error) {
-	// 		c := make(chan Result, 1)
-	// 		go func() { c <- UncancelableOperation() }()
-	// 		select {
-	// 		case res := <-c:
-	// 			return res, nil
-	// 		case <-ctx.Done():
-	// 			return nil, ctx.Err()
-	// 		}
-	// 	}
+	//  // Stream generates values with DoSomething and sends them to out
+	//  // until DoSomething returns an error or ctx.Done is closed.
+	//  func Stream(ctx context.Context, out <-chan Value) error {
+	//  	for {
+	//  		v, err := DoSomething(ctx)
+	//  		if err != nil {
+	//  			return err
+	//  		}
+	//  		select {
+	//  		case <-ctx.Done():
+	//  			return ctx.Err()
+	//  		case out <- v:
+	//  		}
+	//  	}
+	//  }
 	//
 	// See http://blog.golang.org/pipelines for more examples of how to use
 	// a Done channel for cancelation.
