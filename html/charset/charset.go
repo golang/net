@@ -10,6 +10,7 @@ package charset // import "golang.org/x/net/html/charset"
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"mime"
 	"strings"
@@ -108,6 +109,18 @@ func NewReader(r io.Reader, contentType string) (io.Reader, error) {
 		r = transform.NewReader(r, e.NewDecoder())
 	}
 	return r, nil
+}
+
+// NewReaderByName returns a reader that converts from the specified charset to
+// UTF-8. It returns an error if the charset is not one of the standard
+// encodings for HTML. It is suitable for use as encoding/xml.Decoder's
+// CharsetReader function.
+func NewReaderByName(charset string, input io.Reader) (io.Reader, error) {
+	e, _ := Lookup(charset)
+	if e == nil {
+		return nil, fmt.Errorf("unsupported charset: %q", charset)
+	}
+	return transform.NewReader(input, e.NewDecoder()), nil
 }
 
 func prescan(content []byte) (e encoding.Encoding, name string) {
