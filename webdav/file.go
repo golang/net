@@ -30,6 +30,10 @@ func slashClean(name string) string {
 //
 // Each method has the same semantics as the os package's function of the same
 // name.
+//
+// Note that the os.Rename documentation says that "OS-specific restrictions
+// might apply". In particular, whether or not renaming a file or directory
+// overwriting another existing file or directory is an error is OS-dependent.
 type FileSystem interface {
 	Mkdir(name string, perm os.FileMode) error
 	OpenFile(name string, flag int, perm os.FileMode) (File, error)
@@ -546,6 +550,36 @@ func (f *memFile) Write(p []byte) (int, error) {
 	}
 	f.n.modTime = time.Now()
 	return lenp, nil
+}
+
+// moveFiles moves files and/or directories from src to dst.
+//
+// See section 9.9.4 for when various HTTP status codes apply.
+func moveFiles(fs FileSystem, src, dst string, overwrite bool) (status int, err error) {
+	created := false
+	if _, err := fs.Stat(dst); err != nil {
+		if !os.IsNotExist(err) {
+			return http.StatusForbidden, err
+		}
+		created = true
+	} else if overwrite {
+		// Section 9.9.3 says that "If a resource exists at the destination
+		// and the Overwrite header is "T", then prior to performing the move,
+		// the server must perform a DELETE with "Depth: infinity" on the
+		// destination resource.
+		if err := fs.RemoveAll(dst); err != nil {
+			return http.StatusForbidden, err
+		}
+	} else {
+		return http.StatusPreconditionFailed, os.ErrExist
+	}
+	if err := fs.Rename(src, dst); err != nil {
+		return http.StatusForbidden, err
+	}
+	if created {
+		return http.StatusCreated, nil
+	}
+	return http.StatusNoContent, nil
 }
 
 // copyFiles copies files and/or directories from src to dst.

@@ -247,36 +247,7 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 			return http.StatusBadRequest, errInvalidDepth
 		}
 	}
-
-	created := false
-	if _, err := h.FileSystem.Stat(dst); err != nil {
-		if !os.IsNotExist(err) {
-			return http.StatusForbidden, err
-		}
-		created = true
-	} else {
-		switch r.Header.Get("Overwrite") {
-		case "T":
-			// Section 9.9.3 says that "If a resource exists at the destination
-			// and the Overwrite header is "T", then prior to performing the move,
-			// the server must perform a DELETE with "Depth: infinity" on the
-			// destination resource.
-			if err := h.FileSystem.RemoveAll(dst); err != nil {
-				return http.StatusForbidden, err
-			}
-		case "F":
-			return http.StatusPreconditionFailed, os.ErrExist
-		default:
-			return http.StatusBadRequest, errInvalidOverwrite
-		}
-	}
-	if err := h.FileSystem.Rename(src, dst); err != nil {
-		return http.StatusForbidden, err
-	}
-	if created {
-		return http.StatusCreated, nil
-	}
-	return http.StatusNoContent, nil
+	return moveFiles(h.FileSystem, src, dst, r.Header.Get("Overwrite") == "T")
 }
 
 func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus int, retErr error) {
@@ -450,7 +421,6 @@ var (
 	errInvalidIfHeader         = errors.New("webdav: invalid If header")
 	errInvalidLockInfo         = errors.New("webdav: invalid lock info")
 	errInvalidLockToken        = errors.New("webdav: invalid lock token")
-	errInvalidOverwrite        = errors.New("webdav: invalid overwrite")
 	errInvalidPropfind         = errors.New("webdav: invalid propfind")
 	errInvalidResponse         = errors.New("webdav: invalid response")
 	errInvalidTimeout          = errors.New("webdav: invalid timeout")
