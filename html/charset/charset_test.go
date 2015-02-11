@@ -219,7 +219,7 @@ func TestXML(t *testing.T) {
 	const s = "<?xml version=\"1.0\" encoding=\"windows-1252\"?><a><Word>r\xe9sum\xe9</Word></a>"
 
 	d := xml.NewDecoder(strings.NewReader(s))
-	d.CharsetReader = NewReaderByName
+	d.CharsetReader = NewReaderLabel
 
 	var a struct {
 		Word string
