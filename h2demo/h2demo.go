@@ -213,7 +213,7 @@ func registerHandlers() {
 	})
 	mux2.HandleFunc("/", home)
 	mux2.Handle("/file/gopher.png", fileServer("https://golang.org/doc/gopher/frontpage.png"))
-	mux2.Handle("/file/go.src.tar.gz", fileServer("https://storage.googleapis.com/golang/go1.4rc1.src.tar.gz"))
+	mux2.Handle("/file/go.src.tar.gz", fileServer("https://storage.googleapis.com/golang/go1.4.1.src.tar.gz"))
 	mux2.HandleFunc("/reqinfo", reqInfoHandler)
 	mux2.HandleFunc("/crc32", crcHandler)
 	mux2.HandleFunc("/clockstream", clockStreamHandler)
