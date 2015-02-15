@@ -8,6 +8,7 @@ package webdav // import "golang.org/x/net/webdav"
 // TODO: ETag, properties.
 
 import (
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -184,6 +185,14 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 	if err != nil {
 		return http.StatusNotFound, err
 	}
+	pstats, err := h.PropSystem.Find(r.URL.Path, []xml.Name{
+		{Space: "DAV:", Local: "getetag"},
+		{Space: "DAV:", Local: "getcontenttype"},
+	})
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	writeDAVHeaders(w, pstats)
 	http.ServeContent(w, r, r.URL.Path, fi.ModTime(), f)
 	return 0, nil
 }
@@ -223,10 +232,21 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	if err != nil {
 		return http.StatusNotFound, err
 	}
-	defer f.Close()
-	if _, err := io.Copy(f, r.Body); err != nil {
-		return http.StatusMethodNotAllowed, err
+	_, copyErr := io.Copy(f, r.Body)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return http.StatusMethodNotAllowed, copyErr
 	}
+	if closeErr != nil {
+		return http.StatusMethodNotAllowed, closeErr
+	}
+	pstats, err := h.PropSystem.Find(r.URL.Path, []xml.Name{
+		{Space: "DAV:", Local: "getetag"},
+	})
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	writeDAVHeaders(w, pstats)
 	return http.StatusCreated, nil
 }
 
@@ -490,6 +510,26 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 		return 0, err
 	}
 	return 0, mw.close()
+}
+
+// davHeaderNames maps the names of DAV properties to their corresponding
+// HTTP response headers.
+var davHeaderNames = map[xml.Name]string{
+	xml.Name{Space: "DAV:", Local: "getetag"}:        "ETag",
+	xml.Name{Space: "DAV:", Local: "getcontenttype"}: "Content-Type",
+}
+
+func writeDAVHeaders(w http.ResponseWriter, pstats []Propstat) {
+	for _, pst := range pstats {
+		if pst.Status == http.StatusOK {
+			for _, p := range pst.Props {
+				if n, ok := davHeaderNames[p.XMLName]; ok {
+					w.Header().Set(n, string(p.InnerXML))
+				}
+			}
+			break
+		}
+	}
 }
 
 func makePropstatResponse(href string, pstats []Propstat) *response {

@@ -6,8 +6,12 @@ package webdav
 
 import (
 	"encoding/xml"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -79,25 +83,54 @@ func NewMemPS(fs FileSystem, ls LockSystem) PropSystem {
 	return &memPS{fs: fs, ls: ls}
 }
 
-type propfindFn func(*memPS, string, os.FileInfo) (string, error)
-
 // davProps contains all supported DAV: properties and their optional
-// propfind functions. A nil value indicates a hidden, protected property.
-var davProps = map[xml.Name]propfindFn{
-	xml.Name{Space: "DAV:", Local: "resourcetype"}:       (*memPS).findResourceType,
-	xml.Name{Space: "DAV:", Local: "displayname"}:        (*memPS).findDisplayName,
-	xml.Name{Space: "DAV:", Local: "getcontentlength"}:   (*memPS).findContentLength,
-	xml.Name{Space: "DAV:", Local: "getlastmodified"}:    (*memPS).findLastModified,
-	xml.Name{Space: "DAV:", Local: "creationdate"}:       nil,
-	xml.Name{Space: "DAV:", Local: "getcontentlanguage"}: nil,
-
-	// TODO(rost) ETag and ContentType will be defined the next CL.
-	// xml.Name{Space: "DAV:", Local: "getcontenttype"}:     (*memPS).findContentType,
-	// xml.Name{Space: "DAV:", Local: "getetag"}:            (*memPS).findEtag,
+// propfind functions. A nil findFn indicates a hidden, protected property.
+// The dir field indicates if the property applies to directories in addition
+// to regular files.
+var davProps = map[xml.Name]struct {
+	findFn func(*memPS, string, os.FileInfo) (string, error)
+	dir    bool
+}{
+	xml.Name{Space: "DAV:", Local: "resourcetype"}: {
+		findFn: (*memPS).findResourceType,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "displayname"}: {
+		findFn: (*memPS).findDisplayName,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "getcontentlength"}: {
+		findFn: (*memPS).findContentLength,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "getlastmodified"}: {
+		findFn: (*memPS).findLastModified,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "creationdate"}: {
+		findFn: nil,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "getcontentlanguage"}: {
+		findFn: nil,
+		dir:    true,
+	},
+	xml.Name{Space: "DAV:", Local: "getcontenttype"}: {
+		findFn: (*memPS).findContentType,
+		dir:    true,
+	},
+	// memPS implements ETag as the concatenated hex values of a file's
+	// modification time and size. This is not a reliable synchronization
+	// mechanism for directories, so we do not advertise getetag for
+	// DAV collections.
+	xml.Name{Space: "DAV:", Local: "getetag"}: {
+		findFn: (*memPS).findETag,
+		dir:    false,
+	},
 
 	// TODO(nigeltao) Lock properties will be defined later.
-	// xml.Name{Space: "DAV:", Local: "lockdiscovery"}: nil, // TODO(rost)
-	// xml.Name{Space: "DAV:", Local: "supportedlock"}: nil, // TODO(rost)
+	// xml.Name{Space: "DAV:", Local: "lockdiscovery"}
+	// xml.Name{Space: "DAV:", Local: "supportedlock"}
 }
 
 func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
@@ -110,8 +143,8 @@ func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
 	for _, pn := range propnames {
 		p := Property{XMLName: pn}
 		s := http.StatusNotFound
-		if fn := davProps[pn]; fn != nil {
-			xmlvalue, err := fn(ps, name, fi)
+		if prop := davProps[pn]; prop.findFn != nil && (prop.dir || !fi.IsDir()) {
+			xmlvalue, err := prop.findFn(ps, name, fi)
 			if err != nil {
 				return nil, err
 			}
@@ -137,16 +170,8 @@ func (ps *memPS) Propnames(name string) ([]xml.Name, error) {
 		return nil, err
 	}
 	propnames := make([]xml.Name, 0, len(davProps))
-	for pn, findFn := range davProps {
-		// TODO(rost) ETag and ContentType will be defined the next CL.
-		// memPS implements ETag as the concatenated hex values of a file's
-		// modification time and size. This is not a reliable synchronization
-		// mechanism for directories, so we do not advertise getetag for
-		// DAV collections. Other property systems may do how they please.
-		if fi.IsDir() && pn.Space == "DAV:" && pn.Local == "getetag" {
-			continue
-		}
-		if findFn != nil {
+	for pn, prop := range davProps {
+		if prop.findFn != nil && (prop.dir || !fi.IsDir()) {
 			propnames = append(propnames, pn)
 		}
 	}
@@ -192,4 +217,35 @@ func (ps *memPS) findContentLength(name string, fi os.FileInfo) (string, error) 
 
 func (ps *memPS) findLastModified(name string, fi os.FileInfo) (string, error) {
 	return fi.ModTime().Format(http.TimeFormat), nil
+}
+
+func (ps *memPS) findContentType(name string, fi os.FileInfo) (string, error) {
+	f, err := ps.fs.OpenFile(name, os.O_RDONLY, 0)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	// This implementation is based on serveContent's code in the standard net/http package.
+	ctype := mime.TypeByExtension(filepath.Ext(name))
+	if ctype == "" {
+		// Read a chunk to decide between utf-8 text and binary.
+		var buf [512]byte
+		n, _ := io.ReadFull(f, buf[:])
+		ctype = http.DetectContentType(buf[:n])
+		// Rewind file.
+		_, err = f.Seek(0, os.SEEK_SET)
+	}
+	return ctype, err
+}
+
+func (ps *memPS) findETag(name string, fi os.FileInfo) (string, error) {
+	return detectETag(fi), nil
+}
+
+// detectETag determines the ETag for the file described by fi.
+func detectETag(fi os.FileInfo) string {
+	// The Apache http 2.4 web server by default concatenates the
+	// modification time and size of a file. We replicate the heuristic
+	// with nanosecond granularity.
+	return fmt.Sprintf(`"%x%x"`, fi.ModTime().UnixNano(), fi.Size())
 }

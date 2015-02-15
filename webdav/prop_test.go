@@ -28,8 +28,11 @@ func TestMemPS(t *testing.T) {
 					p.InnerXML = []byte(fi.ModTime().Format(http.TimeFormat))
 					pst.Props[i] = p
 				case xml.Name{Space: "DAV:", Local: "getetag"}:
-					// TODO(rost) ETag will be defined in the next CL.
-					panic("Not implemented")
+					if fi.IsDir() {
+						continue
+					}
+					p.InnerXML = []byte(detectETag(fi))
+					pst.Props[i] = p
 				}
 			}
 		}
@@ -59,6 +62,7 @@ func TestMemPS(t *testing.T) {
 				xml.Name{Space: "DAV:", Local: "displayname"},
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
 				xml.Name{Space: "DAV:", Local: "getlastmodified"},
+				xml.Name{Space: "DAV:", Local: "getcontenttype"},
 			},
 		}, {
 			op:   "propname",
@@ -68,6 +72,8 @@ func TestMemPS(t *testing.T) {
 				xml.Name{Space: "DAV:", Local: "displayname"},
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
 				xml.Name{Space: "DAV:", Local: "getlastmodified"},
+				xml.Name{Space: "DAV:", Local: "getcontenttype"},
+				xml.Name{Space: "DAV:", Local: "getetag"},
 			},
 		}},
 	}, {
@@ -90,6 +96,9 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getlastmodified"},
 					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "getcontenttype"},
+					InnerXML: []byte("text/plain; charset=utf-8"),
 				}},
 			}},
 		}, {
@@ -108,6 +117,12 @@ func TestMemPS(t *testing.T) {
 					InnerXML: []byte("9"),
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getlastmodified"},
+					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "getcontenttype"},
+					InnerXML: []byte("text/plain; charset=utf-8"),
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
 				}},
 			}},
@@ -131,6 +146,12 @@ func TestMemPS(t *testing.T) {
 					InnerXML: []byte("9"),
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getlastmodified"},
+					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "getcontenttype"},
+					InnerXML: []byte("text/plain; charset=utf-8"),
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
 				}}}, {
 				Status: http.StatusNotFound,
@@ -186,6 +207,31 @@ func TestMemPS(t *testing.T) {
 				Status: http.StatusNotFound,
 				Props: []Property{{
 					XMLName: xml.Name{Space: "DAV:", Local: "creationdate"},
+				}},
+			}},
+		}},
+	}, {
+		"propfind getetag for files but not for directories",
+		[]string{"mkdir /dir", "touch /file"},
+		[]propOp{{
+			op:        "propfind",
+			name:      "/dir",
+			propnames: []xml.Name{{"DAV:", "getetag"}},
+			wantPropstats: []Propstat{{
+				Status: http.StatusNotFound,
+				Props: []Property{{
+					XMLName: xml.Name{Space: "DAV:", Local: "getetag"},
+				}},
+			}},
+		}, {
+			op:        "propfind",
+			name:      "/file",
+			propnames: []xml.Name{{"DAV:", "getetag"}},
+			wantPropstats: []Propstat{{
+				Status: http.StatusOK,
+				Props: []Property{{
+					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
+					InnerXML: nil, // Calculated during test.
 				}},
 			}},
 		}},
