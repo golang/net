@@ -205,6 +205,9 @@ type CancelFunc func()
 // WithCancel returns a copy of parent with a new Done channel. The returned
 // context's Done channel is closed when the returned cancel function is called
 // or when the parent context's Done channel is closed, whichever happens first.
+//
+// Canceling this context releases resources associated with it, so code should
+// call cancel as soon as the operations running in this Context complete.
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	propagateCancel(parent, &c)
@@ -343,9 +346,8 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 // cancel function is called, or when the parent context's Done channel is
 // closed, whichever happens first.
 //
-// Canceling this context releases resources associated with the deadline
-// timer, so code should call cancel as soon as the operations running in this
-// Context complete.
+// Canceling this context releases resources associated with it, so code should
+// call cancel as soon as the operations running in this Context complete.
 func WithDeadline(parent Context, deadline time.Time) (Context, CancelFunc) {
 	if cur, ok := parent.Deadline(); ok && cur.Before(deadline) {
 		// The current deadline is already sooner than the new one.
@@ -405,9 +407,8 @@ func (c *timerCtx) cancel(removeFromParent bool, err error) {
 
 // WithTimeout returns WithDeadline(parent, time.Now().Add(timeout)).
 //
-// Canceling this context releases resources associated with the deadline
-// timer, so code should call cancel as soon as the operations running in this
-// Context complete:
+// Canceling this context releases resources associated with it, so code should
+// call cancel as soon as the operations running in this Context complete:
 //
 // 	func slowOperationWithTimeout(ctx context.Context) (Result, error) {
 // 		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
