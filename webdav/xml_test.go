@@ -5,7 +5,9 @@
 package webdav
 
 import (
+	"bytes"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -345,13 +347,6 @@ func TestReadPropfind(t *testing.T) {
 func TestMultistatusWriter(t *testing.T) {
 	///The "section x.y.z" test cases come from section x.y.z of the spec at
 	// http://www.webdav.org/specs/rfc4918.html
-	//
-	// BUG:The following tests compare the actual and expected XML verbatim.
-	// Minor tweaks in the marshalling output of either standard encoding/xml
-	// or this package might break them. A more resilient approach could be
-	// to normalize both actual and expected XML content before comparison.
-	// This also would enhance readibility of the expected XML payload in the
-	// wantXML field.
 	testCases := []struct {
 		desc      string
 		responses []response
@@ -365,38 +360,43 @@ func TestMultistatusWriter(t *testing.T) {
 			Href: []string{"http://example.com/foo"},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: xml.Name{Space: "http://ns.example.com/", Local: "Authors"},
+					XMLName: xml.Name{
+						Space: "http://ns.example.com/",
+						Local: "Authors",
+					},
 				}},
 				Status: "HTTP/1.1 424 Failed Dependency",
 			}, {
 				Prop: []Property{{
-					XMLName: xml.Name{Space: "http://ns.example.com/", Local: "Copyright-Owner"},
+					XMLName: xml.Name{
+						Space: "http://ns.example.com/",
+						Local: "Copyright-Owner",
+					},
 				}},
 				Status: "HTTP/1.1 409 Conflict",
 			}},
-			ResponseDescription: " Copyright Owner cannot be deleted or altered.",
+			ResponseDescription: "Copyright Owner cannot be deleted or altered.",
 		}},
-		wantXML: `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<D:multistatus xmlns:D="DAV:">` +
-			`<response xmlns="DAV:">` +
-			`<href xmlns="DAV:">http://example.com/foo</href>` +
-			`<propstat xmlns="DAV:">` +
-			`<prop>` +
-			`<Authors xmlns="http://ns.example.com/"></Authors>` +
-			`</prop>` +
-			`<status xmlns="DAV:">HTTP/1.1 424 Failed Dependency</status>` +
-			`</propstat>` +
-			`<propstat xmlns="DAV:">` +
-			`<prop>` +
-			`<Copyright-Owner xmlns="http://ns.example.com/"></Copyright-Owner>` +
-			`</prop>` +
-			`<status xmlns="DAV:">HTTP/1.1 409 Conflict</status>` +
-			`</propstat>` +
-			`<responsedescription xmlns="DAV:">` +
-			` Copyright Owner cannot be deleted or altered.` +
-			`</responsedescription>` +
+		wantXML: `` +
+			`<?xml version="1.0" encoding="UTF-8"?>` +
+			`<multistatus xmlns="DAV:">` +
+			`  <response>` +
+			`    <href>http://example.com/foo</href>` +
+			`    <propstat>` +
+			`      <prop>` +
+			`        <Authors xmlns="http://ns.example.com/"></Authors>` +
+			`      </prop>` +
+			`      <status>HTTP/1.1 424 Failed Dependency</status>` +
+			`    </propstat>` +
+			`    <propstat xmlns="DAV:">` +
+			`      <prop>` +
+			`        <Copyright-Owner xmlns="http://ns.example.com/"></Copyright-Owner>` +
+			`      </prop>` +
+			`      <status>HTTP/1.1 409 Conflict</status>` +
+			`    </propstat>` +
+			`  <responsedescription>Copyright Owner cannot be deleted or altered.</responsedescription>` +
 			`</response>` +
-			`</D:multistatus>`,
+			`</multistatus>`,
 		wantCode: StatusMulti,
 	}, {
 		desc: "section 9.6.2 (lock-token-submitted)",
@@ -407,14 +407,15 @@ func TestMultistatusWriter(t *testing.T) {
 				InnerXML: []byte(`<lock-token-submitted xmlns="DAV:"/>`),
 			},
 		}},
-		wantXML: `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<D:multistatus xmlns:D="DAV:">` +
-			`<response xmlns="DAV:">` +
-			`<href xmlns="DAV:">http://example.com/foo</href>` +
-			`<status xmlns="DAV:">HTTP/1.1 423 Locked</status>` +
-			`<error xmlns="DAV:"><lock-token-submitted xmlns="DAV:"/></error>` +
-			`</response>` +
-			`</D:multistatus>`,
+		wantXML: `` +
+			`<?xml version="1.0" encoding="UTF-8"?>` +
+			`<multistatus xmlns="DAV:">` +
+			`  <response>` +
+			`    <href>http://example.com/foo</href>` +
+			`    <status>HTTP/1.1 423 Locked</status>` +
+			`    <error><lock-token-submitted xmlns="DAV:"/></error>` +
+			`  </response>` +
+			`</multistatus>`,
 		wantCode: StatusMulti,
 	}, {
 		desc: "section 9.1.3",
@@ -442,42 +443,33 @@ func TestMultistatusWriter(t *testing.T) {
 					XMLName: xml.Name{Space: "http://ns.example.com/boxschema/", Local: "Random"},
 				}},
 				Status:              "HTTP/1.1 403 Forbidden",
-				ResponseDescription: " The user does not have access to the DingALing property.",
+				ResponseDescription: "The user does not have access to the DingALing property.",
 			}},
 		}},
-		respdesc: " There has been an access violation error.",
-		wantXML: `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<D:multistatus xmlns:D="DAV:">` +
-			`<response xmlns="DAV:">` +
-			`<href xmlns="DAV:">http://example.com/foo</href>` +
-			`<propstat xmlns="DAV:">` +
-			`<prop>` +
-			`<bigbox xmlns="http://ns.example.com/boxschema/">` +
-			`<BoxType xmlns="http://ns.example.com/boxschema/">Box type A</BoxType>` +
-			`</bigbox>` +
-			`<author xmlns="http://ns.example.com/boxschema/">` +
-			`<Name xmlns="http://ns.example.com/boxschema/">J.J. Johnson</Name>` +
-			`</author>` +
-			`</prop>` +
-			`<status xmlns="DAV:">HTTP/1.1 200 OK</status>` +
-			`</propstat>` +
-			`<propstat xmlns="DAV:">` +
-			`<prop>` +
-			`<DingALing xmlns="http://ns.example.com/boxschema/">` +
-			`</DingALing>` +
-			`<Random xmlns="http://ns.example.com/boxschema/">` +
-			`</Random>` +
-			`</prop>` +
-			`<status xmlns="DAV:">HTTP/1.1 403 Forbidden</status>` +
-			`<responsedescription xmlns="DAV:">` +
-			` The user does not have access to the DingALing property.` +
-			`</responsedescription>` +
-			`</propstat>` +
-			`</response>` +
-			`<D:responsedescription>` +
-			` There has been an access violation error.` +
-			`</D:responsedescription>` +
-			`</D:multistatus>`,
+		respdesc: "There has been an access violation error.",
+		wantXML: `` +
+			`<?xml version="1.0" encoding="UTF-8"?>` +
+			`<multistatus xmlns="DAV:">` +
+			`  <response>` +
+			`    <href>http://example.com/foo</href>` +
+			`    <propstat>` +
+			`      <prop>` +
+			`        <bigbox xmlns="http://ns.example.com/boxschema/"><BoxType xmlns="http://ns.example.com/boxschema/">Box type A</BoxType></bigbox>` +
+			`        <author xmlns="http://ns.example.com/boxschema/"><Name xmlns="http://ns.example.com/boxschema/">J.J. Johnson</Name></author>` +
+			`      </prop>` +
+			`      <status>HTTP/1.1 200 OK</status>` +
+			`    </propstat>` +
+			`    <propstat>` +
+			`      <prop>` +
+			`        <DingALing xmlns="http://ns.example.com/boxschema/"></DingALing>` +
+			`        <Random xmlns="http://ns.example.com/boxschema/"></Random>` +
+			`      </prop>` +
+			`      <status>HTTP/1.1 403 Forbidden</status>` +
+			`      <responsedescription>The user does not have access to the DingALing property.</responsedescription>` +
+			`    </propstat>` +
+			`  </response>` +
+			`  <responsedescription>There has been an access violation error.</responsedescription>` +
+			`</multistatus>`,
 		wantCode: StatusMulti,
 	}, {
 		desc: "bad: no response written",
@@ -493,7 +485,10 @@ func TestMultistatusWriter(t *testing.T) {
 		responses: []response{{
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: xml.Name{Space: "http://example.com/", Local: "foo"},
+					XMLName: xml.Name{
+						Space: "http://example.com/",
+						Local: "foo",
+					},
 				}},
 				Status: "HTTP/1.1 200 OK",
 			}},
@@ -523,7 +518,10 @@ func TestMultistatusWriter(t *testing.T) {
 			Href: []string{"http://example.com/foo"},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: xml.Name{Space: "http://example.com/", Local: "foo"},
+					XMLName: xml.Name{
+						Space: "http://example.com/",
+						Local: "foo",
+					},
 				}},
 				Status: "HTTP/1.1 200 OK",
 			}},
@@ -535,10 +533,16 @@ func TestMultistatusWriter(t *testing.T) {
 	}, {
 		desc: "bad: multiple hrefs and propstat",
 		responses: []response{{
-			Href: []string{"http://example.com/foo", "http://example.com/bar"},
+			Href: []string{
+				"http://example.com/foo",
+				"http://example.com/bar",
+			},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: xml.Name{Space: "http://example.com/", Local: "foo"},
+					XMLName: xml.Name{
+						Space: "http://example.com/",
+						Local: "foo",
+					},
 				}},
 				Status: "HTTP/1.1 200 OK",
 			}},
@@ -547,6 +551,7 @@ func TestMultistatusWriter(t *testing.T) {
 		// default of http.responseWriter
 		wantCode: http.StatusOK,
 	}}
+
 loop:
 	for _, tc := range testCases {
 		rec := httptest.NewRecorder()
@@ -554,22 +559,60 @@ loop:
 		for _, r := range tc.responses {
 			if err := w.write(&r); err != nil {
 				if err != tc.wantErr {
-					t.Errorf("%s: got write error %v, want %v", tc.desc, err, tc.wantErr)
+					t.Errorf("%s: got write error %v, want %v",
+						tc.desc, err, tc.wantErr)
 				}
 				continue loop
 			}
 		}
 		if err := w.close(); err != tc.wantErr {
-			t.Errorf("%s: got close error %v, want %v", tc.desc, err, tc.wantErr)
+			t.Errorf("%s: got close error %v, want %v",
+				tc.desc, err, tc.wantErr)
 			continue
 		}
 		if rec.Code != tc.wantCode {
-			t.Errorf("%s: got HTTP status code %d, want %d\n", tc.desc, rec.Code, tc.wantCode)
+			t.Errorf("%s: got HTTP status code %d, want %d\n",
+				tc.desc, rec.Code, tc.wantCode)
 			continue
 		}
-		if gotXML := rec.Body.String(); gotXML != tc.wantXML {
-			t.Errorf("%s: XML body\ngot  %q\nwant %q", tc.desc, gotXML, tc.wantXML)
-			continue
+
+		// normalize returns the normalized XML content of s. In contrast to
+		// the WebDAV specification, it ignores whitespace within property
+		// values of mixed XML content.
+		normalize := func(s string) string {
+			d := xml.NewDecoder(strings.NewReader(s))
+			var b bytes.Buffer
+			e := xml.NewEncoder(&b)
+			for {
+				tok, err := d.Token()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					t.Fatalf("%s: Token %v", tc.desc, err)
+				}
+				switch val := tok.(type) {
+				case xml.Comment, xml.Directive, xml.ProcInst:
+					continue
+				case xml.CharData:
+					if len(bytes.TrimSpace(val)) == 0 {
+						continue
+					}
+				}
+				if err := e.EncodeToken(tok); err != nil {
+					t.Fatalf("%s: EncodeToken: %v", tc.desc, err)
+				}
+			}
+			if err := e.Flush(); err != nil {
+				t.Fatalf("%s: Flush: %v", tc.desc, err)
+			}
+			return b.String()
+		}
+
+		gotXML := normalize(rec.Body.String())
+		wantXML := normalize(tc.wantXML)
+		if gotXML != wantXML {
+			t.Errorf("%s: XML body\ngot  %q\nwant %q", tc.desc, gotXML, wantXML)
 		}
 	}
 }

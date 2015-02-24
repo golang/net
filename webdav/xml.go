@@ -212,12 +212,7 @@ type xmlError struct {
 
 // http://www.webdav.org/specs/rfc4918.html#ELEMENT_propstat
 type propstat struct {
-	// Prop requires DAV: to be the default namespace in the enclosing
-	// XML. This is due to the standard encoding/xml package currently
-	// not honoring namespace declarations inside a xmltag with a
-	// parent element for anonymous slice elements.
-	// Use of multistatusWriter takes care of this.
-	Prop                []Property `xml:"prop>_ignored_"`
+	Prop                []Property `xml:"DAV: prop>_ignored_"`
 	Status              string     `xml:"DAV: status"`
 	Error               *xmlError  `xml:"DAV: error"`
 	ResponseDescription string     `xml:"DAV: responsedescription,omitempty"`
@@ -271,12 +266,24 @@ func (w *multistatusWriter) write(r *response) error {
 	if w.enc == nil {
 		w.w.Header().Add("Content-Type", "text/xml; charset=utf-8")
 		w.w.WriteHeader(StatusMulti)
-		_, err := fmt.Fprintf(w.w, `<?xml version="1.0" encoding="UTF-8"?>`+
-			`<D:multistatus xmlns:D="DAV:">`)
+		_, err := fmt.Fprintf(w.w, `<?xml version="1.0" encoding="UTF-8"?>`)
 		if err != nil {
 			return err
 		}
 		w.enc = xml.NewEncoder(w.w)
+		err = w.enc.EncodeToken(xml.StartElement{
+			Name: xml.Name{
+				Space: "DAV:",
+				Local: "multistatus",
+			},
+			Attr: []xml.Attr{{
+				Name:  xml.Name{Local: "xmlns"},
+				Value: "DAV:",
+			}},
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return w.enc.Encode(r)
 }
@@ -289,14 +296,23 @@ func (w *multistatusWriter) close() error {
 	if w.enc == nil {
 		return nil
 	}
+	var end []xml.Token
 	if w.responseDescription != "" {
-		_, err := fmt.Fprintf(w.w,
-			"<D:responsedescription>%s</D:responsedescription>",
-			w.responseDescription)
+		name := xml.Name{Space: "DAV:", Local: "responsedescription"}
+		end = append(end,
+			xml.StartElement{Name: name},
+			xml.CharData(w.responseDescription),
+			xml.EndElement{Name: name},
+		)
+	}
+	end = append(end, xml.EndElement{
+		Name: xml.Name{Space: "DAV:", Local: "multistatus"},
+	})
+	for _, t := range end {
+		err := w.enc.EncodeToken(t)
 		if err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w.w, "</D:multistatus>")
-	return err
+	return w.enc.Flush()
 }
