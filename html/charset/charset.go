@@ -5,7 +5,7 @@
 // Package charset provides common text encodings for HTML documents.
 //
 // The mapping from encoding labels to encodings is defined at
-// http://encoding.spec.whatwg.org.
+// https://encoding.spec.whatwg.org/.
 package charset // import "golang.org/x/net/html/charset"
 
 import (
