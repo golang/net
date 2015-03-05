@@ -38,7 +38,7 @@ const (
 
 	// NextProtoTLS is the NPN/ALPN protocol negotiated during
 	// HTTP/2's TLS setup.
-	NextProtoTLS = "h2-14"
+	NextProtoTLS = "h2"
 
 	// http://http2.github.io/http2-spec/#SettingValues
 	initialHeaderTableSize = 4096
