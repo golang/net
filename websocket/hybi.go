@@ -515,15 +515,15 @@ func (c *hybiServerHandshaker) ReadHandshake(buf *bufio.Reader, req *http.Reques
 	return http.StatusSwitchingProtocols, nil
 }
 
-// Origin parses Origin header in "req".
-// If origin is "null", returns (nil, nil).
+// Origin parses the Origin header in req.
+// If the Origin header is not set, it returns nil and nil.
 func Origin(config *Config, req *http.Request) (*url.URL, error) {
 	var origin string
 	switch config.Version {
 	case ProtocolVersionHybi13:
 		origin = req.Header.Get("Origin")
 	}
-	if origin == "null" {
+	if origin == "" {
 		return nil, nil
 	}
 	return url.ParseRequestURI(origin)
