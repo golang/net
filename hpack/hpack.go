@@ -96,7 +96,7 @@ func (d *Decoder) SetAllowedMaxDynamicTableSize(v uint32) {
 }
 
 type dynamicTable struct {
-	// s is the FIFO described at
+	// ents is the FIFO described at
 	// http://http2.github.io/http2-spec/compression.html#rfc.section.2.3.2
 	// The newest (low index) is append at the end, and items are
 	// evicted from the front.
@@ -276,7 +276,7 @@ func (v indexType) indexed() bool   { return v == indexedTrue }
 func (v indexType) sensitive() bool { return v == indexedNever }
 
 // returns errNeedMore if there isn't enough data available.
-// any other error is atal.
+// any other error is fatal.
 // consumes d.buf iff it returns nil.
 // precondition: must be called with len(d.buf) > 0
 func (d *Decoder) parseHeaderFieldRepr() error {
