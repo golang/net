@@ -82,7 +82,11 @@ func main() {
 		host: host,
 	}
 	if err := app.Main(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		if app.term != nil {
+			app.logf("%v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -237,11 +241,19 @@ func (a *h2i) readFrames() error {
 		if err != nil {
 			return fmt.Errorf("ReadFrame: %v", err)
 		}
+		a.logf("%v", f)
 		switch f := f.(type) {
 		case *http2.PingFrame:
-			fmt.Fprintf(a.term, "%v %q\n", f, f.Data)
-		default:
-			fmt.Fprintf(a.term, "%v\n", f)
+			a.logf("  Data = %q", f.Data)
+		case *http2.SettingsFrame:
+			f.ForeachSetting(func(s http2.Setting) error {
+				a.logf("  %v", s)
+				return nil
+			})
+		case *http2.WindowUpdateFrame:
+			a.logf("  Window-Increment = %v\n", f.Increment)
+		case *http2.GoAwayFrame:
+			a.logf("  Last-Stream-ID = %d; Error-Code = %v (%d)\n", f.LastStreamID, f.ErrCode, f.ErrCode)
 		}
 	}
 }
