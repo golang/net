@@ -5,7 +5,17 @@
 // Licensed under the same terms as Go itself:
 // https://code.google.com/p/go/source/browse/LICENSE
 
-// The h2i command is an interactive HTTP/2 console.
+/*
+The h2i command is an interactive HTTP/2 console.
+
+Usage:
+  $ h2i [flags] <hostname>
+
+Interactive commands in the console:
+
+  ping [up-to-eight-bytes]
+
+*/
 package main
 
 import (
@@ -136,8 +146,36 @@ func (a *h2i) readConsole() error {
 		if line == "q" || line == "quit" {
 			return nil
 		}
-		a.logf("Unknown command %q", line)
+		f := strings.Fields(line)
+		if len(f) == 0 {
+			continue
+		}
+		cmd, args := f[0], f[1:]
+		cmd = strings.ToLower(cmd)
+		switch cmd {
+		case "ping":
+			err = a.sendPing(args)
+		default:
+			a.logf("Unknown command %q", line)
+		}
+		if err != nil {
+			return err
+		}
 	}
+}
+
+func (a *h2i) sendPing(args []string) error {
+	if len(args) > 1 {
+		a.logf("invalid PING usage: only accepts 0 or 1 args")
+		return nil // nil means don't end the program
+	}
+	var data [8]byte
+	if len(args) == 1 {
+		copy(data[:], args[0])
+	} else {
+		copy(data[:], "h2i_ping")
+	}
+	return a.framer.WritePing(false, data)
 }
 
 func (a *h2i) readFrames() error {
@@ -146,6 +184,11 @@ func (a *h2i) readFrames() error {
 		if err != nil {
 			return fmt.Errorf("ReadFrame: %v", err)
 		}
-		fmt.Fprintf(a.term, "%v\n", f)
+		switch f := f.(type) {
+		case *http2.PingFrame:
+			fmt.Fprintf(a.term, "%v %q\n", f, f.Data)
+		default:
+			fmt.Fprintf(a.term, "%v\n", f)
+		}
 	}
 }
