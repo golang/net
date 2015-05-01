@@ -13,8 +13,8 @@ Usage:
 
 Interactive commands in the console:
 
-  ping [up-to-eight-bytes]
-
+  ping [data]
+  settings ack
 */
 package main
 
@@ -155,6 +155,8 @@ func (a *h2i) readConsole() error {
 		switch cmd {
 		case "ping":
 			err = a.sendPing(args)
+		case "settings":
+			err = a.sendSettings(args)
 		default:
 			a.logf("Unknown command %q", line)
 		}
@@ -162,6 +164,14 @@ func (a *h2i) readConsole() error {
 			return err
 		}
 	}
+}
+
+func (a *h2i) sendSettings(args []string) error {
+	if len(args) == 1 && args[0] == "ack" {
+		return a.framer.WriteSettingsAck()
+	}
+	a.logf("TODO: unhandled SETTINGS")
+	return nil
 }
 
 func (a *h2i) sendPing(args []string) error {
