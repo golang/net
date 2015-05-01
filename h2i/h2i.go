@@ -20,6 +20,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -37,6 +38,14 @@ var (
 	flagNextProto = flag.String("nextproto", "h2,h2-14", "Comma-separated list of NPN/ALPN protocol names to negotiate.")
 	flagInsecure  = flag.Bool("insecure", false, "Whether to skip TLS cert validation")
 )
+
+type command func(*h2i, []string) error
+
+var commands = map[string]command{
+	"ping":     (*h2i).sendPing,
+	"settings": (*h2i).sendSettings,
+	"quit":     (*h2i).cmdQuit,
+}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: h2i <hostname>\n\n")
@@ -143,27 +152,50 @@ func (a *h2i) readConsole() error {
 		if err != nil {
 			return fmt.Errorf("terminal.ReadLine: %v", err)
 		}
-		if line == "q" || line == "quit" {
-			return nil
-		}
 		f := strings.Fields(line)
 		if len(f) == 0 {
 			continue
 		}
 		cmd, args := f[0], f[1:]
-		cmd = strings.ToLower(cmd)
-		switch cmd {
-		case "ping":
-			err = a.sendPing(args)
-		case "settings":
-			err = a.sendSettings(args)
-		default:
+		if fn, ok := lookupCommand(cmd); ok {
+			err = fn(a, args)
+		} else {
 			a.logf("Unknown command %q", line)
+		}
+		if err == errExitApp {
+			return nil
 		}
 		if err != nil {
 			return err
 		}
 	}
+}
+
+func lookupCommand(prefix string) (c command, ok bool) {
+	prefix = strings.ToLower(prefix)
+	if c, ok = commands[prefix]; ok {
+		return
+	}
+
+	for full, candidate := range commands {
+		if strings.HasPrefix(full, prefix) {
+			if c != nil {
+				return nil, false // ambiguous
+			}
+			c = candidate
+		}
+	}
+	return c, c != nil
+}
+
+var errExitApp = errors.New("internal sentinel error value to quit the console reading loop")
+
+func (a *h2i) cmdQuit(args []string) error {
+	if len(args) > 0 {
+		a.logf("the QUIT command takes no argument")
+		return nil
+	}
+	return errExitApp
 }
 
 func (a *h2i) sendSettings(args []string) error {
