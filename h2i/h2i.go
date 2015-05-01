@@ -19,6 +19,8 @@ Interactive commands in the console:
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -26,10 +28,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/bradfitz/http2"
+	"github.com/bradfitz/http2/hpack"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -42,9 +46,10 @@ var (
 type command func(*h2i, []string) error
 
 var commands = map[string]command{
-	"ping":     (*h2i).sendPing,
-	"settings": (*h2i).sendSettings,
+	"ping":     (*h2i).cmdPing,
+	"settings": (*h2i).cmdSettings,
 	"quit":     (*h2i).cmdQuit,
+	"headers":  (*h2i).cmdHeaders,
 }
 
 func usage() {
@@ -67,6 +72,11 @@ type h2i struct {
 	tc     *tls.Conn
 	framer *http2.Framer
 	term   *terminal.Terminal
+
+	// owned by the command loop:
+	streamID uint32
+	hbuf     bytes.Buffer
+	henc     *hpack.Encoder
 }
 
 func main() {
@@ -81,6 +91,8 @@ func main() {
 	app := &h2i{
 		host: host,
 	}
+	app.henc = hpack.NewEncoder(&app.hbuf)
+
 	if err := app.Main(); err != nil {
 		if app.term != nil {
 			app.logf("%v\n", err)
@@ -138,7 +150,7 @@ func (a *h2i) Main() error {
 		io.Writer
 	}{os.Stdin, os.Stdout}
 
-	a.term = terminal.NewTerminal(screen, "> ")
+	a.term = terminal.NewTerminal(screen, "h2i> ")
 	a.term.AutoCompleteCallback = func(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
 		if key != '\t' {
 			return
@@ -213,7 +225,7 @@ func (a *h2i) cmdQuit(args []string) error {
 	return errExitApp
 }
 
-func (a *h2i) sendSettings(args []string) error {
+func (a *h2i) cmdSettings(args []string) error {
 	if len(args) == 1 && args[0] == "ack" {
 		return a.framer.WriteSettingsAck()
 	}
@@ -221,7 +233,7 @@ func (a *h2i) sendSettings(args []string) error {
 	return nil
 }
 
-func (a *h2i) sendPing(args []string) error {
+func (a *h2i) cmdPing(args []string) error {
 	if len(args) > 1 {
 		a.logf("invalid PING usage: only accepts 0 or 1 args")
 		return nil // nil means don't end the program
@@ -233,6 +245,51 @@ func (a *h2i) sendPing(args []string) error {
 		copy(data[:], "h2i_ping")
 	}
 	return a.framer.WritePing(false, data)
+}
+
+func (a *h2i) cmdHeaders(args []string) error {
+	if len(args) > 0 {
+		a.logf("Error: HEADERS doesn't yet take arguments.")
+		// TODO: flags for restricting window size, to force CONTINUATION
+		// frames.
+		return nil
+	}
+	var h1req bytes.Buffer
+	a.term.SetPrompt("(as HTTP/1.1)> ")
+	defer a.term.SetPrompt("h2i> ")
+	for {
+		line, err := a.term.ReadLine()
+		if err != nil {
+			return err
+		}
+		h1req.WriteString(line)
+		h1req.WriteString("\r\n")
+		if line == "" {
+			break
+		}
+	}
+	req, err := http.ReadRequest(bufio.NewReader(&h1req))
+	if err != nil {
+		a.logf("Invalid HTTP/1.1 request: %v", err)
+		return nil
+	}
+	if a.streamID == 0 {
+		a.streamID = 1
+	} else {
+		a.streamID += 2
+	}
+	a.logf("Opening Stream-ID %d:", a.streamID)
+	hbf := a.encodeHeaders(req)
+	if len(hbf) > 16<<10 {
+		a.logf("TODO: h2i doesn't yet write CONTINUATION frames. Copy it from transport.go")
+		return nil
+	}
+	return a.framer.WriteHeaders(http2.HeadersFrameParam{
+		StreamID:      a.streamID,
+		BlockFragment: hbf,
+		EndStream:     req.Method == "GET" || req.Method == "HEAD", // good enough for now
+		EndHeaders:    true,                                        // for now
+	})
 }
 
 func (a *h2i) readFrames() error {
@@ -254,6 +311,44 @@ func (a *h2i) readFrames() error {
 			a.logf("  Window-Increment = %v\n", f.Increment)
 		case *http2.GoAwayFrame:
 			a.logf("  Last-Stream-ID = %d; Error-Code = %v (%d)\n", f.LastStreamID, f.ErrCode, f.ErrCode)
+		case *http2.DataFrame:
+			a.logf("  %q", f.Data())
 		}
 	}
+}
+
+func (a *h2i) encodeHeaders(req *http.Request) []byte {
+	a.hbuf.Reset()
+
+	// TODO(bradfitz): figure out :authority-vs-Host stuff between http2 and Go
+	host := req.Host
+	if host == "" {
+		host = req.URL.Host
+	}
+
+	path := req.URL.Path
+	if path == "" {
+		path = "/"
+	}
+
+	a.writeHeader(":authority", host) // probably not right for all sites
+	a.writeHeader(":method", req.Method)
+	a.writeHeader(":path", path)
+	a.writeHeader(":scheme", "https")
+
+	for k, vv := range req.Header {
+		lowKey := strings.ToLower(k)
+		if lowKey == "host" {
+			continue
+		}
+		for _, v := range vv {
+			a.writeHeader(lowKey, v)
+		}
+	}
+	return a.hbuf.Bytes()
+}
+
+func (a *h2i) writeHeader(name, value string) {
+	a.henc.WriteField(hpack.HeaderField{Name: name, Value: value})
+	a.logf(" %s = %s", name, value)
 }
