@@ -77,6 +77,10 @@ type h2i struct {
 	streamID uint32
 	hbuf     bytes.Buffer
 	henc     *hpack.Encoder
+
+	// owned by the readFrames loop:
+	peerSetting map[http2.SettingID]uint32
+	hdec        *hpack.Decoder
 }
 
 func main() {
@@ -89,7 +93,8 @@ func main() {
 
 	host := flag.Arg(0)
 	app := &h2i{
-		host: host,
+		host:        host,
+		peerSetting: make(map[http2.SettingID]uint32),
 	}
 	app.henc = hpack.NewEncoder(&app.hbuf)
 
@@ -305,6 +310,7 @@ func (a *h2i) readFrames() error {
 		case *http2.SettingsFrame:
 			f.ForeachSetting(func(s http2.Setting) error {
 				a.logf("  %v", s)
+				a.peerSetting[s.ID] = s.Val
 				return nil
 			})
 		case *http2.WindowUpdateFrame:
@@ -313,8 +319,28 @@ func (a *h2i) readFrames() error {
 			a.logf("  Last-Stream-ID = %d; Error-Code = %v (%d)\n", f.LastStreamID, f.ErrCode, f.ErrCode)
 		case *http2.DataFrame:
 			a.logf("  %q", f.Data())
+		case *http2.HeadersFrame:
+			if f.HasPriority() {
+				a.logf("  PRIORITY = %v", f.Priority)
+			}
+			if a.hdec == nil {
+				// TODO: if the user uses h2i to send a SETTINGS frame advertising
+				// something larger, we'll need to respect SETTINGS_HEADER_TABLE_SIZE
+				// and stuff here instead of using the 4k default. But for now:
+				tableSize := uint32(4 << 10)
+				a.hdec = hpack.NewDecoder(tableSize, a.onNewHeaderField)
+			}
+			a.hdec.Write(f.HeaderBlockFragment())
 		}
 	}
+}
+
+// called from readLoop
+func (a *h2i) onNewHeaderField(f hpack.HeaderField) {
+	if f.Sensitive {
+		a.logf("  %s = %q (SENSITIVE)", f.Name, f.Value)
+	}
+	a.logf("  %s = %q", f.Name, f.Value)
 }
 
 func (a *h2i) encodeHeaders(req *http.Request) []byte {
