@@ -9,15 +9,23 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
-	"time"
+	"strings"
 
+	"github.com/bradfitz/http2"
 	"golang.org/x/crypto/ssh/terminal"
+)
+
+// Flags
+var (
+	flagNextProto = flag.String("nextproto", "h2,h2-14", "Comma-separated list of NPN/ALPN protocol names to negotiate.")
+	flagInsecure  = flag.Bool("insecure", false, "Whether to skip TLS cert validation")
 )
 
 func usage() {
@@ -34,24 +42,71 @@ func withPort(host string) string {
 	return host
 }
 
+// h2i is the app's state.
+type h2i struct {
+	host   string
+	tc     *tls.Conn
+	framer *http2.Framer
+	term   *terminal.Terminal
+}
+
 func main() {
 	flag.Usage = usage
 	flag.Parse()
 	if flag.NArg() != 1 {
 		usage()
 	}
+	log.SetFlags(0)
 
 	host := flag.Arg(0)
-	c, err := net.Dial("tcp", withPort(host))
-	if err != nil {
-		log.Fatalf("Error dialing %s: %v", withPort(host), err)
+	app := &h2i{
+		host: host,
 	}
-	defer c.Close()
-	log.Printf("Connected to %v", c.RemoteAddr())
+	if err := app.Main(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
+func (a *h2i) Main() error {
+	cfg := &tls.Config{
+		ServerName:         a.host,
+		NextProtos:         strings.Split(*flagNextProto, ","),
+		InsecureSkipVerify: *flagInsecure,
+	}
+
+	hostAndPort := withPort(a.host)
+	log.Printf("Connecting to %s ...", hostAndPort)
+	tc, err := tls.Dial("tcp", hostAndPort, cfg)
+	if err != nil {
+		return fmt.Errorf("Error dialing %s: %v", withPort(a.host), err)
+	}
+	log.Printf("Connected to %v", tc.RemoteAddr())
+	defer tc.Close()
+
+	if err := tc.Handshake(); err != nil {
+		return fmt.Errorf("TLS handshake: %v", err)
+	}
+	if !*flagInsecure {
+		if err := tc.VerifyHostname(a.host); err != nil {
+			return fmt.Errorf("VerifyHostname: %v", err)
+		}
+	}
+	state := tc.ConnectionState()
+	log.Printf("Negotiated protocol %q", state.NegotiatedProtocol)
+	if !state.NegotiatedProtocolIsMutual || state.NegotiatedProtocol == "" {
+		return fmt.Errorf("Could not negotiate protocol mutually")
+	}
+
+	if _, err := io.WriteString(tc, http2.ClientPreface); err != nil {
+		return err
+	}
+
+	a.framer = http2.NewFramer(tc, tc)
 
 	oldState, err := terminal.MakeRaw(0)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer terminal.Restore(0, oldState)
 
@@ -60,25 +115,37 @@ func main() {
 		io.Writer
 	}{os.Stdin, os.Stdout}
 
-	term := terminal.NewTerminal(screen, "> ")
+	a.term = terminal.NewTerminal(screen, "> ")
 
-	go func() {
-		for t := range time.Tick(1 * time.Second) {
-			term.Write([]byte(t.String() + "\n"))
-		}
-	}()
+	errc := make(chan error, 2)
+	go func() { errc <- a.readFrames() }()
+	go func() { errc <- a.readConsole() }()
+	return <-errc
+}
 
+func (a *h2i) logf(format string, args ...interface{}) {
+	fmt.Fprintf(a.term, format+"\n", args...)
+}
+
+func (a *h2i) readConsole() error {
 	for {
-		line, err := term.ReadLine()
+		line, err := a.term.ReadLine()
 		if err != nil {
-			log.Fatal("ReadLine:", err)
+			return fmt.Errorf("terminal.ReadLine: %v", err)
 		}
 		if line == "q" || line == "quit" {
-			return
+			return nil
 		}
-		_, err = term.Write([]byte("boom - " + line + "\n"))
+		a.logf("Unknown command %q", line)
+	}
+}
+
+func (a *h2i) readFrames() error {
+	for {
+		f, err := a.framer.ReadFrame()
 		if err != nil {
-			log.Fatal("Write:", err)
+			return fmt.Errorf("ReadFrame: %v", err)
 		}
+		fmt.Fprintf(a.term, "%v\n", f)
 	}
 }
