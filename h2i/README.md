@@ -86,6 +86,6 @@ ReadFrame: EOF
 ## Status
 
 Quick few hour hack. So much yet to do. Feel free to file issues for
-bugs or wishlist items, but @bmizerany and I aren't yet accepting pull
-requests until things settle down.
+bugs or wishlist items, but [@bmizerany](https://github.com/bmizerany/)
+and I aren't yet accepting pull requests until things settle down.
 
