@@ -1,6 +1,6 @@
 # h2i
 
-**h2i** is an interactive HTTP/2 ("h2") console debugger. Miss the ol'
+**h2i** is an interactive HTTP/2 ("h2") console debugger. Miss the good ol'
 days of telnetting to your HTTP/1.n servers? We're bringing you
 back.
 
