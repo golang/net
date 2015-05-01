@@ -135,6 +135,16 @@ func (a *h2i) Main() error {
 	}{os.Stdin, os.Stdout}
 
 	a.term = terminal.NewTerminal(screen, "> ")
+	a.term.AutoCompleteCallback = func(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
+		if key != '\t' {
+			return
+		}
+		name, _, ok := lookupCommand(line)
+		if !ok {
+			return
+		}
+		return name, len(name), true
+	}
 
 	errc := make(chan error, 2)
 	go func() { errc <- a.readFrames() }()
@@ -157,7 +167,7 @@ func (a *h2i) readConsole() error {
 			continue
 		}
 		cmd, args := f[0], f[1:]
-		if fn, ok := lookupCommand(cmd); ok {
+		if _, fn, ok := lookupCommand(cmd); ok {
 			err = fn(a, args)
 		} else {
 			a.logf("Unknown command %q", line)
@@ -171,21 +181,22 @@ func (a *h2i) readConsole() error {
 	}
 }
 
-func lookupCommand(prefix string) (c command, ok bool) {
+func lookupCommand(prefix string) (name string, c command, ok bool) {
 	prefix = strings.ToLower(prefix)
 	if c, ok = commands[prefix]; ok {
-		return
+		return prefix, c, ok
 	}
 
 	for full, candidate := range commands {
 		if strings.HasPrefix(full, prefix) {
 			if c != nil {
-				return nil, false // ambiguous
+				return "", nil, false // ambiguous
 			}
 			c = candidate
+			name = full
 		}
 	}
-	return c, c != nil
+	return name, c, c != nil
 }
 
 var errExitApp = errors.New("internal sentinel error value to quit the console reading loop")
