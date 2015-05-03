@@ -148,7 +148,7 @@ func TestBufferWrite(t *testing.T) {
 			continue
 		}
 		if !reflect.DeepEqual(tt.buf, tt.wbuf) {
-			t.Errorf("#%d: buf = %q; want %q", i, tt.buf, tt.wbuf)
+			t.Errorf("#%d: buf = %+v; want %+v", i, tt.buf, tt.wbuf)
 		}
 	}
 }
