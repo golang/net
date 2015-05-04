@@ -11,10 +11,12 @@ The h2i command is an interactive HTTP/2 console.
 Usage:
   $ h2i [flags] <hostname>
 
-Interactive commands in the console:
+Interactive commands in the console: (all parts case-insensitive)
 
   ping [data]
   settings ack
+  settings FOO=n BAR=z
+  headers      (open a new stream by typing HTTP/1.1)
 */
 package main
 
@@ -30,6 +32,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/bradfitz/http2"
@@ -43,17 +47,36 @@ var (
 	flagInsecure  = flag.Bool("insecure", false, "Whether to skip TLS cert validation")
 )
 
-type command func(*h2i, []string) error
+type command struct {
+	run func(*h2i, []string) error // required
+
+	// complete optionally specifies tokens (case-insensitive) which are
+	// valid for this subcommand.
+	complete func() []string
+}
 
 var commands = map[string]command{
-	"ping":     (*h2i).cmdPing,
-	"settings": (*h2i).cmdSettings,
-	"quit":     (*h2i).cmdQuit,
-	"headers":  (*h2i).cmdHeaders,
+	"ping": command{run: (*h2i).cmdPing},
+	"settings": command{
+		run: (*h2i).cmdSettings,
+		complete: func() []string {
+			return []string{
+				"ACK",
+				http2.SettingHeaderTableSize.String(),
+				http2.SettingEnablePush.String(),
+				http2.SettingMaxConcurrentStreams.String(),
+				http2.SettingInitialWindowSize.String(),
+				http2.SettingMaxFrameSize.String(),
+				http2.SettingMaxHeaderListSize.String(),
+			}
+		},
+	},
+	"quit":    command{run: (*h2i).cmdQuit},
+	"headers": command{run: (*h2i).cmdHeaders},
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: h2i <hostname>\n\n")
+	fmt.Fprintf(os.Stderr, "Usage: 2i <hostname>\n\n")
 	flag.PrintDefaults()
 	os.Exit(1)
 }
@@ -106,6 +129,7 @@ func main() {
 		}
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stdout, "\n")
 }
 
 func (app *h2i) Main() error {
@@ -156,15 +180,55 @@ func (app *h2i) Main() error {
 	}{os.Stdin, os.Stdout}
 
 	app.term = terminal.NewTerminal(screen, "h2i> ")
+	lastWord := regexp.MustCompile(`.+\W(\w+)$`)
 	app.term.AutoCompleteCallback = func(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
 		if key != '\t' {
 			return
 		}
-		name, _, ok := lookupCommand(line)
-		if !ok {
+		if pos != len(line) {
+			// TODO: we're being lazy for now, only supporting tab completion at the end.
 			return
 		}
-		return name, len(name), true
+		// Auto-complete for the command itself.
+		if !strings.Contains(line, " ") {
+			var name string
+			name, _, ok = lookupCommand(line)
+			if !ok {
+				return
+			}
+			return name, len(name), true
+		}
+		_, c, ok := lookupCommand(line[:strings.IndexByte(line, ' ')])
+		if !ok || c.complete == nil {
+			return
+		}
+		if strings.HasSuffix(line, " ") {
+			app.logf("%s", strings.Join(c.complete(), " "))
+			return line, pos, true
+		}
+		m := lastWord.FindStringSubmatch(line)
+		if m == nil {
+			return line, len(line), true
+		}
+		soFar := m[1]
+		var match []string
+		for _, cand := range c.complete() {
+			if len(soFar) > len(cand) || !strings.EqualFold(cand[:len(soFar)], soFar) {
+				continue
+			}
+			match = append(match, cand)
+		}
+		if len(match) == 0 {
+			return
+		}
+		if len(match) > 1 {
+			// TODO: auto-complete any common prefix
+			app.logf("%s", strings.Join(match, " "))
+			return line, pos, true
+		}
+		newLine = line[:len(line)-len(soFar)] + match[0]
+		return newLine, len(newLine), true
+
 	}
 
 	errc := make(chan error, 2)
@@ -180,6 +244,9 @@ func (app *h2i) logf(format string, args ...interface{}) {
 func (app *h2i) readConsole() error {
 	for {
 		line, err := app.term.ReadLine()
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("terminal.ReadLine: %v", err)
 		}
@@ -188,8 +255,8 @@ func (app *h2i) readConsole() error {
 			continue
 		}
 		cmd, args := f[0], f[1:]
-		if _, fn, ok := lookupCommand(cmd); ok {
-			err = fn(app, args)
+		if _, c, ok := lookupCommand(cmd); ok {
+			err = c.run(app, args)
 		} else {
 			app.logf("Unknown command %q", line)
 		}
@@ -210,32 +277,74 @@ func lookupCommand(prefix string) (name string, c command, ok bool) {
 
 	for full, candidate := range commands {
 		if strings.HasPrefix(full, prefix) {
-			if c != nil {
-				return "", nil, false // ambiguous
+			if c.run != nil {
+				return "", command{}, false // ambiguous
 			}
 			c = candidate
 			name = full
 		}
 	}
-	return name, c, c != nil
+	return name, c, c.run != nil
 }
 
 var errExitApp = errors.New("internal sentinel error value to quit the console reading loop")
 
-func (app *h2i) cmdQuit(args []string) error {
+func (a *h2i) cmdQuit(args []string) error {
 	if len(args) > 0 {
-		app.logf("the QUIT command takes no argument")
+		a.logf("the QUIT command takes no argument")
 		return nil
 	}
 	return errExitApp
 }
 
-func (app *h2i) cmdSettings(args []string) error {
-	if len(args) == 1 && args[0] == "ack" {
-		return app.framer.WriteSettingsAck()
+func (a *h2i) cmdSettings(args []string) error {
+	if len(args) == 1 && strings.EqualFold(args[0], "ACK") {
+		return a.framer.WriteSettingsAck()
 	}
-	app.logf("TODO: unhandled SETTINGS")
-	return nil
+	var settings []http2.Setting
+	for _, arg := range args {
+		if strings.EqualFold(arg, "ACK") {
+			a.logf("Error: ACK must be only argument with the SETTINGS command")
+			return nil
+		}
+		eq := strings.Index(arg, "=")
+		if eq == -1 {
+			a.logf("Error: invalid argument %q (expected SETTING_NAME=nnnn)", arg)
+			return nil
+		}
+		sid, ok := settingByName(arg[:eq])
+		if !ok {
+			a.logf("Error: unknown setting name %q", arg[:eq])
+			return nil
+		}
+		val, err := strconv.ParseUint(arg[eq+1:], 10, 32)
+		if err != nil {
+			a.logf("Error: invalid argument %q (expected SETTING_NAME=nnnn)", arg)
+			return nil
+		}
+		settings = append(settings, http2.Setting{
+			ID:  sid,
+			Val: uint32(val),
+		})
+	}
+	a.logf("Sending: %v", settings)
+	return a.framer.WriteSettings(settings...)
+}
+
+func settingByName(name string) (http2.SettingID, bool) {
+	for _, sid := range [...]http2.SettingID{
+		http2.SettingHeaderTableSize,
+		http2.SettingEnablePush,
+		http2.SettingMaxConcurrentStreams,
+		http2.SettingInitialWindowSize,
+		http2.SettingMaxFrameSize,
+		http2.SettingMaxHeaderListSize,
+	} {
+		if strings.EqualFold(sid.String(), name) {
+			return sid, true
+		}
+	}
+	return 0, false
 }
 
 func (app *h2i) cmdPing(args []string) error {
