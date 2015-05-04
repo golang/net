@@ -12,16 +12,22 @@ Features:
  - etc
 - type in HTTP/1.n and have it auto-HPACK/frame-ify it for HTTP/2
 - pretty print all received HTTP/2 frames from the peer (including HPACK decoding)
-- tab completion of available commands
+- tab completion of commands, options
 
 Not yet features, but soon:
 - unnecessary CONTINUATION frames on short boundaries, to test peer implementations 
 - request bodies (DATA frames)
-- auto-completion of subcommands and options
 - send invalid frames for testing server implementations (supported by underlying Framer)
 
 Later:
 - act like a server
+
+## Installation
+
+```
+$ go get github.com/bradfitz/http2/h2i
+$ h2i <host>
+```
 
 ## Demo
 
