@@ -76,7 +76,7 @@ var commands = map[string]command{
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: 2i <hostname>\n\n")
+	fmt.Fprintf(os.Stderr, "Usage: h2i <hostname>\n\n")
 	flag.PrintDefaults()
 	os.Exit(1)
 }
