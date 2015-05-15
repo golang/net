@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var serverAddr string
@@ -410,5 +411,42 @@ func TestParseAuthority(t *testing.T) {
 		if out != tt.out {
 			t.Errorf("got %v; want %v", out, tt.out)
 		}
+	}
+}
+
+type closerConn struct {
+	net.Conn
+	closed int // count of the number of times Close was called
+}
+
+func (c *closerConn) Close() error {
+	c.closed++
+	return c.Conn.Close()
+}
+
+func TestClose(t *testing.T) {
+	once.Do(startServer)
+
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		t.Fatal("dialing", err)
+	}
+
+	cc := closerConn{Conn: conn}
+
+	client, err := NewClient(newConfig(t, "/echo"), &cc)
+	if err != nil {
+		t.Fatalf("WebSocket handshake: %v", err)
+	}
+
+	// set the deadline to ten minutes ago, which will have expired by the time
+	// client.Close sends the close status frame.
+	conn.SetDeadline(time.Now().Add(-10 * time.Minute))
+
+	if err := client.Close(); err == nil {
+		t.Errorf("ws.Close(): expected error, got %v", err)
+	}
+	if cc.closed < 1 {
+		t.Fatalf("ws.Close(): expected underlying ws.rwc.Close to be called > 0 times, got: %v", cc.closed)
 	}
 }
