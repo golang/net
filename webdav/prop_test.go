@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -49,10 +50,10 @@ func TestMemPS(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc       string
-		mutability Mutability
-		buildfs    []string
-		propOp     []propOp
+		desc        string
+		noDeadProps bool
+		buildfs     []string
+		propOp      []propOp
 	}{{
 		desc:    "propname",
 		buildfs: []string{"mkdir /dir", "touch /file"},
@@ -238,9 +239,9 @@ func TestMemPS(t *testing.T) {
 			}},
 		}},
 	}, {
-		desc:       "proppatch property on read-only property system",
-		buildfs:    []string{"mkdir /dir"},
-		mutability: ReadOnly,
+		desc:        "proppatch property on no-dead-properties file system",
+		buildfs:     []string{"mkdir /dir"},
+		noDeadProps: true,
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/dir",
@@ -264,16 +265,16 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 			wantPropstats: []Propstat{{
-				Status: http.StatusForbidden,
+				Status:   http.StatusForbidden,
+				XMLError: `<error xmlns="DAV:"><cannot-modify-protected-property/></error>`,
 				Props: []Property{{
 					XMLName: xml.Name{Space: "DAV:", Local: "getetag"},
 				}},
 			}},
 		}},
 	}, {
-		desc:       "proppatch dead property",
-		buildfs:    []string{"mkdir /dir"},
-		mutability: ReadWrite,
+		desc:    "proppatch dead property",
+		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/dir",
@@ -302,9 +303,8 @@ func TestMemPS(t *testing.T) {
 			}},
 		}},
 	}, {
-		desc:       "proppatch dead property with failed dependency",
-		buildfs:    []string{"mkdir /dir"},
-		mutability: ReadWrite,
+		desc:    "proppatch dead property with failed dependency",
+		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/dir",
@@ -320,7 +320,8 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 			wantPropstats: []Propstat{{
-				Status: http.StatusForbidden,
+				Status:   http.StatusForbidden,
+				XMLError: `<error xmlns="DAV:"><cannot-modify-protected-property/></error>`,
 				Props: []Property{{
 					XMLName: xml.Name{Space: "DAV:", Local: "displayname"},
 				}},
@@ -342,9 +343,8 @@ func TestMemPS(t *testing.T) {
 			}},
 		}},
 	}, {
-		desc:       "proppatch remove dead property",
-		buildfs:    []string{"mkdir /dir"},
-		mutability: ReadWrite,
+		desc:    "proppatch remove dead property",
+		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/dir",
@@ -418,9 +418,8 @@ func TestMemPS(t *testing.T) {
 			}},
 		}},
 	}, {
-		desc:       "propname with dead property",
-		buildfs:    []string{"touch /file"},
-		mutability: ReadWrite,
+		desc:    "propname with dead property",
+		buildfs: []string{"touch /file"},
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/file",
@@ -450,9 +449,8 @@ func TestMemPS(t *testing.T) {
 			},
 		}},
 	}, {
-		desc:       "proppatch remove unknown dead property",
-		buildfs:    []string{"mkdir /dir"},
-		mutability: ReadWrite,
+		desc:    "proppatch remove unknown dead property",
+		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
 			op:   "proppatch",
 			name: "/dir",
@@ -490,8 +488,11 @@ func TestMemPS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: cannot create test filesystem: %v", tc.desc, err)
 		}
+		if tc.noDeadProps {
+			fs = noDeadPropsFS{fs}
+		}
 		ls := NewMemLS()
-		ps := NewMemPS(fs, ls, tc.mutability)
+		ps := NewMemPS(fs, ls)
 		for _, op := range tc.propOp {
 			desc := fmt.Sprintf("%s: %s %s", tc.desc, op.op, op.name)
 			if err = calcProps(op.name, fs, op.wantPropstats); err != nil {
@@ -551,36 +552,43 @@ func cmpXMLName(a, b xml.Name) bool {
 
 type byXMLName []xml.Name
 
-func (b byXMLName) Len() int {
-	return len(b)
-}
-func (b byXMLName) Swap(i, j int) {
-	b[i], b[j] = b[j], b[i]
-}
-func (b byXMLName) Less(i, j int) bool {
-	return cmpXMLName(b[i], b[j])
-}
+func (b byXMLName) Len() int           { return len(b) }
+func (b byXMLName) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byXMLName) Less(i, j int) bool { return cmpXMLName(b[i], b[j]) }
 
 type byPropname []Property
 
-func (b byPropname) Len() int {
-	return len(b)
-}
-func (b byPropname) Swap(i, j int) {
-	b[i], b[j] = b[j], b[i]
-}
-func (b byPropname) Less(i, j int) bool {
-	return cmpXMLName(b[i].XMLName, b[j].XMLName)
-}
+func (b byPropname) Len() int           { return len(b) }
+func (b byPropname) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byPropname) Less(i, j int) bool { return cmpXMLName(b[i].XMLName, b[j].XMLName) }
 
 type byStatus []Propstat
 
-func (b byStatus) Len() int {
-	return len(b)
+func (b byStatus) Len() int           { return len(b) }
+func (b byStatus) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byStatus) Less(i, j int) bool { return b[i].Status < b[j].Status }
+
+type noDeadPropsFS struct {
+	FileSystem
 }
-func (b byStatus) Swap(i, j int) {
-	b[i], b[j] = b[j], b[i]
+
+func (fs noDeadPropsFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return noDeadPropsFile{f}, nil
 }
-func (b byStatus) Less(i, j int) bool {
-	return b[i].Status < b[j].Status
+
+// noDeadPropsFile wraps a File but strips any optional DeadPropsHolder methods
+// provided by the underlying File implementation.
+type noDeadPropsFile struct {
+	f File
 }
+
+func (f noDeadPropsFile) Close() error                              { return f.f.Close() }
+func (f noDeadPropsFile) Read(p []byte) (int, error)                { return f.f.Read(p) }
+func (f noDeadPropsFile) Readdir(count int) ([]os.FileInfo, error)  { return f.f.Readdir(count) }
+func (f noDeadPropsFile) Seek(off int64, whence int) (int64, error) { return f.f.Seek(off, whence) }
+func (f noDeadPropsFile) Stat() (os.FileInfo, error)                { return f.f.Stat() }
+func (f noDeadPropsFile) Write(p []byte) (int, error)               { return f.f.Write(p) }
