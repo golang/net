@@ -43,9 +43,9 @@ func TestMemPS(t *testing.T) {
 	type propOp struct {
 		op            string
 		name          string
-		propnames     []xml.Name
+		pnames        []xml.Name
 		patches       []Proppatch
-		wantNames     []xml.Name
+		wantPnames    []xml.Name
 		wantPropstats []Propstat
 	}
 
@@ -60,7 +60,7 @@ func TestMemPS(t *testing.T) {
 		propOp: []propOp{{
 			op:   "propname",
 			name: "/dir",
-			wantNames: []xml.Name{
+			wantPnames: []xml.Name{
 				xml.Name{Space: "DAV:", Local: "resourcetype"},
 				xml.Name{Space: "DAV:", Local: "displayname"},
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
@@ -70,7 +70,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:   "propname",
 			name: "/file",
-			wantNames: []xml.Name{
+			wantPnames: []xml.Name{
 				xml.Name{Space: "DAV:", Local: "resourcetype"},
 				xml.Name{Space: "DAV:", Local: "displayname"},
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
@@ -132,7 +132,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:   "allprop",
 			name: "/file",
-			propnames: []xml.Name{
+			pnames: []xml.Name{
 				{"DAV:", "resourcetype"},
 				{"foo", "bar"},
 			},
@@ -167,9 +167,9 @@ func TestMemPS(t *testing.T) {
 		desc:    "propfind DAV:resourcetype",
 		buildfs: []string{"mkdir /dir", "touch /file"},
 		propOp: []propOp{{
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{"DAV:", "resourcetype"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{"DAV:", "resourcetype"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -178,9 +178,9 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 		}, {
-			op:        "propfind",
-			name:      "/file",
-			propnames: []xml.Name{{"DAV:", "resourcetype"}},
+			op:     "propfind",
+			name:   "/file",
+			pnames: []xml.Name{{"DAV:", "resourcetype"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -193,9 +193,9 @@ func TestMemPS(t *testing.T) {
 		desc:    "propfind unsupported DAV properties",
 		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{"DAV:", "getcontentlanguage"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{"DAV:", "getcontentlanguage"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -203,9 +203,9 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 		}, {
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{"DAV:", "creationdate"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{"DAV:", "creationdate"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -217,9 +217,9 @@ func TestMemPS(t *testing.T) {
 		desc:    "propfind getetag for files but not for directories",
 		buildfs: []string{"mkdir /dir", "touch /file"},
 		propOp: []propOp{{
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{"DAV:", "getetag"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{"DAV:", "getetag"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -227,9 +227,9 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 		}, {
-			op:        "propfind",
-			name:      "/file",
-			propnames: []xml.Name{{"DAV:", "getetag"}},
+			op:     "propfind",
+			name:   "/file",
+			pnames: []xml.Name{{"DAV:", "getetag"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -291,9 +291,9 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 		}, {
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{Space: "foo", Local: "bar"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{Space: "foo", Local: "bar"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -332,9 +332,9 @@ func TestMemPS(t *testing.T) {
 				}},
 			}},
 		}, {
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{Space: "foo", Local: "bar"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{Space: "foo", Local: "bar"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -368,7 +368,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:   "propfind",
 			name: "/dir",
-			propnames: []xml.Name{
+			pnames: []xml.Name{
 				{Space: "foo", Local: "bar"},
 				{Space: "spam", Local: "ham"},
 			},
@@ -400,7 +400,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:   "propfind",
 			name: "/dir",
-			propnames: []xml.Name{
+			pnames: []xml.Name{
 				{Space: "foo", Local: "bar"},
 				{Space: "spam", Local: "ham"},
 			},
@@ -438,7 +438,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:   "propname",
 			name: "/file",
-			wantNames: []xml.Name{
+			wantPnames: []xml.Name{
 				xml.Name{Space: "DAV:", Local: "resourcetype"},
 				xml.Name{Space: "DAV:", Local: "displayname"},
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
@@ -471,9 +471,9 @@ func TestMemPS(t *testing.T) {
 		desc:    "bad: propfind unknown property",
 		buildfs: []string{"mkdir /dir"},
 		propOp: []propOp{{
-			op:        "propfind",
-			name:      "/dir",
-			propnames: []xml.Name{{"foo:", "bar"}},
+			op:     "propfind",
+			name:   "/dir",
+			pnames: []xml.Name{{"foo:", "bar"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -492,7 +492,6 @@ func TestMemPS(t *testing.T) {
 			fs = noDeadPropsFS{fs}
 		}
 		ls := NewMemLS()
-		ps := NewMemPS(fs, ls)
 		for _, op := range tc.propOp {
 			desc := fmt.Sprintf("%s: %s %s", tc.desc, op.op, op.name)
 			if err = calcProps(op.name, fs, op.wantPropstats); err != nil {
@@ -503,23 +502,23 @@ func TestMemPS(t *testing.T) {
 			var propstats []Propstat
 			switch op.op {
 			case "propname":
-				names, err := ps.Propnames(op.name)
+				pnames, err := propnames(fs, ls, op.name)
 				if err != nil {
 					t.Errorf("%s: got error %v, want nil", desc, err)
 					continue
 				}
-				sort.Sort(byXMLName(names))
-				sort.Sort(byXMLName(op.wantNames))
-				if !reflect.DeepEqual(names, op.wantNames) {
-					t.Errorf("%s: names\ngot  %q\nwant %q", desc, names, op.wantNames)
+				sort.Sort(byXMLName(pnames))
+				sort.Sort(byXMLName(op.wantPnames))
+				if !reflect.DeepEqual(pnames, op.wantPnames) {
+					t.Errorf("%s: pnames\ngot  %q\nwant %q", desc, pnames, op.wantPnames)
 				}
 				continue
 			case "allprop":
-				propstats, err = ps.Allprop(op.name, op.propnames)
+				propstats, err = allprop(fs, ls, op.name, op.pnames)
 			case "propfind":
-				propstats, err = ps.Find(op.name, op.propnames)
+				propstats, err = props(fs, ls, op.name, op.pnames)
 			case "proppatch":
-				propstats, err = ps.Patch(op.name, op.patches)
+				propstats, err = patch(fs, ls, op.name, op.patches)
 			default:
 				t.Fatalf("%s: %s not implemented", desc, op.op)
 			}

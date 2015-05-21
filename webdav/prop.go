@@ -15,50 +15,6 @@ import (
 	"strconv"
 )
 
-// TODO(nigeltao): eliminate the concept of a configurable PropSystem, and the
-// MemPS implementation. Properties are now the responsibility of a File
-// implementation, not a PropSystem implementation.
-
-// PropSystem manages the properties of named resources. It allows finding
-// and setting properties as defined in RFC 4918.
-//
-// The elements in a resource name are separated by slash ('/', U+002F)
-// characters, regardless of host operating system convention.
-type PropSystem interface {
-	// Find returns the status of properties named propnames for resource name.
-	//
-	// Each Propstat must have a unique status and each property name must
-	// only be part of one Propstat element.
-	Find(name string, propnames []xml.Name) ([]Propstat, error)
-
-	// TODO(nigeltao) merge Find and Allprop?
-
-	// Allprop returns the properties defined for resource name and the
-	// properties named in include. The returned Propstats are handled
-	// as in Find.
-	//
-	// Note that RFC 4918 defines 'allprop' to return the DAV: properties
-	// defined within the RFC plus dead properties. Other live properties
-	// should only be returned if they are named in 'include'.
-	//
-	// See http://www.webdav.org/specs/rfc4918.html#METHOD_PROPFIND
-	Allprop(name string, include []xml.Name) ([]Propstat, error)
-
-	// Propnames returns the property names defined for resource name.
-	Propnames(name string) ([]xml.Name, error)
-
-	// Patch patches the properties of resource name.
-	//
-	// If all patches can be applied without conflict, Patch returns a slice
-	// of length one and a Propstat element of status 200, naming all patched
-	// properties. In case of conflict, Patch returns an arbitrary long slice
-	// and no Propstat element must have status 200. In either case, properties
-	// in Propstat must not have values.
-	//
-	// Note that the WebDAV RFC requires either all patches to succeed or none.
-	Patch(name string, patches []Proppatch) ([]Propstat, error)
-}
-
 // Proppatch describes a property update instruction as defined in RFC 4918.
 // See http://www.webdav.org/specs/rfc4918.html#METHOD_PROPPATCH
 type Proppatch struct {
@@ -140,43 +96,28 @@ type DeadPropsHolder interface {
 	Patch([]Proppatch) ([]Propstat, error)
 }
 
-// memPS implements an in-memory PropSystem. It supports all of the mandatory
-// live properties of RFC 4918.
-type memPS struct {
-	fs FileSystem
-	ls LockSystem
-}
-
-// NewMemPS returns a new in-memory PropSystem implementation.
-func NewMemPS(fs FileSystem, ls LockSystem) PropSystem {
-	return &memPS{
-		fs: fs,
-		ls: ls,
-	}
-}
-
 // liveProps contains all supported, protected DAV: properties.
 var liveProps = map[xml.Name]struct {
 	// findFn implements the propfind function of this property. If nil,
 	// it indicates a hidden property.
-	findFn func(*memPS, string, os.FileInfo) (string, error)
+	findFn func(FileSystem, LockSystem, string, os.FileInfo) (string, error)
 	// dir is true if the property applies to directories.
 	dir bool
 }{
 	xml.Name{Space: "DAV:", Local: "resourcetype"}: {
-		findFn: (*memPS).findResourceType,
+		findFn: findResourceType,
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "displayname"}: {
-		findFn: (*memPS).findDisplayName,
+		findFn: findDisplayName,
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "getcontentlength"}: {
-		findFn: (*memPS).findContentLength,
+		findFn: findContentLength,
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "getlastmodified"}: {
-		findFn: (*memPS).findLastModified,
+		findFn: findLastModified,
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "creationdate"}: {
@@ -188,15 +129,15 @@ var liveProps = map[xml.Name]struct {
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "getcontenttype"}: {
-		findFn: (*memPS).findContentType,
+		findFn: findContentType,
 		dir:    true,
 	},
 	xml.Name{Space: "DAV:", Local: "getetag"}: {
-		findFn: (*memPS).findETag,
-		// memPS implements ETag as the concatenated hex values of a file's
+		findFn: findETag,
+		// findETag implements ETag as the concatenated hex values of a file's
 		// modification time and size. This is not a reliable synchronization
-		// mechanism for directories, so we do not advertise getetag for
-		// DAV collections.
+		// mechanism for directories, so we do not advertise getetag for DAV
+		// collections.
 		dir: false,
 	},
 
@@ -205,8 +146,14 @@ var liveProps = map[xml.Name]struct {
 	xml.Name{Space: "DAV:", Local: "supportedlock"}: {},
 }
 
-func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
-	f, err := ps.fs.OpenFile(name, os.O_RDONLY, 0)
+// TODO(nigeltao) merge props and allprop?
+
+// Props returns the status of the properties named pnames for resource name.
+//
+// Each Propstat has a unique status and each property name will only be part
+// of one Propstat element.
+func props(fs FileSystem, ls LockSystem, name string, pnames []xml.Name) ([]Propstat, error) {
+	f, err := fs.OpenFile(name, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +171,7 @@ func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
 
 	pstatOK := Propstat{Status: http.StatusOK}
 	pstatNotFound := Propstat{Status: http.StatusNotFound}
-	for _, pn := range propnames {
+	for _, pn := range pnames {
 		// If this file has dead properties, check if they contain pn.
 		if dp, ok := deadProps[pn]; ok {
 			pstatOK.Props = append(pstatOK.Props, dp)
@@ -232,7 +179,7 @@ func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
 		}
 		// Otherwise, it must either be a live property or we don't know it.
 		if prop := liveProps[pn]; prop.findFn != nil && (prop.dir || !isDir) {
-			innerXML, err := prop.findFn(ps, name, fi)
+			innerXML, err := prop.findFn(fs, ls, name, fi)
 			if err != nil {
 				return nil, err
 			}
@@ -249,8 +196,9 @@ func (ps *memPS) Find(name string, propnames []xml.Name) ([]Propstat, error) {
 	return makePropstats(pstatOK, pstatNotFound), nil
 }
 
-func (ps *memPS) Propnames(name string) ([]xml.Name, error) {
-	f, err := ps.fs.OpenFile(name, os.O_RDONLY, 0)
+// Propnames returns the property names defined for resource name.
+func propnames(fs FileSystem, ls LockSystem, name string) ([]xml.Name, error) {
+	f, err := fs.OpenFile(name, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -266,37 +214,47 @@ func (ps *memPS) Propnames(name string) ([]xml.Name, error) {
 		deadProps = dph.DeadProps()
 	}
 
-	propnames := make([]xml.Name, 0, len(liveProps)+len(deadProps))
+	pnames := make([]xml.Name, 0, len(liveProps)+len(deadProps))
 	for pn, prop := range liveProps {
 		if prop.findFn != nil && (prop.dir || !isDir) {
-			propnames = append(propnames, pn)
+			pnames = append(pnames, pn)
 		}
 	}
 	for pn := range deadProps {
-		propnames = append(propnames, pn)
+		pnames = append(pnames, pn)
 	}
-	return propnames, nil
+	return pnames, nil
 }
 
-func (ps *memPS) Allprop(name string, include []xml.Name) ([]Propstat, error) {
-	propnames, err := ps.Propnames(name)
+// Allprop returns the properties defined for resource name and the properties
+// named in include.
+//
+// Note that RFC 4918 defines 'allprop' to return the DAV: properties defined
+// within the RFC plus dead properties. Other live properties should only be
+// returned if they are named in 'include'.
+//
+// See http://www.webdav.org/specs/rfc4918.html#METHOD_PROPFIND
+func allprop(fs FileSystem, ls LockSystem, name string, include []xml.Name) ([]Propstat, error) {
+	pnames, err := propnames(fs, ls, name)
 	if err != nil {
 		return nil, err
 	}
-	// Add names from include if they are not already covered in propnames.
+	// Add names from include if they are not already covered in pnames.
 	nameset := make(map[xml.Name]bool)
-	for _, pn := range propnames {
+	for _, pn := range pnames {
 		nameset[pn] = true
 	}
 	for _, pn := range include {
 		if !nameset[pn] {
-			propnames = append(propnames, pn)
+			pnames = append(pnames, pn)
 		}
 	}
-	return ps.Find(name, propnames)
+	return props(fs, ls, name, pnames)
 }
 
-func (ps *memPS) Patch(name string, patches []Proppatch) ([]Propstat, error) {
+// Patch patches the properties of resource name. The return values are
+// constrained in the same manner as DeadPropsHolder.Patch.
+func patch(fs FileSystem, ls LockSystem, name string, patches []Proppatch) ([]Propstat, error) {
 	conflict := false
 loop:
 	for _, patch := range patches {
@@ -327,7 +285,7 @@ loop:
 		return makePropstats(pstatForbidden, pstatFailedDep), nil
 	}
 
-	f, err := ps.fs.OpenFile(name, os.O_RDWR, 0)
+	f, err := fs.OpenFile(name, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -358,14 +316,14 @@ loop:
 	return []Propstat{pstat}, nil
 }
 
-func (ps *memPS) findResourceType(name string, fi os.FileInfo) (string, error) {
+func findResourceType(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	if fi.IsDir() {
 		return `<collection xmlns="DAV:"/>`, nil
 	}
 	return "", nil
 }
 
-func (ps *memPS) findDisplayName(name string, fi os.FileInfo) (string, error) {
+func findDisplayName(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	if slashClean(name) == "/" {
 		// Hide the real name of a possibly prefixed root directory.
 		return "", nil
@@ -373,16 +331,16 @@ func (ps *memPS) findDisplayName(name string, fi os.FileInfo) (string, error) {
 	return fi.Name(), nil
 }
 
-func (ps *memPS) findContentLength(name string, fi os.FileInfo) (string, error) {
+func findContentLength(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	return strconv.FormatInt(fi.Size(), 10), nil
 }
 
-func (ps *memPS) findLastModified(name string, fi os.FileInfo) (string, error) {
+func findLastModified(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	return fi.ModTime().Format(http.TimeFormat), nil
 }
 
-func (ps *memPS) findContentType(name string, fi os.FileInfo) (string, error) {
-	f, err := ps.fs.OpenFile(name, os.O_RDONLY, 0)
+func findContentType(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
+	f, err := fs.OpenFile(name, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
@@ -400,7 +358,7 @@ func (ps *memPS) findContentType(name string, fi os.FileInfo) (string, error) {
 	return ctype, err
 }
 
-func (ps *memPS) findETag(name string, fi os.FileInfo) (string, error) {
+func findETag(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	return detectETag(fi), nil
 }
 

@@ -5,8 +5,6 @@
 // Package webdav etc etc TODO.
 package webdav // import "golang.org/x/net/webdav"
 
-// TODO: ETag, properties.
-
 import (
 	"encoding/xml"
 	"errors"
@@ -45,8 +43,6 @@ type Handler struct {
 	FileSystem FileSystem
 	// LockSystem is the lock management system.
 	LockSystem LockSystem
-	// PropSystem is the property management system.
-	PropSystem PropSystem
 	// Logger is an optional error logger. If non-nil, it will be called
 	// for all HTTP requests.
 	Logger func(*http.Request, error)
@@ -58,8 +54,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, err = http.StatusInternalServerError, errNoFileSystem
 	} else if h.LockSystem == nil {
 		status, err = http.StatusInternalServerError, errNoLockSystem
-	} else if h.PropSystem == nil {
-		status, err = http.StatusInternalServerError, errNoPropSystem
 	} else {
 		switch r.Method {
 		case "OPTIONS":
@@ -209,7 +203,7 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 	if err != nil {
 		return http.StatusNotFound, err
 	}
-	pstats, err := h.PropSystem.Find(r.URL.Path, []xml.Name{
+	pstats, err := props(h.FileSystem, h.LockSystem, r.URL.Path, []xml.Name{
 		{Space: "DAV:", Local: "getetag"},
 		{Space: "DAV:", Local: "getcontenttype"},
 	})
@@ -264,7 +258,7 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 	if closeErr != nil {
 		return http.StatusMethodNotAllowed, closeErr
 	}
-	pstats, err := h.PropSystem.Find(r.URL.Path, []xml.Name{
+	pstats, err := props(h.FileSystem, h.LockSystem, r.URL.Path, []xml.Name{
 		{Space: "DAV:", Local: "getetag"},
 	})
 	if err != nil {
@@ -502,19 +496,19 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 		}
 		var pstats []Propstat
 		if pf.Propname != nil {
-			propnames, err := h.PropSystem.Propnames(path)
+			pnames, err := propnames(h.FileSystem, h.LockSystem, path)
 			if err != nil {
 				return err
 			}
 			pstat := Propstat{Status: http.StatusOK}
-			for _, xmlname := range propnames {
+			for _, xmlname := range pnames {
 				pstat.Props = append(pstat.Props, Property{XMLName: xmlname})
 			}
 			pstats = append(pstats, pstat)
 		} else if pf.Allprop != nil {
-			pstats, err = h.PropSystem.Allprop(path, pf.Prop)
+			pstats, err = allprop(h.FileSystem, h.LockSystem, path, pf.Prop)
 		} else {
-			pstats, err = h.PropSystem.Find(path, pf.Prop)
+			pstats, err = props(h.FileSystem, h.LockSystem, path, pf.Prop)
 		}
 		if err != nil {
 			return err
@@ -550,7 +544,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 	if err != nil {
 		return status, err
 	}
-	pstats, err := h.PropSystem.Patch(r.URL.Path, patches)
+	pstats, err := patch(h.FileSystem, h.LockSystem, r.URL.Path, patches)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -671,7 +665,6 @@ var (
 	errInvalidTimeout          = errors.New("webdav: invalid timeout")
 	errNoFileSystem            = errors.New("webdav: no file system")
 	errNoLockSystem            = errors.New("webdav: no lock system")
-	errNoPropSystem            = errors.New("webdav: no property system")
 	errNotADirectory           = errors.New("webdav: not a directory")
 	errRecursionTooDeep        = errors.New("webdav: recursion too deep")
 	errUnsupportedLockInfo     = errors.New("webdav: unsupported lock info")
