@@ -468,7 +468,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) (status i
 func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status int, err error) {
 	fi, err := h.FileSystem.Stat(r.URL.Path)
 	if err != nil {
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
 		return http.StatusMethodNotAllowed, err
@@ -532,7 +532,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 	defer release()
 
 	if _, err := h.FileSystem.Stat(r.URL.Path); err != nil {
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
 		return http.StatusMethodNotAllowed, err
