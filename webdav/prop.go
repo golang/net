@@ -359,13 +359,8 @@ func findContentType(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) 
 }
 
 func findETag(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
-	return detectETag(fi), nil
-}
-
-// detectETag determines the ETag for the file described by fi.
-func detectETag(fi os.FileInfo) string {
 	// The Apache http 2.4 web server by default concatenates the
 	// modification time and size of a file. We replicate the heuristic
 	// with nanosecond granularity.
-	return fmt.Sprintf(`"%x%x"`, fi.ModTime().UnixNano(), fi.Size())
+	return fmt.Sprintf(`"%x%x"`, fi.ModTime().UnixNano(), fi.Size()), nil
 }

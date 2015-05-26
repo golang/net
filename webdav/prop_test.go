@@ -17,7 +17,7 @@ import (
 func TestMemPS(t *testing.T) {
 	// calcProps calculates the getlastmodified and getetag DAV: property
 	// values in pstats for resource name in file-system fs.
-	calcProps := func(name string, fs FileSystem, pstats []Propstat) error {
+	calcProps := func(name string, fs FileSystem, ls LockSystem, pstats []Propstat) error {
 		fi, err := fs.Stat(name)
 		if err != nil {
 			return err
@@ -32,7 +32,11 @@ func TestMemPS(t *testing.T) {
 					if fi.IsDir() {
 						continue
 					}
-					p.InnerXML = []byte(detectETag(fi))
+					etag, err := findETag(fs, ls, name, fi)
+					if err != nil {
+						return err
+					}
+					p.InnerXML = []byte(etag)
 					pst.Props[i] = p
 				}
 			}
@@ -494,7 +498,7 @@ func TestMemPS(t *testing.T) {
 		ls := NewMemLS()
 		for _, op := range tc.propOp {
 			desc := fmt.Sprintf("%s: %s %s", tc.desc, op.op, op.name)
-			if err = calcProps(op.name, fs, op.wantPropstats); err != nil {
+			if err = calcProps(op.name, fs, ls, op.wantPropstats); err != nil {
 				t.Fatalf("%s: calcProps: %v", desc, err)
 			}
 

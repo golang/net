@@ -6,7 +6,6 @@
 package webdav // import "golang.org/x/net/webdav"
 
 import (
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -203,14 +202,14 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 	if err != nil {
 		return http.StatusNotFound, err
 	}
-	pstats, err := props(h.FileSystem, h.LockSystem, r.URL.Path, []xml.Name{
-		{Space: "DAV:", Local: "getetag"},
-		{Space: "DAV:", Local: "getcontenttype"},
-	})
-	if err != nil {
-		return http.StatusInternalServerError, err
+	if !fi.IsDir() {
+		etag, err := findETag(h.FileSystem, h.LockSystem, r.URL.Path, fi)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		w.Header().Set("ETag", etag)
 	}
-	writeDAVHeaders(w, pstats)
+	// Let ServeContent determine the Content-Type header.
 	http.ServeContent(w, r, r.URL.Path, fi.ModTime(), f)
 	return 0, nil
 }
@@ -245,26 +244,31 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 		return status, err
 	}
 	defer release()
+	// TODO(rost): Support the If-Match, If-None-Match headers? See bradfitz'
+	// comments in http.checkEtag.
 
 	f, err := h.FileSystem.OpenFile(r.URL.Path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return http.StatusNotFound, err
 	}
 	_, copyErr := io.Copy(f, r.Body)
+	fi, statErr := f.Stat()
 	closeErr := f.Close()
+	// TODO(rost): Returning 405 Method Not Allowed might not be appropriate.
 	if copyErr != nil {
 		return http.StatusMethodNotAllowed, copyErr
+	}
+	if statErr != nil {
+		return http.StatusMethodNotAllowed, statErr
 	}
 	if closeErr != nil {
 		return http.StatusMethodNotAllowed, closeErr
 	}
-	pstats, err := props(h.FileSystem, h.LockSystem, r.URL.Path, []xml.Name{
-		{Space: "DAV:", Local: "getetag"},
-	})
+	etag, err := findETag(h.FileSystem, h.LockSystem, r.URL.Path, fi)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
-	writeDAVHeaders(w, pstats)
+	w.Header().Set("ETag", etag)
 	return http.StatusCreated, nil
 }
 
@@ -555,26 +559,6 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 		return http.StatusInternalServerError, closeErr
 	}
 	return 0, nil
-}
-
-// davHeaderNames maps the names of DAV properties to their corresponding
-// HTTP response headers.
-var davHeaderNames = map[xml.Name]string{
-	xml.Name{Space: "DAV:", Local: "getetag"}:        "ETag",
-	xml.Name{Space: "DAV:", Local: "getcontenttype"}: "Content-Type",
-}
-
-func writeDAVHeaders(w http.ResponseWriter, pstats []Propstat) {
-	for _, pst := range pstats {
-		if pst.Status == http.StatusOK {
-			for _, p := range pst.Props {
-				if n, ok := davHeaderNames[p.XMLName]; ok {
-					w.Header().Set(n, string(p.InnerXML))
-				}
-			}
-			break
-		}
-	}
 }
 
 func makePropstatResponse(href string, pstats []Propstat) *response {
