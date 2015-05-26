@@ -301,9 +301,6 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 	if u.Host != r.Host {
 		return http.StatusBadGateway, errInvalidDestination
 	}
-	// TODO: do we need a webdav.StripPrefix HTTP handler that's like the
-	// standard library's http.StripPrefix handler, but also strips the
-	// prefix in the Destination header?
 
 	dst, src := u.Path, r.URL.Path
 	if dst == "" {
@@ -624,6 +621,29 @@ func parseDepth(s string) int {
 		return infiniteDepth
 	}
 	return invalidDepth
+}
+
+// StripPrefix is like http.StripPrefix but it also strips the prefix from any
+// Destination headers, so that COPY and MOVE requests also see stripped paths.
+func StripPrefix(prefix string, h http.Handler) http.Handler {
+	if prefix == "" {
+		return h
+	}
+	h = http.StripPrefix(prefix, h)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dsts := r.Header["Destination"]
+		for i, dst := range dsts {
+			u, err := url.Parse(dst)
+			if err != nil {
+				continue
+			}
+			if p := strings.TrimPrefix(u.Path, prefix); len(p) < len(u.Path) {
+				u.Path = p
+				dsts[i] = u.String()
+			}
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // http://www.webdav.org/specs/rfc4918.html#status.code.extensions.to.http11
