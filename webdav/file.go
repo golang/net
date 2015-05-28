@@ -702,9 +702,23 @@ func copyFiles(fs FileSystem, src, dst string, overwrite bool, depth int, recurs
 
 		}
 		_, copyErr := io.Copy(dstFile, srcFile)
+		var propsErr error
+		if s, ok := srcFile.(DeadPropsHolder); ok {
+			if d, ok := dstFile.(DeadPropsHolder); ok {
+				m := s.DeadProps()
+				props := make([]Property, 0, len(m))
+				for _, prop := range m {
+					props = append(props, prop)
+				}
+				_, propsErr = d.Patch([]Proppatch{{Props: props}})
+			}
+		}
 		closeErr := dstFile.Close()
 		if copyErr != nil {
 			return http.StatusInternalServerError, copyErr
+		}
+		if propsErr != nil {
+			return http.StatusInternalServerError, propsErr
 		}
 		if closeErr != nil {
 			return http.StatusInternalServerError, closeErr

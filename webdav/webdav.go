@@ -292,8 +292,6 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 }
 
 func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status int, err error) {
-	// TODO: COPY/MOVE for Properties, as per sections 9.8.2 and 9.9.1.
-
 	hdr := r.Header.Get("Destination")
 	if hdr == "" {
 		return http.StatusBadRequest, errInvalidDestination
