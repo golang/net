@@ -825,7 +825,7 @@ func BenchmarkMemFileWrite(b *testing.B) {
 	}
 }
 
-func TestMoveCopyProps(t *testing.T) {
+func TestCopyMoveProps(t *testing.T) {
 	fs := NewMemFS()
 	create := func(name string) error {
 		f, err := fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
@@ -856,8 +856,11 @@ func TestMoveCopyProps(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		m := f.(DeadPropsHolder).DeadProps()
+		m, pErr := f.(DeadPropsHolder).DeadProps()
 		cErr := f.Close()
+		if pErr != nil {
+			return nil, pErr
+		}
 		if cErr != nil {
 			return nil, cErr
 		}

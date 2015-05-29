@@ -80,7 +80,7 @@ func makePropstats(x, y Propstat) []Propstat {
 // method of DeadPropsHolder implementations.
 type DeadPropsHolder interface {
 	// DeadProps returns a copy of the dead properties held.
-	DeadProps() map[xml.Name]Property
+	DeadProps() (map[xml.Name]Property, error)
 
 	// Patch patches the dead properties held.
 	//
@@ -166,7 +166,10 @@ func props(fs FileSystem, ls LockSystem, name string, pnames []xml.Name) ([]Prop
 
 	var deadProps map[xml.Name]Property
 	if dph, ok := f.(DeadPropsHolder); ok {
-		deadProps = dph.DeadProps()
+		deadProps, err = dph.DeadProps()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pstatOK := Propstat{Status: http.StatusOK}
@@ -211,7 +214,10 @@ func propnames(fs FileSystem, ls LockSystem, name string) ([]xml.Name, error) {
 
 	var deadProps map[xml.Name]Property
 	if dph, ok := f.(DeadPropsHolder); ok {
-		deadProps = dph.DeadProps()
+		deadProps, err = dph.DeadProps()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pnames := make([]xml.Name, 0, len(liveProps)+len(deadProps))

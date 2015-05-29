@@ -423,17 +423,17 @@ func (n *memFSNode) stat(name string) *memFileInfo {
 	}
 }
 
-func (n *memFSNode) DeadProps() map[xml.Name]Property {
+func (n *memFSNode) DeadProps() (map[xml.Name]Property, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if len(n.deadProps) == 0 {
-		return nil
+		return nil, nil
 	}
 	ret := make(map[xml.Name]Property, len(n.deadProps))
 	for k, v := range n.deadProps {
 		ret[k] = v
 	}
-	return ret
+	return ret, nil
 }
 
 func (n *memFSNode) Patch(patches []Proppatch) ([]Propstat, error) {
@@ -484,7 +484,7 @@ type memFile struct {
 // A *memFile implements the optional DeadPropsHolder interface.
 var _ DeadPropsHolder = (*memFile)(nil)
 
-func (f *memFile) DeadProps() map[xml.Name]Property              { return f.n.DeadProps() }
+func (f *memFile) DeadProps() (map[xml.Name]Property, error)     { return f.n.DeadProps() }
 func (f *memFile) Patch(patches []Proppatch) ([]Propstat, error) { return f.n.Patch(patches) }
 
 func (f *memFile) Close() error {
@@ -626,6 +626,27 @@ func moveFiles(fs FileSystem, src, dst string, overwrite bool) (status int, err 
 	return http.StatusNoContent, nil
 }
 
+func copyProps(dst, src File) error {
+	d, ok := dst.(DeadPropsHolder)
+	if !ok {
+		return nil
+	}
+	s, ok := src.(DeadPropsHolder)
+	if !ok {
+		return nil
+	}
+	m, err := s.DeadProps()
+	if err != nil {
+		return err
+	}
+	props := make([]Property, 0, len(m))
+	for _, prop := range m {
+		props = append(props, prop)
+	}
+	_, err = d.Patch([]Proppatch{{Props: props}})
+	return err
+}
+
 // copyFiles copies files and/or directories from src to dst.
 //
 // See section 9.8.5 for when various HTTP status codes apply.
@@ -702,17 +723,7 @@ func copyFiles(fs FileSystem, src, dst string, overwrite bool, depth int, recurs
 
 		}
 		_, copyErr := io.Copy(dstFile, srcFile)
-		var propsErr error
-		if s, ok := srcFile.(DeadPropsHolder); ok {
-			if d, ok := dstFile.(DeadPropsHolder); ok {
-				m := s.DeadProps()
-				props := make([]Property, 0, len(m))
-				for _, prop := range m {
-					props = append(props, prop)
-				}
-				_, propsErr = d.Patch([]Proppatch{{Props: props}})
-			}
-		}
+		propsErr := copyProps(dstFile, srcFile)
 		closeErr := dstFile.Close()
 		if copyErr != nil {
 			return http.StatusInternalServerError, copyErr
