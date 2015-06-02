@@ -70,6 +70,7 @@ func TestMemPS(t *testing.T) {
 				xml.Name{Space: "DAV:", Local: "getcontentlength"},
 				xml.Name{Space: "DAV:", Local: "getlastmodified"},
 				xml.Name{Space: "DAV:", Local: "getcontenttype"},
+				xml.Name{Space: "DAV:", Local: "supportedlock"},
 			},
 		}, {
 			op:   "propname",
@@ -81,6 +82,7 @@ func TestMemPS(t *testing.T) {
 				xml.Name{Space: "DAV:", Local: "getlastmodified"},
 				xml.Name{Space: "DAV:", Local: "getcontenttype"},
 				xml.Name{Space: "DAV:", Local: "getetag"},
+				xml.Name{Space: "DAV:", Local: "supportedlock"},
 			},
 		}},
 	}, {
@@ -106,6 +108,14 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getcontenttype"},
 					InnerXML: []byte("text/plain; charset=utf-8"),
+				}, {
+					XMLName: xml.Name{Space: "DAV:", Local: "supportedlock"},
+					InnerXML: []byte(`` +
+						`<lockentry xmlns="DAV:">` +
+						`<lockscope><exclusive/></lockscope>` +
+						`<locktype><write/></locktype>` +
+						`</lockentry>`,
+					),
 				}},
 			}},
 		}, {
@@ -131,6 +141,14 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName: xml.Name{Space: "DAV:", Local: "supportedlock"},
+					InnerXML: []byte(`` +
+						`<lockentry xmlns="DAV:">` +
+						`<lockscope><exclusive/></lockscope>` +
+						`<locktype><write/></locktype>` +
+						`</lockentry>`,
+					),
 				}},
 			}},
 		}, {
@@ -160,6 +178,14 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName: xml.Name{Space: "DAV:", Local: "supportedlock"},
+					InnerXML: []byte(`` +
+						`<lockentry xmlns="DAV:">` +
+						`<lockscope><exclusive/></lockscope>` +
+						`<locktype><write/></locktype>` +
+						`</lockentry>`,
+					),
 				}}}, {
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -449,6 +475,7 @@ func TestMemPS(t *testing.T) {
 				xml.Name{Space: "DAV:", Local: "getlastmodified"},
 				xml.Name{Space: "DAV:", Local: "getcontenttype"},
 				xml.Name{Space: "DAV:", Local: "getetag"},
+				xml.Name{Space: "DAV:", Local: "supportedlock"},
 				xml.Name{Space: "foo", Local: "bar"},
 			},
 		}},

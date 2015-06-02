@@ -141,9 +141,13 @@ var liveProps = map[xml.Name]struct {
 		dir: false,
 	},
 
-	// TODO(nigeltao) Lock properties will be defined later.
+	// TODO: The lockdiscovery property requires LockSystem to list the
+	// active locks on a resource.
 	xml.Name{Space: "DAV:", Local: "lockdiscovery"}: {},
-	xml.Name{Space: "DAV:", Local: "supportedlock"}: {},
+	xml.Name{Space: "DAV:", Local: "supportedlock"}: {
+		findFn: findSupportedLock,
+		dir:    true,
+	},
 }
 
 // TODO(nigeltao) merge props and allprop?
@@ -369,4 +373,12 @@ func findETag(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string
 	// modification time and size of a file. We replicate the heuristic
 	// with nanosecond granularity.
 	return fmt.Sprintf(`"%x%x"`, fi.ModTime().UnixNano(), fi.Size()), nil
+}
+
+func findSupportedLock(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
+	return `` +
+		`<lockentry xmlns="DAV:">` +
+		`<lockscope><exclusive/></lockscope>` +
+		`<locktype><write/></locktype>` +
+		`</lockentry>`, nil
 }
