@@ -55,7 +55,7 @@ var AuthRequest = func(req *http.Request) (any, sensitive bool) {
 	switch {
 	case err != nil: // Badly formed address; fail closed.
 		return false, false
-	case host == "localhost" || host == "127.0.0.1" || host == "[::1]":
+	case host == "localhost" || host == "127.0.0.1" || host == "::1":
 		return true, true
 	default:
 		return false, false
