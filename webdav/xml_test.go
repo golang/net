@@ -7,6 +7,7 @@ package webdav
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -634,6 +635,20 @@ loop:
 }
 
 func TestReadProppatch(t *testing.T) {
+	ppStr := func(pps []Proppatch) string {
+		var outer []string
+		for _, pp := range pps {
+			var inner []string
+			for _, p := range pp.Props {
+				inner = append(inner, fmt.Sprintf("{XMLName: %q, Lang: %q, InnerXML: %q}",
+					p.XMLName, p.Lang, p.InnerXML))
+			}
+			outer = append(outer, fmt.Sprintf("{Remove: %t, Props: [%s]}",
+				pp.Remove, strings.Join(inner, ", ")))
+		}
+		return "[" + strings.Join(outer, ", ") + "]"
+	}
+
 	// TODO(rost): These "golden XML" tests easily break with changes in the
 	// xml package. A whitespace-preserving normalizer of XML content is
 	// required to make these tests more robust.
@@ -806,7 +821,7 @@ func TestReadProppatch(t *testing.T) {
 			continue
 		}
 		if !reflect.DeepEqual(pp, tc.wantPP) || status != tc.wantStatus {
-			t.Errorf("%s: proppatch\ngot  %v\nwant %v", tc.desc, pp, tc.wantPP)
+			t.Errorf("%s: proppatch\ngot  %v\nwant %v", tc.desc, ppStr(pp), ppStr(tc.wantPP))
 		}
 	}
 }
