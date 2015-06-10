@@ -36,6 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/context"
 	"golang.org/x/net/internal/timeseries"
 )
 
@@ -205,6 +206,22 @@ func lookupBucket(fam string, b int) *traceBucket {
 		return nil
 	}
 	return f.Buckets[b]
+}
+
+type contextKeyT string
+
+var contextKey = contextKeyT("golang.org/x/net/trace.Trace")
+
+// NewContext returns a copy of the parent context
+// and associates it with a Trace.
+func NewContext(ctx context.Context, tr Trace) context.Context {
+	return context.WithValue(ctx, contextKey, tr)
+}
+
+// FromContext returns the Trace bound to the context, if any.
+func FromContext(ctx context.Context) (tr Trace, ok bool) {
+	tr, ok = ctx.Value(contextKey).(Trace)
+	return
 }
 
 // Trace represents an active request.
