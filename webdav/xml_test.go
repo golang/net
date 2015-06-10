@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -649,27 +650,19 @@ func TestReadProppatch(t *testing.T) {
 		return "[" + strings.Join(outer, ", ") + "]"
 	}
 
-	// TODO(rost): These "golden XML" tests easily break with changes in the
-	// xml package. A whitespace-preserving normalizer of XML content is
-	// required to make these tests more robust.
 	testCases := []struct {
 		desc       string
 		input      string
 		wantPP     []Proppatch
 		wantStatus int
 	}{{
-		desc: "proppatch: section 9.2",
+		desc: "proppatch: section 9.2 (with simple property value)",
 		input: `` +
 			`<?xml version="1.0" encoding="utf-8" ?>` +
 			`<D:propertyupdate xmlns:D="DAV:"` +
 			`                  xmlns:Z="http://ns.example.com/z/">` +
 			`    <D:set>` +
-			`         <D:prop>` +
-			`              <Z:Authors>` +
-			`              <Z:Author>Jim Whitehead</Z:Author>` +
-			`              <Z:Author>Roy Fielding</Z:Author>` +
-			`              </Z:Authors>` +
-			`         </D:prop>` +
+			`         <D:prop><Z:Authors>somevalue</Z:Authors></D:prop>` +
 			`    </D:set>` +
 			`    <D:remove>` +
 			`         <D:prop><Z:Copyright-Owner/></D:prop>` +
@@ -679,17 +672,7 @@ func TestReadProppatch(t *testing.T) {
 			Props: []Property{{
 				xml.Name{Space: "http://ns.example.com/z/", Local: "Authors"},
 				"",
-				[]byte(`` +
-					`              ` +
-					`<z:Author xmlns:z="http://ns.example.com/z/">` +
-					`Jim Whitehead` +
-					`</z:Author>` +
-					`              ` +
-					`<z:Author xmlns:z="http://ns.example.com/z/">` +
-					`Roy Fielding` +
-					`</z:Author>` +
-					`              `,
-				),
+				[]byte(`somevalue`),
 			}},
 		}, {
 			Remove: true,
@@ -697,59 +680,6 @@ func TestReadProppatch(t *testing.T) {
 				xml.Name{Space: "http://ns.example.com/z/", Local: "Copyright-Owner"},
 				"",
 				nil,
-			}},
-		}},
-	}, {
-		desc: "proppatch: section 4.3.1 (mixed content)",
-		input: `` +
-			`<?xml version="1.0" encoding="utf-8" ?>` +
-			`<D:propertyupdate xmlns:D="DAV:"` +
-			`                  xmlns:Z="http://ns.example.com/z/">` +
-			`  <D:set>` +
-			`     <D:prop xml:lang="en" xmlns:D="DAV:">` +
-			`         <x:author xmlns:x='http://example.com/ns'>` +
-			`            <x:name>Jane Doe</x:name>` +
-			`            <!-- Jane's contact info -->` +
-			`            <x:uri type='email'` +
-			`                   added='2005-11-26'>mailto:jane.doe@example.com</x:uri>` +
-			`            <x:uri type='web'` +
-			`                   added='2005-11-27'>http://www.example.com</x:uri>` +
-			`            <x:notes xmlns:h='http://www.w3.org/1999/xhtml'>` +
-			`              Jane has been working way <h:em>too</h:em> long on the` +
-			`              long-awaited revision of <![CDATA[<RFC2518>]]>.` +
-			`            </x:notes>` +
-			`         </x:author>` +
-			`     </D:prop>` +
-			`  </D:set>` +
-			`</D:propertyupdate>`,
-		wantPP: []Proppatch{{
-			Props: []Property{{
-				xml.Name{Space: "http://example.com/ns", Local: "author"},
-				"en",
-				[]byte(`` +
-					`            ` +
-					`<ns:name xmlns:ns="http://example.com/ns">Jane Doe</ns:name>` +
-					`                        ` +
-					`<ns:uri xmlns:ns="http://example.com/ns" type="email" added="2005-11-26">` +
-					`mailto:jane.doe@example.com` +
-					`</ns:uri>` +
-					`            ` +
-					`<ns:uri xmlns:ns="http://example.com/ns" type="web" added="2005-11-27">` +
-					`http://www.example.com` +
-					`</ns:uri>` +
-					`            ` +
-
-					`<ns:notes xmlns:ns="http://example.com/ns"` +
-					` xmlns:h="http://www.w3.org/1999/xhtml">` +
-					`             ` +
-					` Jane has been working way` +
-					` <h:em>too</h:em>` +
-					` long on the` + `             ` +
-					` long-awaited revision of &lt;RFC2518&gt;.` +
-					`            ` +
-					`</ns:notes>` +
-					`         `,
-				),
 			}},
 		}},
 	}, {
@@ -824,4 +754,149 @@ func TestReadProppatch(t *testing.T) {
 			t.Errorf("%s: proppatch\ngot  %v\nwant %v", tc.desc, ppStr(pp), ppStr(tc.wantPP))
 		}
 	}
+}
+
+func TestUnmarshalXMLValue(t *testing.T) {
+	testCases := []struct {
+		desc    string
+		input   string
+		wantVal string
+	}{{
+		desc:    "simple char data",
+		input:   "<root>foo</root>",
+		wantVal: "foo",
+	}, {
+		desc:    "empty element",
+		input:   "<root><foo/></root>",
+		wantVal: "<foo/>",
+	}, {
+		desc:    "preserve namespace",
+		input:   `<root><foo xmlns="bar"/></root>`,
+		wantVal: `<foo xmlns="bar"/>`,
+	}, {
+		desc:    "preserve root element namespace",
+		input:   `<root xmlns:bar="bar"><bar:foo/></root>`,
+		wantVal: `<foo xmlns="bar"/>`,
+	}, {
+		desc:    "preserve whitespace",
+		input:   "<root>  \t </root>",
+		wantVal: "  \t ",
+	}, {
+		desc:    "preserve mixed content",
+		input:   `<root xmlns="bar">  <foo>a<bam xmlns="baz"/> </foo> </root>`,
+		wantVal: `  <foo xmlns="bar">a<bam xmlns="baz"/> </foo> `,
+	}, {
+		desc: "section 9.2",
+		input: `` +
+			`<Z:Authors xmlns:Z="http://ns.example.com/z/">` +
+			`  <Z:Author>Jim Whitehead</Z:Author>` +
+			`  <Z:Author>Roy Fielding</Z:Author>` +
+			`</Z:Authors>`,
+		wantVal: `` +
+			`  <Author xmlns="http://ns.example.com/z/">Jim Whitehead</Author>` +
+			`  <Author xmlns="http://ns.example.com/z/">Roy Fielding</Author>`,
+	}, {
+		desc: "section 4.3.1 (mixed content)",
+		input: `` +
+			`<x:author ` +
+			`    xmlns:x='http://example.com/ns' ` +
+			`    xmlns:D="DAV:">` +
+			`  <x:name>Jane Doe</x:name>` +
+			`  <!-- Jane's contact info -->` +
+			`  <x:uri type='email'` +
+			`         added='2005-11-26'>mailto:jane.doe@example.com</x:uri>` +
+			`  <x:uri type='web'` +
+			`         added='2005-11-27'>http://www.example.com</x:uri>` +
+			`  <x:notes xmlns:h='http://www.w3.org/1999/xhtml'>` +
+			`    Jane has been working way <h:em>too</h:em> long on the` +
+			`    long-awaited revision of <![CDATA[<RFC2518>]]>.` +
+			`  </x:notes>` +
+			`</x:author>`,
+		wantVal: `` +
+			`  <name xmlns="http://example.com/ns">Jane Doe</name>` +
+			`  ` +
+			`  <uri type='email'` +
+			`       xmlns="http://example.com/ns" ` +
+			`       added='2005-11-26'>mailto:jane.doe@example.com</uri>` +
+			`  <uri added='2005-11-27'` +
+			`       type='web'` +
+			`       xmlns="http://example.com/ns">http://www.example.com</uri>` +
+			`  <notes xmlns="http://example.com/ns" ` +
+			`         xmlns:h="http://www.w3.org/1999/xhtml">` +
+			`    Jane has been working way <h:em>too</h:em> long on the` +
+			`    long-awaited revision of &lt;RFC2518&gt;.` +
+			`  </notes>`,
+	}}
+
+	// Normalize namespace declarations, prefixes and attribute order.
+	normalize := func(s string) (string, error) {
+		d := xml.NewDecoder(strings.NewReader(s))
+		var b bytes.Buffer
+		e := xml.NewEncoder(&b)
+		for {
+			t, err := d.Token()
+			if err != nil {
+				if t == nil && err == io.EOF {
+					break
+				}
+				return "", err
+			}
+			t = xml.CopyToken(t)
+			if start, ok := t.(xml.StartElement); ok {
+				attr := start.Attr[:0]
+				for _, a := range start.Attr {
+					if a.Name.Space == "xmlns" || a.Name.Local == "xmlns" {
+						continue
+					}
+					attr = append(attr, a)
+				}
+				sort.Sort(byName(attr))
+				start.Attr = attr
+				t = start
+			}
+			err = e.EncodeToken(t)
+			if err != nil {
+				return "", err
+			}
+		}
+		err := e.Flush()
+		if err != nil {
+			return "", err
+		}
+		return b.String(), nil
+	}
+
+	for _, tc := range testCases {
+		d := xml.NewDecoder(strings.NewReader(tc.input))
+		var v xmlValue
+		err := d.Decode(&v)
+		if err != nil {
+			t.Errorf("%s: got error %v, want nil", tc.desc, err)
+			continue
+		}
+		got, err := normalize(string(v))
+		if err != nil {
+			t.Errorf("%s: normalize: %v", tc.desc, err)
+			continue
+		}
+		want, err := normalize(tc.wantVal)
+		if err != nil {
+			t.Errorf("%s: normalize: %v", tc.desc, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s:\ngot  %s\nwant %s", tc.desc, got, want)
+		}
+	}
+}
+
+type byName []xml.Attr
+
+func (a byName) Len() int      { return len(a) }
+func (a byName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byName) Less(i, j int) bool {
+	if a[i].Name.Space != a[j].Name.Space {
+		return a[i].Name.Space < a[j].Name.Space
+	}
+	return a[i].Name.Local < a[j].Name.Local
 }

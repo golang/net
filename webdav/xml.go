@@ -340,6 +340,35 @@ func xmlLang(s xml.StartElement, d string) string {
 	return d
 }
 
+type xmlValue []byte
+
+func (v *xmlValue) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	// The XML value of a property can be arbitrary, mixed-content XML.
+	// To make sure that the unmarshalled value contains all required
+	// namespaces, we encode all the property value XML tokens into a
+	// buffer. This forces the encoder to redeclare any used namespaces.
+	var b bytes.Buffer
+	e := xml.NewEncoder(&b)
+	for {
+		t, err := next(d)
+		if err != nil {
+			return err
+		}
+		if e, ok := t.(xml.EndElement); ok && e.Name == start.Name {
+			break
+		}
+		if err = e.EncodeToken(t); err != nil {
+			return err
+		}
+	}
+	err := e.Flush()
+	if err != nil {
+		return err
+	}
+	*v = b.Bytes()
+	return nil
+}
+
 // UnmarshalXML appends the property names and values enclosed within start
 // to ps.
 //
@@ -355,7 +384,7 @@ func (ps *proppatchProps) UnmarshalXML(d *xml.Decoder, start xml.StartElement) e
 		if err != nil {
 			return err
 		}
-		switch t.(type) {
+		switch elem := t.(type) {
 		case xml.EndElement:
 			if len(*ps) == 0 {
 				return fmt.Errorf("%s must not be empty", start.Name.Local)
@@ -366,29 +395,10 @@ func (ps *proppatchProps) UnmarshalXML(d *xml.Decoder, start xml.StartElement) e
 				XMLName: t.(xml.StartElement).Name,
 				Lang:    xmlLang(t.(xml.StartElement), lang),
 			}
-			// The XML value of a property can be arbitrary, mixed-content XML.
-			// To make sure that the unmarshalled value contains all required
-			// namespaces, we encode all the property value XML tokens into a
-			// buffer. This forces the encoder to redeclare any used namespaces.
-			var b bytes.Buffer
-			e := xml.NewEncoder(&b)
-			for {
-				t, err = next(d)
-				if err != nil {
-					return err
-				}
-				if e, ok := t.(xml.EndElement); ok && e.Name == p.XMLName {
-					break
-				}
-				if err = e.EncodeToken(t); err != nil {
-					return err
-				}
-			}
-			err = e.Flush()
+			err = d.DecodeElement(((*xmlValue)(&p.InnerXML)), &elem)
 			if err != nil {
 				return err
 			}
-			p.InnerXML = b.Bytes()
 			*ps = append(*ps, p)
 		}
 	}
