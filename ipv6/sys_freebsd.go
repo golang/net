@@ -50,8 +50,8 @@ var (
 func init() {
 	if runtime.GOOS == "freebsd" && runtime.GOARCH == "386" {
 		archs, _ := syscall.Sysctl("kern.supported_archs")
-		for _, s := range strings.Split(archs, " ") {
-			if strings.TrimSpace(s) == "amd64" {
+		for _, s := range strings.Fields(archs) {
+			if s == "amd64" {
 				freebsd32o64 = true
 				break
 			}
