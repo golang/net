@@ -27,6 +27,9 @@ import (
 func TestLimitListener(t *testing.T) {
 	const max = 5
 	attempts := (nettest.MaxOpenFiles() - max) / 2
+	if attempts > 256 { // maximum length of accept queue is 128 by default
+		attempts = 256
+	}
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
