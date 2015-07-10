@@ -3,12 +3,14 @@
 // license that can be found in the LICENSE file.
 
 /*
-Package trace implements tracing of requests.
-It exports an HTTP interface on /debug/requests.
+Package trace implements tracing of requests and long-lived objects.
+It exports HTTP interfaces on /debug/requests and /debug/events.
 
+A trace.Trace provides tracing for short-lived objects, usually requests.
 A request handler might be implemented like this:
-	func myHandler(w http.ResponseWriter, req *http.Request) {
-		tr := trace.New("Received", req.URL.Path)
+
+	func fooHandler(w http.ResponseWriter, req *http.Request) {
+		tr := trace.New("mypkg.Foo", req.URL.Path)
 		defer tr.Finish()
 		...
 		tr.LazyPrintf("some event %q happened", str)
@@ -18,6 +20,44 @@ A request handler might be implemented like this:
 			tr.SetError()
 		}
 	}
+
+The /debug/requests HTTP endpoint organizes the traces by family,
+errors, and duration.  It also provides histogram of request duration
+for each family.
+
+A trace.EventLog provides tracing for long-lived objects, such as RPC
+connections.
+
+        // A Fetcher fetches URL paths for a single domain.
+	type Fetcher struct {
+		domain string
+		events *trace.EventLog
+	}
+
+	func NewFetcher(domain string) *Fetcher {
+		return &Fetcher{
+			domain,
+			trace.NewEventLog("mypkg.Fetcher", domain),
+		}
+	}
+
+	func (f *Fetcher) Fetch(path string) (string, error) {
+		resp, err := http.Get("http://"+domain+"/"+path)
+		if err != nil {
+			f.events.Errorf("Get(%q) = %v", path, err)
+			return
+		}
+		f.events.Printf("Get(%q) = %s", path, resp.Code)
+		...
+	}
+
+	func (f *Fetcher) Close() error {
+		f.events.Finish()
+	}
+
+The /debug/events HTTP endpoint organizes the event logs by family and
+by time since the last error.  The expanded view displays recent log
+entries and the log's call stack.
 */
 package trace // import "golang.org/x/net/trace"
 
@@ -71,6 +111,14 @@ func init() {
 			return
 		}
 		render(w, req, sensitive)
+	})
+	http.HandleFunc("/debug/events", func(w http.ResponseWriter, req *http.Request) {
+		any, sensitive := AuthRequest(req)
+		if !any {
+			http.Error(w, "not allowed", http.StatusUnauthorized)
+			return
+		}
+		renderEvents(w, req, sensitive)
 	})
 }
 
