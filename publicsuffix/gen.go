@@ -13,10 +13,10 @@ package main
 //	go run gen.go -version "xxx" -test >table_test.go
 //
 // The version is derived from information found at
-// https://hg.mozilla.org/mozilla-central/log/tip/netwerk/dns/effective_tld_names.dat
+// https://github.com/publicsuffix/list/commits/master/public_suffix_list.dat
 //
-// To fetch a particular hg revision, such as 05b11a8d1ace, pass
-// -url "https://hg.mozilla.org/mozilla-central/raw-file/05b11a8d1ace/netwerk/dns/effective_tld_names.dat"
+// To fetch a particular git revision, such as 5c70ccd250, pass
+// -url "https://github.com/publicsuffix/list/blob/5c70ccd250/public_suffix_list.dat"
 
 import (
 	"bufio"

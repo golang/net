@@ -329,7 +329,7 @@ func (b byPriority) Less(i, j int) bool {
 }
 
 // eTLDPlusOneTestCases come from
-// http://mxr.mozilla.org/mozilla-central/source/netwerk/test/unit/data/test_psl.txt
+// https://github.com/publicsuffix/list/blob/master/tests/test_psl.txt
 var eTLDPlusOneTestCases = []struct {
 	domain, want string
 }{
@@ -356,10 +356,10 @@ var eTLDPlusOneTestCases = []struct {
 	{"a.b.example.uk.com", "example.uk.com"},
 	{"test.ac", "test.ac"},
 	// TLD with only 1 (wildcard) rule.
-	{"cy", ""},
-	{"c.cy", ""},
-	{"b.c.cy", "b.c.cy"},
-	{"a.b.c.cy", "b.c.cy"},
+	{"il", ""},
+	{"c.il", ""},
+	{"b.c.il", "b.c.il"},
+	{"a.b.c.il", "b.c.il"},
 	// More complex TLD.
 	{"jp", ""},
 	{"test.jp", "test.jp"},
