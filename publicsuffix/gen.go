@@ -16,7 +16,7 @@ package main
 // https://github.com/publicsuffix/list/commits/master/public_suffix_list.dat
 //
 // To fetch a particular git revision, such as 5c70ccd250, pass
-// -url "https://github.com/publicsuffix/list/blob/5c70ccd250/public_suffix_list.dat"
+// -url "https://raw.githubusercontent.com/publicsuffix/list/5c70ccd250/public_suffix_list.dat"
 
 import (
 	"bufio"
