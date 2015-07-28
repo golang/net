@@ -5,7 +5,6 @@
 package webdav
 
 import (
-	"encoding/xml"
 	"fmt"
 	"io"
 	"mime"
@@ -13,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"golang.org/x/net/webdav/internal/xml"
 )
 
 // Proppatch describes a property update instruction as defined in RFC 4918.
