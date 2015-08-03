@@ -507,7 +507,10 @@ func testFS(t *testing.T, fs FileSystem) {
 }
 
 func TestDir(t *testing.T) {
-	if runtime.GOOS == "plan9" {
+	switch runtime.GOOS {
+	case "nacl":
+		t.Skip("see golang.org/issue/12004")
+	case "plan9":
 		t.Skip("see golang.org/issue/11453")
 	}
 
