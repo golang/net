@@ -267,7 +267,7 @@ type hybiFrameHandler struct {
 	payloadType byte
 }
 
-func (handler *hybiFrameHandler) HandleFrame(frame frameReader) (r frameReader, err error) {
+func (handler *hybiFrameHandler) HandleFrame(frame frameReader) (frameReader, error) {
 	if handler.conn.IsServerConn() {
 		// The client MUST mask all frames sent to the server.
 		if frame.(*hybiFrameReader).header.MaskingKey == nil {
@@ -291,20 +291,19 @@ func (handler *hybiFrameHandler) HandleFrame(frame frameReader) (r frameReader, 
 		handler.payloadType = frame.PayloadType()
 	case CloseFrame:
 		return nil, io.EOF
-	case PingFrame:
-		pingMsg := make([]byte, maxControlFramePayloadLength)
-		n, err := io.ReadFull(frame, pingMsg)
-		if err != nil && err != io.ErrUnexpectedEOF {
+	case PingFrame, PongFrame:
+		b := make([]byte, maxControlFramePayloadLength)
+		n, err := io.ReadFull(frame, b)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return nil, err
 		}
 		io.Copy(ioutil.Discard, frame)
-		n, err = handler.WritePong(pingMsg[:n])
-		if err != nil {
-			return nil, err
+		if frame.PayloadType() == PingFrame {
+			if _, err := handler.WritePong(b[:n]); err != nil {
+				return nil, err
+			}
 		}
 		return nil, nil
-	case PongFrame:
-		return nil, ErrNotImplemented
 	}
 	return frame, nil
 }

@@ -326,7 +326,7 @@ func testHybiFrame(t *testing.T, testHeader, testPayload, testMaskedPayload []by
 	}
 	payload := make([]byte, len(testPayload))
 	_, err = r.Read(payload)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		t.Errorf("read %v", err)
 	}
 	if !bytes.Equal(testPayload, payload) {
@@ -363,12 +363,19 @@ func TestHybiShortBinaryFrame(t *testing.T) {
 }
 
 func TestHybiControlFrame(t *testing.T) {
-	frameHeader := &hybiFrameHeader{Fin: true, OpCode: PingFrame}
 	payload := []byte("hello")
+
+	frameHeader := &hybiFrameHeader{Fin: true, OpCode: PingFrame}
 	testHybiFrame(t, []byte{0x89, 0x05}, payload, payload, frameHeader)
+
+	frameHeader = &hybiFrameHeader{Fin: true, OpCode: PingFrame}
+	testHybiFrame(t, []byte{0x89, 0x00}, nil, nil, frameHeader)
 
 	frameHeader = &hybiFrameHeader{Fin: true, OpCode: PongFrame}
 	testHybiFrame(t, []byte{0x8A, 0x05}, payload, payload, frameHeader)
+
+	frameHeader = &hybiFrameHeader{Fin: true, OpCode: PongFrame}
+	testHybiFrame(t, []byte{0x8A, 0x00}, nil, nil, frameHeader)
 
 	frameHeader = &hybiFrameHeader{Fin: true, OpCode: CloseFrame}
 	payload = []byte{0x03, 0xe8} // 1000
