@@ -157,6 +157,9 @@ func (buf hybiFrameReaderFactory) NewFrameReader() (frame frameReader, err error
 		if err != nil {
 			return
 		}
+		if lengthFields == 8 && i == 0 { // MSB must be zero when 7+64 bits
+			b &= 0x7f
+		}
 		header = append(header, b)
 		hybiFrame.header.Length = hybiFrame.header.Length*256 + int64(b)
 	}
