@@ -372,6 +372,23 @@ func generateNonce() (nonce []byte) {
 	return
 }
 
+// removeZone removes IPv6 zone identifer from host.
+// E.g., "[fe80::1%en0]:8080" to "[fe80::1]:8080"
+func removeZone(host string) string {
+	if !strings.HasPrefix(host, "[") {
+		return host
+	}
+	i := strings.LastIndex(host, "]")
+	if i < 0 {
+		return host
+	}
+	j := strings.LastIndex(host[:i], "%")
+	if j < 0 {
+		return host
+	}
+	return host[:j] + host[i:]
+}
+
 // getNonceAccept computes the base64-encoded SHA-1 of the concatenation of
 // the nonce ("Sec-WebSocket-Key" value) with the websocket GUID string.
 func getNonceAccept(nonce []byte) (expected []byte, err error) {
@@ -391,7 +408,10 @@ func getNonceAccept(nonce []byte) (expected []byte, err error) {
 func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (err error) {
 	bw.WriteString("GET " + config.Location.RequestURI() + " HTTP/1.1\r\n")
 
-	bw.WriteString("Host: " + config.Location.Host + "\r\n")
+	// According to RFC 6874, an HTTP client, proxy, or other
+	// intermediary must remove any IPv6 zone identifier attached
+	// to an outgoing URI.
+	bw.WriteString("Host: " + removeZone(config.Location.Host) + "\r\n")
 	bw.WriteString("Upgrade: websocket\r\n")
 	bw.WriteString("Connection: Upgrade\r\n")
 	nonce := generateNonce()
