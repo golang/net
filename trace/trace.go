@@ -84,7 +84,9 @@ import (
 // FOR DEBUGGING ONLY. This will slow down the program.
 var DebugUseAfterFinish = false
 
-// AuthRequest determines whether a specific request is permitted to load the /debug/requests page.
+// AuthRequest determines whether a specific request is permitted to load the
+// /debug/requests or /debug/events pages.
+//
 // It returns two bools; the first indicates whether the page may be viewed at all,
 // and the second indicates whether sensitive events will be shown.
 //
@@ -110,7 +112,7 @@ func init() {
 			http.Error(w, "not allowed", http.StatusUnauthorized)
 			return
 		}
-		render(w, req, sensitive)
+		Render(w, req, sensitive)
 	})
 	http.HandleFunc("/debug/events", func(w http.ResponseWriter, req *http.Request) {
 		any, sensitive := AuthRequest(req)
@@ -118,13 +120,15 @@ func init() {
 			http.Error(w, "not allowed", http.StatusUnauthorized)
 			return
 		}
-		renderEvents(w, req, sensitive)
+		RenderEvents(w, req, sensitive)
 	})
 }
 
-// render renders the HTML page.
+// Render renders the HTML page typically served at /debug/requests.
+// It does not do any auth checking; see AuthRequest for the default auth check
+// used by the handler registered on http.DefaultServeMux.
 // req may be nil.
-func render(w io.Writer, req *http.Request, sensitive bool) {
+func Render(w io.Writer, req *http.Request, sensitive bool) {
 	data := &struct {
 		Families         []string
 		ActiveTraceCount map[string]int

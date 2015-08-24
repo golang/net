@@ -43,7 +43,11 @@ var buckets = []bucket{
 	{24000 * time.Hour, "errors"},
 }
 
-func renderEvents(w http.ResponseWriter, req *http.Request, sensitive bool) {
+// RenderEvents renders the HTML page typically served at /debug/events.
+// It does not do any auth checking; see AuthRequest for the default auth check
+// used by the handler registered on http.DefaultServeMux.
+// req may be nil.
+func RenderEvents(w http.ResponseWriter, req *http.Request, sensitive bool) {
 	now := time.Now()
 	data := &struct {
 		Families []string // family names
@@ -78,19 +82,21 @@ func renderEvents(w http.ResponseWriter, req *http.Request, sensitive bool) {
 		}
 	}
 
-	var ok bool
-	data.Family, data.Bucket, ok = parseEventsArgs(req)
-	if !ok {
-		// No-op
-	} else {
-		data.EventLogs = getEventFamily(data.Family).Copy(now, buckets[data.Bucket].MaxErrAge)
-	}
-	if data.EventLogs != nil {
-		defer data.EventLogs.Free()
-		sort.Sort(data.EventLogs)
-	}
-	if exp, err := strconv.ParseBool(req.FormValue("exp")); err == nil {
-		data.Expanded = exp
+	if req != nil {
+		var ok bool
+		data.Family, data.Bucket, ok = parseEventsArgs(req)
+		if !ok {
+			// No-op
+		} else {
+			data.EventLogs = getEventFamily(data.Family).Copy(now, buckets[data.Bucket].MaxErrAge)
+		}
+		if data.EventLogs != nil {
+			defer data.EventLogs.Free()
+			sort.Sort(data.EventLogs)
+		}
+		if exp, err := strconv.ParseBool(req.FormValue("exp")); err == nil {
+			data.Expanded = exp
+		}
 	}
 
 	famMu.RLock()
