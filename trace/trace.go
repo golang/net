@@ -28,10 +28,10 @@ for each family.
 A trace.EventLog provides tracing for long-lived objects, such as RPC
 connections.
 
-        // A Fetcher fetches URL paths for a single domain.
+	// A Fetcher fetches URL paths for a single domain.
 	type Fetcher struct {
 		domain string
-		events *trace.EventLog
+		events trace.EventLog
 	}
 
 	func NewFetcher(domain string) *Fetcher {
@@ -42,17 +42,18 @@ connections.
 	}
 
 	func (f *Fetcher) Fetch(path string) (string, error) {
-		resp, err := http.Get("http://"+domain+"/"+path)
+		resp, err := http.Get("http://" + f.domain + "/" + path)
 		if err != nil {
 			f.events.Errorf("Get(%q) = %v", path, err)
-			return
+			return "", err
 		}
-		f.events.Printf("Get(%q) = %s", path, resp.Code)
+		f.events.Printf("Get(%q) = %s", path, resp.Status)
 		...
 	}
 
 	func (f *Fetcher) Close() error {
 		f.events.Finish()
+		return nil
 	}
 
 The /debug/events HTTP endpoint organizes the event logs by family and
