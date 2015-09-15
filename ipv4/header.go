@@ -23,7 +23,7 @@ var (
 
 const (
 	Version      = 4  // protocol version
-	HeaderLen    = 20 // header length without extension headers
+	HeaderLen    = 20 // header length without extension headers in number of bytes not number of 32-bit words as called out in the RFC
 	maxHeaderLen = 60 // sensible default, revisit if later RFCs define new usage of version and header length fields
 )
 
@@ -36,8 +36,8 @@ const (
 
 // A Header represents an IPv4 header.
 type Header struct {
-	Version  int         // protocol version
-	Len      int         // header length
+	Version  int         // protocol version, you can not manually set this as the constant is used in Marshal() below
+	Len      int         // header length in number bytes, this is used for sanity checking, the actual header length is computed in Marshal()
 	TOS      int         // type-of-service
 	TotalLen int         // packet total length
 	ID       int         // identification
