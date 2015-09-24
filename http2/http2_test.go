@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bradfitz/http2/hpack"
+	"golang.org/x/net/http2/hpack"
 )
 
 var knownFailing = flag.Bool("known_failing", false, "Run known-failing tests.")

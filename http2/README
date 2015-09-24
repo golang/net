@@ -10,7 +10,7 @@ Status:
 * The client work has just started but shares a lot of code
   is coming along much quicker.
 
-Docs are at https://godoc.org/github.com/bradfitz/http2
+Docs are at https://godoc.org/golang.org/x/net/http2
 
 Demo test server at https://http2.golang.org/
 

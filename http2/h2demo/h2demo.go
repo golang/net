@@ -31,7 +31,7 @@ import (
 
 	"camlistore.org/pkg/googlestorage"
 	"camlistore.org/pkg/singleflight"
-	"github.com/bradfitz/http2"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -51,7 +51,7 @@ func homeOldHTTP(w http.ResponseWriter, r *http.Request) {
    <li>Use Firefox Nightly or go to <b>about:config</b> and enable "network.http.spdy.enabled.http2draft"</li>
    <li>Use Google Chrome Canary and/or go to <b>chrome://flags/#enable-spdy4</b> to <i>Enable SPDY/4</i> (Chrome's name for HTTP/2)</li>
 </ul>
-<p>See code & instructions for connecting at <a href="https://github.com/bradfitz/http2">https://github.com/bradfitz/http2</a>.</p>
+<p>See code & instructions for connecting at <a href="https://github.com/golang/net/tree/master/http2">https://github.com/golang/net/tree/master/http2</a>.</p>
 
 </body></html>`)
 }
@@ -73,12 +73,12 @@ href="https://http2.github.io/">HTTP/2</a> demo & interop server.</p>
 <p>This server exists for others in the HTTP/2 community to test their HTTP/2 client implementations and point out flaws in our server.</p>
 
 <p> The code is currently at <a
-href="https://github.com/bradfitz/http2">github.com/bradfitz/http2</a>
+href="https://golang.org/x/net/http2">github.com/bradfitz/http2</a>
 but will move to the Go standard library at some point in the future
 (enabled by default, without users needing to change their code).</p>
 
 <p>Contact info: <i>bradfitz@golang.org</i>, or <a
-href="https://github.com/bradfitz/http2/issues">file a bug</a>.</p>
+href="https://golang.org/x/net/http2/issues">file a bug</a>.</p>
 
 <h2>Handlers for testing</h2>
 <ul>
