@@ -186,7 +186,7 @@ func (t *Transport) newClientConn(host, port, key string) (*clientConn, error) {
 		NextProtos:         []string{NextProtoTLS},
 		InsecureSkipVerify: t.InsecureTLSDial,
 	}
-	tconn, err := tls.Dial("tcp", host+":"+port, cfg)
+	tconn, err := tls.Dial("tcp", net.JoinHostPort(host, port), cfg)
 	if err != nil {
 		return nil, err
 	}
