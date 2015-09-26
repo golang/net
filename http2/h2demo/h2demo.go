@@ -287,7 +287,7 @@ func newGopherTilesHandler() http.Handler {
 				return
 			}
 		}
-		io.WriteString(w, "<html><body>")
+		io.WriteString(w, "<html><body onload='showtimes()'>")
 		fmt.Fprintf(w, "A grid of %d tiled images is below. Compare:<p>", xt*yt)
 		for _, ms := range []int{0, 30, 200, 1000} {
 			d := time.Duration(ms) * nanosPerMilli
@@ -305,7 +305,16 @@ func newGopherTilesHandler() http.Handler {
 			}
 			io.WriteString(w, "<br/>\n")
 		}
-		io.WriteString(w, "<hr><a href='/'>&lt;&lt Back to Go HTTP/2 demo server</a></body></html>")
+		io.WriteString(w, `<p><div id='loadtimes'></div></p>
+<script>
+function showtimes() {
+	var times = 'Times from connection start:<br>'
+	times += 'DOM loaded: ' + (window.performance.timing.domContentLoadedEventEnd - window.performance.timing.connectStart) + 'ms<br>'
+	times += 'DOM complete (images loaded): ' + (window.performance.timing.domComplete - window.performance.timing.connectStart) + 'ms<br>'
+	document.getElementById('loadtimes').innerHTML = times
+}
+</script>
+<hr><a href='/'>&lt;&lt Back to Go HTTP/2 demo server</a></body></html>`)
 	})
 }
 
