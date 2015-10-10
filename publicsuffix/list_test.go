@@ -414,3 +414,62 @@ func TestEffectiveTLDPlusOne(t *testing.T) {
 		}
 	}
 }
+
+var icannTLDTestCases = []struct {
+	domain, want string
+}{
+	// TLD with only 1 rule.
+	{"biz", "biz"},
+	{"domain.biz", "biz"},
+	{"b.domain.biz", "biz"},
+
+	// The relevant {kobe,kyoto}.jp rules are:
+	// jp
+	// *.kobe.jp
+	// !city.kobe.jp
+	// kyoto.jp
+	// ide.kyoto.jp
+	{"jp", "jp"},
+	{"kobe.jp", "jp"},
+	{"c.kobe.jp", "c.kobe.jp"},
+	{"b.c.kobe.jp", "c.kobe.jp"},
+	{"a.b.c.kobe.jp", "c.kobe.jp"},
+	{"city.kobe.jp", "kobe.jp"},
+	{"www.city.kobe.jp", "kobe.jp"},
+	{"kyoto.jp", "kyoto.jp"},
+	{"test.kyoto.jp", "kyoto.jp"},
+	{"ide.kyoto.jp", "ide.kyoto.jp"},
+	{"b.ide.kyoto.jp", "ide.kyoto.jp"},
+	{"a.b.ide.kyoto.jp", "ide.kyoto.jp"},
+
+	// Domain with a private public suffix should return the ICANN public suffix.
+	{"foo.compute-1.amazonaws.com", "com"},
+}
+
+func TestICANNTLD(t *testing.T) {
+	for _, tc := range icannTLDTestCases {
+		got, err := ICANNTLD(tc.domain)
+		if err != nil {
+			t.Errorf("%q: ICANNTLD returned error")
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.domain, got, tc.want)
+		}
+	}
+}
+
+var icannTLDErrTestCases = []string{
+	"",
+	"example",
+	"example.example",
+}
+
+func TestICANNTLDErr(t *testing.T) {
+	for _, tc := range icannTLDErrTestCases {
+		_, err := ICANNTLD(tc)
+		if err == nil {
+			t.Errorf("%q: expected err, got none", tc)
+		}
+	}
+}
