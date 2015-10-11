@@ -64,6 +64,10 @@ type Decoder struct {
 	dynTab dynamicTable
 	emit   func(f HeaderField)
 
+	headerListSize    int64
+	maxHeaderListSize uint32 // 0 means unlimited
+	hitLimit          bool
+
 	// buf is the unparsed buffer. It's only written to
 	// saveBuf if it was truncated in the middle of a header
 	// block. Because it's usually not owned, we can only
@@ -72,13 +76,24 @@ type Decoder struct {
 	saveBuf bytes.Buffer
 }
 
-func NewDecoder(maxSize uint32, emitFunc func(f HeaderField)) *Decoder {
+// NewDecoder returns a new decoder with the provided maximum dynamic
+// table size. The emitFunc will be called for each valid field
+// parsed.
+func NewDecoder(maxDynamicTableSize uint32, emitFunc func(f HeaderField)) *Decoder {
 	d := &Decoder{
 		emit: emitFunc,
 	}
-	d.dynTab.allowedMaxSize = maxSize
-	d.dynTab.setMaxSize(maxSize)
+	d.dynTab.allowedMaxSize = maxDynamicTableSize
+	d.dynTab.setMaxSize(maxDynamicTableSize)
 	return d
+}
+
+// SetMaxHeaderListSize sets the decoder's SETTINGS_MAX_HEADER_LIST_SIZE.
+// It should be set before any call to Write.
+// The default, 0, means unlimited.
+// If the limit is passed, calls to Write and Close will return ErrMaxHeaderListSize.
+func (d *Decoder) SetMaxHeaderListSize(v uint32) {
+	d.maxHeaderListSize = v
 }
 
 // TODO: add method *Decoder.Reset(maxSize, emitFunc) to let callers re-use Decoders and their
@@ -220,10 +235,15 @@ func (d *Decoder) DecodeFull(p []byte) ([]HeaderField, error) {
 	return hf, nil
 }
 
+var ErrMaxHeaderListSize = errors.New("hpack: max header list size exceeded")
+
 func (d *Decoder) Close() error {
 	if d.saveBuf.Len() > 0 {
 		d.saveBuf.Reset()
 		return DecodingError{errors.New("truncated headers")}
+	}
+	if d.hitLimit {
+		return ErrMaxHeaderListSize
 	}
 	return nil
 }
@@ -245,7 +265,7 @@ func (d *Decoder) Write(p []byte) (n int, err error) {
 		d.saveBuf.Reset()
 	}
 
-	for len(d.buf) > 0 {
+	for len(d.buf) > 0 && !d.hitLimit {
 		err = d.parseHeaderFieldRepr()
 		if err != nil {
 			if err == errNeedMore {
@@ -255,7 +275,9 @@ func (d *Decoder) Write(p []byte) (n int, err error) {
 			break
 		}
 	}
-
+	if err == nil && d.hitLimit {
+		err = ErrMaxHeaderListSize
+	}
 	return len(p), err
 }
 
@@ -323,7 +345,7 @@ func (d *Decoder) parseFieldIndexed() error {
 	if !ok {
 		return DecodingError{InvalidIndexError(idx)}
 	}
-	d.emit(HeaderField{Name: hf.Name, Value: hf.Value})
+	d.callEmit(HeaderField{Name: hf.Name, Value: hf.Value})
 	d.buf = buf
 	return nil
 }
@@ -358,8 +380,18 @@ func (d *Decoder) parseFieldLiteral(n uint8, it indexType) error {
 		d.dynTab.add(hf)
 	}
 	hf.Sensitive = it.sensitive()
-	d.emit(hf)
+	d.callEmit(hf)
 	return nil
+}
+
+func (d *Decoder) callEmit(hf HeaderField) {
+	const overheadPerField = 32 // per http2 section 6.5.2, etc
+	d.headerListSize += int64(len(hf.Name)+len(hf.Value)) + overheadPerField
+	if d.maxHeaderListSize != 0 && d.headerListSize > int64(d.maxHeaderListSize) {
+		d.hitLimit = true
+		return
+	}
+	d.emit(hf)
 }
 
 // (same invariants and behavior as parseHeaderFieldRepr)

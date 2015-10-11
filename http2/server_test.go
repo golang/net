@@ -2188,6 +2188,75 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 	}
 }
 
+// Issue 12843
+func TestServerDoS_MaxHeaderListSize(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {})
+	defer st.Close()
+
+	// shake hands
+	st.writePreface()
+	st.writeInitialSettings()
+	frameSize := defaultMaxReadFrameSize
+	var advHeaderListSize *uint32
+	st.wantSettings().ForeachSetting(func(s Setting) error {
+		switch s.ID {
+		case SettingMaxFrameSize:
+			if s.Val < minMaxFrameSize {
+				frameSize = minMaxFrameSize
+			} else if s.Val > maxFrameSize {
+				frameSize = maxFrameSize
+			} else {
+				frameSize = int(s.Val)
+			}
+		case SettingMaxHeaderListSize:
+			advHeaderListSize = &s.Val
+		}
+		return nil
+	})
+	st.writeSettingsAck()
+	st.wantSettingsAck()
+
+	if advHeaderListSize == nil {
+		t.Errorf("server didn't advertise a max header list size")
+	} else if *advHeaderListSize == 0 {
+		t.Errorf("server advertised a max header list size of 0")
+	}
+
+	st.encodeHeaderField(":method", "GET")
+	st.encodeHeaderField(":path", "/")
+	st.encodeHeaderField(":scheme", "https")
+	cookie := strings.Repeat("*", 4058)
+	st.encodeHeaderField("cookie", cookie)
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.headerBuf.Bytes(),
+		EndStream:     true,
+		EndHeaders:    false,
+	})
+
+	// Capture the short encoding of a duplicate ~4K cookie, now
+	// that we've already sent it once.
+	st.headerBuf.Reset()
+	st.encodeHeaderField("cookie", cookie)
+
+	// Now send 1MB of it.
+	const size = 1 << 20
+	b := bytes.Repeat(st.headerBuf.Bytes(), size/st.headerBuf.Len())
+	for len(b) > 0 {
+		chunk := b
+		if len(chunk) > frameSize {
+			chunk = chunk[:frameSize]
+		}
+		b = b[len(chunk):]
+		st.fr.WriteContinuation(1, len(b) == 0, chunk)
+	}
+
+	fr, err := st.fr.ReadFrame()
+	if err == nil {
+		t.Fatalf("want error; got unexpected frame: %#v", fr)
+	}
+}
+
 func BenchmarkServerGets(b *testing.B) {
 	b.ReportAllocs()
 

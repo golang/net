@@ -646,3 +646,41 @@ func dehex(s string) []byte {
 	}
 	return b
 }
+
+func TestMaxHeaderListSize(t *testing.T) {
+	tests := []struct {
+		fields  []HeaderField
+		max     int
+		wantErr bool
+	}{
+		// Plenty of space.
+		{
+			fields: []HeaderField{{Name: "foo", Value: "bar"}},
+			max:    500,
+		},
+		// Exactly right limit.
+		{
+			fields: []HeaderField{{Name: "foo", Value: "bar"}},
+			max:    len("foo") + len("bar") + 32,
+		},
+		// One byte too short.
+		{
+			fields:  []HeaderField{{Name: "foo", Value: "bar"}},
+			max:     len("foo") + len("bar") + 32 - 1,
+			wantErr: true,
+		},
+	}
+	for i, tt := range tests {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf)
+		for _, hf := range tt.fields {
+			enc.WriteField(hf)
+		}
+		dec := NewDecoder(8<<20, func(HeaderField) {})
+		dec.SetMaxHeaderListSize(uint32(tt.max))
+		_, err := dec.Write(buf.Bytes())
+		if (err != nil) != tt.wantErr {
+			t.Errorf("%d. err = %v; want err = %v", i, err, tt.wantErr)
+		}
+	}
+}

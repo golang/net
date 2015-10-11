@@ -220,6 +220,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc.inflow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
+	sc.hpackDecoder.SetMaxHeaderListSize(sc.maxHeaderListSize())
 
 	fr := NewFramer(sc.bw, c)
 	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
@@ -353,7 +354,7 @@ type serverConn struct {
 	streams               map[uint32]*stream
 	initialWindowSize     int32
 	headerTableSize       uint32
-	maxHeaderListSize     uint32            // zero means unknown (default)
+	peerMaxHeaderListSize uint32            // zero means unknown (default)
 	canonHeader           map[string]string // http2-lower-case -> Go-Canonical-Case
 	req                   requestParam      // non-zero while reading request headers
 	writingFrame          bool              // started write goroutine but haven't heard back on wroteFrameCh
@@ -368,6 +369,18 @@ type serverConn struct {
 	// Owned by the writeFrameAsync goroutine:
 	headerWriteBuf bytes.Buffer
 	hpackEncoder   *hpack.Encoder
+}
+
+func (sc *serverConn) maxHeaderListSize() uint32 {
+	n := sc.hs.MaxHeaderBytes
+	if n == 0 {
+		n = http.DefaultMaxHeaderBytes
+	}
+	// http2's count is in a slightly different unit and includes 32 bytes per pair.
+	// So, take the net/http.Server value and pad it up a bit, assuming 10 headers.
+	const perFieldOverhead = 32 // per http2 spec
+	const typicalHeaders = 10   // conservative
+	return uint32(n + typicalHeaders*perFieldOverhead)
 }
 
 // requestParam is the state of the next request, initialized over
@@ -602,6 +615,7 @@ func (sc *serverConn) serve() {
 		write: writeSettings{
 			{SettingMaxFrameSize, sc.srv.maxReadFrameSize()},
 			{SettingMaxConcurrentStreams, sc.advMaxStreams},
+			{SettingMaxHeaderListSize, sc.maxHeaderListSize()},
 
 			// TODO: more actual settings, notably
 			// SettingInitialWindowSize, but then we also
@@ -1100,7 +1114,7 @@ func (sc *serverConn) processSetting(s Setting) error {
 	case SettingMaxFrameSize:
 		sc.writeSched.maxFrameSize = s.Val
 	case SettingMaxHeaderListSize:
-		sc.maxHeaderListSize = s.Val
+		sc.peerMaxHeaderListSize = s.Val
 	default:
 		// Unknown setting: "An endpoint that receives a SETTINGS
 		// frame with any unknown or unsupported identifier MUST
