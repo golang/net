@@ -10,7 +10,7 @@ func pair(name, value string) HeaderField {
 }
 
 // http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-07#appendix-B
-var staticTable = []HeaderField{
+var staticTable = [...]HeaderField{
 	pair(":authority", ""), // index 1 (1-based)
 	pair(":method", "GET"),
 	pair(":method", "POST"),
