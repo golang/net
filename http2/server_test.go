@@ -34,6 +34,14 @@ import (
 
 var stderrVerbose = flag.Bool("stderr_verbose", false, "Mirror verbosity to stderr, unbuffered")
 
+func stderrv() io.Writer {
+	if *stderrVerbose {
+		return os.Stderr
+	}
+
+	return ioutil.Discard
+}
+
 type serverTester struct {
 	cc        net.Conn // client conn
 	t         testing.TB
@@ -106,13 +114,8 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 
-	var stderrv io.Writer = ioutil.Discard
-	if *stderrVerbose {
-		stderrv = os.Stderr
-	}
-
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
-	ts.Config.ErrorLog = log.New(io.MultiWriter(stderrv, twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
+	ts.Config.ErrorLog = log.New(io.MultiWriter(stderrv(), twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
 	ts.StartTLS()
 
 	if VerboseLogs {
@@ -124,7 +127,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		st.sc = v
 		st.sc.testHookCh = make(chan func())
 	}
-	log.SetOutput(io.MultiWriter(stderrv, twriter{t: t, st: st}))
+	log.SetOutput(io.MultiWriter(stderrv(), twriter{t: t, st: st}))
 	if !onlyServer {
 		cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
 		if err != nil {
@@ -2328,3 +2331,52 @@ func BenchmarkServerPosts(b *testing.B) {
 		}
 	}
 }
+
+// go-fuzz bug, originally reported at https://github.com/bradfitz/http2/issues/53
+// Verify we don't hang.
+func TestIssue53(t *testing.T) {
+	const data = "PRI * HTTP/2.0\r\n\r\nSM" +
+		"\r\n\r\n\x00\x00\x00\x01\ainfinfin\ad"
+	s := &http.Server{
+		ErrorLog: log.New(io.MultiWriter(stderrv(), twriter{t: t}), "", log.LstdFlags),
+	}
+	s2 := &Server{MaxReadFrameSize: 1 << 16, PermitProhibitedCipherSuites: true}
+	c := &issue53Conn{[]byte(data), false, false}
+	s2.handleConn(s, c, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte("hello"))
+	}))
+	if !c.closed {
+		t.Fatal("connection is not closed")
+	}
+}
+
+type issue53Conn struct {
+	data    []byte
+	closed  bool
+	written bool
+}
+
+func (c *issue53Conn) Read(b []byte) (n int, err error) {
+	if len(c.data) == 0 {
+		return 0, io.EOF
+	}
+	n = copy(b, c.data)
+	c.data = c.data[n:]
+	return
+}
+
+func (c *issue53Conn) Write(b []byte) (n int, err error) {
+	c.written = true
+	return len(b), nil
+}
+
+func (c *issue53Conn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func (c *issue53Conn) LocalAddr() net.Addr                { return &net.TCPAddr{net.IP{127, 0, 0, 1}, 49706, ""} }
+func (c *issue53Conn) RemoteAddr() net.Addr               { return &net.TCPAddr{net.IP{127, 0, 0, 1}, 49706, ""} }
+func (c *issue53Conn) SetDeadline(t time.Time) error      { return nil }
+func (c *issue53Conn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *issue53Conn) SetWriteDeadline(t time.Time) error { return nil }
