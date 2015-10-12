@@ -2251,9 +2251,18 @@ func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 		st.fr.WriteContinuation(1, len(b) == 0, chunk)
 	}
 
-	fr, err := st.fr.ReadFrame()
-	if err == nil {
-		t.Fatalf("want error; got unexpected frame: %#v", fr)
+	h := st.wantHeaders()
+	if !h.HeadersEnded() {
+		t.Fatalf("Got HEADERS without END_HEADERS set: %v", h)
+	}
+	headers := decodeHeader(t, h.HeaderBlockFragment())
+	want := [][2]string{
+		{":status", "431"},
+		{"content-type", "text/html; charset=utf-8"},
+		{"content-length", "63"},
+	}
+	if !reflect.DeepEqual(headers, want) {
+		t.Errorf("Headers mismatch.\n got: %q\nwant: %q\n", headers, want)
 	}
 }
 

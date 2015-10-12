@@ -220,7 +220,6 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc.inflow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
-	sc.hpackDecoder.SetMaxHeaderListSize(sc.maxHeaderListSize())
 
 	fr := NewFramer(sc.bw, c)
 	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
@@ -373,7 +372,7 @@ type serverConn struct {
 
 func (sc *serverConn) maxHeaderListSize() uint32 {
 	n := sc.hs.MaxHeaderBytes
-	if n == 0 {
+	if n <= 0 {
 		n = http.DefaultMaxHeaderBytes
 	}
 	// http2's count is in a slightly different unit and includes 32 bytes per pair.
@@ -393,8 +392,9 @@ type requestParam struct {
 	header            http.Header
 	method, path      string
 	scheme, authority string
-	sawRegularHeader  bool // saw a non-pseudo header already
-	invalidHeader     bool // an invalid header was seen
+	sawRegularHeader  bool  // saw a non-pseudo header already
+	invalidHeader     bool  // an invalid header was seen
+	headerListSize    int64 // actually uint32, but easier math this way
 }
 
 // stream represents a stream. This is the minimal metadata needed by
@@ -515,6 +515,11 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	default:
 		sc.req.sawRegularHeader = true
 		sc.req.header.Add(sc.canonicalHeader(f.Name), f.Value)
+		const headerFieldOverhead = 32 // per spec
+		sc.req.headerListSize += int64(len(f.Name)) + int64(len(f.Value)) + headerFieldOverhead
+		if sc.req.headerListSize > int64(sc.maxHeaderListSize()) {
+			sc.hpackDecoder.SetEmitEnabled(false)
+		}
 	}
 }
 
@@ -1247,6 +1252,7 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		stream: st,
 		header: make(http.Header),
 	}
+	sc.hpackDecoder.SetEmitEnabled(true)
 	return sc.processHeaderBlockFragment(st, f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
@@ -1298,7 +1304,14 @@ func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bo
 	}
 	st.body = req.Body.(*requestBody).pipe // may be nil
 	st.declBodyBytes = req.ContentLength
-	go sc.runHandler(rw, req)
+
+	handler := sc.handler.ServeHTTP
+	if !sc.hpackDecoder.EmitEnabled() {
+		// Their header list was too long. Send a 431 error.
+		handler = handleHeaderListTooLong
+	}
+
+	go sc.runHandler(rw, req, handler)
 	return nil
 }
 
@@ -1438,10 +1451,20 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 }
 
 // Run on its own goroutine.
-func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request) {
+func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) {
 	defer rw.handlerDone()
 	// TODO: catch panics like net/http.Server
-	sc.handler.ServeHTTP(rw, req)
+	handler(rw, req)
+}
+
+func handleHeaderListTooLong(w http.ResponseWriter, r *http.Request) {
+	// 10.5.1 Limits on Header Block Size:
+	// .. "A server that receives a larger header block than it is
+	// willing to handle can send an HTTP 431 (Request Header Fields Too
+	// Large) status code"
+	const statusRequestHeaderFieldsTooLarge = 431 // only in Go 1.6+
+	w.WriteHeader(statusRequestHeaderFieldsTooLarge)
+	io.WriteString(w, "<h1>HTTP Error 431</h1><p>Request Header Field(s) Too Large</p>")
 }
 
 // called from handler goroutines.
