@@ -125,7 +125,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		st.scMu.Lock()
 		defer st.scMu.Unlock()
 		st.sc = v
-		st.sc.testHookCh = make(chan func())
+		st.sc.testHookCh = make(chan func(int))
 	}
 	log.SetOutput(io.MultiWriter(stderrv(), twriter{t: t, st: st}))
 	if !onlyServer {
@@ -152,7 +152,7 @@ func (st *serverTester) addLogFilter(phrase string) {
 
 func (st *serverTester) stream(id uint32) *stream {
 	ch := make(chan *stream, 1)
-	st.sc.testHookCh <- func() {
+	st.sc.testHookCh <- func(int) {
 		ch <- st.sc.streams[id]
 	}
 	return <-ch
@@ -160,11 +160,37 @@ func (st *serverTester) stream(id uint32) *stream {
 
 func (st *serverTester) streamState(id uint32) streamState {
 	ch := make(chan streamState, 1)
-	st.sc.testHookCh <- func() {
+	st.sc.testHookCh <- func(int) {
 		state, _ := st.sc.state(id)
 		ch <- state
 	}
 	return <-ch
+}
+
+// loopNum reports how many times this conn's select loop has gone around.
+func (st *serverTester) loopNum() int {
+	lastc := make(chan int, 1)
+	st.sc.testHookCh <- func(loopNum int) {
+		lastc <- loopNum
+	}
+	return <-lastc
+}
+
+// awaitIdle heuristically awaits for the server conn's select loop to be idle.
+// The heuristic is that the server connection's serve loop must schedule
+// 50 times in a row without any channel sends or receives occuring.
+func (st *serverTester) awaitIdle() {
+	remain := 50
+	last := st.loopNum()
+	for remain > 0 {
+		n := st.loopNum()
+		if n == last+1 {
+			remain--
+		} else {
+			remain = 50
+		}
+		last = n
+	}
 }
 
 func (st *serverTester) Close() {
@@ -1026,6 +1052,56 @@ func TestServer_RSTStream_Unblocks_Read(t *testing.T) {
 			}
 		},
 	)
+}
+
+func TestServer_RSTStream_Unblocks_Header_Write(t *testing.T) {
+	// Run this test a bunch, because it doesn't always
+	// deadlock. But with a bunch, it did.
+	n := 50
+	if testing.Short() {
+		n = 5
+	}
+	for i := 0; i < n; i++ {
+		testServer_RSTStream_Unblocks_Header_Write(t)
+	}
+}
+
+func testServer_RSTStream_Unblocks_Header_Write(t *testing.T) {
+	inHandler := make(chan bool, 1)
+	unblockHandler := make(chan bool, 1)
+	headerWritten := make(chan bool, 1)
+	wroteRST := make(chan bool, 1)
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		inHandler <- true
+		<-wroteRST
+		w.Header().Set("foo", "bar")
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		headerWritten <- true
+		<-unblockHandler
+	})
+	defer st.Close()
+
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(":method", "POST"),
+		EndStream:     false, // keep it open
+		EndHeaders:    true,
+	})
+	<-inHandler
+	if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
+		t.Fatal(err)
+	}
+	wroteRST <- true
+	st.awaitIdle()
+	select {
+	case <-headerWritten:
+	case <-time.After(2 * time.Second):
+		t.Error("timeout waiting for header write")
+	}
+	unblockHandler <- true
 }
 
 func TestServer_DeadConn_Unblocks_Read(t *testing.T) {
