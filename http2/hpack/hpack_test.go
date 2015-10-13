@@ -10,11 +10,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStaticTable(t *testing.T) {
@@ -582,6 +584,77 @@ func TestAppendHuffmanString(t *testing.T) {
 	}
 }
 
+func TestHuffmanRoundtripStress(t *testing.T) {
+	const Len = 50 // of uncompressed string
+	input := make([]byte, Len)
+	var output bytes.Buffer
+	var huff []byte
+
+	n := 5000
+	if testing.Short() {
+		n = 100
+	}
+	seed := time.Now().UnixNano()
+	t.Logf("Seed = %v", seed)
+	src := rand.New(rand.NewSource(seed))
+	var encSize int64
+	for i := 0; i < n; i++ {
+		for l := range input {
+			input[l] = byte(src.Intn(256))
+		}
+		huff = AppendHuffmanString(huff[:0], string(input))
+		encSize += int64(len(huff))
+		output.Reset()
+		if err := huffmanDecode(&output, huff); err != nil {
+			t.Errorf("Failed to decode %q -> %q -> error %v", input, huff, err)
+			continue
+		}
+		if !bytes.Equal(output.Bytes(), input) {
+			t.Errorf("Roundtrip failure on %q -> %q -> %q", input, huff, output.Bytes())
+		}
+	}
+	t.Logf("Compressed size of original: %0.02f%% (%v -> %v)", 100*(float64(encSize)/(Len*float64(n))), Len*n, encSize)
+}
+
+func TestHuffmanDecodeFuzz(t *testing.T) {
+	const Len = 50 // of compressed
+	var buf, zbuf bytes.Buffer
+
+	n := 5000
+	if testing.Short() {
+		n = 100
+	}
+	seed := time.Now().UnixNano()
+	t.Logf("Seed = %v", seed)
+	src := rand.New(rand.NewSource(seed))
+	numFail := 0
+	for i := 0; i < n; i++ {
+		zbuf.Reset()
+		if i == 0 {
+			// Start with at least one invalid one.
+			zbuf.WriteString("00\x91\xff\xff\xff\xff\xc8")
+		} else {
+			for l := 0; l < Len; l++ {
+				zbuf.WriteByte(byte(src.Intn(256)))
+			}
+		}
+
+		buf.Reset()
+		if err := huffmanDecode(&buf, zbuf.Bytes()); err != nil {
+			if err == ErrInvalidHuffman {
+				numFail++
+				continue
+			}
+			t.Errorf("Failed to decode %q: %v", zbuf.Bytes(), err)
+			continue
+		}
+	}
+	t.Logf("%0.02f%% are invalid (%d / %d)", 100*float64(numFail)/float64(n), numFail, n)
+	if numFail < 1 {
+		t.Error("expected at least one invalid huffman encoding (test starts with one)")
+	}
+}
+
 func TestReadVarInt(t *testing.T) {
 	type res struct {
 		i        uint64
@@ -634,6 +707,17 @@ func TestReadVarInt(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("readVarInt(%d, %v ~ %x) = %+v; want %+v", tt.n, tt.p, tt.p, got, tt.want)
 		}
+	}
+}
+
+// Fuzz crash, originally reported at https://github.com/bradfitz/http2/issues/56
+func TestHuffmanFuzzCrash(t *testing.T) {
+	got, err := HuffmanDecodeToString([]byte("00\x91\xff\xff\xff\xff\xc8"))
+	if got != "" {
+		t.Errorf("Got %q; want empty string", got)
+	}
+	if err != ErrInvalidHuffman {
+		t.Errorf("Err = %v; want ErrInvalidHuffman", err)
 	}
 }
 

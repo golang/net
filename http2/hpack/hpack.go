@@ -473,12 +473,10 @@ func readString(p []byte, wantStr bool) (s string, remain []byte, err error) {
 	}
 
 	if wantStr {
-		// TODO: optimize this garbage:
-		var buf bytes.Buffer
-		if _, err := HuffmanDecode(&buf, p[:strLen]); err != nil {
+		s, err = HuffmanDecodeToString(p[:strLen])
+		if err != nil {
 			return "", nil, err
 		}
-		s = buf.String()
 	}
 	return s, p[strLen:], nil
 }
