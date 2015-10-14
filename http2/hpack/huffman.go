@@ -22,7 +22,7 @@ func HuffmanDecode(w io.Writer, v []byte) (int, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
-	if err := huffmanDecode(buf, v); err != nil {
+	if err := huffmanDecode(buf, 0, v); err != nil {
 		return 0, err
 	}
 	return w.Write(buf.Bytes())
@@ -33,7 +33,7 @@ func HuffmanDecodeToString(v []byte) (string, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
-	if err := huffmanDecode(buf, v); err != nil {
+	if err := huffmanDecode(buf, 0, v); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
@@ -43,7 +43,10 @@ func HuffmanDecodeToString(v []byte) (string, error) {
 // Huffman-encoded strings.
 var ErrInvalidHuffman = errors.New("hpack: invalid Huffman-encoded data")
 
-func huffmanDecode(buf *bytes.Buffer, v []byte) error {
+// huffmanDecode decodes v to buf.
+// If maxLen is greater than 0, attempts to write more to buf than
+// maxLen bytes will return ErrStringLength.
+func huffmanDecode(buf *bytes.Buffer, maxLen int, v []byte) error {
 	n := rootHuffmanNode
 	cur, nbits := uint(0), uint8(0)
 	for _, b := range v {
@@ -56,6 +59,9 @@ func huffmanDecode(buf *bytes.Buffer, v []byte) error {
 				return ErrInvalidHuffman
 			}
 			if n.children == nil {
+				if maxLen != 0 && buf.Len() == maxLen {
+					return ErrStringLength
+				}
 				buf.WriteByte(n.sym)
 				nbits -= n.codeLen
 				n = rootHuffmanNode

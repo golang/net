@@ -583,6 +583,29 @@ func TestAppendHuffmanString(t *testing.T) {
 	}
 }
 
+func TestHuffmanMaxStrLen(t *testing.T) {
+	const msg = "Some string"
+	huff := AppendHuffmanString(nil, msg)
+
+	testGood := func(max int) {
+		var out bytes.Buffer
+		if err := huffmanDecode(&out, max, huff); err != nil {
+			t.Errorf("For maxLen=%d, unexpected error: %v", max, err)
+		}
+		if out.String() != msg {
+			t.Errorf("For maxLen=%d, out = %q; want %q", max, out.String(), msg)
+		}
+	}
+	testGood(0)
+	testGood(len(msg))
+	testGood(len(msg) + 1)
+
+	var out bytes.Buffer
+	if err := huffmanDecode(&out, len(msg)-1, huff); err != ErrStringLength {
+		t.Errorf("err = %v; want ErrStringLength", err)
+	}
+}
+
 func TestHuffmanRoundtripStress(t *testing.T) {
 	const Len = 50 // of uncompressed string
 	input := make([]byte, Len)
@@ -604,7 +627,7 @@ func TestHuffmanRoundtripStress(t *testing.T) {
 		huff = AppendHuffmanString(huff[:0], string(input))
 		encSize += int64(len(huff))
 		output.Reset()
-		if err := huffmanDecode(&output, huff); err != nil {
+		if err := huffmanDecode(&output, 0, huff); err != nil {
 			t.Errorf("Failed to decode %q -> %q -> error %v", input, huff, err)
 			continue
 		}
@@ -639,7 +662,7 @@ func TestHuffmanDecodeFuzz(t *testing.T) {
 		}
 
 		buf.Reset()
-		if err := huffmanDecode(&buf, zbuf.Bytes()); err != nil {
+		if err := huffmanDecode(&buf, 0, zbuf.Bytes()); err != nil {
 			if err == ErrInvalidHuffman {
 				numFail++
 				continue

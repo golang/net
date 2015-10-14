@@ -95,8 +95,8 @@ func NewDecoder(maxDynamicTableSize uint32, emitFunc func(f HeaderField)) *Decod
 var ErrStringLength = errors.New("hpack: string too long")
 
 // SetMaxStringLength sets the maximum size of a HeaderField name or
-// value string, after compression. If a string exceeds this length,
-// Write will return ErrStringLength.
+// value string. If a string exceeds this length (even after any
+// decompression), Write will return ErrStringLength.
 // A value of 0 means unlimited and is the default from NewDecoder.
 func (d *Decoder) SetMaxStringLength(n int) {
 	d.maxStrLen = n
@@ -281,16 +281,20 @@ func (d *Decoder) Write(p []byte) (n int, err error) {
 
 	for len(d.buf) > 0 {
 		err = d.parseHeaderFieldRepr()
-		if err != nil {
-			if err == errNeedMore {
-				err = nil
-				const varIntOverhead = 8 // conservative
-				if d.maxStrLen != 0 &&
-					int64(len(d.buf))+int64(d.saveBuf.Len()) > 2*(int64(d.maxStrLen)+varIntOverhead) {
-					return 0, ErrStringLength
-				}
-				d.saveBuf.Write(d.buf)
+		if err == errNeedMore {
+			// Extra paranoia, making sure saveBuf won't
+			// get too large.  All the varint and string
+			// reading code earlier should already catch
+			// overlong things and return ErrStringLength,
+			// but keep this as a last resort.
+			const varIntOverhead = 8 // conservative
+			if d.maxStrLen != 0 && int64(len(d.buf)) > 2*(int64(d.maxStrLen)+varIntOverhead) {
+				return 0, ErrStringLength
 			}
+			d.saveBuf.Write(d.buf)
+			return len(p), nil
+		}
+		if err != nil {
 			break
 		}
 	}
@@ -382,12 +386,12 @@ func (d *Decoder) parseFieldLiteral(n uint8, it indexType) error {
 		}
 		hf.Name = ihf.Name
 	} else {
-		hf.Name, buf, err = readString(buf, wantStr)
+		hf.Name, buf, err = d.readString(buf, wantStr)
 		if err != nil {
 			return err
 		}
 	}
-	hf.Value, buf, err = readString(buf, wantStr)
+	hf.Value, buf, err = d.readString(buf, wantStr)
 	if err != nil {
 		return err
 	}
@@ -477,7 +481,7 @@ func readVarInt(n byte, p []byte) (i uint64, remain []byte, err error) {
 // strings past the MAX_HEADER_LIST_SIZE are ignored, but the server
 // is returning an error anyway, and because they're not indexed, the error
 // won't affect the decoding state.
-func readString(p []byte, wantStr bool) (s string, remain []byte, err error) {
+func (d *Decoder) readString(p []byte, wantStr bool) (s string, remain []byte, err error) {
 	if len(p) == 0 {
 		return "", p, errNeedMore
 	}
@@ -485,6 +489,9 @@ func readString(p []byte, wantStr bool) (s string, remain []byte, err error) {
 	strLen, p, err := readVarInt(7, p)
 	if err != nil {
 		return "", p, err
+	}
+	if d.maxStrLen != 0 && strLen > uint64(d.maxStrLen) {
+		return "", nil, ErrStringLength
 	}
 	if uint64(len(p)) < strLen {
 		return "", p, errNeedMore
@@ -497,10 +504,15 @@ func readString(p []byte, wantStr bool) (s string, remain []byte, err error) {
 	}
 
 	if wantStr {
-		s, err = HuffmanDecodeToString(p[:strLen])
-		if err != nil {
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset() // don't trust others
+		defer bufPool.Put(buf)
+		if err := huffmanDecode(buf, d.maxStrLen, p[:strLen]); err != nil {
+			buf.Reset()
 			return "", nil, err
 		}
+		s = buf.String()
+		buf.Reset() // be nice to GC
 	}
 	return s, p[strLen:], nil
 }
