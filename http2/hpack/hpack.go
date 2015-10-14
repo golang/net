@@ -65,12 +65,16 @@ type Decoder struct {
 	emit   func(f HeaderField)
 
 	emitEnabled bool // whether calls to emit are enabled
+	maxStrLen   int  // 0 means unlimited
 
 	// buf is the unparsed buffer. It's only written to
 	// saveBuf if it was truncated in the middle of a header
 	// block. Because it's usually not owned, we can only
 	// process it under Write.
-	buf     []byte // usually not owned
+	buf []byte // not owned; only valid during Write
+
+	// saveBuf is previous data passed to Write which we weren't able
+	// to fully parse before. Unlike buf, we own this data.
 	saveBuf bytes.Buffer
 }
 
@@ -85,6 +89,18 @@ func NewDecoder(maxDynamicTableSize uint32, emitFunc func(f HeaderField)) *Decod
 	d.dynTab.allowedMaxSize = maxDynamicTableSize
 	d.dynTab.setMaxSize(maxDynamicTableSize)
 	return d
+}
+
+// ErrStringLength is returned by Decoder.Write when the max string length
+// (as configured by Decoder.SetMaxStringLength) would be violated.
+var ErrStringLength = errors.New("hpack: string too long")
+
+// SetMaxStringLength sets the maximum size of a HeaderField name or
+// value string, after compression. If a string exceeds this length,
+// Write will return ErrStringLength.
+// A value of 0 means unlimited and is the default from NewDecoder.
+func (d *Decoder) SetMaxStringLength(n int) {
+	d.maxStrLen = n
 }
 
 // SetEmitEnabled controls whether the emitFunc provided to NewDecoder
@@ -269,6 +285,11 @@ func (d *Decoder) Write(p []byte) (n int, err error) {
 		if err != nil {
 			if err == errNeedMore {
 				err = nil
+				const varIntOverhead = 8 // conservative
+				if d.maxStrLen != 0 &&
+					int64(len(d.buf))+int64(d.saveBuf.Len()) > 2*(int64(d.maxStrLen)+varIntOverhead) {
+					return 0, ErrStringLength
+				}
 				d.saveBuf.Write(d.buf)
 			}
 			break
@@ -341,9 +362,8 @@ func (d *Decoder) parseFieldIndexed() error {
 	if !ok {
 		return DecodingError{InvalidIndexError(idx)}
 	}
-	d.callEmit(HeaderField{Name: hf.Name, Value: hf.Value})
 	d.buf = buf
-	return nil
+	return d.callEmit(HeaderField{Name: hf.Name, Value: hf.Value})
 }
 
 // (same invariants and behavior as parseHeaderFieldRepr)
@@ -377,14 +397,19 @@ func (d *Decoder) parseFieldLiteral(n uint8, it indexType) error {
 		d.dynTab.add(hf)
 	}
 	hf.Sensitive = it.sensitive()
-	d.callEmit(hf)
-	return nil
+	return d.callEmit(hf)
 }
 
-func (d *Decoder) callEmit(hf HeaderField) {
+func (d *Decoder) callEmit(hf HeaderField) error {
+	if d.maxStrLen != 0 {
+		if len(hf.Name) > d.maxStrLen || len(hf.Value) > d.maxStrLen {
+			return ErrStringLength
+		}
+	}
 	if d.emitEnabled {
 		d.emit(hf)
 	}
+	return nil
 }
 
 // (same invariants and behavior as parseHeaderFieldRepr)

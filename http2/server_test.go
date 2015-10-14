@@ -2345,6 +2345,75 @@ func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 	}
 }
 
+func TestCompressionErrorOnWrite(t *testing.T) {
+	const maxStrLen = 8 << 10
+	var serverConfig *http.Server
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		// No response body.
+	}, func(ts *httptest.Server) {
+		serverConfig = ts.Config
+		serverConfig.MaxHeaderBytes = maxStrLen
+	})
+	defer st.Close()
+	st.greet()
+
+	maxAllowed := st.sc.maxHeaderStringLen()
+
+	// Crank this up, now that we have a conn connected with the
+	// hpack.Decoder's max string length set has been initialized
+	// from the earlier low ~8K value. We want this higher so don't
+	// hit the max header list size. We only want to test hitting
+	// the max string size.
+	serverConfig.MaxHeaderBytes = 1 << 20
+
+	// First a request with a header that's exactly the max allowed size.
+	hbf := st.encodeHeader("foo", strings.Repeat("a", maxAllowed))
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: hbf,
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	h := st.wantHeaders()
+	if !h.HeadersEnded() || !h.StreamEnded() {
+		t.Errorf("Unexpected HEADER frame %v", h)
+	}
+
+	// And now send one that's just one byte too big.
+	hbf = st.encodeHeader("bar", strings.Repeat("b", maxAllowed+1))
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      3,
+		BlockFragment: hbf,
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	ga := st.wantGoAway()
+	if ga.ErrCode != ErrCodeCompression {
+		t.Errorf("GOAWAY err = %v; want ErrCodeCompression", ga.ErrCode)
+	}
+}
+
+func TestCompressionErrorOnClose(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		// No response body.
+	})
+	defer st.Close()
+	st.greet()
+
+	hbf := st.encodeHeader("foo", "bar")
+	hbf = hbf[:len(hbf)-1] // truncate one byte from the end, so hpack.Decoder.Close fails.
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: hbf,
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	ga := st.wantGoAway()
+	if ga.ErrCode != ErrCodeCompression {
+		t.Errorf("GOAWAY err = %v; want ErrCodeCompression", ga.ErrCode)
+	}
+}
+
 func BenchmarkServerGets(b *testing.B) {
 	b.ReportAllocs()
 

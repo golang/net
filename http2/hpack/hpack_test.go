@@ -756,3 +756,36 @@ func TestEmitEnabled(t *testing.T) {
 		t.Errorf("emit enabled = true; want false")
 	}
 }
+
+func TestSaveBufLimit(t *testing.T) {
+	const maxStr = 1 << 10
+	var got []HeaderField
+	dec := NewDecoder(initialHeaderTableSize, func(hf HeaderField) {
+		got = append(got, hf)
+	})
+	dec.SetMaxStringLength(maxStr)
+	var frag []byte
+	frag = append(frag[:0], encodeTypeByte(false, false))
+	frag = appendVarInt(frag, 7, 3)
+	frag = append(frag, "foo"...)
+	frag = appendVarInt(frag, 7, 3)
+	frag = append(frag, "bar"...)
+
+	if _, err := dec.Write(frag); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []HeaderField{{Name: "foo", Value: "bar"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("After small writes, got %v; want %v", got, want)
+	}
+
+	frag = append(frag[:0], encodeTypeByte(false, false))
+	frag = appendVarInt(frag, 7, maxStr*3)
+	frag = append(frag, make([]byte, maxStr*3)...)
+
+	_, err := dec.Write(frag)
+	if err != ErrStringLength {
+		t.Fatalf("Write error = %v; want ErrStringLength", err)
+	}
+}

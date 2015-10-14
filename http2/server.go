@@ -219,6 +219,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc.inflow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
 	sc.hpackDecoder = hpack.NewDecoder(initialHeaderTableSize, sc.onNewHeaderField)
+	sc.hpackDecoder.SetMaxStringLength(sc.maxHeaderStringLen())
 
 	fr := NewFramer(sc.bw, c)
 	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
@@ -356,6 +357,16 @@ type serverConn struct {
 	// Owned by the writeFrameAsync goroutine:
 	headerWriteBuf bytes.Buffer
 	hpackEncoder   *hpack.Encoder
+}
+
+func (sc *serverConn) maxHeaderStringLen() int {
+	v := sc.maxHeaderListSize()
+	if uint32(int(v)) == v {
+		return int(v)
+	}
+	// They had a crazy big number for MaxHeaderBytes anyway,
+	// so give them unlimited header lengths:
+	return 0
 }
 
 func (sc *serverConn) maxHeaderListSize() uint32 {
@@ -1275,15 +1286,13 @@ func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 func (sc *serverConn) processHeaderBlockFragment(st *stream, frag []byte, end bool) error {
 	sc.serveG.check()
 	if _, err := sc.hpackDecoder.Write(frag); err != nil {
-		// TODO: convert to stream error I assume?
-		return err
+		return ConnectionError(ErrCodeCompression)
 	}
 	if !end {
 		return nil
 	}
 	if err := sc.hpackDecoder.Close(); err != nil {
-		// TODO: convert to stream error I assume?
-		return err
+		return ConnectionError(ErrCodeCompression)
 	}
 	defer sc.resetPendingRequest()
 	if sc.curOpenStreams > sc.advMaxStreams {
