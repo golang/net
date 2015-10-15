@@ -130,12 +130,33 @@ func (s *Server) maxConcurrentStreams() uint32 {
 // The configuration conf may be nil.
 //
 // ConfigureServer must be called before s begins serving.
-func ConfigureServer(s *http.Server, conf *Server) {
+func ConfigureServer(s *http.Server, conf *Server) error {
 	if conf == nil {
 		conf = new(Server)
 	}
+
 	if s.TLSConfig == nil {
 		s.TLSConfig = new(tls.Config)
+	} else if s.TLSConfig.CipherSuites != nil {
+		// If they already provided a CipherSuite list, return
+		// an error if it has a bad order or is missing
+		// ECDHE_RSA_WITH_AES_128_GCM_SHA256.
+		const requiredCipher = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+		haveRequired := false
+		sawBad := false
+		for i, cs := range s.TLSConfig.CipherSuites {
+			if cs == requiredCipher {
+				haveRequired = true
+			}
+			if isBadCipher(cs) {
+				sawBad = true
+			} else if sawBad {
+				return fmt.Errorf("http2: TLSConfig.CipherSuites index %d contains an HTTP/2-approved cipher suite (%#04x), but it comes after unapproved cipher suites. With this configuration, clients that don't support previous, approved cipher suites may be given an unapproved one and reject the connection.", i, cs)
+			}
+		}
+		if !haveRequired {
+			return fmt.Errorf("http2: TLSConfig.CipherSuites is missing HTTP/2-required TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+		}
 	}
 
 	// Note: not setting MinVersion to tls.VersionTLS12,
@@ -145,22 +166,7 @@ func ConfigureServer(s *http.Server, conf *Server) {
 	// during next-proto selection, but using TLS <1.2 with
 	// HTTP/2 is still the client's bug.
 
-	// Be sure we advertise tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-	// at least.
-	// TODO: enable PreferServerCipherSuites?
-	if s.TLSConfig.CipherSuites != nil {
-		const requiredCipher = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-		haveRequired := false
-		for _, v := range s.TLSConfig.CipherSuites {
-			if v == requiredCipher {
-				haveRequired = true
-				break
-			}
-		}
-		if !haveRequired {
-			s.TLSConfig.CipherSuites = append(s.TLSConfig.CipherSuites, requiredCipher)
-		}
-	}
+	s.TLSConfig.PreferServerCipherSuites = true
 
 	haveNPN := false
 	for _, p := range s.TLSConfig.NextProtos {
@@ -187,6 +193,7 @@ func ConfigureServer(s *http.Server, conf *Server) {
 	}
 	s.TLSNextProto[NextProtoTLS] = protoHandler
 	s.TLSNextProto["h2-14"] = protoHandler // temporary; see above.
+	return nil
 }
 
 func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
