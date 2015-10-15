@@ -443,6 +443,15 @@ func (sc *serverConn) state(streamID uint32) (streamState, *stream) {
 	return stateIdle, nil
 }
 
+// setConnState calls the net/http ConnState hook for this connection, if configured.
+// Note that the net/http package does StateNew and StateClosed for us.
+// There is currently no plan for StateHijacked or hijacking HTTP/2 connections.
+func (sc *serverConn) setConnState(state http.ConnState) {
+	if sc.hs.ConnState != nil {
+		sc.hs.ConnState(sc.conn, state)
+	}
+}
+
 func (sc *serverConn) vlogf(format string, args ...interface{}) {
 	if VerboseLogs {
 		sc.logf(format, args...)
@@ -640,6 +649,12 @@ func (sc *serverConn) serve() {
 		sc.condlogf(err, "error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
 		return
 	}
+	// Now that we've got the preface, get us out of the
+	// "StateNew" state.  We can't go directly to idle, though.
+	// Active means we read some data and anticipate a request. We'll
+	// do another Active when we get a HEADERS frame.
+	sc.setConnState(http.StateActive)
+	sc.setConnState(http.StateIdle)
 
 	go sc.readFrames() // closed by defer sc.conn.Close above
 
@@ -1087,6 +1102,9 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 	}
 	st.state = stateClosed
 	sc.curOpenStreams--
+	if sc.curOpenStreams == 0 {
+		sc.setConnState(http.StateIdle)
+	}
 	delete(sc.streams, st.id)
 	if p := st.body; p != nil {
 		p.Close(err)
@@ -1263,6 +1281,9 @@ func (sc *serverConn) processHeaders(f *HeadersFrame) error {
 		adjustStreamPriority(sc.streams, st.id, f.Priority)
 	}
 	sc.curOpenStreams++
+	if sc.curOpenStreams == 1 {
+		sc.setConnState(http.StateActive)
+	}
 	sc.req = requestParam{
 		stream: st,
 		header: make(http.Header),

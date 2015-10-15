@@ -41,7 +41,7 @@ func TestTransport(t *testing.T) {
 	const body = "sup"
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, body)
-	})
+	}, optOnlyServer)
 	defer st.Close()
 
 	tr := &Transport{InsecureTLSDial: true}
