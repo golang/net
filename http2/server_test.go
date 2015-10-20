@@ -2115,12 +2115,9 @@ func TestServer_Advertises_Common_Cipher(t *testing.T) {
 		c.CipherSuites = []uint16{requiredSuite}
 	}, func(ts *httptest.Server) {
 		var srv *http.Server = ts.Config
-		// Have the server configured with one specific cipher suite
-		// which is banned. This tests that ConfigureServer ends up
-		// adding the good one to this list.
-		srv.TLSConfig = &tls.Config{
-			CipherSuites: []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA}, // just a banned one
-		}
+		// Have the server configured with no specific cipher suites.
+		// This tests that Go's defaults include the required one.
+		srv.TLSConfig = nil
 	})
 	defer st.Close()
 	st.greet()
