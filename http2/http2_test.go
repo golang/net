@@ -91,9 +91,28 @@ func requireCurl(t *testing.T) {
 }
 
 func curl(t *testing.T, args ...string) (container string) {
-	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "gohttp2/curl"}, args...)...).CombinedOutput()
+	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "gohttp2/curl"}, args...)...).Output()
 	if err != nil {
 		t.Skipf("Failed to run curl in docker: %v, %s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Verify that h2load exists.
+func requireH2load(t *testing.T) {
+	out, err := dockerLogs(h2load(t, "--version"))
+	if err != nil {
+		t.Skipf("failed to probe h2load; skipping test: %s", out)
+	}
+	if !strings.Contains(string(out), "h2load nghttp2/") {
+		t.Skipf("h2load not present; skipping test. (Output=%q)", out)
+	}
+}
+
+func h2load(t *testing.T, args ...string) (container string) {
+	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "--entrypoint=/usr/local/bin/h2load", "gohttp2/curl"}, args...)...).Output()
+	if err != nil {
+		t.Skipf("Failed to run h2load in docker: %v, %s", err, out)
 	}
 	return strings.TrimSpace(string(out))
 }

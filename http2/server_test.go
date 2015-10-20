@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -2240,11 +2241,15 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 		if err, ok := res.(error); ok {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(res.([]byte)), "foo: Bar") {
+		body := string(res.([]byte))
+		// Search for both "key: value" and "key:value", since curl changed their format
+		// Our Dockerfile contains the latest version (no space), but just in case people
+		// didn't rebuild, check both.
+		if !strings.Contains(body, "foo: Bar") && !strings.Contains(body, "foo:Bar") {
 			t.Errorf("didn't see foo: Bar header")
-			t.Logf("Got: %s", res)
+			t.Logf("Got: %s", body)
 		}
-		if !strings.Contains(string(res.([]byte)), "client-proto: HTTP/2") {
+		if !strings.Contains(body, "client-proto: HTTP/2") && !strings.Contains(body, "client-proto:HTTP/2") {
 			t.Errorf("didn't see client-proto: HTTP/2 header")
 			t.Logf("Got: %s", res)
 		}
@@ -2258,6 +2263,35 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 
 	if atomic.LoadInt32(&gotConn) == 0 {
 		t.Error("never saw an http2 connection")
+	}
+}
+
+var doh2load = flag.Bool("h2load", false, "Run h2load test")
+
+func TestServerWithH2Load(t *testing.T) {
+	if !*doh2load {
+		t.Skip("Skipping without --h2load flag.")
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("skipping Docker test when not on Linux; requires --net which won't work with boot2docker anyway")
+	}
+	requireH2load(t)
+
+	msg := strings.Repeat("Hello, h2load!\n", 5000)
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, msg)
+		w.(http.Flusher).Flush()
+		io.WriteString(w, msg)
+	}))
+	ts.StartTLS()
+	defer ts.Close()
+
+	cmd := exec.Command("docker", "run", "--net=host", "--entrypoint=/usr/local/bin/h2load", "gohttp2/curl",
+		"-n100000", "-c100", "-m100", ts.URL)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
 	}
 }
 
