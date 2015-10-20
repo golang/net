@@ -2207,6 +2207,9 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 	if runtime.GOOS != "linux" {
 		t.Skip("skipping Docker test when not on Linux; requires --net which won't work with boot2docker anyway")
 	}
+	if testing.Short() {
+		t.Skip("skipping curl test in short mode")
+	}
 	requireCurl(t)
 	const msg = "Hello from curl!\n"
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
