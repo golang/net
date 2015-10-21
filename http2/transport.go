@@ -157,29 +157,61 @@ func filterOutClientConn(in []*clientConn, exclude *clientConn) []*clientConn {
 	return out
 }
 
-func (t *Transport) getClientConn(host, port string) (*clientConn, error) {
+// AddIdleConn adds c as an idle conn for Transport.
+// It assumes that c has not yet exchanged SETTINGS frames.
+// The addr maybe be either "host" or "host:port".
+func (t *Transport) AddIdleConn(addr string, c *tls.Conn) error {
+	var key string
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		key = addr
+	} else {
+		host = addr
+		key = addr + ":443"
+	}
+	cc, err := t.newClientConn(host, key, c)
+	if err != nil {
+		return err
+	}
+
+	t.addConn(key, cc)
+	return nil
+}
+
+func (t *Transport) addConn(key string, cc *clientConn) {
 	t.connMu.Lock()
 	defer t.connMu.Unlock()
-
-	key := net.JoinHostPort(host, port)
-
-	for _, cc := range t.conns[key] {
-		if cc.canTakeNewRequest() {
-			return cc, nil
-		}
-	}
 	if t.conns == nil {
 		t.conns = make(map[string][]*clientConn)
 	}
-	cc, err := t.newClientConn(host, port, key)
+	t.conns[key] = append(t.conns[key], cc)
+}
+
+func (t *Transport) getClientConn(host, port string) (*clientConn, error) {
+	key := net.JoinHostPort(host, port)
+
+	t.connMu.Lock()
+	for _, cc := range t.conns[key] {
+		if cc.canTakeNewRequest() {
+			t.connMu.Unlock()
+			return cc, nil
+		}
+	}
+	t.connMu.Unlock()
+
+	// TODO(bradfitz): use a singleflight.Group to only lock once per 'key'.
+	// Probably need to vendor it in as github.com/golang/sync/singleflight
+	// though, since the net package already uses it? Also lines up with
+	// sameer, bcmills, et al wanting to open source some sync stuff.
+	cc, err := t.dialClientConn(host, port, key)
 	if err != nil {
 		return nil, err
 	}
-	t.conns[key] = append(t.conns[key], cc)
+	t.addConn(key, cc)
 	return cc, nil
 }
 
-func (t *Transport) newClientConn(host, port, key string) (*clientConn, error) {
+func (t *Transport) dialClientConn(host, port, key string) (*clientConn, error) {
 	cfg := &tls.Config{
 		ServerName:         host,
 		NextProtos:         []string{NextProtoTLS},
@@ -189,11 +221,15 @@ func (t *Transport) newClientConn(host, port, key string) (*clientConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	return t.newClientConn(host, key, tconn)
+}
+
+func (t *Transport) newClientConn(host, key string, tconn *tls.Conn) (*clientConn, error) {
 	if err := tconn.Handshake(); err != nil {
 		return nil, err
 	}
 	if !t.InsecureTLSDial {
-		if err := tconn.VerifyHostname(cfg.ServerName); err != nil {
+		if err := tconn.VerifyHostname(host); err != nil {
 			return nil, err
 		}
 	}
