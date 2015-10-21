@@ -21,9 +21,8 @@ import (
 	"golang.org/x/net/http2/hpack"
 )
 
+// Transport is an HTTP/2 Transport.
 type Transport struct {
-	Fallback http.RoundTripper
-
 	// TODO: remove this and make more general with a TLS dial hook, like http
 	InsecureTLSDial bool
 
@@ -82,10 +81,7 @@ func (sew stickyErrWriter) Write(p []byte) (n int, err error) {
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" {
-		if t.Fallback == nil {
-			return nil, errors.New("http2: unsupported scheme and no Fallback")
-		}
-		return t.Fallback.RoundTrip(req)
+		return nil, errors.New("http2: unsupported scheme")
 	}
 
 	host, port, err := net.SplitHostPort(req.URL.Host)
@@ -235,11 +231,10 @@ func (t *Transport) newClientConn(host, key string, tconn *tls.Conn) (*clientCon
 	}
 	state := tconn.ConnectionState()
 	if p := state.NegotiatedProtocol; p != NextProtoTLS {
-		// TODO(bradfitz): fall back to Fallback
-		return nil, fmt.Errorf("bad protocol: %v", p)
+		return nil, fmt.Errorf("http2: unexpected ALPN protocol %q; want %q", p, NextProtoTLS)
 	}
 	if !state.NegotiatedProtocolIsMutual {
-		return nil, errors.New("could not negotiate protocol mutually")
+		return nil, errors.New("http2: could not negotiate protocol mutually")
 	}
 	if _, err := tconn.Write(clientPreface); err != nil {
 		return nil, err
