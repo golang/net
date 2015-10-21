@@ -165,3 +165,42 @@ func TestTransportAbortClosesPipes(t *testing.T) {
 		t.Fatal("timeout")
 	}
 }
+
+func TestTransportBody(t *testing.T) {
+	gotc := make(chan interface{}, 1)
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			slurp, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				gotc <- err
+			} else {
+				gotc <- string(slurp)
+
+			}
+		},
+		optOnlyServer,
+	)
+	defer st.Close()
+
+	tr := &Transport{
+		InsecureTLSDial: true,
+	}
+	defer tr.CloseIdleConnections()
+	const body = "Some message"
+	req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &http.Client{Transport: tr}
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	got := <-gotc
+	if err, ok := got.(error); ok {
+		t.Fatal(err)
+	} else if got.(string) != body {
+		t.Errorf("Read body = %q; want %q", got, body)
+	}
+}
