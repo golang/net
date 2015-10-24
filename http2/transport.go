@@ -44,8 +44,18 @@ const (
 // A Transport internally caches connections to servers. It is safe
 // for concurrent use by multiple goroutines.
 type Transport struct {
-	// TODO: remove this and make more general with a TLS dial hook, like http
-	InsecureTLSDial bool
+	// DialTLS specifies an optional dial function for creating
+	// TLS connections for requests.
+	//
+	// If DialTLS is nil, tls.Dial is used.
+	//
+	// If the returned net.Conn has a ConnectionState method like tls.Conn,
+	// it will be used to set http.Response.TLS.
+	DialTLS func(network, addr string, cfg *tls.Config) (net.Conn, error)
+
+	// TLSClientConfig specifies the TLS configuration to use with
+	// tls.Client. If nil, the default configuration is used.
+	TLSClientConfig *tls.Config
 
 	// TODO: switch to RWMutex
 	// TODO: add support for sharing conns based on cert names
@@ -58,7 +68,7 @@ type Transport struct {
 // HTTP/2 server.
 type clientConn struct {
 	t        *Transport
-	tconn    *tls.Conn
+	tconn    net.Conn
 	tlsState *tls.ConnectionState
 	connKey  []string // key(s) this connection is cached in, in t.conns
 
@@ -213,14 +223,13 @@ func filterOutClientConn(in []*clientConn, exclude *clientConn) []*clientConn {
 // The addr maybe be either "host" or "host:port".
 func (t *Transport) AddIdleConn(addr string, c *tls.Conn) error {
 	var key string
-	host, _, err := net.SplitHostPort(addr)
+	_, _, err := net.SplitHostPort(addr)
 	if err == nil {
 		key = addr
 	} else {
-		host = addr
 		key = addr + ":443"
 	}
-	cc, err := t.newClientConn(host, key, c)
+	cc, err := t.newClientConn(key, c)
 	if err != nil {
 		return err
 	}
@@ -263,34 +272,54 @@ func (t *Transport) getClientConn(host, port string) (*clientConn, error) {
 }
 
 func (t *Transport) dialClientConn(host, port, key string) (*clientConn, error) {
-	cfg := &tls.Config{
-		ServerName:         host,
-		NextProtos:         []string{NextProtoTLS},
-		InsecureSkipVerify: t.InsecureTLSDial,
-	}
-	tconn, err := tls.Dial("tcp", net.JoinHostPort(host, port), cfg)
+	tconn, err := t.dialTLS()("tcp", net.JoinHostPort(host, port), t.newTLSConfig(host))
 	if err != nil {
 		return nil, err
 	}
-	return t.newClientConn(host, key, tconn)
+	return t.newClientConn(key, tconn)
 }
 
-func (t *Transport) newClientConn(host, key string, tconn *tls.Conn) (*clientConn, error) {
-	if err := tconn.Handshake(); err != nil {
+func (t *Transport) newTLSConfig(host string) *tls.Config {
+	cfg := new(tls.Config)
+	if t.TLSClientConfig != nil {
+		*cfg = *t.TLSClientConfig
+	}
+	cfg.NextProtos = []string{NextProtoTLS} // TODO: don't override if already in list
+	cfg.ServerName = host
+	return cfg
+}
+
+func (t *Transport) dialTLS() func(string, string, *tls.Config) (net.Conn, error) {
+	if t.DialTLS != nil {
+		return t.DialTLS
+	}
+	return t.dialTLSDefault
+}
+
+func (t *Transport) dialTLSDefault(network, addr string, cfg *tls.Config) (net.Conn, error) {
+	cn, err := tls.Dial(network, addr, cfg)
+	if err != nil {
 		return nil, err
 	}
-	if !t.InsecureTLSDial {
-		if err := tconn.VerifyHostname(host); err != nil {
+	if err := cn.Handshake(); err != nil {
+		return nil, err
+	}
+	if !cfg.InsecureSkipVerify {
+		if err := cn.VerifyHostname(cfg.ServerName); err != nil {
 			return nil, err
 		}
 	}
-	state := tconn.ConnectionState()
+	state := cn.ConnectionState()
 	if p := state.NegotiatedProtocol; p != NextProtoTLS {
 		return nil, fmt.Errorf("http2: unexpected ALPN protocol %q; want %q", p, NextProtoTLS)
 	}
 	if !state.NegotiatedProtocolIsMutual {
 		return nil, errors.New("http2: could not negotiate protocol mutually")
 	}
+	return cn, nil
+}
+
+func (t *Transport) newClientConn(key string, tconn net.Conn) (*clientConn, error) {
 	if _, err := tconn.Write(clientPreface); err != nil {
 		return nil, err
 	}
@@ -299,7 +328,6 @@ func (t *Transport) newClientConn(host, key string, tconn *tls.Conn) (*clientCon
 		t:                    t,
 		tconn:                tconn,
 		connKey:              []string{key}, // TODO: cert's validated hostnames too
-		tlsState:             &state,
 		readerDone:           make(chan struct{}),
 		nextStreamID:         1,
 		maxFrameSize:         16 << 10, // spec default
@@ -316,6 +344,15 @@ func (t *Transport) newClientConn(host, key string, tconn *tls.Conn) (*clientCon
 	cc.br = bufio.NewReader(tconn)
 	cc.fr = NewFramer(cc.bw, cc.br)
 	cc.henc = hpack.NewEncoder(&cc.hbuf)
+
+	type connectionStater interface {
+		ConnectionState() tls.ConnectionState
+	}
+	if cs, ok := tconn.(connectionStater); ok {
+		state := cs.ConnectionState()
+		cc.tlsState = &state
+	}
+
 	cc.fr.WriteSettings(
 		Setting{ID: SettingEnablePush, Val: 0},
 		Setting{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},

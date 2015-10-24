@@ -5,13 +5,16 @@
 package http2
 
 import (
+	"crypto/tls"
 	"flag"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -22,14 +25,14 @@ var (
 	insecure      = flag.Bool("insecure", false, "insecure TLS dials")
 )
 
+var tlsConfigInsecure = &tls.Config{InsecureSkipVerify: true}
+
 func TestTransportExternal(t *testing.T) {
 	if !*extNet {
 		t.Skip("skipping external network test")
 	}
 	req, _ := http.NewRequest("GET", "https://"+*transportHost+"/", nil)
-	rt := &Transport{
-		InsecureTLSDial: *insecure,
-	}
+	rt := &Transport{TLSClientConfig: tlsConfigInsecure}
 	res, err := rt.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -44,7 +47,7 @@ func TestTransport(t *testing.T) {
 	}, optOnlyServer)
 	defer st.Close()
 
-	tr := &Transport{InsecureTLSDial: true}
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
 
 	req, err := http.NewRequest("GET", st.ts.URL, nil)
@@ -91,7 +94,7 @@ func TestTransportReusesConns(t *testing.T) {
 		io.WriteString(w, r.RemoteAddr)
 	}, optOnlyServer)
 	defer st.Close()
-	tr := &Transport{InsecureTLSDial: true}
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
 	get := func() string {
 		req, err := http.NewRequest("GET", st.ts.URL, nil)
@@ -136,9 +139,7 @@ func TestTransportAbortClosesPipes(t *testing.T) {
 	requestMade := make(chan struct{})
 	go func() {
 		defer close(done)
-		tr := &Transport{
-			InsecureTLSDial: true,
-		}
+		tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 		req, err := http.NewRequest("GET", st.ts.URL, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -182,9 +183,7 @@ func TestTransportBody(t *testing.T) {
 	)
 	defer st.Close()
 
-	tr := &Transport{
-		InsecureTLSDial: true,
-	}
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
 	const body = "Some message"
 	req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader(body))
@@ -202,5 +201,47 @@ func TestTransportBody(t *testing.T) {
 		t.Fatal(err)
 	} else if got.(string) != body {
 		t.Errorf("Read body = %q; want %q", got, body)
+	}
+}
+
+func TestTransportDialTLS(t *testing.T) {
+	var mu sync.Mutex // guards following
+	var gotReq, didDial bool
+
+	ts := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			gotReq = true
+			mu.Unlock()
+		},
+		optOnlyServer,
+	)
+	defer ts.Close()
+	tr := &Transport{
+		DialTLS: func(netw, addr string, cfg *tls.Config) (net.Conn, error) {
+			mu.Lock()
+			didDial = true
+			mu.Unlock()
+			cfg.InsecureSkipVerify = true
+			c, err := tls.Dial(netw, addr, cfg)
+			if err != nil {
+				return nil, err
+			}
+			return c, c.Handshake()
+		},
+	}
+	defer tr.CloseIdleConnections()
+	client := &http.Client{Transport: tr}
+	res, err := client.Get(ts.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	mu.Lock()
+	if !gotReq {
+		t.Error("didn't get request")
+	}
+	if !didDial {
+		t.Error("didn't use dial hook")
 	}
 }
