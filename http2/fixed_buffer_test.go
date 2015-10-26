@@ -5,47 +5,36 @@
 package http2
 
 import (
-	"io"
 	"reflect"
 	"testing"
 )
 
 var bufferReadTests = []struct {
-	buf      buffer
+	buf      fixedBuffer
 	read, wn int
 	werr     error
 	wp       []byte
-	wbuf     buffer
+	wbuf     fixedBuffer
 }{
 	{
-		buffer{[]byte{'a', 0}, 0, 1, false, nil},
+		fixedBuffer{[]byte{'a', 0}, 0, 1},
 		5, 1, nil, []byte{'a'},
-		buffer{[]byte{'a', 0}, 1, 1, false, nil},
+		fixedBuffer{[]byte{'a', 0}, 0, 0},
 	},
 	{
-		buffer{[]byte{'a', 0}, 0, 1, true, io.EOF},
-		5, 1, io.EOF, []byte{'a'},
-		buffer{[]byte{'a', 0}, 1, 1, true, io.EOF},
-	},
-	{
-		buffer{[]byte{0, 'a'}, 1, 2, false, nil},
+		fixedBuffer{[]byte{0, 'a'}, 1, 2},
 		5, 1, nil, []byte{'a'},
-		buffer{[]byte{0, 'a'}, 2, 2, false, nil},
+		fixedBuffer{[]byte{0, 'a'}, 0, 0},
 	},
 	{
-		buffer{[]byte{0, 'a'}, 1, 2, true, io.EOF},
-		5, 1, io.EOF, []byte{'a'},
-		buffer{[]byte{0, 'a'}, 2, 2, true, io.EOF},
+		fixedBuffer{[]byte{'a', 'b'}, 0, 2},
+		1, 1, nil, []byte{'a'},
+		fixedBuffer{[]byte{'a', 'b'}, 1, 2},
 	},
 	{
-		buffer{[]byte{}, 0, 0, false, nil},
+		fixedBuffer{[]byte{}, 0, 0},
 		5, 0, errReadEmpty, []byte{},
-		buffer{[]byte{}, 0, 0, false, nil},
-	},
-	{
-		buffer{[]byte{}, 0, 0, true, io.EOF},
-		5, 0, io.EOF, []byte{},
-		buffer{[]byte{}, 0, 0, true, io.EOF},
+		fixedBuffer{[]byte{}, 0, 0},
 	},
 }
 
@@ -72,64 +61,50 @@ func TestBufferRead(t *testing.T) {
 }
 
 var bufferWriteTests = []struct {
-	buf       buffer
+	buf       fixedBuffer
 	write, wn int
 	werr      error
-	wbuf      buffer
+	wbuf      fixedBuffer
 }{
 	{
-		buf: buffer{
+		buf: fixedBuffer{
 			buf: []byte{},
 		},
-		wbuf: buffer{
+		wbuf: fixedBuffer{
 			buf: []byte{},
 		},
 	},
 	{
-		buf: buffer{
+		buf: fixedBuffer{
 			buf: []byte{1, 'a'},
 		},
 		write: 1,
 		wn:    1,
-		wbuf: buffer{
+		wbuf: fixedBuffer{
 			buf: []byte{0, 'a'},
 			w:   1,
 		},
 	},
 	{
-		buf: buffer{
+		buf: fixedBuffer{
 			buf: []byte{'a', 1},
 			r:   1,
 			w:   1,
 		},
 		write: 2,
 		wn:    2,
-		wbuf: buffer{
+		wbuf: fixedBuffer{
 			buf: []byte{0, 0},
 			w:   2,
 		},
 	},
 	{
-		buf: buffer{
-			buf:    []byte{},
-			r:      1,
-			closed: true,
-		},
-		write: 5,
-		werr:  errWriteClosed,
-		wbuf: buffer{
-			buf:    []byte{},
-			r:      1,
-			closed: true,
-		},
-	},
-	{
-		buf: buffer{
+		buf: fixedBuffer{
 			buf: []byte{},
 		},
 		write: 5,
 		werr:  errWriteFull,
-		wbuf: buffer{
+		wbuf: fixedBuffer{
 			buf: []byte{},
 		},
 	},
