@@ -5,16 +5,9 @@
 package ipv6
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"sync"
-)
-
-var (
-	errMissingAddress  = errors.New("missing address")
-	errInvalidConnType = errors.New("invalid conn type")
-	errNoSuchInterface = errors.New("no such interface")
 )
 
 // Note that RFC 3542 obsoletes RFC 2292 but OS X Snow Leopard and the
