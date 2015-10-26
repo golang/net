@@ -30,7 +30,7 @@ func (h *Header) String() string {
 	if h == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("ver: %v, tclass: %#x, flowlbl: %#x, payloadlen: %v, nxthdr: %v, hoplim: %v, src: %v, dst: %v", h.Version, h.TrafficClass, h.FlowLabel, h.PayloadLen, h.NextHeader, h.HopLimit, h.Src, h.Dst)
+	return fmt.Sprintf("ver=%d tclass=%#x flowlbl=%#x payloadlen=%d nxthdr=%d hoplim=%d src=%v dst=%v", h.Version, h.TrafficClass, h.FlowLabel, h.PayloadLen, h.NextHeader, h.HopLimit, h.Src, h.Dst)
 }
 
 // ParseHeader parses b as an IPv6 base header.
