@@ -80,3 +80,11 @@ func (p *pipe) CloseWithError(err error) {
 		p.err = err
 	}
 }
+
+// Err returns the error (if any) first set with CloseWithError.
+// This is the error which will be returned after the reader is exhausted.
+func (p *pipe) Err() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.err
+}
