@@ -5,20 +5,11 @@
 package ipv4
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"runtime"
 	"syscall"
 	"unsafe"
-)
-
-var (
-	errMissingAddress  = errors.New("missing address")
-	errMissingHeader   = errors.New("missing header")
-	errHeaderTooShort  = errors.New("header too short")
-	errBufferTooShort  = errors.New("buffer too short")
-	errInvalidConnType = errors.New("invalid conn type")
 )
 
 const (
