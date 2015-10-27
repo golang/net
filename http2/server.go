@@ -1588,7 +1588,10 @@ type bodyReadMsg struct {
 // and schedules flow control tokens to be sent.
 func (sc *serverConn) noteBodyReadFromHandler(st *stream, n int) {
 	sc.serveG.checkNotOn() // NOT on
-	sc.bodyReadCh <- bodyReadMsg{st, n}
+	select {
+	case sc.bodyReadCh <- bodyReadMsg{st, n}:
+	case <-sc.doneServing:
+	}
 }
 
 func (sc *serverConn) noteBodyRead(st *stream, n int) {
