@@ -617,14 +617,14 @@ func (cc *clientConn) encodeHeaders(req *http.Request) []byte {
 		host = req.URL.Host
 	}
 
-	path := req.URL.Path
-	if path == "" {
-		path = "/"
-	}
-
+	// 8.1.2.3 Request Pseudo-Header Fields
+	// The :path pseudo-header field includes the path and query parts of the
+	// target URI (the path-absolute production and optionally a '?' character
+	// followed by the query production (see Sections 3.3 and 3.4 of
+	// [RFC3986]).
 	cc.writeHeader(":authority", host) // probably not right for all sites
 	cc.writeHeader(":method", req.Method)
-	cc.writeHeader(":path", path)
+	cc.writeHeader(":path", req.URL.RequestURI())
 	cc.writeHeader(":scheme", "https")
 
 	for k, vv := range req.Header {

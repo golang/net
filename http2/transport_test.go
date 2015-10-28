@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -164,6 +165,44 @@ func TestTransportAbortClosesPipes(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout")
+	}
+}
+
+// TODO: merge this with TestTransportBody to make TestTransportRequest? This
+// could be a table-driven test with extra goodies.
+func TestTransportPath(t *testing.T) {
+	gotc := make(chan *url.URL, 1)
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			gotc <- r.URL
+		},
+		optOnlyServer,
+	)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	const (
+		path  = "/testpath"
+		query = "q=1"
+	)
+	surl := st.ts.URL + path + "?" + query
+	req, err := http.NewRequest("POST", surl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &http.Client{Transport: tr}
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	got := <-gotc
+	if got.Path != path {
+		t.Errorf("Read Path = %q; want %q", got.Path, path)
+	}
+	if got.RawQuery != query {
+		t.Errorf("Read RawQuery = %q; want %q", got.RawQuery, query)
 	}
 }
 
