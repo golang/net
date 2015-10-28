@@ -23,7 +23,7 @@ import (
 var (
 	extNet        = flag.Bool("extnet", false, "do external network tests")
 	transportHost = flag.String("transporthost", "http2.golang.org", "hostname to use for TestTransport")
-	insecure      = flag.Bool("insecure", false, "insecure TLS dials")
+	insecure      = flag.Bool("insecure", false, "insecure TLS dials") // TODO: dead code. remove?
 )
 
 var tlsConfigInsecure = &tls.Config{InsecureSkipVerify: true}
@@ -206,6 +206,18 @@ func TestTransportPath(t *testing.T) {
 	}
 }
 
+var bodyTests = []struct {
+	body         string
+	noContentLen bool
+}{
+	{body: "some message"},
+	{body: "some message", noContentLen: true},
+	{body: ""},
+	{body: "", noContentLen: true},
+	{body: strings.Repeat("a", 1<<20), noContentLen: true},
+	{body: strings.Repeat("a", 1<<20)},
+}
+
 func TestTransportBody(t *testing.T) {
 	gotc := make(chan interface{}, 1)
 	st := newServerTester(t,
@@ -222,24 +234,30 @@ func TestTransportBody(t *testing.T) {
 	)
 	defer st.Close()
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-	const body = "Some message"
-	req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := &http.Client{Transport: tr}
-	res, err := c.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	got := <-gotc
-	if err, ok := got.(error); ok {
-		t.Fatal(err)
-	} else if got.(string) != body {
-		t.Errorf("Read body = %q; want %q", got, body)
+	for i, tt := range bodyTests {
+		tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+		defer tr.CloseIdleConnections()
+
+		var body io.Reader = strings.NewReader(tt.body)
+		if tt.noContentLen {
+			body = struct{ io.Reader }{body} // just a Reader, hiding concrete type and other methods
+		}
+		req, err := http.NewRequest("POST", st.ts.URL, body)
+		if err != nil {
+			t.Fatalf("#%d: %v", i, err)
+		}
+		c := &http.Client{Transport: tr}
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatalf("#%d: %v", i, err)
+		}
+		defer res.Body.Close()
+		got := <-gotc
+		if err, ok := got.(error); ok {
+			t.Fatalf("#%d: %v", i, err)
+		} else if got.(string) != tt.body {
+			t.Errorf("#%d: Read body = %q; want %q", i, got, tt.body)
+		}
 	}
 }
 
