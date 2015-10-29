@@ -7,8 +7,10 @@ package http2
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -206,6 +208,15 @@ func TestTransportPath(t *testing.T) {
 	}
 }
 
+func randString(n int) string {
+	rnd := rand.New(rand.NewSource(int64(n)))
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte(rnd.Intn(256))
+	}
+	return string(b)
+}
+
 var bodyTests = []struct {
 	body         string
 	noContentLen bool
@@ -216,6 +227,15 @@ var bodyTests = []struct {
 	{body: "", noContentLen: true},
 	{body: strings.Repeat("a", 1<<20), noContentLen: true},
 	{body: strings.Repeat("a", 1<<20)},
+	{body: randString(16<<10 - 1)},
+	{body: randString(16 << 10)},
+	{body: randString(16<<10 + 1)},
+	{body: randString(512<<10 - 1)},
+	{body: randString(512 << 10)},
+	{body: randString(512<<10 + 1)},
+	{body: randString(1<<20 - 1)},
+	{body: randString(1 << 20)},
+	{body: randString(1<<20 + 2)},
 }
 
 func TestTransportBody(t *testing.T) {
@@ -227,7 +247,6 @@ func TestTransportBody(t *testing.T) {
 				gotc <- err
 			} else {
 				gotc <- string(slurp)
-
 			}
 		},
 		optOnlyServer,
@@ -256,9 +275,18 @@ func TestTransportBody(t *testing.T) {
 		if err, ok := got.(error); ok {
 			t.Fatalf("#%d: %v", i, err)
 		} else if got.(string) != tt.body {
-			t.Errorf("#%d: Read body = %q; want %q", i, got, tt.body)
+			got := got.(string)
+			t.Errorf("#%d: Read body mismatch.\n got: %q (len %d)\nwant: %q (len %d)", i, shortString(got), len(got), shortString(tt.body), len(tt.body))
 		}
 	}
+}
+
+func shortString(v string) string {
+	const maxLen = 100
+	if len(v) <= maxLen {
+		return v
+	}
+	return fmt.Sprintf("%v[...%d bytes omitted...]%v", v[:maxLen/2], len(v)-maxLen, v[len(v)-maxLen/2:])
 }
 
 func TestTransportDialTLS(t *testing.T) {
