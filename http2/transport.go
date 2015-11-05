@@ -139,7 +139,23 @@ func (sew stickyErrWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+var ErrNoCachedConn = errors.New("http2: no cached connection was available")
+
+// RoundTripOpt are options for the Transport.RoundTripOpt method.
+type RoundTripOpt struct {
+	// OnlyCachedConn controls whether RoundTripOpt may
+	// create a new TCP connection. If set true and
+	// no cached connection is available, RoundTripOpt
+	// will return ErrNoCachedConn.
+	OnlyCachedConn bool
+}
+
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.RoundTripOpt(req, RoundTripOpt{})
+}
+
+// RoundTripOpt is like RoundTrip, but takes options.
+func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Response, error) {
 	if req.URL.Scheme != "https" {
 		return nil, errors.New("http2: unsupported scheme")
 	}
@@ -151,7 +167,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	for {
-		cc, err := t.getClientConn(host, port)
+		cc, err := t.getClientConn(host, port, opt.OnlyCachedConn)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +263,7 @@ func (t *Transport) addConn(key string, cc *clientConn) {
 	t.conns[key] = append(t.conns[key], cc)
 }
 
-func (t *Transport) getClientConn(host, port string) (*clientConn, error) {
+func (t *Transport) getClientConn(host, port string, onlyCached bool) (*clientConn, error) {
 	key := net.JoinHostPort(host, port)
 
 	t.connMu.Lock()
@@ -258,6 +274,9 @@ func (t *Transport) getClientConn(host, port string) (*clientConn, error) {
 		}
 	}
 	t.connMu.Unlock()
+	if onlyCached {
+		return nil, ErrNoCachedConn
+	}
 
 	// TODO(bradfitz): use a singleflight.Group to only lock once per 'key'.
 	// Probably need to vendor it in as github.com/golang/sync/singleflight
