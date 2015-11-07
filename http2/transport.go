@@ -751,6 +751,8 @@ func (rl *clientConnReadLoop) run() error {
 			err = rl.processPushPromise(f)
 		case *WindowUpdateFrame:
 			err = rl.processWindowUpdate(f)
+		case *PingFrame:
+			err = rl.processPing(f)
 		default:
 			cc.logf("Transport: unhandled response frame type %T", f)
 		}
@@ -981,6 +983,21 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 	}
 	delete(rl.activeRes, cs.ID)
 	return nil
+}
+
+func (rl *clientConnReadLoop) processPing(f *PingFrame) error {
+	if f.IsAck() {
+		// 6.7 PING: " An endpoint MUST NOT respond to PING frames
+		// containing this flag."
+		return nil
+	}
+	cc := rl.cc
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
+	if err := cc.fr.WritePing(true, f.Data); err != nil {
+		return err
+	}
+	return cc.bw.Flush()
 }
 
 func (rl *clientConnReadLoop) processPushPromise(f *PushPromiseFrame) error {
