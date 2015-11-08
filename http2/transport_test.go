@@ -330,3 +330,46 @@ func TestTransportDialTLS(t *testing.T) {
 		t.Error("didn't use dial hook")
 	}
 }
+
+func TestConfigureTransport(t *testing.T) {
+	t1 := &http.Transport{}
+	err := ConfigureTransport(t1)
+	if err == errTransportVersion {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprintf("%#v", *t1); !strings.Contains(got, `"h2"`) {
+		// Laziness, to avoid buildtags.
+		t.Errorf("stringification of HTTP/1 transport didn't contain \"h2\": %v", got)
+	}
+	if t1.TLSClientConfig == nil {
+		t.Errorf("nil t1.TLSClientConfig")
+	} else if !reflect.DeepEqual(t1.TLSClientConfig.NextProtos, []string{"h2"}) {
+		t.Errorf("TLSClientConfig.NextProtos = %q; want just 'h2'", t1.TLSClientConfig.NextProtos)
+	}
+	if err := ConfigureTransport(t1); err == nil {
+		t.Error("unexpected success on second call to ConfigureTransport")
+	}
+
+	// And does it work?
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.Proto)
+	}, optOnlyServer)
+	defer st.Close()
+
+	t1.TLSClientConfig.InsecureSkipVerify = true
+	c := &http.Client{Transport: t1}
+	res, err := c.Get(st.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slurp, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(slurp), "HTTP/2.0"; got != want {
+		t.Errorf("body = %q; want %q", got, want)
+	}
+}

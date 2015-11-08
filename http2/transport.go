@@ -65,6 +65,15 @@ type Transport struct {
 	connPoolOrDef ClientConnPool // non-nil version of ConnPool
 }
 
+var errTransportVersion = errors.New("http2: ConfigureTransport is only supported starting at Go 1.6")
+
+// ConfigureTransport configures a net/http HTTP/1 Transport to use HTTP/2.
+// It requires Go 1.6 or later and returns an error if the net/http package is too old
+// or if t1 has already been HTTP/2-enabled.
+func ConfigureTransport(t1 *http.Transport) error {
+	return configureTransport(t1) // in configure_transport.go (go1.6) or go15.go
+}
+
 func (t *Transport) connPool() ClientConnPool {
 	t.connPoolOnce.Do(t.initConnPool)
 	return t.connPoolOrDef
@@ -1072,3 +1081,16 @@ func (t *Transport) logf(format string, args ...interface{}) {
 }
 
 var noBody io.ReadCloser = ioutil.NopCloser(bytes.NewReader(nil))
+
+func strSliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+type erringRoundTripper struct{ err error }
+
+func (rt erringRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, rt.err }
