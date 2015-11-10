@@ -198,7 +198,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 			return nil, err
 		}
 		res, err := cc.RoundTrip(req)
-		if shouldRetryRequest(err) { // TODO: or clientconn is overloaded (too many outstanding requests)?
+		if shouldRetryRequest(req, err) {
 			continue
 		}
 		if err != nil {
@@ -217,11 +217,15 @@ func (t *Transport) CloseIdleConnections() {
 	}
 }
 
-var errClientConnClosed = errors.New("http2: client conn is closed")
+var (
+	errClientConnClosed   = errors.New("http2: client conn is closed")
+	errClientConnUnusable = errors.New("http2: client conn not usable")
+)
 
-func shouldRetryRequest(err error) bool {
-	// TODO: or GOAWAY graceful shutdown stuff
-	return err == errClientConnClosed
+func shouldRetryRequest(req *http.Request, err error) bool {
+	// TODO: retry GET requests (no bodies) more aggressively, if shutdown
+	// before response.
+	return err == errClientConnUnusable
 }
 
 func (t *Transport) dialClientConn(addr string) (*ClientConn, error) {
@@ -360,6 +364,10 @@ func (cc *ClientConn) setGoAway(f *GoAwayFrame) {
 func (cc *ClientConn) CanTakeNewRequest() bool {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
+	return cc.canTakeNewRequestLocked()
+}
+
+func (cc *ClientConn) canTakeNewRequestLocked() bool {
 	return cc.goAway == nil &&
 		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
 		cc.nextStreamID < 2147483647
@@ -421,17 +429,17 @@ func (cc *ClientConn) putFrameScratchBuffer(buf []byte) {
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	cc.mu.Lock()
 
-	if cc.closed {
+	if cc.closed || !cc.canTakeNewRequestLocked() {
 		cc.mu.Unlock()
-		return nil, errClientConnClosed
+		return nil, errClientConnUnusable
 	}
 
 	cs := cc.newStream()
 	hasBody := req.Body != nil
 
-	// we send: HEADERS[+CONTINUATION] + (DATA?)
+	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,}
 	hdrs := cc.encodeHeaders(req)
-	first := true
+	first := true // first frame written (HEADERS is first, then CONTINUATION)
 
 	cc.wmu.Lock()
 	frameSize := int(cc.maxFrameSize)
