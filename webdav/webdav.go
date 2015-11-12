@@ -195,7 +195,7 @@ func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status 
 	allow := "OPTIONS, LOCK, PUT, MKCOL"
 	if fi, err := h.FileSystem.Stat(reqPath); err == nil {
 		if fi.IsDir() {
-			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, PROPPATCH, COPY, MOVE, UNLOCK, PROPFIND"
+			allow = "OPTIONS, LOCK, DELETE, PROPPATCH, COPY, MOVE, UNLOCK, PROPFIND"
 		} else {
 			allow = "OPTIONS, LOCK, GET, HEAD, POST, DELETE, PROPPATCH, COPY, MOVE, UNLOCK, PROPFIND, PUT"
 		}
@@ -223,13 +223,14 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 	if err != nil {
 		return http.StatusNotFound, err
 	}
-	if !fi.IsDir() {
-		etag, err := findETag(h.FileSystem, h.LockSystem, reqPath, fi)
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-		w.Header().Set("ETag", etag)
+	if fi.IsDir() {
+		return http.StatusMethodNotAllowed, nil
 	}
+	etag, err := findETag(h.FileSystem, h.LockSystem, reqPath, fi)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	w.Header().Set("ETag", etag)
 	// Let ServeContent determine the Content-Type header.
 	http.ServeContent(w, r, reqPath, fi.ModTime(), f)
 	return 0, nil
