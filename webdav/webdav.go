@@ -615,7 +615,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 
 func makePropstatResponse(href string, pstats []Propstat) *response {
 	resp := response{
-		Href:     []string{href},
+		Href:     []string{(&url.URL{Path: href}).EscapedPath()},
 		Propstat: make([]propstat, 0, len(pstats)),
 	}
 	for _, p := range pstats {
