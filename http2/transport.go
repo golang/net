@@ -125,12 +125,15 @@ type ClientConn struct {
 // is created for each Transport.RoundTrip call.
 type clientStream struct {
 	cc      *ClientConn
+	req     *http.Request
 	ID      uint32
 	resc    chan resAndError
 	bufPipe pipe // buffered pipe with the flow-controlled response payload
 
-	flow   flow // guarded by cc.mu
-	inflow flow // guarded by cc.mu
+	flow        flow  // guarded by cc.mu
+	inflow      flow  // guarded by cc.mu
+	bytesRemain int64 // -1 means unknown; owned by transportResponseBody.Read
+	readErr     error // sticky read error; owned by transportResponseBody.Read
 
 	peerReset chan struct{} // closed on peer reset
 	resetErr  error         // populated before peerReset is closed
@@ -435,6 +438,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	cs := cc.newStream()
+	cs.req = req
 	hasBody := req.Body != nil
 
 	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,}
@@ -826,13 +830,31 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 	}
 
 	res := rl.nextRes
+
+	if !streamEnded || cs.req.Method == "HEAD" {
+		res.ContentLength = -1
+		if clens := res.Header["Content-Length"]; len(clens) == 1 {
+			if clen64, err := strconv.ParseInt(clens[0], 10, 64); err == nil {
+				res.ContentLength = clen64
+			} else {
+				// TODO: care? unlike http/1, it won't mess up our framing, so it's
+				// more safe smuggling-wise to ignore.
+			}
+		} else if len(clens) > 1 {
+			// TODO: care? unlike http/1, it won't mess up our framing, so it's
+			// more safe smuggling-wise to ignore.
+		}
+	}
+
 	if streamEnded {
 		res.Body = noBody
 	} else {
 		buf := new(bytes.Buffer) // TODO(bradfitz): recycle this garbage
 		cs.bufPipe = pipe{b: buf}
+		cs.bytesRemain = res.ContentLength
 		res.Body = transportResponseBody{cs}
 	}
+
 	rl.activeRes[cs.ID] = cs
 	cs.resc <- resAndError{res: res}
 	rl.nextRes = nil // unused now; will be reset next HEADERS frame
@@ -847,13 +869,35 @@ type transportResponseBody struct {
 }
 
 func (b transportResponseBody) Read(p []byte) (n int, err error) {
+	cs := b.cs
+	cc := cs.cc
+
+	if cs.readErr != nil {
+		return 0, cs.readErr
+	}
 	n, err = b.cs.bufPipe.Read(p)
+	if cs.bytesRemain != -1 {
+		if int64(n) > cs.bytesRemain {
+			n = int(cs.bytesRemain)
+			if err == nil {
+				err = errors.New("net/http: server replied with more than declared Content-Length; truncated")
+				cc.writeStreamReset(cs.ID, ErrCodeProtocol, err)
+			}
+			cs.readErr = err
+			return int(cs.bytesRemain), err
+		}
+		cs.bytesRemain -= int64(n)
+		if err == io.EOF && cs.bytesRemain > 0 {
+			err = io.ErrUnexpectedEOF
+			cs.readErr = err
+			return n, err
+		}
+	}
 	if n == 0 {
+		// No flow control tokens to send back.
 		return
 	}
 
-	cs := b.cs
-	cc := cs.cc
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 

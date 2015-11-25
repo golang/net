@@ -73,7 +73,9 @@ func TestTransport(t *testing.T) {
 	wantHeader := http.Header{
 		"Content-Length": []string{"3"},
 		"Content-Type":   []string{"text/plain; charset=utf-8"},
+		"Date":           []string{"XXX"}, // see cleanDate
 	}
+	cleanDate(res)
 	if !reflect.DeepEqual(res.Header, wantHeader) {
 		t.Errorf("res Header = %v; want %v", res.Header, wantHeader)
 	}
