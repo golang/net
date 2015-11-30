@@ -128,6 +128,87 @@ func TestTransportReusesConns(t *testing.T) {
 	}
 }
 
+// Tests that the Transport only keeps one pending dial open per destination address.
+// https://golang.org/issue/13397
+func TestTransportGroupsPendingDials(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.RemoteAddr)
+	}, optOnlyServer)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+	}
+	defer tr.CloseIdleConnections()
+	var (
+		mu    sync.Mutex
+		dials = map[string]int{}
+	)
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest("GET", st.ts.URL, nil)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			res, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer res.Body.Close()
+			slurp, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				t.Errorf("Body read: %v", err)
+			}
+			addr := strings.TrimSpace(string(slurp))
+			if addr == "" {
+				t.Errorf("didn't get an addr in response")
+			}
+			mu.Lock()
+			dials[addr]++
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	if len(dials) != 1 {
+		t.Errorf("saw %d dials; want 1: %v", len(dials), dials)
+	}
+	tr.CloseIdleConnections()
+	if err := retry(50, 10*time.Millisecond, func() error {
+		cp, ok := tr.connPool().(*clientConnPool)
+		if !ok {
+			return fmt.Errorf("Conn pool is %T; want *clientConnPool", tr.connPool())
+		}
+		if len(cp.dialing) != 0 {
+			return fmt.Errorf("dialing map = %v; want empty", cp.dialing)
+		}
+		if len(cp.conns) != 0 {
+			return fmt.Errorf("conns = %v; want empty", cp.conns)
+		}
+		if len(cp.keys) != 0 {
+			return fmt.Errorf("keys = %v; want empty", cp.keys)
+		}
+		return nil
+	}); err != nil {
+		t.Error("State of pool after CloseIdleConnections: %v", err)
+	}
+}
+
+func retry(tries int, delay time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < tries; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return err
+}
+
 func TestTransportAbortClosesPipes(t *testing.T) {
 	shutdown := make(chan struct{})
 	st := newServerTester(t,
