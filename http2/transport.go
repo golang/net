@@ -155,6 +155,7 @@ type clientStream struct {
 	inflow      flow  // guarded by cc.mu
 	bytesRemain int64 // -1 means unknown; owned by transportResponseBody.Read
 	readErr     error // sticky read error; owned by transportResponseBody.Read
+	stopReqBody bool  // stop writing req body; guarded by cc.mu
 
 	peerReset chan struct{} // closed on peer reset
 	resetErr  error         // populated before peerReset is closed
@@ -169,6 +170,14 @@ func (cs *clientStream) checkReset() error {
 	default:
 		return nil
 	}
+}
+
+func (cs *clientStream) abortRequestBodyWrite() {
+	cc := cs.cc
+	cc.mu.Lock()
+	cs.stopReqBody = true
+	cc.cond.Broadcast()
+	cc.mu.Unlock()
 }
 
 type stickyErrWriter struct {
@@ -516,26 +525,33 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, werr
 	}
 
-	var bodyCopyErrc chan error
-	var gotResHeaders chan struct{} // closed on resheaders
+	var bodyCopyErrc chan error // result of body copy
 	if hasBody {
 		bodyCopyErrc = make(chan error, 1)
-		gotResHeaders = make(chan struct{})
 		go func() {
-			bodyCopyErrc <- cs.writeRequestBody(req.Body, gotResHeaders)
+			bodyCopyErrc <- cs.writeRequestBody(req.Body)
 		}()
 	}
 
 	for {
 		select {
 		case re := <-cs.resc:
-			if gotResHeaders != nil {
-				close(gotResHeaders)
+			res := re.res
+			if re.err != nil || res.StatusCode > 299 {
+				// On error or status code 3xx, 4xx, 5xx, etc abort any
+				// ongoing write, assuming that the server doesn't care
+				// about our request body. If the server replied with 1xx or
+				// 2xx, however, then assume the server DOES potentially
+				// want our body (e.g. full-duplex streaming:
+				// golang.org/issue/13444). If it turns out the server
+				// doesn't, they'll RST_STREAM us soon enough.  This is a
+				// heuristic to avoid adding knobs to Transport.  Hopefully
+				// we can keep it.
+				cs.abortRequestBodyWrite()
 			}
 			if re.err != nil {
 				return nil, re.err
 			}
-			res := re.res
 			res.Request = req
 			res.TLS = cc.tlsState
 			return res, nil
@@ -547,45 +563,56 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 }
 
-var errServerResponseBeforeRequestBody = errors.New("http2: server sent response while still writing request body")
+// errAbortReqBodyWrite is an internal error value.
+// It doesn't escape to callers.
+var errAbortReqBodyWrite = errors.New("http2: aborting request body write")
 
-func (cs *clientStream) writeRequestBody(body io.Reader, gotResHeaders <-chan struct{}) error {
+func (cs *clientStream) writeRequestBody(body io.ReadCloser) (err error) {
 	cc := cs.cc
 	sentEnd := false // whether we sent the final DATA frame w/ END_STREAM
 	buf := cc.frameScratchBuffer()
 	defer cc.putFrameScratchBuffer(buf)
 
-	for !sentEnd {
-		var sawEOF bool
-		n, err := io.ReadFull(body, buf)
-		if err == io.ErrUnexpectedEOF {
+	defer func() {
+		// TODO: write h12Compare test showing whether
+		// Request.Body is closed by the Transport,
+		// and in multiple cases: server replies <=299 and >299
+		// while still writing request body
+		cerr := body.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+
+	var sawEOF bool
+	for !sawEOF {
+		n, err := body.Read(buf)
+		if err == io.EOF {
 			sawEOF = true
 			err = nil
-		} else if err == io.EOF {
-			break
 		} else if err != nil {
 			return err
 		}
 
-		toWrite := buf[:n]
-		for len(toWrite) > 0 && err == nil {
+		remain := buf[:n]
+		for len(remain) > 0 && err == nil {
 			var allowed int32
-			allowed, err = cs.awaitFlowControl(int32(len(toWrite)))
+			allowed, err = cs.awaitFlowControl(len(remain))
 			if err != nil {
 				return err
 			}
-
 			cc.wmu.Lock()
-			select {
-			case <-gotResHeaders:
-				err = errServerResponseBeforeRequestBody
-			case <-cs.peerReset:
-				err = cs.resetErr
-			default:
-				data := toWrite[:allowed]
-				toWrite = toWrite[allowed:]
-				sentEnd = sawEOF && len(toWrite) == 0
-				err = cc.fr.WriteData(cs.ID, sentEnd, data)
+			data := remain[:allowed]
+			remain = remain[allowed:]
+			sentEnd = sawEOF && len(remain) == 0
+			err = cc.fr.WriteData(cs.ID, sentEnd, data)
+			if err == nil {
+				// TODO(bradfitz): this flush is for latency, not bandwidth.
+				// Most requests won't need this. Make this opt-in or opt-out?
+				// Use some heuristic on the body type? Nagel-like timers?
+				// Based on 'n'? Only last chunk of this for loop, unless flow control
+				// tokens are low? For now, always:
+				err = cc.bw.Flush()
 			}
 			cc.wmu.Unlock()
 		}
@@ -593,8 +620,6 @@ func (cs *clientStream) writeRequestBody(body io.Reader, gotResHeaders <-chan st
 			return err
 		}
 	}
-
-	var err error
 
 	cc.wmu.Lock()
 	if !sentEnd {
@@ -612,7 +637,7 @@ func (cs *clientStream) writeRequestBody(body io.Reader, gotResHeaders <-chan st
 // control tokens from the server.
 // It returns either the non-zero number of tokens taken or an error
 // if the stream is dead.
-func (cs *clientStream) awaitFlowControl(maxBytes int32) (taken int32, err error) {
+func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) {
 	cc := cs.cc
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
@@ -620,13 +645,17 @@ func (cs *clientStream) awaitFlowControl(maxBytes int32) (taken int32, err error
 		if cc.closed {
 			return 0, errClientConnClosed
 		}
+		if cs.stopReqBody {
+			return 0, errAbortReqBodyWrite
+		}
 		if err := cs.checkReset(); err != nil {
 			return 0, err
 		}
 		if a := cs.flow.available(); a > 0 {
 			take := a
-			if take > maxBytes {
-				take = maxBytes
+			if int(take) > maxBytes {
+
+				take = int32(maxBytes) // can't truncate int; take is int32
 			}
 			if take > int32(cc.maxFrameSize) {
 				take = int32(cc.maxFrameSize)
@@ -1092,6 +1121,7 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 		cs.resetErr = err
 		close(cs.peerReset)
 		cs.bufPipe.CloseWithError(err)
+		cs.cc.cond.Broadcast() // wake up checkReset via clientStream.awaitFlowControl
 	}
 	delete(rl.activeRes, cs.ID)
 	return nil

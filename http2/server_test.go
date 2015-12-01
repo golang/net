@@ -2213,6 +2213,9 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 		t.Skip("skipping curl test in short mode")
 	}
 	requireCurl(t)
+	var gotConn int32
+	testHookOnConn = func() { atomic.StoreInt32(&gotConn, 1) }
+
 	const msg = "Hello from curl!\n"
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Foo", "Bar")
@@ -2225,9 +2228,6 @@ func testServerWithCurl(t *testing.T, permitProhibitedCipherSuites bool) {
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.StartTLS()
 	defer ts.Close()
-
-	var gotConn int32
-	testHookOnConn = func() { atomic.StoreInt32(&gotConn, 1) }
 
 	t.Logf("Running test server for curl to hit at: %s", ts.URL)
 	container := curl(t, "--silent", "--http2", "--insecure", "-v", ts.URL)
