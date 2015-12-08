@@ -2637,3 +2637,52 @@ func TestServerRejectHeadWithBody(t *testing.T) {
 	})
 	st.wantRSTStream(1, ErrCodeProtocol)
 }
+
+func TestServerNoAutoContentLengthOnHead(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		// No response body. (or smaller than one frame)
+	})
+	defer st.Close()
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1, // clients send odd numbers
+		BlockFragment: st.encodeHeader(":method", "HEAD"),
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	h := st.wantHeaders()
+	headers := decodeHeader(t, h.HeaderBlockFragment())
+	want := [][2]string{
+		{":status", "200"},
+		{"content-type", "text/plain; charset=utf-8"},
+	}
+	if !reflect.DeepEqual(headers, want) {
+		t.Errorf("Headers mismatch.\n got: %q\nwant: %q\n", headers, want)
+	}
+}
+
+// golang.org/issue/13495
+func TestServerNoDuplicateContentType(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Content-Type"] = []string{""}
+		fmt.Fprintf(w, "<html><head></head><body>hi</body></html>")
+	})
+	defer st.Close()
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(),
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	h := st.wantHeaders()
+	headers := decodeHeader(t, h.HeaderBlockFragment())
+	want := [][2]string{
+		{":status", "200"},
+		{"content-type", ""},
+		{"content-length", "41"},
+	}
+	if !reflect.DeepEqual(headers, want) {
+		t.Errorf("Headers mismatch.\n got: %q\nwant: %q\n", headers, want)
+	}
+}

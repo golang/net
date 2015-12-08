@@ -1758,10 +1758,11 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 				clen = ""
 			}
 		}
-		if clen == "" && rws.handlerDone && bodyAllowedForStatus(rws.status) {
+		if clen == "" && rws.handlerDone && bodyAllowedForStatus(rws.status) && (len(p) > 0 || !isHeadResp) {
 			clen = strconv.Itoa(len(p))
 		}
-		if rws.snapHeader.Get("Content-Type") == "" && bodyAllowedForStatus(rws.status) {
+		_, hasContentType := rws.snapHeader["Content-Type"]
+		if !hasContentType && bodyAllowedForStatus(rws.status) {
 			ctype = http.DetectContentType(p)
 		}
 		var date string
