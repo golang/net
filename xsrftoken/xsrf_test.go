@@ -29,7 +29,7 @@ func TestValidToken(t *testing.T) {
 	if !validTokenAtTime(tok, key, userID, actionID, now.Add(Timeout-1*time.Nanosecond)) {
 		t.Error("Just before timeout: Expected token to be valid")
 	}
-	if !validTokenAtTime(tok, key, userID, actionID, now.Add(-1*time.Minute)) {
+	if !validTokenAtTime(tok, key, userID, actionID, now.Add(-1*time.Minute+1*time.Millisecond)) {
 		t.Error("One minute in the past: Expected token to be valid")
 	}
 }
@@ -51,7 +51,7 @@ func TestInvalidToken(t *testing.T) {
 		{"Bad key", "foobar", userID, actionID, oneMinuteFromNow},
 		{"Bad userID", key, "foobar", actionID, oneMinuteFromNow},
 		{"Bad actionID", key, userID, "foobar", oneMinuteFromNow},
-		{"Expired", key, userID, actionID, now.Add(Timeout)},
+		{"Expired", key, userID, actionID, now.Add(Timeout + 1*time.Millisecond)},
 		{"More than 1 minute from the future", key, userID, actionID, now.Add(-1*time.Nanosecond - 1*time.Minute)},
 	}
 
@@ -72,6 +72,7 @@ func TestValidateBadData(t *testing.T) {
 		{"Invalid Base64", "ASDab24(@)$*=="},
 		{"No delimiter", base64.URLEncoding.EncodeToString([]byte("foobar12345678"))},
 		{"Invalid time", base64.URLEncoding.EncodeToString([]byte("foobar:foobar"))},
+		{"Wrong length", "1234" + generateTokenAtTime(key, userID, actionID, now)},
 	}
 
 	for _, bdt := range badDataTests {

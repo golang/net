@@ -6,7 +6,6 @@
 package xsrftoken
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/subtle"
@@ -37,35 +36,37 @@ func Generate(key, userID, actionID string) string {
 
 // generateTokenAtTime is like Generate, but returns a token that expires 24 hours from now.
 func generateTokenAtTime(key, userID, actionID string, now time.Time) string {
+	// Round time up and convert to milliseconds.
+	milliTime := (now.UnixNano() + 1e6 - 1) / 1e6
+
 	h := hmac.New(sha1.New, []byte(key))
-	fmt.Fprintf(h, "%s:%s:%d", clean(userID), clean(actionID), now.UnixNano())
-	tok := fmt.Sprintf("%s:%d", h.Sum(nil), now.UnixNano())
-	return base64.URLEncoding.EncodeToString([]byte(tok))
+	fmt.Fprintf(h, "%s:%s:%d", clean(userID), clean(actionID), milliTime)
+
+	// Get the padded base64 string then removing the padding.
+	tok := string(h.Sum(nil))
+	tok = base64.URLEncoding.EncodeToString([]byte(tok))
+	tok = strings.TrimRight(tok, "=")
+
+	return fmt.Sprintf("%s:%d", tok, milliTime)
 }
 
-// Valid returns true if token is a valid, unexpired token returned by Generate.
+// Valid reports whether a token is a valid, unexpired token returned by Generate.
 func Valid(token, key, userID, actionID string) bool {
 	return validTokenAtTime(token, key, userID, actionID, time.Now())
 }
 
-// validTokenAtTime is like Valid, but it uses now to check if the token is expired.
+// validTokenAtTime reports whether a token is valid at the given time.
 func validTokenAtTime(token, key, userID, actionID string, now time.Time) bool {
-	// Decode the token.
-	data, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		return false
-	}
-
 	// Extract the issue time of the token.
-	sep := bytes.LastIndex(data, []byte{':'})
+	sep := strings.LastIndex(token, ":")
 	if sep < 0 {
 		return false
 	}
-	nanos, err := strconv.ParseInt(string(data[sep+1:]), 10, 64)
+	millis, err := strconv.ParseInt(token[sep+1:], 10, 64)
 	if err != nil {
 		return false
 	}
-	issueTime := time.Unix(0, nanos)
+	issueTime := time.Unix(0, millis*1e6)
 
 	// Check that the token is not expired.
 	if now.Sub(issueTime) >= Timeout {
