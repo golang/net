@@ -161,6 +161,18 @@ type clientStream struct {
 	resetErr  error         // populated before peerReset is closed
 }
 
+// awaitRequestCancel runs in its own goroutine and waits for the user's
+func (cs *clientStream) awaitRequestCancel(cancel <-chan struct{}) {
+	if cancel == nil {
+		return
+	}
+	select {
+	case <-cancel:
+		cs.bufPipe.CloseWithError(errRequestCanceled)
+	case <-cs.bufPipe.Done():
+	}
+}
+
 // checkReset reports any error sent in a RST_STREAM frame by the
 // server.
 func (cs *clientStream) checkReset() error {
@@ -465,6 +477,10 @@ func (cc *ClientConn) putFrameScratchBuffer(buf []byte) {
 	// forget about it.
 }
 
+// errRequestCanceled is a copy of net/http's errRequestCanceled because it's not
+// exported. At least they'll be DeepEqual for h1-vs-h2 comparisons tests.
+var errRequestCanceled = errors.New("net/http: request canceled")
+
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	cc.mu.Lock()
 
@@ -522,6 +538,10 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			cc.fr.WriteContinuation(cs.ID, endHeaders, chunk)
 		}
 	}
+	// TODO(bradfitz): this Flush could potentially block (as
+	// could the WriteHeaders call(s) above), which means they
+	// wouldn't respond to Request.Cancel being readable. That's
+	// rare, but this should probably be in a goroutine.
 	cc.bw.Flush()
 	werr := cc.werr
 	cc.wmu.Unlock()
@@ -561,6 +581,9 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			res.Request = req
 			res.TLS = cc.tlsState
 			return res, nil
+		case <-req.Cancel:
+			cs.abortRequestBodyWrite()
+			return nil, errRequestCanceled
 		case err := <-bodyCopyErrc:
 			if err != nil {
 				return nil, err
@@ -935,6 +958,7 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 		cs.bufPipe = pipe{b: buf}
 		cs.bytesRemain = res.ContentLength
 		res.Body = transportResponseBody{cs}
+		go cs.awaitRequestCancel(cs.req.Cancel)
 
 		if cs.requestedGzip && res.Header.Get("Content-Encoding") == "gzip" {
 			res.Header.Del("Content-Encoding")

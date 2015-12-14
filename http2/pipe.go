@@ -14,10 +14,11 @@ import (
 // io.Pipe except there are no PipeReader/PipeWriter halves, and the
 // underlying buffer is an interface. (io.Pipe is always unbuffered)
 type pipe struct {
-	mu  sync.Mutex
-	c   sync.Cond // c.L must point to
-	b   pipeBuffer
-	err error // read error once empty. non-nil means closed.
+	mu    sync.Mutex
+	c     sync.Cond // c.L must point to
+	b     pipeBuffer
+	err   error         // read error once empty. non-nil means closed.
+	donec chan struct{} // closed on error
 }
 
 type pipeBuffer interface {
@@ -78,6 +79,9 @@ func (p *pipe) CloseWithError(err error) {
 	defer p.c.Signal()
 	if p.err == nil {
 		p.err = err
+		if p.donec != nil {
+			close(p.donec)
+		}
 	}
 }
 
@@ -87,4 +91,19 @@ func (p *pipe) Err() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.err
+}
+
+// Done returns a channel which is closed if and when this pipe is closed
+// with CloseWithError.
+func (p *pipe) Done() <-chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.donec == nil {
+		p.donec = make(chan struct{})
+		if p.err != nil {
+			// Already hit an error.
+			close(p.donec)
+		}
+	}
+	return p.donec
 }
