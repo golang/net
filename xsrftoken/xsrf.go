@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// The duration that XSRF tokens are valid.
+// Timeout is the duration for which XSRF tokens are valid.
 // It is exported so clients may set cookie timeouts that match generated tokens.
 const Timeout = 24 * time.Hour
 
