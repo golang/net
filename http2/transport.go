@@ -581,7 +581,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			res.Request = req
 			res.TLS = cc.tlsState
 			return res, nil
-		case <-req.Cancel:
+		case <-requestCancel(req):
 			cs.abortRequestBodyWrite()
 			return nil, errRequestCanceled
 		case err := <-bodyCopyErrc:
@@ -958,7 +958,7 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 		cs.bufPipe = pipe{b: buf}
 		cs.bytesRemain = res.ContentLength
 		res.Body = transportResponseBody{cs}
-		go cs.awaitRequestCancel(cs.req.Cancel)
+		go cs.awaitRequestCancel(requestCancel(cs.req))
 
 		if cs.requestedGzip && res.Header.Get("Content-Encoding") == "gzip" {
 			res.Header.Del("Content-Encoding")
