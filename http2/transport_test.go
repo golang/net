@@ -437,10 +437,11 @@ func TestConfigureTransport(t *testing.T) {
 		// Laziness, to avoid buildtags.
 		t.Errorf("stringification of HTTP/1 transport didn't contain \"h2\": %v", got)
 	}
+	wantNextProtos := []string{"h2", "http/1.1"}
 	if t1.TLSClientConfig == nil {
 		t.Errorf("nil t1.TLSClientConfig")
-	} else if !reflect.DeepEqual(t1.TLSClientConfig.NextProtos, []string{"h2"}) {
-		t.Errorf("TLSClientConfig.NextProtos = %q; want just 'h2'", t1.TLSClientConfig.NextProtos)
+	} else if !reflect.DeepEqual(t1.TLSClientConfig.NextProtos, wantNextProtos) {
+		t.Errorf("TLSClientConfig.NextProtos = %q; want %q", t1.TLSClientConfig.NextProtos, wantNextProtos)
 	}
 	if err := ConfigureTransport(t1); err == nil {
 		t.Error("unexpected success on second call to ConfigureTransport")

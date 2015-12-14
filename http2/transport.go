@@ -228,6 +228,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 	for {
 		cc, err := t.connPool().GetClientConn(req, addr)
 		if err != nil {
+			t.vlogf("failed to get client conn: %v", err)
 			return nil, err
 		}
 		res, err := cc.RoundTrip(req)
@@ -235,6 +236,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 			continue
 		}
 		if err != nil {
+			t.vlogf("RoundTrip failure: %v", err)
 			return nil, err
 		}
 		return res, nil
@@ -314,7 +316,11 @@ func (t *Transport) dialTLSDefault(network, addr string, cfg *tls.Config) (net.C
 }
 
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
+	if VerboseLogs {
+		t.vlogf("creating client conn to %v", c.RemoteAddr())
+	}
 	if _, err := c.Write(clientPreface); err != nil {
+		t.vlogf("client preface write error: %v", err)
 		return nil, err
 	}
 
@@ -805,6 +811,9 @@ func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
 	for {
 		f, err := cc.fr.ReadFrame()
+		if err != nil {
+			cc.vlogf("Transport readFrame error: (%T) %v", err, err)
+		}
 		if se, ok := err.(StreamError); ok {
 			// TODO: deal with stream errors from the framer.
 			return se
