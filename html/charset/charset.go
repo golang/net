@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/transform"
 )
 
@@ -27,9 +28,12 @@ import (
 // standard encodings for HTML. Matching is case-insensitive and ignores
 // leading and trailing whitespace.
 func Lookup(label string) (e encoding.Encoding, name string) {
-	label = strings.ToLower(strings.Trim(label, "\t\n\r\f "))
-	enc := encodings[label]
-	return enc.e, enc.name
+	e, err := htmlindex.Get(label)
+	if err != nil {
+		return nil, ""
+	}
+	name, _ = htmlindex.Name(e)
+	return e, name
 }
 
 // DetermineEncoding determines the encoding of an HTML document by examining

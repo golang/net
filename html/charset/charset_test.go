@@ -103,21 +103,6 @@ func TestEncode(t *testing.T) {
 	}
 }
 
-// TestNames verifies that you can pass an encoding's name to Lookup and get
-// the same encoding back (except for "replacement").
-func TestNames(t *testing.T) {
-	for _, e := range encodings {
-		if e.name == "replacement" {
-			continue
-		}
-		_, got := Lookup(e.name)
-		if got != e.name {
-			t.Errorf("got %q, want %q", got, e.name)
-			continue
-		}
-	}
-}
-
 var sniffTestCases = []struct {
 	filename, declared, want string
 }{
