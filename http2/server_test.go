@@ -41,14 +41,16 @@ func stderrv() io.Writer {
 }
 
 type serverTester struct {
-	cc        net.Conn // client conn
-	t         testing.TB
-	ts        *httptest.Server
-	fr        *Framer
-	logBuf    *bytes.Buffer
-	logFilter []string   // substrings to filter out
-	scMu      sync.Mutex // guards sc
-	sc        *serverConn
+	cc             net.Conn // client conn
+	t              testing.TB
+	ts             *httptest.Server
+	fr             *Framer
+	logBuf         *bytes.Buffer
+	logFilter      []string   // substrings to filter out
+	scMu           sync.Mutex // guards sc
+	sc             *serverConn
+	hpackDec       *hpack.Decoder
+	decodedHeaders [][2]string
 
 	// writing headers:
 	headerBuf bytes.Buffer
@@ -111,6 +113,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		frErrc: make(chan error, 1),
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
+	st.hpackDec = hpack.NewDecoder(initialHeaderTableSize, st.onHeaderField)
 
 	ts.TLS = ts.Config.TLSConfig // the httptest.Server has its own copy of this TLS config
 	ts.Config.ErrorLog = log.New(io.MultiWriter(stderrv(), twriter{t: t, st: st}, logBuf), "", log.LstdFlags)
@@ -1381,7 +1384,7 @@ func TestServer_Response_NoData_Header_FooBar(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"foo-bar", "some-value"},
@@ -1409,7 +1412,7 @@ func TestServer_Response_Data_Sniff_DoesntOverride(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "foo/bar"},
@@ -1437,7 +1440,7 @@ func TestServer_Response_TransferEncoding_chunked(t *testing.T) {
 	}, func(st *serverTester) {
 		getSlash(st)
 		hf := st.wantHeaders()
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "text/plain; charset=utf-8"},
@@ -1465,7 +1468,7 @@ func TestServer_Response_Data_IgnoreHeaderAfterWrite_After(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "text/html; charset=utf-8"},
@@ -1494,7 +1497,7 @@ func TestServer_Response_Data_IgnoreHeaderAfterWrite_Overwrite(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"foo", "proper value"},
@@ -1521,7 +1524,7 @@ func TestServer_Response_Data_SniffLenType(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "text/html; charset=utf-8"},
@@ -1557,7 +1560,7 @@ func TestServer_Response_Header_Flush_MidWrite(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "text/html; charset=utf-8"}, // sniffed
@@ -1626,7 +1629,7 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "200"},
 			{"content-type", "text/plain; charset=utf-8"}, // sniffed
@@ -1821,7 +1824,7 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth := decodeHeader(t, hf.HeaderBlockFragment())
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
 		wanth := [][2]string{
 			{":status", "100"},
 		}
@@ -1842,7 +1845,7 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		if !hf.HeadersEnded() {
 			t.Fatal("want END_HEADERS flag")
 		}
-		goth = decodeHeader(t, hf.HeaderBlockFragment())
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
 		wanth = [][2]string{
 			{":status", "200"},
 			{"content-type", "text/plain; charset=utf-8"},
@@ -2123,23 +2126,22 @@ func TestServer_Advertises_Common_Cipher(t *testing.T) {
 	st.greet()
 }
 
-// TODO: move this onto *serverTester, and re-use the same hpack
-// decoding context throughout.  We're just getting lucky here with
-// creating a new decoder each time.
-func decodeHeader(t *testing.T, headerBlock []byte) (pairs [][2]string) {
-	d := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
-		if f.Name == "date" {
-			return
-		}
-		pairs = append(pairs, [2]string{f.Name, f.Value})
-	})
-	if _, err := d.Write(headerBlock); err != nil {
-		t.Fatalf("hpack decoding error: %v", err)
+func (st *serverTester) onHeaderField(f hpack.HeaderField) {
+	if f.Name == "date" {
+		return
 	}
-	if err := d.Close(); err != nil {
-		t.Fatalf("hpack decoding error: %v", err)
+	st.decodedHeaders = append(st.decodedHeaders, [2]string{f.Name, f.Value})
+}
+
+func (st *serverTester) decodeHeader(headerBlock []byte) (pairs [][2]string) {
+	st.decodedHeaders = nil
+	if _, err := st.hpackDec.Write(headerBlock); err != nil {
+		st.t.Fatalf("hpack decoding error: %v", err)
 	}
-	return
+	if err := st.hpackDec.Close(); err != nil {
+		st.t.Fatalf("hpack decoding error: %v", err)
+	}
+	return st.decodedHeaders
 }
 
 // testServerResponse sets up an idle HTTP/2 connection and lets you
@@ -2367,7 +2369,7 @@ func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 	if !h.HeadersEnded() {
 		t.Fatalf("Got HEADERS without END_HEADERS set: %v", h)
 	}
-	headers := decodeHeader(t, h.HeaderBlockFragment())
+	headers := st.decodeHeader(h.HeaderBlockFragment())
 	want := [][2]string{
 		{":status", "431"},
 		{"content-type", "text/html; charset=utf-8"},
@@ -2445,6 +2447,64 @@ func TestCompressionErrorOnClose(t *testing.T) {
 	if ga.ErrCode != ErrCodeCompression {
 		t.Errorf("GOAWAY err = %v; want ErrCodeCompression", ga.ErrCode)
 	}
+}
+
+// test that a server handler can read trailers from a client
+func TestServerReadsTrailers(t *testing.T) {
+	// TODO: use testBodyContents or testServerRequest
+	t.Skip("unimplemented")
+}
+
+// test that a server handler can send trailers
+func TestServerWritesTrailers(t *testing.T) {
+	t.Skip("known failing test; see golang.org/issue/13557")
+	// See https://httpwg.github.io/specs/rfc7540.html#rfc.section.8.1.3
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Trailer", "Server-Trailer-A, Server-Trailer-B")
+		w.Header().Add("Trailer", "Server-Trailer-C")
+		w.Header().Set("Foo", "Bar")
+		io.WriteString(w, "Hello")
+		w.(http.Flusher).Flush()
+		w.Header().Set("Server-Trailer-A", "valuea")
+		w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("response HEADERS had END_STREAM")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("response HEADERS didn't have END_HEADERS")
+		}
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "200"},
+			{"foo", "Bar"},
+			{"trailer", "Server-Trailer-A, Server-Trailer-B"},
+			{"trailer", "Server-Trailer-C"},
+			{"content-type", "text/plain; charset=utf-8"},
+		}
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
+		}
+		df := st.wantData()
+		if string(df.Data()) != "Hello" {
+			t.Fatalf("Client read %q; want Hello", df.Data())
+		}
+		if df.StreamEnded() {
+			t.Fatalf("data frame had STREAM_ENDED")
+		}
+		tf := st.wantHeaders() // for the trailers
+		if !tf.StreamEnded() {
+			t.Fatalf("trailers HEADERS lacked END_STREAM")
+		}
+		if !tf.HeadersEnded() {
+			t.Fatalf("trailers HEADERS lacked END_HEADERS")
+		}
+		pairs := st.decodeHeader(tf.HeaderBlockFragment())
+		t.Logf("Got: %v", pairs)
+	})
 }
 
 func BenchmarkServerGets(b *testing.B) {
@@ -2651,7 +2711,7 @@ func TestServerNoAutoContentLengthOnHead(t *testing.T) {
 		EndHeaders:    true,
 	})
 	h := st.wantHeaders()
-	headers := decodeHeader(t, h.HeaderBlockFragment())
+	headers := st.decodeHeader(h.HeaderBlockFragment())
 	want := [][2]string{
 		{":status", "200"},
 		{"content-type", "text/plain; charset=utf-8"},
@@ -2676,7 +2736,7 @@ func TestServerNoDuplicateContentType(t *testing.T) {
 		EndHeaders:    true,
 	})
 	h := st.wantHeaders()
-	headers := decodeHeader(t, h.HeaderBlockFragment())
+	headers := st.decodeHeader(h.HeaderBlockFragment())
 	want := [][2]string{
 		{":status", "200"},
 		{"content-type", ""},

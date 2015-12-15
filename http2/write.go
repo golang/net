@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"golang.org/x/net/http2/hpack"
@@ -138,11 +139,20 @@ func (w *writeResHeaders) writeFrame(ctx writeContext) error {
 	enc, buf := ctx.HeaderEncoder()
 	buf.Reset()
 	enc.WriteField(hpack.HeaderField{Name: ":status", Value: httpCodeString(w.httpResCode)})
-	for k, vv := range w.h {
+
+	// TODO: garbage. pool sorters like http1? hot path for 1 key?
+	keys := make([]string, 0, len(w.h))
+	for k := range w.h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		vv := w.h[k]
 		k = lowerHeader(k)
+		isTE := k == "transfer-encoding"
 		for _, v := range vv {
 			// TODO: more of "8.1.2.2 Connection-Specific Header Fields"
-			if k == "transfer-encoding" && v != "trailers" {
+			if isTE && v != "trailers" {
 				continue
 			}
 			enc.WriteField(hpack.HeaderField{Name: k, Value: v})
