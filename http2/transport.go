@@ -584,6 +584,8 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		case <-requestCancel(req):
 			cs.abortRequestBodyWrite()
 			return nil, errRequestCanceled
+		case <-cs.peerReset:
+			return nil, cs.resetErr
 		case err := <-bodyCopyErrc:
 			if err != nil {
 				return nil, err

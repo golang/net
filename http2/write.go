@@ -95,6 +95,16 @@ func (w *writeData) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteData(w.streamID, w.endStream, w.p)
 }
 
+// handlerPanicRST is the message sent from handler goroutines when
+// the handler panics.
+type handlerPanicRST struct {
+	StreamID uint32
+}
+
+func (hp handlerPanicRST) writeFrame(ctx writeContext) error {
+	return ctx.Framer().WriteRSTStream(hp.StreamID, ErrCodeInternal)
+}
+
 func (se StreamError) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteRSTStream(se.StreamID, se.Code)
 }

@@ -47,6 +47,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -615,6 +616,7 @@ func (sc *serverConn) stopShutdownTimer() {
 }
 
 func (sc *serverConn) notePanic() {
+	// Note: this is for serverConn.serve panicking, not http.Handler code.
 	if testHookOnPanicMu != nil {
 		testHookOnPanicMu.Lock()
 		defer testHookOnPanicMu.Unlock()
@@ -837,6 +839,11 @@ func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
 	go sc.writeFrameAsync(wm)
 }
 
+// errHandlerPanicked is the error given to any callers blocked in a read from
+// Request.Body when the main goroutine panics. Since most handlers read in the
+// the main ServeHTTP goroutine, this will show up rarely.
+var errHandlerPanicked = errors.New("http2: handler panicked")
+
 // wroteFrame is called on the serve goroutine with the result of
 // whatever happened on writeFrameAsync.
 func (sc *serverConn) wroteFrame(res frameWriteResult) {
@@ -850,6 +857,10 @@ func (sc *serverConn) wroteFrame(res frameWriteResult) {
 	st := wm.stream
 
 	closeStream := endsStream(wm.write)
+
+	if _, ok := wm.write.(handlerPanicRST); ok {
+		sc.closeStream(st, errHandlerPanicked)
+	}
 
 	// Reply (if requested) to the blocked ServeHTTP goroutine.
 	if ch := wm.done; ch != nil {
@@ -1530,9 +1541,25 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 
 // Run on its own goroutine.
 func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) {
-	defer rw.handlerDone()
-	// TODO: catch panics like net/http.Server
+	didPanic := true
+	defer func() {
+		if didPanic {
+			e := recover()
+			// Same as net/http:
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			sc.writeFrameFromHandler(frameWriteMsg{
+				write:  handlerPanicRST{rw.rws.stream.id},
+				stream: rw.rws.stream,
+			})
+			sc.logf("http2: panic serving %v: %v\n%s", sc.conn.RemoteAddr(), e, buf)
+			return
+		}
+		rw.handlerDone()
+	}()
 	handler(rw, req)
+	didPanic = false
 }
 
 func handleHeaderListTooLong(w http.ResponseWriter, r *http.Request) {
@@ -1920,9 +1947,6 @@ func (w *responseWriter) write(lenData int, dataB []byte, dataS string) (n int, 
 
 func (w *responseWriter) handlerDone() {
 	rws := w.rws
-	if rws == nil {
-		panic("handlerDone called twice")
-	}
 	rws.handlerDone = true
 	w.Flush()
 	w.rws = nil
