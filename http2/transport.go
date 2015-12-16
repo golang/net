@@ -276,7 +276,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 	for {
 		cc, err := t.connPool().GetClientConn(req, addr)
 		if err != nil {
-			t.vlogf("failed to get client conn: %v", err)
+			t.vlogf("http2: Transport failed to get client conn for %s: %v", addr, err)
 			return nil, err
 		}
 		res, err := cc.RoundTrip(req)
@@ -365,7 +365,7 @@ func (t *Transport) dialTLSDefault(network, addr string, cfg *tls.Config) (net.C
 
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 	if VerboseLogs {
-		t.vlogf("creating client conn to %v", c.RemoteAddr())
+		t.vlogf("http2: Transport creating client conn to %v", c.RemoteAddr())
 	}
 	if _, err := c.Write(clientPreface); err != nil {
 		t.vlogf("client preface write error: %v", err)
@@ -899,6 +899,9 @@ func (cc *ClientConn) encodeTrailers(req *http.Request) []byte {
 }
 
 func (cc *ClientConn) writeHeader(name, value string) {
+	if VerboseLogs {
+		log.Printf("http2: Transport encoding header %q = %q", name, value)
+	}
 	cc.henc.WriteField(hpack.HeaderField{Name: name, Value: value})
 }
 
@@ -1014,7 +1017,9 @@ func (rl *clientConnReadLoop) run() error {
 		} else if err != nil {
 			return err
 		}
-		cc.vlogf("Transport received %v: %#v", f.Header(), f)
+		if VerboseLogs {
+			cc.vlogf("http2: Transport received %s", summarizeFrame(f))
+		}
 
 		switch f := f.(type) {
 		case *HeadersFrame:
@@ -1253,9 +1258,6 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 		return nil
 	}
 	data := f.Data()
-	if VerboseLogs {
-		rl.cc.logf("DATA: %q", data)
-	}
 
 	// Check connection-level flow control.
 	cc.mu.Lock()
@@ -1455,7 +1457,7 @@ func (rl *clientConnReadLoop) checkHeaderField(f hpack.HeaderField) bool {
 func (rl *clientConnReadLoop) onNewHeaderField(f hpack.HeaderField) {
 	cc := rl.cc
 	if VerboseLogs {
-		cc.logf("Header field: %+v", f)
+		cc.logf("http2: Transport decoded %v", f)
 	}
 
 	if !rl.checkHeaderField(f) {
@@ -1498,6 +1500,9 @@ func (rl *clientConnReadLoop) onNewHeaderField(f hpack.HeaderField) {
 }
 
 func (rl *clientConnReadLoop) onNewTrailerField(cs *clientStream, f hpack.HeaderField) {
+	if VerboseLogs {
+		rl.cc.logf("http2: Transport decoded trailer %v", f)
+	}
 	if !rl.checkHeaderField(f) {
 		return
 	}

@@ -2472,6 +2472,7 @@ func TestCompressionErrorOnWrite(t *testing.T) {
 		serverConfig = ts.Config
 		serverConfig.MaxHeaderBytes = maxStrLen
 	})
+	st.addLogFilter("connection error: COMPRESSION_ERROR")
 	defer st.Close()
 	st.greet()
 
@@ -2515,6 +2516,7 @@ func TestCompressionErrorOnClose(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		// No response body.
 	})
+	st.addLogFilter("connection error: COMPRESSION_ERROR")
 	defer st.Close()
 	st.greet()
 

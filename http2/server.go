@@ -309,7 +309,7 @@ func isBadCipher(cipher uint16) bool {
 }
 
 func (sc *serverConn) rejectConn(err ErrCode, debug string) {
-	sc.vlogf("REJECTING conn: %v, %s", err, debug)
+	sc.vlogf("http2: server rejecting conn: %v, %s", err, debug)
 	// ignoring errors. hanging up anyway.
 	sc.framer.WriteGoAway(0, err, []byte(debug))
 	sc.bw.Flush()
@@ -497,7 +497,9 @@ func (sc *serverConn) condlogf(err error, format string, args ...interface{}) {
 
 func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 	sc.serveG.check()
-	sc.vlogf("got header field %+v", f)
+	if VerboseLogs {
+		sc.vlogf("http2: server decoded %v", f)
+	}
 	switch {
 	case !validHeader(f.Name):
 		sc.req.invalidHeader = true
@@ -547,7 +549,9 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 func (st *stream) onNewTrailerField(f hpack.HeaderField) {
 	sc := st.sc
 	sc.serveG.check()
-	sc.vlogf("got trailer field %+v", f)
+	if VerboseLogs {
+		sc.vlogf("http2: server decoded trailer %v", f)
+	}
 	switch {
 	case !validHeader(f.Name):
 		sc.req.invalidHeader = true
@@ -674,7 +678,9 @@ func (sc *serverConn) serve() {
 	defer sc.stopShutdownTimer()
 	defer close(sc.doneServing) // unblocks handlers trying to send
 
-	sc.vlogf("HTTP/2 connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
+	if VerboseLogs {
+		sc.vlogf("http2: server connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
+	}
 
 	sc.writeFrame(frameWriteMsg{
 		write: writeSettings{
@@ -691,7 +697,7 @@ func (sc *serverConn) serve() {
 	sc.unackedSettings++
 
 	if err := sc.readPreface(); err != nil {
-		sc.condlogf(err, "error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
+		sc.condlogf(err, "http2: server: error reading preface from client %v: %v", sc.conn.RemoteAddr(), err)
 		return
 	}
 	// Now that we've got the preface, get us out of the
@@ -757,7 +763,9 @@ func (sc *serverConn) readPreface() error {
 		return errors.New("timeout waiting for client preface")
 	case err := <-errc:
 		if err == nil {
-			sc.vlogf("client %v said hello", sc.conn.RemoteAddr())
+			if VerboseLogs {
+				sc.vlogf("http2: server: client %v said hello", sc.conn.RemoteAddr())
+			}
 		}
 		return err
 	}
@@ -1035,7 +1043,9 @@ func (sc *serverConn) processFrameFromReader(res readFrameResult) bool {
 		}
 	} else {
 		f := res.f
-		sc.vlogf("got %v: %#v", f.Header(), f)
+		if VerboseLogs {
+			sc.vlogf("http2: server read frame %v", summarizeFrame(f))
+		}
 		err = sc.processFrame(f)
 		if err == nil {
 			return true
@@ -1050,14 +1060,14 @@ func (sc *serverConn) processFrameFromReader(res readFrameResult) bool {
 		sc.goAway(ErrCodeFlowControl)
 		return true
 	case ConnectionError:
-		sc.logf("%v: %v", sc.conn.RemoteAddr(), ev)
+		sc.logf("http2: server connection error from %v: %v", sc.conn.RemoteAddr(), ev)
 		sc.goAway(ErrCode(ev))
 		return true // goAway will handle shutdown
 	default:
 		if res.err != nil {
-			sc.logf("disconnecting; error reading frame from client %s: %v", sc.conn.RemoteAddr(), err)
+			sc.logf("http2: server closing client connection; error reading frame from client %s: %v", sc.conn.RemoteAddr(), err)
 		} else {
-			sc.logf("disconnection due to other error: %v", err)
+			sc.logf("http2: server closing client connection: %v", err)
 		}
 		return false
 	}
@@ -1096,7 +1106,7 @@ func (sc *serverConn) processFrame(f Frame) error {
 		// frame as a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
 		return ConnectionError(ErrCodeProtocol)
 	default:
-		sc.vlogf("Ignoring frame: %v", f.Header())
+		sc.vlogf("http2: server ignoring frame: %v", f.Header())
 		return nil
 	}
 }
@@ -1207,7 +1217,9 @@ func (sc *serverConn) processSetting(s Setting) error {
 	if err := s.Valid(); err != nil {
 		return err
 	}
-	sc.vlogf("processing setting %v", s)
+	if VerboseLogs {
+		sc.vlogf("http2: server processing setting %v", s)
+	}
 	switch s.ID {
 	case SettingHeaderTableSize:
 		sc.headerTableSize = s.Val
@@ -1226,6 +1238,9 @@ func (sc *serverConn) processSetting(s Setting) error {
 		// Unknown setting: "An endpoint that receives a SETTINGS
 		// frame with any unknown or unsupported identifier MUST
 		// ignore that setting."
+		if VerboseLogs {
+			sc.vlogf("http2: server ignoring unknown setting %v", s)
+		}
 	}
 	return nil
 }
