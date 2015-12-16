@@ -2515,17 +2515,32 @@ func TestServerReadsTrailers(t *testing.T) {
 }
 
 // test that a server handler can send trailers
-func TestServerWritesTrailers(t *testing.T) {
-	t.Skip("known failing test; see golang.org/issue/13557")
+func TestServerWritesTrailers_WithFlush(t *testing.T)    { testServerWritesTrailers(t, true) }
+func TestServerWritesTrailers_WithoutFlush(t *testing.T) { testServerWritesTrailers(t, false) }
+
+func testServerWritesTrailers(t *testing.T, withFlush bool) {
 	// See https://httpwg.github.io/specs/rfc7540.html#rfc.section.8.1.3
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Trailer", "Server-Trailer-A, Server-Trailer-B")
 		w.Header().Add("Trailer", "Server-Trailer-C")
+
+		// TODO: decide if the server should filter these while
+		// writing the Trailer header in the response. Currently it
+		// appears net/http doesn't do this for http/1.1
+		w.Header().Add("Trailer", "Transfer-Encoding, Content-Length, Trailer") // filtered
 		w.Header().Set("Foo", "Bar")
+		w.Header().Set("Content-Length", "5")
+
 		io.WriteString(w, "Hello")
-		w.(http.Flusher).Flush()
+		if withFlush {
+			w.(http.Flusher).Flush()
+		}
 		w.Header().Set("Server-Trailer-A", "valuea")
 		w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+		w.Header().Set("Server-Surpise", "surprise! this isn't predeclared!")
+		w.Header().Set("Transfer-Encoding", "should not be included; Forbidden by RFC 2616 14.40")
+		w.Header().Set("Content-Length", "should not be included; Forbidden by RFC 2616 14.40")
+		w.Header().Set("Trailer", "should not be included; Forbidden by RFC 2616 14.40")
 		return nil
 	}, func(st *serverTester) {
 		getSlash(st)
@@ -2542,7 +2557,9 @@ func TestServerWritesTrailers(t *testing.T) {
 			{"foo", "Bar"},
 			{"trailer", "Server-Trailer-A, Server-Trailer-B"},
 			{"trailer", "Server-Trailer-C"},
+			{"trailer", "Transfer-Encoding, Content-Length, Trailer"},
 			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "5"},
 		}
 		if !reflect.DeepEqual(goth, wanth) {
 			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
@@ -2561,8 +2578,14 @@ func TestServerWritesTrailers(t *testing.T) {
 		if !tf.HeadersEnded() {
 			t.Fatalf("trailers HEADERS lacked END_HEADERS")
 		}
-		pairs := st.decodeHeader(tf.HeaderBlockFragment())
-		t.Logf("Got: %v", pairs)
+		wanth = [][2]string{
+			{"server-trailer-a", "valuea"},
+			{"server-trailer-c", "valuec"},
+		}
+		goth = st.decodeHeader(tf.HeaderBlockFragment())
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
+		}
 	})
 }
 

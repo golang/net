@@ -46,6 +46,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -1877,6 +1878,7 @@ type responseWriterState struct {
 	// mutated by http.Handler goroutine:
 	handlerHeader http.Header // nil until called
 	snapHeader    http.Header // snapshot of handlerHeader at WriteHeader time
+	trailers      []string    // set in writeChunk
 	status        int         // status code passed to WriteHeader
 	wroteHeader   bool        // WriteHeader called (explicitly or implicitly). Not necessarily sent to user yet.
 	sentHeader    bool        // have we sent the header frame?
@@ -1893,6 +1895,21 @@ type chunkWriter struct{ rws *responseWriterState }
 
 func (cw chunkWriter) Write(p []byte) (n int, err error) { return cw.rws.writeChunk(p) }
 
+func (rws *responseWriterState) hasTrailers() bool { return len(rws.trailers) != 0 }
+
+// declareTrailer is called for each Trailer header when the
+// response header is written. It notes that a header will need to be
+// written in the trailers at the end of the response.
+func (rws *responseWriterState) declareTrailer(k string) {
+	k = http.CanonicalHeaderKey(k)
+	switch k {
+	case "Transfer-Encoding", "Content-Length", "Trailer":
+		// Forbidden by RFC 2616 14.40.
+		return
+	}
+	rws.trailers = append(rws.trailers, k)
+}
+
 // writeChunk writes chunks from the bufio.Writer. But because
 // bufio.Writer may bypass its chunking, sometimes p may be
 // arbitrarily large.
@@ -1903,6 +1920,7 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 	if !rws.wroteHeader {
 		rws.writeHeader(200)
 	}
+
 	isHeadResp := rws.req.Method == "HEAD"
 	if !rws.sentHeader {
 		rws.sentHeader = true
@@ -1928,7 +1946,12 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 			// TODO(bradfitz): be faster here, like net/http? measure.
 			date = time.Now().UTC().Format(http.TimeFormat)
 		}
-		endStream := (rws.handlerDone && len(p) == 0) || isHeadResp
+
+		for _, v := range rws.snapHeader["Trailer"] {
+			foreachHeaderElement(v, rws.declareTrailer)
+		}
+
+		endStream := (rws.handlerDone && !rws.hasTrailers() && len(p) == 0) || isHeadResp
 		err = rws.conn.writeHeaders(rws.stream, &writeResHeaders{
 			streamID:      rws.stream.id,
 			httpResCode:   rws.status,
@@ -1952,8 +1975,22 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 		return 0, nil
 	}
 
-	if err := rws.conn.writeDataFromHandler(rws.stream, p, rws.handlerDone); err != nil {
-		return 0, err
+	endStream := rws.handlerDone && !rws.hasTrailers()
+	if len(p) > 0 || endStream {
+		// only send a 0 byte DATA frame if we're ending the stream.
+		if err := rws.conn.writeDataFromHandler(rws.stream, p, endStream); err != nil {
+			return 0, err
+		}
+	}
+
+	if rws.handlerDone && rws.hasTrailers() {
+		err = rws.conn.writeHeaders(rws.stream, &writeResHeaders{
+			streamID:  rws.stream.id,
+			h:         rws.handlerHeader,
+			trailers:  rws.trailers,
+			endStream: true,
+		})
+		return len(p), err
 	}
 	return len(p), nil
 }
@@ -2082,4 +2119,22 @@ func (w *responseWriter) handlerDone() {
 	w.Flush()
 	w.rws = nil
 	responseWriterStatePool.Put(rws)
+}
+
+// foreachHeaderElement splits v according to the "#rule" construction
+// in RFC 2616 section 2.1 and calls fn for each non-empty element.
+func foreachHeaderElement(v string, fn func(string)) {
+	v = textproto.TrimString(v)
+	if v == "" {
+		return
+	}
+	if !strings.Contains(v, ",") {
+		fn(v)
+		return
+	}
+	for _, f := range strings.Split(v, ",") {
+		if f = textproto.TrimString(f); f != "" {
+			fn(f)
+		}
+	}
 }
