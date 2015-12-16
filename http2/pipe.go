@@ -14,11 +14,12 @@ import (
 // io.Pipe except there are no PipeReader/PipeWriter halves, and the
 // underlying buffer is an interface. (io.Pipe is always unbuffered)
 type pipe struct {
-	mu    sync.Mutex
-	c     sync.Cond // c.L must point to
-	b     pipeBuffer
-	err   error         // read error once empty. non-nil means closed.
-	donec chan struct{} // closed on error
+	mu     sync.Mutex
+	c      sync.Cond // c.L must point to
+	b      pipeBuffer
+	err    error         // read error once empty. non-nil means closed.
+	donec  chan struct{} // closed on error
+	readFn func()        // optional code to run in Read before error
 }
 
 type pipeBuffer interface {
@@ -40,6 +41,10 @@ func (p *pipe) Read(d []byte) (n int, err error) {
 			return p.b.Read(d)
 		}
 		if p.err != nil {
+			if p.readFn != nil {
+				p.readFn()     // e.g. copy trailers
+				p.readFn = nil // not sticky like p.err
+			}
 			return 0, p.err
 		}
 		p.c.Wait()
@@ -63,13 +68,18 @@ func (p *pipe) Write(d []byte) (n int, err error) {
 	return p.b.Write(d)
 }
 
-// CloseWithError causes Reads to wake up and return the
-// provided err after all data has been read.
+// CloseWithError causes the next Read (waking up a current blocked
+// Read if needed) to return the provided err after all data has been
+// read.
 //
 // The error must be non-nil.
-func (p *pipe) CloseWithError(err error) {
+func (p *pipe) CloseWithError(err error) { p.closeWithErrorAndCode(err, nil) }
+
+// closeWithErrorAndCode is like CloseWithError but also sets some code to run
+// in the caller's goroutine before returning the error.
+func (p *pipe) closeWithErrorAndCode(err error, fn func()) {
 	if err == nil {
-		panic("CloseWithError must be non-nil")
+		panic("CloseWithError err must be non-nil")
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -77,11 +87,14 @@ func (p *pipe) CloseWithError(err error) {
 		p.c.L = &p.mu
 	}
 	defer p.c.Signal()
-	if p.err == nil {
-		p.err = err
-		if p.donec != nil {
-			close(p.donec)
-		}
+	if p.err != nil {
+		// Already been done.
+		return
+	}
+	p.readFn = fn
+	p.err = err
+	if p.donec != nil {
+		close(p.donec)
 	}
 }
 

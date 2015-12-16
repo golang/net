@@ -246,6 +246,21 @@ func (st *serverTester) encodeHeaderField(k, v string) {
 	}
 }
 
+// encodeHeaderRaw is the magic-free version of encodeHeader.
+// It takes 0 or more (k, v) pairs and encodes them.
+func (st *serverTester) encodeHeaderRaw(headers ...string) []byte {
+	if len(headers)%2 == 1 {
+		panic("odd number of kv args")
+	}
+	st.headerBuf.Reset()
+	for len(headers) > 0 {
+		k, v := headers[0], headers[1]
+		st.encodeHeaderField(k, v)
+		headers = headers[2:]
+	}
+	return st.headerBuf.Bytes()
+}
+
 // encodeHeader encodes headers and returns their HPACK bytes. headers
 // must contain an even number of key/value pairs.  There may be
 // multiple pairs for keys (e.g. "cookie").  The :method, :path, and
@@ -299,7 +314,6 @@ func (st *serverTester) encodeHeader(headers ...string) []byte {
 			vals[k] = append(vals[k], v)
 		}
 	}
-	st.headerBuf.Reset()
 	for _, k := range keys {
 		for _, v := range vals[k] {
 			st.encodeHeaderField(k, v)
@@ -2451,8 +2465,53 @@ func TestCompressionErrorOnClose(t *testing.T) {
 
 // test that a server handler can read trailers from a client
 func TestServerReadsTrailers(t *testing.T) {
-	// TODO: use testBodyContents or testServerRequest
-	t.Skip("unimplemented")
+	const testBody = "some test body"
+	writeReq := func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: st.encodeHeader("trailer", "Foo, Bar", "trailer", "Baz"),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		st.writeData(1, false, []byte(testBody))
+		st.writeHeaders(HeadersFrameParam{
+			StreamID: 1, // clients send odd numbers
+			BlockFragment: st.encodeHeaderRaw(
+				"foo", "foov",
+				"bar", "barv",
+				"baz", "bazv",
+				"surprise", "wasn't declared; shouldn't show up",
+			),
+			EndStream:  true,
+			EndHeaders: true,
+		})
+	}
+	checkReq := func(r *http.Request) {
+		wantTrailer := http.Header{
+			"Foo": nil,
+			"Bar": nil,
+			"Baz": nil,
+		}
+		if !reflect.DeepEqual(r.Trailer, wantTrailer) {
+			t.Errorf("initial Trailer = %v; want %v", r.Trailer, wantTrailer)
+		}
+		slurp, err := ioutil.ReadAll(r.Body)
+		if string(slurp) != testBody {
+			t.Errorf("read body %q; want %q", slurp, testBody)
+		}
+		if err != nil {
+			t.Fatalf("Body slurp: %v", err)
+		}
+		wantTrailerAfter := http.Header{
+			"Foo": {"foov"},
+			"Bar": {"barv"},
+			"Baz": {"bazv"},
+		}
+		if !reflect.DeepEqual(r.Trailer, wantTrailerAfter) {
+			t.Errorf("final Trailer = %v; want %v", r.Trailer, wantTrailerAfter)
+		}
+	}
+	testServerRequest(t, writeReq, checkReq)
 }
 
 // test that a server handler can send trailers
