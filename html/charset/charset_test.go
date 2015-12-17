@@ -21,9 +21,12 @@ func transformString(t transform.Transformer, s string) (string, error) {
 	return string(b), err
 }
 
-var testCases = []struct {
+type testCase struct {
 	utf8, other, otherEncoding string
-}{
+}
+
+// testCases for encoding and decoding.
+var testCases = []testCase{
 	{"Résumé", "Résumé", "utf8"},
 	{"Résumé", "R\xe9sum\xe9", "latin1"},
 	{"これは漢字です。", "S0\x8c0o0\"oW[g0Y0\x020", "UTF-16LE"},
@@ -86,6 +89,11 @@ func TestDecode(t *testing.T) {
 }
 
 func TestEncode(t *testing.T) {
+	testCases := append(testCases, []testCase{
+		// U+0144 LATIN SMALL LETTER N WITH ACUTE not supported by encoding.
+		{"Gdańsk", "Gda&#324;sk", "ISO-8859-11"},
+		{"\ufffd", "&#65533;", "ISO-8859-11"},
+	}...)
 	for _, tc := range testCases {
 		e, _ := Lookup(tc.otherEncoding)
 		if e == nil {
