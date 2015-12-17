@@ -71,6 +71,11 @@ var testCases = []testCase{
 }
 
 func TestDecode(t *testing.T) {
+	testCases := append(testCases, []testCase{
+		// Replace multi-byte maximum subpart of ill-formed subsequence with
+		// single replacement character (WhatWG requirement).
+		{"Rés\ufffdumé", "Rés\xe1\x80umé", "utf8"},
+	}...)
 	for _, tc := range testCases {
 		e, _ := Lookup(tc.otherEncoding)
 		if e == nil {
@@ -90,9 +95,12 @@ func TestDecode(t *testing.T) {
 
 func TestEncode(t *testing.T) {
 	testCases := append(testCases, []testCase{
+		// Use Go-style replacement.
+		{"Rés\xe1\x80umé", "Rés\ufffd\ufffdumé", "utf8"},
 		// U+0144 LATIN SMALL LETTER N WITH ACUTE not supported by encoding.
 		{"Gdańsk", "Gda&#324;sk", "ISO-8859-11"},
 		{"\ufffd", "&#65533;", "ISO-8859-11"},
+		{"a\xe1\x80b", "a&#65533;&#65533;b", "ISO-8859-11"},
 	}...)
 	for _, tc := range testCases {
 		e, _ := Lookup(tc.otherEncoding)
