@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"testing"
 )
 
@@ -48,5 +49,61 @@ func TestPipeDoneChan_ErrFirst(t *testing.T) {
 	case <-done:
 	default:
 		t.Fatal("should be done")
+	}
+}
+
+func TestPipeDoneChan_Break(t *testing.T) {
+	var p pipe
+	done := p.Done()
+	select {
+	case <-done:
+		t.Fatal("done too soon")
+	default:
+	}
+	p.BreakWithError(io.EOF)
+	select {
+	case <-done:
+	default:
+		t.Fatal("should be done")
+	}
+}
+
+func TestPipeDoneChan_Break_ErrFirst(t *testing.T) {
+	var p pipe
+	p.BreakWithError(io.EOF)
+	done := p.Done()
+	select {
+	case <-done:
+	default:
+		t.Fatal("should be done")
+	}
+}
+
+func TestPipeCloseWithError(t *testing.T) {
+	p := &pipe{b: new(bytes.Buffer)}
+	const body = "foo"
+	io.WriteString(p, body)
+	a := errors.New("test error")
+	p.CloseWithError(a)
+	all, err := ioutil.ReadAll(p)
+	if string(all) != body {
+		t.Errorf("read bytes = %q; want %q", all, body)
+	}
+	if err != a {
+		t.Logf("read error = %v, %v", err, a)
+	}
+}
+
+func TestPipeBreakWithError(t *testing.T) {
+	p := &pipe{b: new(bytes.Buffer)}
+	io.WriteString(p, "foo")
+	a := errors.New("test err")
+	p.BreakWithError(a)
+	all, err := ioutil.ReadAll(p)
+	if string(all) != "" {
+		t.Errorf("read bytes = %q; want empty string", all)
+	}
+	if err != a {
+		t.Logf("read error = %v, %v", err, a)
 	}
 }

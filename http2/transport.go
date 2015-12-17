@@ -1144,11 +1144,15 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 	return
 }
 
+var errClosedResponseBody = errors.New("http2: response body closed")
+
 func (b transportResponseBody) Close() error {
-	if b.cs.bufPipe.Err() != io.EOF {
+	cs := b.cs
+	if cs.bufPipe.Err() != io.EOF {
 		// TODO: write test for this
-		b.cs.cc.writeStreamReset(b.cs.ID, ErrCodeCancel, nil)
+		cs.cc.writeStreamReset(cs.ID, ErrCodeCancel, nil)
 	}
+	cs.bufPipe.BreakWithError(errClosedResponseBody)
 	return nil
 }
 
