@@ -1015,18 +1015,6 @@ func (sc *serverConn) resetStream(se StreamError) {
 	}
 }
 
-// curHeaderStreamID returns the stream ID of the header block we're
-// currently in the middle of reading. If this returns non-zero, the
-// next frame must be a CONTINUATION with this stream id.
-func (sc *serverConn) curHeaderStreamID() uint32 {
-	sc.serveG.check()
-	st := sc.req.stream
-	if st == nil {
-		return 0
-	}
-	return st.id
-}
-
 // processFrameFromReader processes the serve loop's read from readFrameCh from the
 // frame-reading goroutine.
 // processFrameFromReader returns whether the connection should be kept open.
@@ -1089,14 +1077,6 @@ func (sc *serverConn) processFrame(f Frame) error {
 			return ConnectionError(ErrCodeProtocol)
 		}
 		sc.sawFirstSettings = true
-	}
-
-	if s := sc.curHeaderStreamID(); s != 0 {
-		if cf, ok := f.(*ContinuationFrame); !ok {
-			return ConnectionError(ErrCodeProtocol)
-		} else if cf.Header().StreamID != s {
-			return ConnectionError(ErrCodeProtocol)
-		}
 	}
 
 	switch f := f.(type) {
@@ -1437,9 +1417,6 @@ func (st *stream) processTrailerHeaders(f *HeadersFrame) error {
 func (sc *serverConn) processContinuation(f *ContinuationFrame) error {
 	sc.serveG.check()
 	st := sc.streams[f.Header().StreamID]
-	if st == nil || sc.curHeaderStreamID() != st.id {
-		return ConnectionError(ErrCodeProtocol)
-	}
 	if st.gotTrailerHeader {
 		return st.processTrailerHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 	}

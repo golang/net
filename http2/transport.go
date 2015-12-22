@@ -851,10 +851,6 @@ type clientConnReadLoop struct {
 	cc        *ClientConn
 	activeRes map[uint32]*clientStream // keyed by streamID
 
-	// continueStreamID is the stream ID we're waiting for
-	// continuation frames for.
-	continueStreamID uint32
-
 	hdec *hpack.Decoder
 
 	// Fields reset on each HEADERS:
@@ -924,21 +920,6 @@ func (rl *clientConnReadLoop) run() error {
 		}
 		cc.vlogf("Transport received %v: %#v", f.Header(), f)
 
-		streamID := f.Header().StreamID
-
-		_, isContinue := f.(*ContinuationFrame)
-		if isContinue {
-			if streamID != rl.continueStreamID {
-				cc.logf("Protocol violation: got CONTINUATION with id %d; want %d", streamID, rl.continueStreamID)
-				return ConnectionError(ErrCodeProtocol)
-			}
-		} else if rl.continueStreamID != 0 {
-			// Continue frames need to be adjacent in the stream
-			// and we were in the middle of headers.
-			cc.logf("Protocol violation: got %T for stream %d, want CONTINUATION for %d", f, streamID, rl.continueStreamID)
-			return ConnectionError(ErrCodeProtocol)
-		}
-
 		switch f := f.(type) {
 		case *HeadersFrame:
 			err = rl.processHeaders(f)
@@ -986,13 +967,12 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 	cc := rl.cc
 	cs := cc.streamByID(streamID, streamEnded)
 	if cs == nil {
-		// We could return a ConnectionError(ErrCodeProtocol)
-		// here, except that in the case of us canceling
-		// client requests, we may also delete from the
-		// streams map, in which case we forgot that we sent
-		// this request. So, just ignore any responses for
-		// now.  They might've been in-flight before the
-		// server got our RST_STREAM.
+		// We'd get here if we canceled a request while the
+		// server was mid-way through replying with its
+		// headers. (The case of a CONTINUATION arriving
+		// without HEADERS would be rejected earlier by the
+		// Framer). So if this was just something we canceled,
+		// ignore it.
 		return nil
 	}
 	if cs.headersDone {
@@ -1004,12 +984,12 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 	if err != nil {
 		return ConnectionError(ErrCodeCompression)
 	}
+	if err := rl.hdec.Close(); err != nil {
+		return ConnectionError(ErrCodeCompression)
+	}
 	if !headersEnded {
-		rl.continueStreamID = cs.ID
 		return nil
 	}
-	// HEADERS (or CONTINUATION) are now over.
-	rl.continueStreamID = 0
 
 	if !cs.headersDone {
 		cs.headersDone = true

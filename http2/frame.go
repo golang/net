@@ -255,6 +255,11 @@ type Frame interface {
 type Framer struct {
 	r         io.Reader
 	lastFrame Frame
+	errReason string
+
+	// lastHeaderStream is non-zero if the last frame was an
+	// unfinished HEADERS/CONTINUATION.
+	lastHeaderStream uint32
 
 	maxReadSize uint32
 	headerBuf   [frameHeaderLen]byte
@@ -271,12 +276,18 @@ type Framer struct {
 	wbuf []byte
 
 	// AllowIllegalWrites permits the Framer's Write methods to
-	// write frames that do not conform to the HTTP/2 spec.  This
+	// write frames that do not conform to the HTTP/2 spec. This
 	// permits using the Framer to test other HTTP/2
 	// implementations' conformance to the spec.
 	// If false, the Write methods will prefer to return an error
 	// rather than comply.
 	AllowIllegalWrites bool
+
+	// AllowIllegalReads permits the Framer's ReadFrame method
+	// to return non-compliant frames or frame orders.
+	// This is for testing and permits using the Framer to test
+	// other HTTP/2 implementations' conformance to the spec.
+	AllowIllegalReads bool
 
 	// TODO: track which type of frame & with which flags was sent
 	// last.  Then return an error (unless AllowIllegalWrites) if
@@ -394,10 +405,63 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	}
 	f, err := typeFrameParser(fh.Type)(fh, payload)
 	if err != nil {
+		if ce, ok := err.(connError); ok {
+			return nil, fr.connError(ce.Code, ce.Reason)
+		}
 		return nil, err
 	}
-	fr.lastFrame = f
+	if err := fr.checkFrameOrder(f); err != nil {
+		return nil, err
+	}
 	return f, nil
+}
+
+// connError returns ConnectionError(code) but first
+// stashes away a public reason to the caller can optionally relay it
+// to the peer before hanging up on them. This might help others debug
+// their implementations.
+func (fr *Framer) connError(code ErrCode, reason string) error {
+	fr.errReason = reason
+	return ConnectionError(code)
+}
+
+// checkFrameOrder reports an error if f is an invalid frame to return
+// next from ReadFrame. Mostly it checks whether HEADERS and
+// CONTINUATION frames are contiguous.
+func (fr *Framer) checkFrameOrder(f Frame) error {
+	last := fr.lastFrame
+	fr.lastFrame = f
+	if fr.AllowIllegalReads {
+		return nil
+	}
+
+	fh := f.Header()
+	if fr.lastHeaderStream != 0 {
+		if fh.Type != FrameContinuation {
+			return fr.connError(ErrCodeProtocol,
+				fmt.Sprintf("got %s for stream %d; expected CONTINUATION following %s for stream %d",
+					fh.Type, fh.StreamID,
+					last.Header().Type, fr.lastHeaderStream))
+		}
+		if fh.StreamID != fr.lastHeaderStream {
+			return fr.connError(ErrCodeProtocol,
+				fmt.Sprintf("got CONTINUATION for stream %d; expected stream %d",
+					fh.StreamID, fr.lastHeaderStream))
+		}
+	} else if fh.Type == FrameContinuation {
+		return fr.connError(ErrCodeProtocol, fmt.Sprintf("unexpected CONTINUATION for stream %d", fh.StreamID))
+	}
+
+	switch fh.Type {
+	case FrameHeaders, FrameContinuation:
+		if fh.Flags.Has(FlagHeadersEndHeaders) {
+			fr.lastHeaderStream = 0
+		} else {
+			fr.lastHeaderStream = fh.StreamID
+		}
+	}
+
+	return nil
 }
 
 // A DataFrame conveys arbitrary, variable-length sequences of octets
@@ -428,7 +492,7 @@ func parseDataFrame(fh FrameHeader, payload []byte) (Frame, error) {
 		// field is 0x0, the recipient MUST respond with a
 		// connection error (Section 5.4.1) of type
 		// PROTOCOL_ERROR.
-		return nil, ConnectionError(ErrCodeProtocol)
+		return nil, connError{ErrCodeProtocol, "DATA frame with stream ID 0"}
 	}
 	f := &DataFrame{
 		FrameHeader: fh,
@@ -446,7 +510,7 @@ func parseDataFrame(fh FrameHeader, payload []byte) (Frame, error) {
 		// length of the frame payload, the recipient MUST
 		// treat this as a connection error.
 		// Filed: https://github.com/http2/http2-spec/issues/610
-		return nil, ConnectionError(ErrCodeProtocol)
+		return nil, connError{ErrCodeProtocol, "pad size larger than data payload"}
 	}
 	f.data = payload[:len(payload)-int(padSize)]
 	return f, nil
@@ -753,7 +817,7 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 		// is received whose stream identifier field is 0x0, the recipient MUST
 		// respond with a connection error (Section 5.4.1) of type
 		// PROTOCOL_ERROR.
-		return nil, ConnectionError(ErrCodeProtocol)
+		return nil, connError{ErrCodeProtocol, "HEADERS frame with stream ID 0"}
 	}
 	var padLength uint8
 	if fh.Flags.Has(FlagHeadersPadded) {
@@ -883,10 +947,10 @@ func (p PriorityParam) IsZero() bool {
 
 func parsePriorityFrame(fh FrameHeader, payload []byte) (Frame, error) {
 	if fh.StreamID == 0 {
-		return nil, ConnectionError(ErrCodeProtocol)
+		return nil, connError{ErrCodeProtocol, "PRIORITY frame with stream ID 0"}
 	}
 	if len(payload) != 5 {
-		return nil, ConnectionError(ErrCodeFrameSize)
+		return nil, connError{ErrCodeFrameSize, fmt.Sprintf("PRIORITY frame payload size was %d; want 5", len(payload))}
 	}
 	v := binary.BigEndian.Uint32(payload[:4])
 	streamID := v & 0x7fffffff // mask off high bit
@@ -956,6 +1020,9 @@ type ContinuationFrame struct {
 }
 
 func parseContinuationFrame(fh FrameHeader, p []byte) (Frame, error) {
+	if fh.StreamID == 0 {
+		return nil, connError{ErrCodeProtocol, "CONTINUATION frame with stream ID 0"}
+	}
 	return &ContinuationFrame{fh, p}, nil
 }
 
