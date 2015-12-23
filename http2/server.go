@@ -621,6 +621,9 @@ func (sc *serverConn) readFrames() {
 		case <-sc.doneServing:
 			return
 		}
+		if terminalReadFrameError(err) {
+			return
+		}
 	}
 }
 
