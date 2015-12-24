@@ -944,11 +944,7 @@ func TestServer_RejectsLargeFrames(t *testing.T) {
 	if st.logBuf.Len() != 0 {
 		// Previously we spun here for a bit until the GOAWAY disconnect
 		// timer fired, logging while we fired.
-		trunc := st.logBuf.Len()
-		if trunc > 500 {
-			trunc = 500
-		}
-		t.Errorf("unexpected server output: %s\n", st.logBuf.Bytes()[:trunc])
+		t.Errorf("unexpected server output: %.500s\n", st.logBuf.Bytes())
 	}
 }
 

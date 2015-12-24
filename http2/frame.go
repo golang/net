@@ -374,7 +374,7 @@ func terminalReadFrameError(err error) bool {
 // until the next call to ReadFrame.
 //
 // If the frame is larger than previously set with SetMaxReadFrameSize, the
-// returned error is ErrFrameTooLarge. Other errors may of type
+// returned error is ErrFrameTooLarge. Other errors may be of type
 // ConnectionError, StreamError, or anything else from from the underlying
 // reader.
 func (fr *Framer) ReadFrame() (Frame, error) {
