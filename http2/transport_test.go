@@ -760,3 +760,62 @@ func TestTransportFullDuplex(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTransportConnectRequest(t *testing.T) {
+	gotc := make(chan *http.Request, 1)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		gotc <- r
+	}, optOnlyServer)
+	defer st.Close()
+
+	u, err := url.Parse(st.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	tests := []struct {
+		req  *http.Request
+		want string
+	}{
+		{
+			req: &http.Request{
+				Method: "CONNECT",
+				Header: http.Header{},
+				URL:    u,
+			},
+			want: u.Host,
+		},
+		{
+			req: &http.Request{
+				Method: "CONNECT",
+				Header: http.Header{},
+				URL:    u,
+				Host:   "example.com:123",
+			},
+			want: "example.com:123",
+		},
+	}
+
+	for i, tt := range tests {
+		res, err := c.Do(tt.req)
+		if err != nil {
+			t.Errorf("%d. RoundTrip = %v", i, err)
+			continue
+		}
+		res.Body.Close()
+		req := <-gotc
+		if req.Method != "CONNECT" {
+			t.Errorf("method = %q; want CONNECT", req.Method)
+		}
+		if req.Host != tt.want {
+			t.Errorf("Host = %q; want %q", req.Host, tt.want)
+		}
+		if req.URL.Host != tt.want {
+			t.Errorf("URL.Host = %q; want %q", req.URL.Host, tt.want)
+		}
+	}
+}

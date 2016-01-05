@@ -1545,7 +1545,17 @@ func (sc *serverConn) resetPendingRequest() {
 func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, error) {
 	sc.serveG.check()
 	rp := &sc.req
-	if rp.invalidHeader || rp.method == "" || rp.path == "" ||
+
+	if rp.invalidHeader {
+		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
+	}
+
+	isConnect := rp.method == "CONNECT"
+	if isConnect {
+		if rp.path != "" || rp.scheme != "" || rp.authority == "" {
+			return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
+		}
+	} else if rp.method == "" || rp.path == "" ||
 		(rp.scheme != "https" && rp.scheme != "http") {
 		// See 8.1.2.6 Malformed Requests and Responses:
 		//
@@ -1559,12 +1569,14 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		// pseudo-header fields"
 		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
 	}
+
 	bodyOpen := rp.stream.state == stateOpen
 	if rp.method == "HEAD" && bodyOpen {
 		// HEAD requests can't have bodies
 		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
 	}
 	var tlsState *tls.ConnectionState // nil if not scheme https
+
 	if rp.scheme == "https" {
 		tlsState = sc.tlsState
 	}
@@ -1605,18 +1617,26 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		stream:        rp.stream,
 		needsContinue: needsContinue,
 	}
-	// TODO: handle asterisk '*' requests + test
-	url, err := url.ParseRequestURI(rp.path)
-	if err != nil {
-		// TODO: find the right error code?
-		return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
+	var url_ *url.URL
+	var requestURI string
+	if isConnect {
+		url_ = &url.URL{Host: rp.authority}
+		requestURI = rp.authority // mimic HTTP/1 server behavior
+	} else {
+		var err error
+		// TODO: handle asterisk '*' requests + test
+		url_, err = url.ParseRequestURI(rp.path)
+		if err != nil {
+			return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
+		}
+		requestURI = rp.path
 	}
 	req := &http.Request{
 		Method:     rp.method,
-		URL:        url,
+		URL:        url_,
 		RemoteAddr: sc.remoteAddrStr,
 		Header:     rp.header,
-		RequestURI: rp.path,
+		RequestURI: requestURI,
 		Proto:      "HTTP/2.0",
 		ProtoMajor: 2,
 		ProtoMinor: 0,

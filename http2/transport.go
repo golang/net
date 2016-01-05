@@ -775,8 +775,10 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	// [RFC3986]).
 	cc.writeHeader(":authority", host) // probably not right for all sites
 	cc.writeHeader(":method", req.Method)
-	cc.writeHeader(":path", req.URL.RequestURI())
-	cc.writeHeader(":scheme", "https")
+	if req.Method != "CONNECT" {
+		cc.writeHeader(":path", req.URL.RequestURI())
+		cc.writeHeader(":scheme", "https")
+	}
 	if trailers != "" {
 		cc.writeHeader("trailer", trailers)
 	}
