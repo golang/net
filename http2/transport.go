@@ -39,6 +39,8 @@ const (
 	// transportDefaultStreamMinRefresh is the minimum number of bytes we'll send
 	// a stream-level WINDOW_UPDATE for at a time.
 	transportDefaultStreamMinRefresh = 4 << 10
+
+	defaultUserAgent = "Go-http-client/2.0"
 )
 
 // Transport is an HTTP/2 Transport.
@@ -783,10 +785,25 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		cc.writeHeader("trailer", trailers)
 	}
 
+	var didUA bool
 	for k, vv := range req.Header {
 		lowKey := strings.ToLower(k)
 		if lowKey == "host" {
 			continue
+		}
+		if lowKey == "user-agent" {
+			// Match Go's http1 behavior: at most one
+			// User-Agent.  If set to nil or empty string,
+			// then omit it.  Otherwise if not mentioned,
+			// include the default (below).
+			didUA = true
+			if len(vv) < 1 {
+				continue
+			}
+			vv = vv[:1]
+			if vv[0] == "" {
+				continue
+			}
 		}
 		for _, v := range vv {
 			cc.writeHeader(lowKey, v)
@@ -794,6 +811,9 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	}
 	if addGzipHeader {
 		cc.writeHeader("accept-encoding", "gzip")
+	}
+	if !didUA {
+		cc.writeHeader("user-agent", defaultUserAgent)
 	}
 	return cc.hbuf.Bytes()
 }
