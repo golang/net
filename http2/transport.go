@@ -166,8 +166,8 @@ type clientStream struct {
 	done chan struct{} // closed when stream remove from cc.streams map; close calls guarded by cc.mu
 
 	// owned by clientConnReadLoop:
-	headersDone  bool // got HEADERS w/ END_HEADERS
-	trailersDone bool // got second HEADERS frame w/ END_HEADERS
+	pastHeaders  bool // got HEADERS w/ END_HEADERS
+	pastTrailers bool // got second HEADERS frame w/ END_HEADERS
 
 	trailer    http.Header // accumulated trailers
 	resTrailer http.Header // client's Response.Trailer
@@ -923,9 +923,10 @@ type clientConnReadLoop struct {
 	hdec *hpack.Decoder
 
 	// Fields reset on each HEADERS:
-	nextRes      *http.Response
-	sawRegHeader bool  // saw non-pseudo header
-	reqMalformed error // non-nil once known to be malformed
+	nextRes              *http.Response
+	sawRegHeader         bool  // saw non-pseudo header
+	reqMalformed         error // non-nil once known to be malformed
+	lastHeaderEndsStream bool
 }
 
 // readLoop runs in its own goroutine and reads and dispatches frames.
@@ -1021,21 +1022,23 @@ func (rl *clientConnReadLoop) run() error {
 func (rl *clientConnReadLoop) processHeaders(f *HeadersFrame) error {
 	rl.sawRegHeader = false
 	rl.reqMalformed = nil
+	rl.lastHeaderEndsStream = f.StreamEnded()
 	rl.nextRes = &http.Response{
 		Proto:      "HTTP/2.0",
 		ProtoMajor: 2,
 		Header:     make(http.Header),
 	}
-	return rl.processHeaderBlockFragment(f.HeaderBlockFragment(), f.StreamID, f.HeadersEnded(), f.StreamEnded())
+	return rl.processHeaderBlockFragment(f.HeaderBlockFragment(), f.StreamID, f.HeadersEnded())
 }
 
 func (rl *clientConnReadLoop) processContinuation(f *ContinuationFrame) error {
-	return rl.processHeaderBlockFragment(f.HeaderBlockFragment(), f.StreamID, f.HeadersEnded(), f.StreamEnded())
+	return rl.processHeaderBlockFragment(f.HeaderBlockFragment(), f.StreamID, f.HeadersEnded())
 }
 
-func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID uint32, headersEnded, streamEnded bool) error {
+func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID uint32, finalFrag bool) error {
 	cc := rl.cc
-	cs := cc.streamByID(streamID, streamEnded)
+	streamEnded := rl.lastHeaderEndsStream
+	cs := cc.streamByID(streamID, streamEnded && finalFrag)
 	if cs == nil {
 		// We'd get here if we canceled a request while the
 		// server was mid-way through replying with its
@@ -1045,7 +1048,7 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 		// ignore it.
 		return nil
 	}
-	if cs.headersDone {
+	if cs.pastHeaders {
 		rl.hdec.SetEmitFunc(cs.onNewTrailerField)
 	} else {
 		rl.hdec.SetEmitFunc(rl.onNewHeaderField)
@@ -1054,23 +1057,26 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 	if err != nil {
 		return ConnectionError(ErrCodeCompression)
 	}
-	if err := rl.hdec.Close(); err != nil {
-		return ConnectionError(ErrCodeCompression)
+	if finalFrag {
+		if err := rl.hdec.Close(); err != nil {
+			return ConnectionError(ErrCodeCompression)
+		}
 	}
-	if !headersEnded {
+
+	if !finalFrag {
 		return nil
 	}
 
-	if !cs.headersDone {
-		cs.headersDone = true
+	if !cs.pastHeaders {
+		cs.pastHeaders = true
 	} else {
 		// We're dealing with trailers. (and specifically the
 		// final frame of headers)
-		if cs.trailersDone {
+		if cs.pastTrailers {
 			// Too many HEADERS frames for this stream.
 			return ConnectionError(ErrCodeProtocol)
 		}
-		cs.trailersDone = true
+		cs.pastTrailers = true
 		if !streamEnded {
 			// We expect that any header block fragment
 			// frame for trailers with END_HEADERS also
@@ -1088,6 +1094,13 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 	}
 
 	res := rl.nextRes
+
+	if res.StatusCode == 100 {
+		// Just skip 100-continue response headers for now.
+		// TODO: golang.org/issue/13851 for doing it properly.
+		cs.pastHeaders = false // do it all again
+		return nil
+	}
 
 	if !streamEnded || cs.req.Method == "HEAD" {
 		res.ContentLength = -1
