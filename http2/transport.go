@@ -75,8 +75,27 @@ type Transport struct {
 	// uncompressed.
 	DisableCompression bool
 
+	// MaxHeaderListSize is the http2 SETTINGS_MAX_HEADER_LIST_SIZE to
+	// send in the initial settings frame. It is how many bytes
+	// of response headers are allow. Unlike the http2 spec, zero here
+	// means to use a default limit (currently 10MB). If you actually
+	// want to advertise an ulimited value to the peer, Transport
+	// interprets the highest possible value here (0xffffffff or 1<<32-1)
+	// to mean no limit.
+	MaxHeaderListSize uint32
+
 	connPoolOnce  sync.Once
 	connPoolOrDef ClientConnPool // non-nil version of ConnPool
+}
+
+func (t *Transport) maxHeaderListSize() uint32 {
+	if t.MaxHeaderListSize == 0 {
+		return 10 << 20
+	}
+	if t.MaxHeaderListSize == 0xffffffff {
+		return 0
+	}
+	return t.MaxHeaderListSize
 }
 
 func (t *Transport) disableCompression() bool {
@@ -371,6 +390,9 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 	cc.bw = bufio.NewWriter(stickyErrWriter{c, &cc.werr})
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
+
+	// TODO: SetMaxDynamicTableSize, SetMaxDynamicTableSizeLimit on
+	// henc in response to SETTINGS frames?
 	cc.henc = hpack.NewEncoder(&cc.hbuf)
 
 	type connectionStater interface {
@@ -381,10 +403,14 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 		cc.tlsState = &state
 	}
 
-	cc.fr.WriteSettings(
+	initialSettings := []Setting{
 		Setting{ID: SettingEnablePush, Val: 0},
 		Setting{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
-	)
+	}
+	if max := t.maxHeaderListSize(); max != 0 {
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
+	}
+	cc.fr.WriteSettings(initialSettings...)
 	cc.fr.WriteWindowUpdate(0, transportDefaultConnFlow)
 	cc.inflow.add(transportDefaultConnFlow + initialWindowSize)
 	cc.bw.Flush()
@@ -413,7 +439,7 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 		case SettingInitialWindowSize:
 			cc.initialWindowSize = s.Val
 		default:
-			// TODO(bradfitz): handle more
+			// TODO(bradfitz): handle more; at least SETTINGS_HEADER_TABLE_SIZE?
 			t.vlogf("Unhandled Setting: %v", s)
 		}
 		return nil
@@ -805,7 +831,6 @@ func (e *badStringError) Error() string { return fmt.Sprintf("%s %q", e.what, e.
 func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string) []byte {
 	cc.hbuf.Reset()
 
-	// TODO(bradfitz): figure out :authority-vs-Host stuff between http2 and Go
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
@@ -816,7 +841,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	// target URI (the path-absolute production and optionally a '?' character
 	// followed by the query production (see Sections 3.3 and 3.4 of
 	// [RFC3986]).
-	cc.writeHeader(":authority", host) // probably not right for all sites
+	cc.writeHeader(":authority", host)
 	cc.writeHeader(":method", req.Method)
 	if req.Method != "CONNECT" {
 		cc.writeHeader(":path", req.URL.RequestURI())
@@ -927,6 +952,7 @@ type clientConnReadLoop struct {
 	sawRegHeader         bool  // saw non-pseudo header
 	reqMalformed         error // non-nil once known to be malformed
 	lastHeaderEndsStream bool
+	headerListSize       int64 // actually uint32, but easier math this way
 }
 
 // readLoop runs in its own goroutine and reads and dispatches frames.
@@ -935,7 +961,6 @@ func (cc *ClientConn) readLoop() {
 		cc:        cc,
 		activeRes: make(map[uint32]*clientStream),
 	}
-	// TODO: figure out henc size
 	rl.hdec = hpack.NewDecoder(initialHeaderTableSize, rl.onNewHeaderField)
 
 	defer rl.cleanup()
@@ -1023,11 +1048,13 @@ func (rl *clientConnReadLoop) processHeaders(f *HeadersFrame) error {
 	rl.sawRegHeader = false
 	rl.reqMalformed = nil
 	rl.lastHeaderEndsStream = f.StreamEnded()
+	rl.headerListSize = 0
 	rl.nextRes = &http.Response{
 		Proto:      "HTTP/2.0",
 		ProtoMajor: 2,
 		Header:     make(http.Header),
 	}
+	rl.hdec.SetEmitEnabled(true)
 	return rl.processHeaderBlockFragment(f.HeaderBlockFragment(), f.StreamID, f.HeadersEnded())
 }
 
@@ -1049,7 +1076,7 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 		return nil
 	}
 	if cs.pastHeaders {
-		rl.hdec.SetEmitFunc(cs.onNewTrailerField)
+		rl.hdec.SetEmitFunc(func(f hpack.HeaderField) { rl.onNewTrailerField(cs, f) })
 	} else {
 		rl.hdec.SetEmitFunc(rl.onNewHeaderField)
 	}
@@ -1250,10 +1277,18 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 	return nil
 }
 
+var errInvalidTrailers = errors.New("http2: invalid trailers")
+
 func (rl *clientConnReadLoop) endStream(cs *clientStream) {
 	// TODO: check that any declared content-length matches, like
 	// server.go's (*stream).endStream method.
-	cs.bufPipe.closeWithErrorAndCode(io.EOF, cs.copyTrailers)
+	err := io.EOF
+	code := cs.copyTrailers
+	if rl.reqMalformed != nil {
+		err = rl.reqMalformed
+		code = nil
+	}
+	cs.bufPipe.closeWithErrorAndCode(err, code)
 	delete(rl.activeRes, cs.ID)
 }
 
@@ -1292,7 +1327,7 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 			// window size and this one.
 			cc.initialWindowSize = s.Val
 		default:
-			// TODO(bradfitz): handle more settings?
+			// TODO(bradfitz): handle more settings? SETTINGS_HEADER_TABLE_SIZE probably.
 			cc.vlogf("Unhandled Setting: %v", s)
 		}
 		return nil
@@ -1378,6 +1413,43 @@ func (cc *ClientConn) writeStreamReset(streamID uint32, code ErrCode, err error)
 	cc.wmu.Unlock()
 }
 
+var (
+	errResponseHeaderListSize = errors.New("http2: response header list larger than advertised limit")
+	errInvalidHeaderKey       = errors.New("http2: invalid header key")
+	errPseudoTrailers         = errors.New("http2: invalid pseudo header in trailers")
+)
+
+func (rl *clientConnReadLoop) checkHeaderField(f hpack.HeaderField) bool {
+	if rl.reqMalformed != nil {
+		return false
+	}
+
+	const headerFieldOverhead = 32 // per spec
+	rl.headerListSize += int64(len(f.Name)) + int64(len(f.Value)) + headerFieldOverhead
+	if max := rl.cc.t.maxHeaderListSize(); max != 0 && rl.headerListSize > int64(max) {
+		rl.hdec.SetEmitEnabled(false)
+		rl.reqMalformed = errResponseHeaderListSize
+		return false
+	}
+
+	if !validHeader(f.Name) {
+		rl.reqMalformed = errInvalidHeaderKey
+		return false
+	}
+
+	isPseudo := strings.HasPrefix(f.Name, ":")
+	if isPseudo {
+		if rl.sawRegHeader {
+			rl.reqMalformed = errors.New("http2: invalid pseudo header after regular header")
+			return false
+		}
+	} else {
+		rl.sawRegHeader = true
+	}
+
+	return true
+}
+
 // onNewHeaderField runs on the readLoop goroutine whenever a new
 // hpack header field is decoded.
 func (rl *clientConnReadLoop) onNewHeaderField(f hpack.HeaderField) {
@@ -1385,13 +1457,13 @@ func (rl *clientConnReadLoop) onNewHeaderField(f hpack.HeaderField) {
 	if VerboseLogs {
 		cc.logf("Header field: %+v", f)
 	}
-	// TODO: enforce max header list size like server.
+
+	if !rl.checkHeaderField(f) {
+		return
+	}
+
 	isPseudo := strings.HasPrefix(f.Name, ":")
 	if isPseudo {
-		if rl.sawRegHeader {
-			rl.reqMalformed = errors.New("http2: invalid pseudo header after regular header")
-			return
-		}
 		switch f.Name {
 		case ":status":
 			code, err := strconv.Atoi(f.Value)
@@ -1407,40 +1479,43 @@ func (rl *clientConnReadLoop) onNewHeaderField(f hpack.HeaderField) {
 			// document."
 			rl.reqMalformed = fmt.Errorf("http2: unknown response pseudo header %q", f.Name)
 		}
-	} else {
-		rl.sawRegHeader = true
-		key := http.CanonicalHeaderKey(f.Name)
-		if key == "Trailer" {
-			t := rl.nextRes.Trailer
-			if t == nil {
-				t = make(http.Header)
-				rl.nextRes.Trailer = t
-			}
-			foreachHeaderElement(f.Value, func(v string) {
-				t[http.CanonicalHeaderKey(v)] = nil
-			})
-		} else {
-			rl.nextRes.Header.Add(key, f.Value)
+		return
+	}
+
+	key := http.CanonicalHeaderKey(f.Name)
+	if key == "Trailer" {
+		t := rl.nextRes.Trailer
+		if t == nil {
+			t = make(http.Header)
+			rl.nextRes.Trailer = t
 		}
+		foreachHeaderElement(f.Value, func(v string) {
+			t[http.CanonicalHeaderKey(v)] = nil
+		})
+	} else {
+		rl.nextRes.Header.Add(key, f.Value)
 	}
 }
 
-func (cs *clientStream) onNewTrailerField(f hpack.HeaderField) {
-	isPseudo := strings.HasPrefix(f.Name, ":")
-	if isPseudo {
-		// TODO: Bogus. report an error later when we close their body.
-		// drop for now.
+func (rl *clientConnReadLoop) onNewTrailerField(cs *clientStream, f hpack.HeaderField) {
+	if !rl.checkHeaderField(f) {
 		return
 	}
+	if strings.HasPrefix(f.Name, ":") {
+		// Pseudo-header fields MUST NOT appear in
+		// trailers. Endpoints MUST treat a request or
+		// response that contains undefined or invalid
+		// pseudo-header fields as malformed.
+		rl.reqMalformed = errPseudoTrailers
+		return
+	}
+
 	key := http.CanonicalHeaderKey(f.Name)
 	if _, ok := cs.resTrailer[key]; ok {
 		if cs.trailer == nil {
 			cs.trailer = make(http.Header)
 		}
-		const tooBig = 1000 // TODO: arbitrary; use max header list size limits
-		if cur := cs.trailer[key]; len(cur) < tooBig {
-			cs.trailer[key] = append(cur, f.Value)
-		}
+		cs.trailer[key] = append(cs.trailer[key], f.Value)
 	}
 }
 

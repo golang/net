@@ -1002,3 +1002,169 @@ func testTransportResPattern(t *testing.T, expect100Continue, resHeader headerTy
 	}
 	ct.run()
 }
+
+func TestTransportInvalidTrailer_Pseudo1(t *testing.T) {
+	testTransportInvalidTrailer_Pseudo(t, oneHeader)
+}
+func TestTransportInvalidTrailer_Pseudo2(t *testing.T) {
+	testTransportInvalidTrailer_Pseudo(t, splitHeader)
+}
+func testTransportInvalidTrailer_Pseudo(t *testing.T, trailers headerType) {
+	testInvalidTrailer(t, trailers, errPseudoTrailers, func(enc *hpack.Encoder) {
+		enc.WriteField(hpack.HeaderField{Name: ":colon", Value: "foo"})
+		enc.WriteField(hpack.HeaderField{Name: "foo", Value: "bar"})
+	})
+}
+
+func TestTransportInvalidTrailer_Capital1(t *testing.T) {
+	testTransportInvalidTrailer_Capital(t, oneHeader)
+}
+func TestTransportInvalidTrailer_Capital2(t *testing.T) {
+	testTransportInvalidTrailer_Capital(t, splitHeader)
+}
+func testTransportInvalidTrailer_Capital(t *testing.T, trailers headerType) {
+	testInvalidTrailer(t, trailers, errInvalidHeaderKey, func(enc *hpack.Encoder) {
+		enc.WriteField(hpack.HeaderField{Name: "foo", Value: "bar"})
+		enc.WriteField(hpack.HeaderField{Name: "Capital", Value: "bad"})
+	})
+}
+
+func testInvalidTrailer(t *testing.T, trailers headerType, wantErr error, writeTrailer func(*hpack.Encoder)) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		if err != nil {
+			return fmt.Errorf("RoundTrip: %v", err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			return fmt.Errorf("status code = %v; want 200", res.StatusCode)
+		}
+		slurp, err := ioutil.ReadAll(res.Body)
+		if err != wantErr {
+			return fmt.Errorf("res.Body ReadAll error = %q, %v; want %v", slurp, err, wantErr)
+		}
+		if len(slurp) > 0 {
+			return fmt.Errorf("body = %q; want nothing", slurp)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				var endStream bool
+				send := func(mode headerType) {
+					hbf := buf.Bytes()
+					switch mode {
+					case oneHeader:
+						ct.fr.WriteHeaders(HeadersFrameParam{
+							StreamID:      f.StreamID,
+							EndHeaders:    true,
+							EndStream:     endStream,
+							BlockFragment: hbf,
+						})
+					case splitHeader:
+						if len(hbf) < 2 {
+							panic("too small")
+						}
+						ct.fr.WriteHeaders(HeadersFrameParam{
+							StreamID:      f.StreamID,
+							EndHeaders:    false,
+							EndStream:     endStream,
+							BlockFragment: hbf[:1],
+						})
+						ct.fr.WriteContinuation(f.StreamID, true, hbf[1:])
+					default:
+						panic("bogus mode")
+					}
+				}
+				// Response headers (1+ frames; 1 or 2 in this test, but never 0)
+				{
+					buf.Reset()
+					enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+					enc.WriteField(hpack.HeaderField{Name: "trailer", Value: "declared"})
+					endStream = false
+					send(oneHeader)
+				}
+				// Trailers:
+				{
+					endStream = true
+					buf.Reset()
+					writeTrailer(enc)
+					send(trailers)
+				}
+				return nil
+			}
+		}
+	}
+	ct.run()
+}
+
+func TestTransportChecksResponseHeaderListSize(t *testing.T) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		if err != errResponseHeaderListSize {
+			if res != nil {
+				res.Body.Close()
+			}
+			size := int64(0)
+			for k, vv := range res.Header {
+				for _, v := range vv {
+					size += int64(len(k)) + int64(len(v)) + 32
+				}
+			}
+			return fmt.Errorf("RoundTrip Error = %v (and %d bytes of response headers); want errResponseHeaderListSize", err, size)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+				large := strings.Repeat("a", 1<<10)
+				for i := 0; i < 5042; i++ {
+					enc.WriteField(hpack.HeaderField{Name: large, Value: large})
+				}
+				if size, want := buf.Len(), 6329; size != want {
+					// Note: this number might change if
+					// our hpack implementation
+					// changes. That's fine. This is
+					// just a sanity check that our
+					// response can fit in a single
+					// header block fragment frame.
+					return fmt.Errorf("encoding over 10MB of duplicate keypairs took %d bytes; expected %d", size, want)
+				}
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+				return nil
+			}
+		}
+	}
+	ct.run()
+
+}

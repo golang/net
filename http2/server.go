@@ -6,8 +6,8 @@
 // instead, and make sure that on close we close all open
 // streams. then remove doneServing?
 
-// TODO: finish GOAWAY support. Consider each incoming frame type and
-// whether it should be ignored during a shutdown race.
+// TODO: re-audit GOAWAY support. Consider each incoming frame type and
+// whether it should be ignored during graceful shutdown.
 
 // TODO: disconnect idle clients. GFE seems to do 4 minutes. make
 // configurable?  or maximum number of idle clients and remove the
@@ -550,14 +550,10 @@ func (st *stream) onNewTrailerField(f hpack.HeaderField) {
 	sc.vlogf("got trailer field %+v", f)
 	switch {
 	case !validHeader(f.Name):
-		// TODO: change hpack signature so this can return
-		// errors?  Or stash an error somewhere on st or sc
-		// for processHeaderBlockFragment etc to pick up and
-		// return after the hpack Write/Close.  For now just
-		// ignore.
+		sc.req.invalidHeader = true
 		return
 	case strings.HasPrefix(f.Name, ":"):
-		// TODO: same TODO as above.
+		sc.req.invalidHeader = true
 		return
 	default:
 		key := sc.canonicalHeader(f.Name)
@@ -570,7 +566,6 @@ func (st *stream) onNewTrailerField(f hpack.HeaderField) {
 			if len(vv) >= tooBig {
 				sc.hpackDecoder.SetEmitEnabled(false)
 			}
-
 		}
 	}
 }
@@ -1411,6 +1406,10 @@ func (st *stream) processTrailerHeaders(f *HeadersFrame) error {
 		return ConnectionError(ErrCodeProtocol)
 	}
 	st.gotTrailerHeader = true
+	if !f.StreamEnded() {
+		return StreamError{st.id, ErrCodeProtocol}
+	}
+	sc.resetPendingRequest() // we use invalidHeader from it for trailers
 	return st.processTrailerHeaderBlockFragment(f.HeaderBlockFragment(), f.HeadersEnded())
 }
 
@@ -1485,6 +1484,12 @@ func (st *stream) processTrailerHeaderBlockFragment(frag []byte, end bool) error
 	if !end {
 		return nil
 	}
+
+	rp := &sc.req
+	if rp.invalidHeader {
+		return StreamError{rp.stream.id, ErrCodeProtocol}
+	}
+
 	err := sc.hpackDecoder.Close()
 	st.endStream()
 	if err != nil {
@@ -1624,7 +1629,6 @@ func (sc *serverConn) newWriterAndRequest() (*responseWriter, *http.Request, err
 		requestURI = rp.authority // mimic HTTP/1 server behavior
 	} else {
 		var err error
-		// TODO: handle asterisk '*' requests + test
 		url_, err = url.ParseRequestURI(rp.path)
 		if err != nil {
 			return nil, nil, StreamError{rp.stream.id, ErrCodeProtocol}
