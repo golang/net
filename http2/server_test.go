@@ -2829,7 +2829,7 @@ func TestConfigureServer(t *testing.T) {
 			t.Errorf("%s: err = %v; want substring %q", tt.name, err, tt.wantErr)
 		}
 		if err == nil && !tt.in.TLSConfig.PreferServerCipherSuites {
-			t.Error("%s: PreferServerCipherSuite is false; want true", tt.name)
+			t.Errorf("%s: PreferServerCipherSuite is false; want true", tt.name)
 		}
 	}
 }

@@ -203,7 +203,7 @@ func TestTransportGroupsPendingDials(t *testing.T) {
 		}
 		return nil
 	}); err != nil {
-		t.Error("State of pool after CloseIdleConnections: %v", err)
+		t.Errorf("State of pool after CloseIdleConnections: %v", err)
 	}
 }
 
