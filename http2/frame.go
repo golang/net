@@ -301,6 +301,8 @@ type Framer struct {
 	// non-Continuation or Continuation on a different stream is
 	// attempted to be written.
 
+	logReads bool
+
 	debugFramer    *Framer // only use for logging written writes
 	debugFramerBuf *bytes.Buffer
 }
@@ -345,6 +347,7 @@ func (f *Framer) logWrite() {
 	if f.debugFramer == nil {
 		f.debugFramerBuf = new(bytes.Buffer)
 		f.debugFramer = NewFramer(nil, f.debugFramerBuf)
+		f.debugFramer.logReads = false // we log it ourselves, saying "wrote" below
 		// Let us read anything, even if we accidentally wrote it
 		// in the wrong order:
 		f.debugFramer.AllowIllegalReads = true
@@ -373,8 +376,9 @@ const (
 // NewFramer returns a Framer that writes frames to w and reads them from r.
 func NewFramer(w io.Writer, r io.Reader) *Framer {
 	fr := &Framer{
-		w: w,
-		r: r,
+		w:        w,
+		r:        r,
+		logReads: logFrameReads,
 	}
 	fr.getReadBuf = func(size uint32) []byte {
 		if cap(fr.readBuf) >= int(size) {
@@ -442,6 +446,9 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	}
 	if err := fr.checkFrameOrder(f); err != nil {
 		return nil, err
+	}
+	if fr.logReads {
+		log.Printf("http2: Framer %p: read %v", fr, summarizeFrame(f))
 	}
 	return f, nil
 }

@@ -29,6 +29,7 @@ import (
 var (
 	VerboseLogs    bool
 	logFrameWrites bool
+	logFrameReads  bool
 )
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 	if strings.Contains(e, "http2debug=2") {
 		VerboseLogs = true
 		logFrameWrites = true
+		logFrameReads = true
 	}
 }
 
