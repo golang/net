@@ -188,8 +188,8 @@ type clientStream struct {
 	pastHeaders  bool // got HEADERS w/ END_HEADERS
 	pastTrailers bool // got second HEADERS frame w/ END_HEADERS
 
-	trailer    http.Header // accumulated trailers
-	resTrailer http.Header // client's Response.Trailer
+	trailer    http.Header  // accumulated trailers
+	resTrailer *http.Header // client's Response.Trailer
 }
 
 // awaitRequestCancel runs in its own goroutine and waits for the user
@@ -1166,7 +1166,7 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 		}
 	}
 
-	cs.resTrailer = res.Trailer
+	cs.resTrailer = &res.Trailer
 	rl.activeRes[cs.ID] = cs
 	cs.resc <- resAndError{res: res}
 	rl.nextRes = nil // unused now; will be reset next HEADERS frame
@@ -1296,7 +1296,11 @@ func (rl *clientConnReadLoop) endStream(cs *clientStream) {
 
 func (cs *clientStream) copyTrailers() {
 	for k, vv := range cs.trailer {
-		cs.resTrailer[k] = vv
+		t := cs.resTrailer
+		if *t == nil {
+			*t = make(http.Header)
+		}
+		(*t)[k] = vv
 	}
 }
 
@@ -1516,7 +1520,12 @@ func (rl *clientConnReadLoop) onNewTrailerField(cs *clientStream, f hpack.Header
 	}
 
 	key := http.CanonicalHeaderKey(f.Name)
-	if _, ok := cs.resTrailer[key]; ok {
+
+	// The spec says one must predeclare their trailers but in practice
+	// popular users (which is to say the only user we found) do not so we
+	// violate the spec and accept all of them.
+	const acceptAllTrailers = true
+	if _, ok := (*cs.resTrailer)[key]; ok || acceptAllTrailers {
 		if cs.trailer == nil {
 			cs.trailer = make(http.Header)
 		}

@@ -1003,6 +1003,70 @@ func testTransportResPattern(t *testing.T, expect100Continue, resHeader headerTy
 	ct.run()
 }
 
+func TestTransportReceiveUndeclaredTrailer(t *testing.T) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		if err != nil {
+			return fmt.Errorf("RoundTrip: %v", err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			return fmt.Errorf("status code = %v; want 200", res.StatusCode)
+		}
+		slurp, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return fmt.Errorf("res.Body ReadAll error = %q, %v; want %v", slurp, err, nil)
+		}
+		if len(slurp) > 0 {
+			return fmt.Errorf("body = %q; want nothing", slurp)
+		}
+		if _, ok := res.Trailer["Some-Trailer"]; !ok {
+			return fmt.Errorf("expected Some-Trailer")
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+
+		var n int
+		var hf *HeadersFrame
+		for hf == nil && n < 10 {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			hf, _ = f.(*HeadersFrame)
+			n++
+		}
+
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+
+		// send headers without Trailer header
+		enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+		ct.fr.WriteHeaders(HeadersFrameParam{
+			StreamID:      hf.StreamID,
+			EndHeaders:    true,
+			EndStream:     false,
+			BlockFragment: buf.Bytes(),
+		})
+
+		// send trailers
+		buf.Reset()
+		enc.WriteField(hpack.HeaderField{Name: "some-trailer", Value: "I'm an undeclared Trailer!"})
+		ct.fr.WriteHeaders(HeadersFrameParam{
+			StreamID:      hf.StreamID,
+			EndHeaders:    true,
+			EndStream:     true,
+			BlockFragment: buf.Bytes(),
+		})
+		return nil
+	}
+	ct.run()
+}
+
 func TestTransportInvalidTrailer_Pseudo1(t *testing.T) {
 	testTransportInvalidTrailer_Pseudo(t, oneHeader)
 }
