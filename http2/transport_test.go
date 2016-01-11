@@ -1232,3 +1232,34 @@ func TestTransportChecksResponseHeaderListSize(t *testing.T) {
 	ct.run()
 
 }
+
+// Test that the the Transport returns a typed error from Response.Body.Read calls
+// when the server sends an error. (here we use a panic, since that should generate
+// a stream error, but others like cancel should be similar)
+func TestTransportBodyReadErrorType(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.(http.Flusher).Flush() // force headers out
+			panic("boom")
+		},
+		optOnlyServer,
+		optQuiet,
+	)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	res, err := c.Get(st.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	buf := make([]byte, 100)
+	n, err := res.Body.Read(buf)
+	want := StreamError{StreamID: 0x1, Code: 0x2}
+	if !reflect.DeepEqual(want, err) {
+		t.Errorf("Read = %v, %#v; want error %#v", n, err, want)
+	}
+}
