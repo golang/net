@@ -936,7 +936,7 @@ func (cc *ClientConn) streamByID(id uint32, andRemove bool) *clientStream {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	cs := cc.streams[id]
-	if andRemove && cs != nil {
+	if andRemove && cs != nil && !cc.closed {
 		delete(cc.streams, id)
 		close(cs.done)
 	}

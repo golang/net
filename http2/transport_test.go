@@ -1263,3 +1263,42 @@ func TestTransportBodyReadErrorType(t *testing.T) {
 		t.Errorf("Read = %v, %#v; want error %#v", n, err, want)
 	}
 }
+
+// golang.org/issue/13924
+// This used to fail after many iterations, especially with -race:
+// go test -v -run=TestTransportDoubleCloseOnWriteError -count=500 -race
+func TestTransportDoubleCloseOnWriteError(t *testing.T) {
+	var (
+		mu   sync.Mutex
+		conn net.Conn // to close if set
+	)
+
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			if conn != nil {
+				conn.Close()
+			}
+		},
+		optOnlyServer,
+	)
+	defer st.Close()
+
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			tc, err := tls.Dial(network, addr, cfg)
+			if err != nil {
+				return nil, err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			conn = tc
+			return tc, nil
+		},
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+	c.Get(st.ts.URL)
+}
