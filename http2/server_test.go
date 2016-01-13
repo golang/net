@@ -992,6 +992,10 @@ func TestServer_Ping(t *testing.T) {
 }
 
 func TestServer_RejectsLargeFrames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("see golang.org/issue/13434")
+	}
+
 	st := newServerTester(t, nil)
 	defer st.Close()
 	st.greet()
