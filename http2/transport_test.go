@@ -1230,16 +1230,17 @@ func TestTransportChecksResponseHeaderListSize(t *testing.T) {
 		}
 	}
 	ct.run()
-
 }
 
 // Test that the the Transport returns a typed error from Response.Body.Read calls
 // when the server sends an error. (here we use a panic, since that should generate
 // a stream error, but others like cancel should be similar)
 func TestTransportBodyReadErrorType(t *testing.T) {
+	doPanic := make(chan bool, 1)
 	st := newServerTester(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			w.(http.Flusher).Flush() // force headers out
+			<-doPanic
 			panic("boom")
 		},
 		optOnlyServer,
@@ -1256,6 +1257,7 @@ func TestTransportBodyReadErrorType(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
+	doPanic <- true
 	buf := make([]byte, 100)
 	n, err := res.Body.Read(buf)
 	want := StreamError{StreamID: 0x1, Code: 0x2}

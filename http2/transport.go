@@ -1255,22 +1255,40 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 	cc := rl.cc
 	cs := cc.streamByID(f.StreamID, f.StreamEnded())
 	if cs == nil {
+		cc.mu.Lock()
+		neverSent := cc.nextStreamID
+		cc.mu.Unlock()
+		if f.StreamID >= neverSent {
+			// We never asked for this.
+			cc.logf("http2: Transport received unsolicited DATA frame; closing connection")
+			return ConnectionError(ErrCodeProtocol)
+		}
+		// We probably did ask for this, but canceled. Just ignore it.
+		// TODO: be stricter here? only silently ignore things which
+		// we canceled, but not things which were closed normally
+		// by the peer? Tough without accumulating too much state.
 		return nil
 	}
-	data := f.Data()
+	if data := f.Data(); len(data) > 0 {
+		if cs.bufPipe.b == nil {
+			// Data frame after it's already closed?
+			cc.logf("http2: Transport received DATA frame for closed stream; closing connection")
+			return ConnectionError(ErrCodeProtocol)
+		}
 
-	// Check connection-level flow control.
-	cc.mu.Lock()
-	if cs.inflow.available() >= int32(len(data)) {
-		cs.inflow.take(int32(len(data)))
-	} else {
+		// Check connection-level flow control.
+		cc.mu.Lock()
+		if cs.inflow.available() >= int32(len(data)) {
+			cs.inflow.take(int32(len(data)))
+		} else {
+			cc.mu.Unlock()
+			return ConnectionError(ErrCodeFlowControl)
+		}
 		cc.mu.Unlock()
-		return ConnectionError(ErrCodeFlowControl)
-	}
-	cc.mu.Unlock()
 
-	if _, err := cs.bufPipe.Write(data); err != nil {
-		return err
+		if _, err := cs.bufPipe.Write(data); err != nil {
+			return err
+		}
 	}
 
 	if f.StreamEnded() {
