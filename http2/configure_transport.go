@@ -12,11 +12,11 @@ import (
 	"net/http"
 )
 
-func configureTransport(t1 *http.Transport) error {
+func configureTransport(t1 *http.Transport) (*Transport, error) {
 	connPool := new(clientConnPool)
 	t2 := &Transport{ConnPool: noDialClientConnPool{connPool}}
 	if err := registerHTTPSProtocol(t1, noDialH2RoundTripper{t2}); err != nil {
-		return err
+		return nil, err
 	}
 	if t1.TLSClientConfig == nil {
 		t1.TLSClientConfig = new(tls.Config)
@@ -48,7 +48,7 @@ func configureTransport(t1 *http.Transport) error {
 	} else {
 		m["h2"] = upgradeFn
 	}
-	return nil
+	return t2, nil
 }
 
 // registerHTTPSProtocol calls Transport.RegisterProtocol but

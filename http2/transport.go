@@ -113,7 +113,8 @@ var errTransportVersion = errors.New("http2: ConfigureTransport is only supporte
 // It requires Go 1.6 or later and returns an error if the net/http package is too old
 // or if t1 has already been HTTP/2-enabled.
 func ConfigureTransport(t1 *http.Transport) error {
-	return configureTransport(t1) // in configure_transport.go (go1.6) or go15.go
+	_, err := configureTransport(t1) // in configure_transport.go (go1.6) or not_go16.go
+	return err
 }
 
 func (t *Transport) connPool() ClientConnPool {
