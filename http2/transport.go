@@ -551,6 +551,28 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	hasTrailers := trailers != ""
 
+	var body io.Reader = req.Body
+	contentLen := req.ContentLength
+	if req.Body != nil && contentLen == 0 {
+		// Test to see if it's actually zero or just unset.
+		var buf [1]byte
+		n, rerr := io.ReadFull(body, buf[:])
+		if rerr != nil && rerr != io.EOF {
+			contentLen = -1
+			body = errorReader{rerr}
+		} else if n == 1 {
+			// Oh, guess there is data in this Body Reader after all.
+			// The ContentLength field just wasn't set.
+			// Stich the Body back together again, re-attaching our
+			// consumed byte.
+			contentLen = -1
+			body = io.MultiReader(bytes.NewReader(buf[:]), body)
+		} else {
+			// Body is actually empty.
+			body = nil
+		}
+	}
+
 	cc.mu.Lock()
 	if cc.closed || !cc.canTakeNewRequestLocked() {
 		cc.mu.Unlock()
@@ -559,7 +581,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	cs := cc.newStream()
 	cs.req = req
-	hasBody := req.Body != nil
+	hasBody := body != nil
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
 	if !cc.t.disableCompression() &&
@@ -584,7 +606,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,} (DATA is
 	// sent by writeRequestBody below, along with any Trailers,
 	// again in form HEADERS{1}, CONTINUATION{0,})
-	hdrs := cc.encodeHeaders(req, cs.requestedGzip, trailers)
+	hdrs := cc.encodeHeaders(req, cs.requestedGzip, trailers, contentLen)
 	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
 	werr := cc.writeHeaders(cs.ID, endStream, hdrs)
@@ -605,7 +627,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	if hasBody {
 		bodyCopyErrc = make(chan error, 1)
 		go func() {
-			bodyCopyErrc <- cs.writeRequestBody(req.Body)
+			bodyCopyErrc <- cs.writeRequestBody(body, req.Body)
 		}()
 	}
 
@@ -705,7 +727,7 @@ func (cc *ClientConn) writeHeaders(streamID uint32, endStream bool, hdrs []byte)
 // It doesn't escape to callers.
 var errAbortReqBodyWrite = errors.New("http2: aborting request body write")
 
-func (cs *clientStream) writeRequestBody(body io.ReadCloser) (err error) {
+func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (err error) {
 	cc := cs.cc
 	sentEnd := false // whether we sent the final DATA frame w/ END_STREAM
 	buf := cc.frameScratchBuffer()
@@ -716,7 +738,7 @@ func (cs *clientStream) writeRequestBody(body io.ReadCloser) (err error) {
 		// Request.Body is closed by the Transport,
 		// and in multiple cases: server replies <=299 and >299
 		// while still writing request body
-		cerr := body.Close()
+		cerr := bodyCloser.Close()
 		if err == nil {
 			err = cerr
 		}
@@ -829,7 +851,7 @@ type badStringError struct {
 func (e *badStringError) Error() string { return fmt.Sprintf("%s %q", e.what, e.str) }
 
 // requires cc.mu be held.
-func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string) []byte {
+func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) []byte {
 	cc.hbuf.Reset()
 
 	host := req.Host
@@ -855,7 +877,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	var didUA bool
 	for k, vv := range req.Header {
 		lowKey := strings.ToLower(k)
-		if lowKey == "host" {
+		if lowKey == "host" || lowKey == "content-length" {
 			continue
 		}
 		if lowKey == "user-agent" {
@@ -875,6 +897,9 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		for _, v := range vv {
 			cc.writeHeader(lowKey, v)
 		}
+	}
+	if contentLength >= 0 {
+		cc.writeHeader("content-length", strconv.FormatInt(contentLength, 10))
 	}
 	if addGzipHeader {
 		cc.writeHeader("accept-encoding", "gzip")
@@ -1605,3 +1630,7 @@ func (gz *gzipReader) Read(p []byte) (n int, err error) {
 func (gz *gzipReader) Close() error {
 	return gz.body.Close()
 }
+
+type errorReader struct{ err error }
+
+func (r errorReader) Read(p []byte) (int, error) { return 0, r.err }

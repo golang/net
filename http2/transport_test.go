@@ -332,14 +332,19 @@ var bodyTests = []struct {
 }
 
 func TestTransportBody(t *testing.T) {
-	gotc := make(chan interface{}, 1)
+	type reqInfo struct {
+		req   *http.Request
+		slurp []byte
+		err   error
+	}
+	gotc := make(chan reqInfo, 1)
 	st := newServerTester(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			slurp, err := ioutil.ReadAll(r.Body)
 			if err != nil {
-				gotc <- err
+				gotc <- reqInfo{err: err}
 			} else {
-				gotc <- string(slurp)
+				gotc <- reqInfo{req: r, slurp: slurp}
 			}
 		},
 		optOnlyServer,
@@ -364,12 +369,20 @@ func TestTransportBody(t *testing.T) {
 			t.Fatalf("#%d: %v", i, err)
 		}
 		defer res.Body.Close()
-		got := <-gotc
-		if err, ok := got.(error); ok {
-			t.Fatalf("#%d: %v", i, err)
-		} else if got.(string) != tt.body {
-			got := got.(string)
+		ri := <-gotc
+		if ri.err != nil {
+			t.Errorf("%#d: read error: %v", i, ri.err)
+			continue
+		}
+		if got := string(ri.slurp); got != tt.body {
 			t.Errorf("#%d: Read body mismatch.\n got: %q (len %d)\nwant: %q (len %d)", i, shortString(got), len(got), shortString(tt.body), len(tt.body))
+		}
+		wantLen := int64(len(tt.body))
+		if tt.noContentLen && tt.body != "" {
+			wantLen = -1
+		}
+		if ri.req.ContentLength != wantLen {
+			t.Errorf("#%d. handler got ContentLength = %v; want %v", i, ri.req.ContentLength, wantLen)
 		}
 	}
 }
@@ -735,6 +748,7 @@ func TestTransportFullDuplex(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	req.ContentLength = -1
 	res, err := c.Do(req)
 	if err != nil {
 		log.Fatal(err)
