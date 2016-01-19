@@ -285,3 +285,14 @@ func bodyAllowedForStatus(status int) bool {
 	}
 	return true
 }
+
+type httpError struct {
+	msg     string
+	timeout bool
+}
+
+func (e *httpError) Error() string   { return e.msg }
+func (e *httpError) Timeout() bool   { return e.timeout }
+func (e *httpError) Temporary() bool { return true }
+
+var errTimeout error = &httpError{msg: "http2: timeout awaiting response headers", timeout: true}

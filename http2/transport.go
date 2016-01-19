@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/http2/hpack"
 )
@@ -84,6 +85,11 @@ type Transport struct {
 	// to mean no limit.
 	MaxHeaderListSize uint32
 
+	// t1, if non-nil, is the standard library Transport using
+	// this transport. Its settings are used (but not its
+	// RoundTrip method, etc).
+	t1 *http.Transport
+
 	connPoolOnce  sync.Once
 	connPoolOrDef ClientConnPool // non-nil version of ConnPool
 }
@@ -99,12 +105,7 @@ func (t *Transport) maxHeaderListSize() uint32 {
 }
 
 func (t *Transport) disableCompression() bool {
-	if t.DisableCompression {
-		return true
-	}
-	// TODO: also disable if this transport is somehow linked to an http1 Transport
-	// and it's configured there?
-	return false
+	return t.DisableCompression || (t.t1 != nil && t.t1.DisableCompression)
 }
 
 var errTransportVersion = errors.New("http2: ConfigureTransport is only supported starting at Go 1.6")
@@ -160,7 +161,7 @@ type ClientConn struct {
 	henc                 *hpack.Encoder
 	freeBuf              [][]byte
 
-	wmu  sync.Mutex // held while writing; acquire AFTER wmu if holding both
+	wmu  sync.Mutex // held while writing; acquire AFTER mu if holding both
 	werr error      // first write error that has occurred
 }
 
@@ -178,7 +179,7 @@ type clientStream struct {
 	inflow      flow  // guarded by cc.mu
 	bytesRemain int64 // -1 means unknown; owned by transportResponseBody.Read
 	readErr     error // sticky read error; owned by transportResponseBody.Read
-	stopReqBody bool  // stop writing req body; guarded by cc.mu
+	stopReqBody error // if non-nil, stop writing req body; guarded by cc.mu
 
 	peerReset chan struct{} // closed on peer reset
 	resetErr  error         // populated before peerReset is closed
@@ -221,10 +222,13 @@ func (cs *clientStream) checkReset() error {
 	}
 }
 
-func (cs *clientStream) abortRequestBodyWrite() {
+func (cs *clientStream) abortRequestBodyWrite(err error) {
+	if err == nil {
+		panic("nil error")
+	}
 	cc := cs.cc
 	cc.mu.Lock()
-	cs.stopReqBody = true
+	cs.stopReqBody = err
 	cc.cond.Broadcast()
 	cc.mu.Unlock()
 }
@@ -364,6 +368,12 @@ func (t *Transport) dialTLSDefault(network, addr string, cfg *tls.Config) (net.C
 	return cn, nil
 }
 
+// disableKeepAlives reports whether connections should be closed as
+// soon as possible.
+func (t *Transport) disableKeepAlives() bool {
+	return t.t1 != nil && t.t1.DisableKeepAlives
+}
+
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn to %v", c.RemoteAddr())
@@ -463,7 +473,7 @@ func (cc *ClientConn) CanTakeNewRequest() bool {
 }
 
 func (cc *ClientConn) canTakeNewRequestLocked() bool {
-	return cc.goAway == nil &&
+	return cc.goAway == nil && !cc.closed &&
 		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
 		cc.nextStreamID < 2147483647
 }
@@ -542,6 +552,17 @@ func commaSeparatedTrailers(req *http.Request) (string, error) {
 		return strings.Join(keys, ","), nil
 	}
 	return "", nil
+}
+
+func (cc *ClientConn) responseHeaderTimeout() time.Duration {
+	if cc.t.t1 != nil {
+		return cc.t.t1.ResponseHeaderTimeout
+	}
+	// No way to do this (yet?) with just an http2.Transport. Probably
+	// no need. Request.Cancel this is the new way. We only need to support
+	// this for compatibility with the old http.Transport fields when
+	// we're doing transparent http2.
+	return 0
 }
 
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -623,17 +644,25 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, werr
 	}
 
+	var respHeaderTimer <-chan time.Time
 	var bodyCopyErrc chan error // result of body copy
 	if hasBody {
 		bodyCopyErrc = make(chan error, 1)
 		go func() {
 			bodyCopyErrc <- cs.writeRequestBody(body, req.Body)
 		}()
+	} else {
+		if d := cc.responseHeaderTimeout(); d != 0 {
+			timer := time.NewTimer(d)
+			defer timer.Stop()
+			respHeaderTimer = timer.C
+		}
 	}
 
 	readLoopResCh := cs.resc
 	requestCanceledCh := requestCancel(req)
-	requestCanceled := false
+	bodyWritten := false
+
 	for {
 		select {
 		case re := <-readLoopResCh:
@@ -648,7 +677,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 				// doesn't, they'll RST_STREAM us soon enough.  This is a
 				// heuristic to avoid adding knobs to Transport.  Hopefully
 				// we can keep it.
-				cs.abortRequestBodyWrite()
+				cs.abortRequestBodyWrite(errStopReqBodyWrite)
 			}
 			if re.err != nil {
 				cc.forgetStreamID(cs.ID)
@@ -657,36 +686,36 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			res.Request = req
 			res.TLS = cc.tlsState
 			return res, nil
+		case <-respHeaderTimer:
+			cc.forgetStreamID(cs.ID)
+			if !hasBody || bodyWritten {
+				cc.writeStreamReset(cs.ID, ErrCodeCancel, nil)
+			} else {
+				cs.abortRequestBodyWrite(errStopReqBodyWriteAndCancel)
+			}
+			return nil, errTimeout
 		case <-requestCanceledCh:
 			cc.forgetStreamID(cs.ID)
-			cs.abortRequestBodyWrite()
-			if !hasBody {
+			if !hasBody || bodyWritten {
 				cc.writeStreamReset(cs.ID, ErrCodeCancel, nil)
-				return nil, errRequestCanceled
+			} else {
+				cs.abortRequestBodyWrite(errStopReqBodyWriteAndCancel)
 			}
-			// If we have a body, wait for the body write to be
-			// finished before sending the RST_STREAM frame.
-			requestCanceled = true
-			requestCanceledCh = nil // to prevent spins
-			readLoopResCh = nil     // ignore responses at this point
+			return nil, errRequestCanceled
 		case <-cs.peerReset:
-			if requestCanceled {
-				// They hung up on us first. No need to write a RST_STREAM.
-				// But prioritize the request canceled error value, since
-				// it's likely related. (same spirit as http1 code)
-				return nil, errRequestCanceled
-			}
 			// processResetStream already removed the
 			// stream from the streams map; no need for
 			// forgetStreamID.
 			return nil, cs.resetErr
 		case err := <-bodyCopyErrc:
-			if requestCanceled {
-				cc.writeStreamReset(cs.ID, ErrCodeCancel, nil)
-				return nil, errRequestCanceled
-			}
 			if err != nil {
 				return nil, err
+			}
+			bodyWritten = true
+			if d := cc.responseHeaderTimeout(); d != 0 {
+				timer := time.NewTimer(d)
+				defer timer.Stop()
+				respHeaderTimer = timer.C
 			}
 		}
 	}
@@ -723,9 +752,14 @@ func (cc *ClientConn) writeHeaders(streamID uint32, endStream bool, hdrs []byte)
 	return cc.werr
 }
 
-// errAbortReqBodyWrite is an internal error value.
-// It doesn't escape to callers.
-var errAbortReqBodyWrite = errors.New("http2: aborting request body write")
+// internal error values; they don't escape to callers
+var (
+	// abort request body write; don't send cancel
+	errStopReqBodyWrite = errors.New("http2: aborting request body write")
+
+	// abort request body write, but send stream reset of cancel.
+	errStopReqBodyWriteAndCancel = errors.New("http2: canceling request")
+)
 
 func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (err error) {
 	cc := cs.cc
@@ -761,7 +795,13 @@ func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (
 		for len(remain) > 0 && err == nil {
 			var allowed int32
 			allowed, err = cs.awaitFlowControl(len(remain))
-			if err != nil {
+			switch {
+			case err == errStopReqBodyWrite:
+				return err
+			case err == errStopReqBodyWriteAndCancel:
+				cc.writeStreamReset(cs.ID, ErrCodeCancel, nil)
+				return err
+			case err != nil:
 				return err
 			}
 			cc.wmu.Lock()
@@ -821,8 +861,8 @@ func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) 
 		if cc.closed {
 			return 0, errClientConnClosed
 		}
-		if cs.stopReqBody {
-			return 0, errAbortReqBodyWrite
+		if cs.stopReqBody != nil {
+			return 0, cs.stopReqBody
 		}
 		if err := cs.checkReset(); err != nil {
 			return 0, err
@@ -898,7 +938,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 			cc.writeHeader(lowKey, v)
 		}
 	}
-	if contentLength >= 0 {
+	if shouldSendReqContentLength(req.Method, contentLength) {
 		cc.writeHeader("content-length", strconv.FormatInt(contentLength, 10))
 	}
 	if addGzipHeader {
@@ -908,6 +948,28 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		cc.writeHeader("user-agent", defaultUserAgent)
 	}
 	return cc.hbuf.Bytes()
+}
+
+// shouldSendReqContentLength reports whether the http2.Transport should send
+// a "content-length" request header. This logic is basically a copy of the net/http
+// transferWriter.shouldSendContentLength.
+// The contentLength is the corrected contentLength (so 0 means actually 0, not unknown).
+// -1 means unknown.
+func shouldSendReqContentLength(method string, contentLength int64) bool {
+	if contentLength > 0 {
+		return true
+	}
+	if contentLength < 0 {
+		return false
+	}
+	// For zero bodies, whether we send a content-length depends on the method.
+	// It also kinda doesn't matter for http2 either way, with END_STREAM.
+	switch method {
+	case "POST", "PUT", "PATCH":
+		return true
+	default:
+		return false
+	}
 }
 
 // requires cc.mu be held.
@@ -1032,6 +1094,8 @@ func (rl *clientConnReadLoop) cleanup() {
 
 func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
+	closeWhenIdle := cc.t.disableKeepAlives()
+	gotReply := false // ever saw a reply
 	for {
 		f, err := cc.fr.ReadFrame()
 		if err != nil {
@@ -1046,18 +1110,25 @@ func (rl *clientConnReadLoop) run() error {
 		if VerboseLogs {
 			cc.vlogf("http2: Transport received %s", summarizeFrame(f))
 		}
+		maybeClose := false // whether frame might transition us to idle
 
 		switch f := f.(type) {
 		case *HeadersFrame:
 			err = rl.processHeaders(f)
+			maybeClose = true
+			gotReply = true
 		case *ContinuationFrame:
 			err = rl.processContinuation(f)
+			maybeClose = true
 		case *DataFrame:
 			err = rl.processData(f)
+			maybeClose = true
 		case *GoAwayFrame:
 			err = rl.processGoAway(f)
+			maybeClose = true
 		case *RSTStreamFrame:
 			err = rl.processResetStream(f)
+			maybeClose = true
 		case *SettingsFrame:
 			err = rl.processSettings(f)
 		case *PushPromiseFrame:
@@ -1071,6 +1142,9 @@ func (rl *clientConnReadLoop) run() error {
 		}
 		if err != nil {
 			return err
+		}
+		if closeWhenIdle && gotReply && maybeClose && len(rl.activeRes) == 0 {
+			cc.closeIfIdle()
 		}
 	}
 }
