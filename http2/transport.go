@@ -369,7 +369,7 @@ func (t *Transport) dialTLSDefault(network, addr string, cfg *tls.Config) (net.C
 }
 
 // disableKeepAlives reports whether connections should be closed as
-// soon as possible.
+// soon as possible after handling the first request.
 func (t *Transport) disableKeepAlives() bool {
 	return t.t1 != nil && t.t1.DisableKeepAlives
 }
@@ -1110,25 +1110,25 @@ func (rl *clientConnReadLoop) run() error {
 		if VerboseLogs {
 			cc.vlogf("http2: Transport received %s", summarizeFrame(f))
 		}
-		maybeClose := false // whether frame might transition us to idle
+		maybeIdle := false // whether frame might transition us to idle
 
 		switch f := f.(type) {
 		case *HeadersFrame:
 			err = rl.processHeaders(f)
-			maybeClose = true
+			maybeIdle = true
 			gotReply = true
 		case *ContinuationFrame:
 			err = rl.processContinuation(f)
-			maybeClose = true
+			maybeIdle = true
 		case *DataFrame:
 			err = rl.processData(f)
-			maybeClose = true
+			maybeIdle = true
 		case *GoAwayFrame:
 			err = rl.processGoAway(f)
-			maybeClose = true
+			maybeIdle = true
 		case *RSTStreamFrame:
 			err = rl.processResetStream(f)
-			maybeClose = true
+			maybeIdle = true
 		case *SettingsFrame:
 			err = rl.processSettings(f)
 		case *PushPromiseFrame:
@@ -1143,7 +1143,7 @@ func (rl *clientConnReadLoop) run() error {
 		if err != nil {
 			return err
 		}
-		if closeWhenIdle && gotReply && maybeClose && len(rl.activeRes) == 0 {
+		if closeWhenIdle && gotReply && maybeIdle && len(rl.activeRes) == 0 {
 			cc.closeIfIdle()
 		}
 	}
