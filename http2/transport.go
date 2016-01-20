@@ -1539,7 +1539,6 @@ func (cc *ClientConn) writeStreamReset(streamID uint32, code ErrCode, err error)
 
 var (
 	errResponseHeaderListSize = errors.New("http2: response header list larger than advertised limit")
-	errInvalidHeaderKey       = errors.New("http2: invalid header key")
 	errPseudoTrailers         = errors.New("http2: invalid pseudo header in trailers")
 )
 
@@ -1556,8 +1555,8 @@ func (rl *clientConnReadLoop) checkHeaderField(f hpack.HeaderField) bool {
 		return false
 	}
 
-	if !validHeader(f.Name) {
-		rl.reqMalformed = errInvalidHeaderKey
+	if !validHeaderFieldValue(f.Value) {
+		rl.reqMalformed = errInvalidHeaderFieldValue
 		return false
 	}
 
@@ -1568,6 +1567,10 @@ func (rl *clientConnReadLoop) checkHeaderField(f hpack.HeaderField) bool {
 			return false
 		}
 	} else {
+		if !validHeaderFieldName(f.Name) {
+			rl.reqMalformed = errInvalidHeaderFieldName
+			return false
+		}
 		rl.sawRegHeader = true
 	}
 

@@ -501,7 +501,7 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 		sc.vlogf("http2: server decoded %v", f)
 	}
 	switch {
-	case !validHeader(f.Name):
+	case !validHeaderFieldValue(f.Value): // f.Name checked _after_ pseudo check, since ':' is invalid
 		sc.req.invalidHeader = true
 	case strings.HasPrefix(f.Name, ":"):
 		if sc.req.sawRegularHeader {
@@ -535,6 +535,8 @@ func (sc *serverConn) onNewHeaderField(f hpack.HeaderField) {
 			return
 		}
 		*dst = f.Value
+	case !validHeaderFieldName(f.Name):
+		sc.req.invalidHeader = true
 	default:
 		sc.req.sawRegularHeader = true
 		sc.req.header.Add(sc.canonicalHeader(f.Name), f.Value)
@@ -553,10 +555,10 @@ func (st *stream) onNewTrailerField(f hpack.HeaderField) {
 		sc.vlogf("http2: server decoded trailer %v", f)
 	}
 	switch {
-	case !validHeader(f.Name):
+	case strings.HasPrefix(f.Name, ":"):
 		sc.req.invalidHeader = true
 		return
-	case strings.HasPrefix(f.Name, ":"):
+	case !validHeaderFieldName(f.Name) || !validHeaderFieldValue(f.Value):
 		sc.req.invalidHeader = true
 		return
 	default:

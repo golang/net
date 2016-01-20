@@ -844,6 +844,26 @@ func TestServer_Request_Reject_CapitalHeader(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("UPPER", "v") })
 }
 
+func TestServer_Request_Reject_HeaderFieldNameColon(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("has:colon", "v") })
+}
+
+func TestServer_Request_Reject_HeaderFieldNameNULL(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("has\x00null", "v") })
+}
+
+func TestServer_Request_Reject_HeaderFieldNameEmpty(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("", "v") })
+}
+
+func TestServer_Request_Reject_HeaderFieldValueNewline(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("foo", "has\nnewline") })
+}
+
+func TestServer_Request_Reject_HeaderFieldValueCR(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("foo", "has\rcarriage") })
+}
+
 func TestServer_Request_Reject_Pseudo_Missing_method(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "") })
 }
