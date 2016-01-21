@@ -193,6 +193,8 @@ func validHeaderFieldName(v string) bool {
 // validHeaderFieldValue reports whether v is a valid header field value.
 //
 // RFC 7230 says:
+//  field-value    = *( field-content / obs-fold )
+//  obj-fold       =  N/A to http2, and deprecated
 //  field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 //  field-vchar    = VCHAR / obs-text
 //  obs-text       = %x80-FF
@@ -212,7 +214,7 @@ func validHeaderFieldName(v string) bool {
 // strings that begin or end with SP or HTAB.
 func validHeaderFieldValue(v string) bool {
 	for i := 0; i < len(v); i++ {
-		if b := v[i]; b < ' ' && b != '\t' {
+		if b := v[i]; b < ' ' && b != '\t' || b == 0x7f {
 			return false
 		}
 	}

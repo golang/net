@@ -864,6 +864,10 @@ func TestServer_Request_Reject_HeaderFieldValueCR(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("foo", "has\rcarriage") })
 }
 
+func TestServer_Request_Reject_HeaderFieldValueDEL(t *testing.T) {
+	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1("foo", "has\x7fdel") })
+}
+
 func TestServer_Request_Reject_Pseudo_Missing_method(t *testing.T) {
 	testRejectRequest(t, func(st *serverTester) { st.bodylessReq1(":method", "") })
 }
