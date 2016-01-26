@@ -484,8 +484,6 @@ func (sc *serverConn) logf(format string, args ...interface{}) {
 	}
 }
 
-var uintptrType = reflect.TypeOf(uintptr(0))
-
 // errno returns v's underlying uintptr, else 0.
 //
 // TODO: remove this helper function once http2 can use build
