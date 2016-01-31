@@ -2647,7 +2647,13 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 		}
 		w.Header().Set("Server-Trailer-A", "valuea")
 		w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+		// After a flush, random keys like Server-Surprise shouldn't show up:
 		w.Header().Set("Server-Surpise", "surprise! this isn't predeclared!")
+		// But we do permit promoting keys to trailers after a
+		// flush if they start with the magic
+		// otherwise-invalid "Trailer:" prefix:
+		w.Header().Set("Trailer:Post-Header-Trailer", "hi1")
+		w.Header().Set("Trailer:post-header-trailer2", "hi2")
 		w.Header().Set("Transfer-Encoding", "should not be included; Forbidden by RFC 2616 14.40")
 		w.Header().Set("Content-Length", "should not be included; Forbidden by RFC 2616 14.40")
 		w.Header().Set("Trailer", "should not be included; Forbidden by RFC 2616 14.40")
@@ -2689,10 +2695,43 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 			t.Fatalf("trailers HEADERS lacked END_HEADERS")
 		}
 		wanth = [][2]string{
+			{"post-header-trailer", "hi1"},
+			{"post-header-trailer2", "hi2"},
 			{"server-trailer-a", "valuea"},
 			{"server-trailer-c", "valuec"},
 		}
 		goth = st.decodeHeader(tf.HeaderBlockFragment())
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
+		}
+	})
+}
+
+// validate transmitted header field names & values
+// golang.org/issue/14048
+func TestServerDoesntWriteInvalidHeaders(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Add("OK1", "x")
+		w.Header().Add("Bad:Colon", "x") // colon (non-token byte) in key
+		w.Header().Add("Bad1\x00", "x")  // null in key
+		w.Header().Add("Bad2", "x\x00y") // null in value
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		if !hf.StreamEnded() {
+			t.Error("response HEADERS lacked END_STREAM")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("response HEADERS didn't have END_HEADERS")
+		}
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "200"},
+			{"ok1", "x"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "0"},
+		}
 		if !reflect.DeepEqual(goth, wanth) {
 			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
 		}
