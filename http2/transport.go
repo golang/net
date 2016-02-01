@@ -1264,10 +1264,10 @@ func (rl *clientConnReadLoop) processHeaderBlockFragment(frag []byte, streamID u
 			res.ContentLength = -1
 			res.Body = &gzipReader{body: res.Body}
 		}
+		rl.activeRes[cs.ID] = cs
 	}
 
 	cs.resTrailer = &res.Trailer
-	rl.activeRes[cs.ID] = cs
 	cs.resc <- resAndError{res: res}
 	rl.nextRes = nil // unused now; will be reset next HEADERS frame
 	return nil
