@@ -406,9 +406,6 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 	// henc in response to SETTINGS frames?
 	cc.henc = hpack.NewEncoder(&cc.hbuf)
 
-	type connectionStater interface {
-		ConnectionState() tls.ConnectionState
-	}
 	if cs, ok := c.(connectionStater); ok {
 		state := cs.ConnectionState()
 		cc.tlsState = &state

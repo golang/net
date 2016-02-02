@@ -195,28 +195,76 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 		if testHookOnConn != nil {
 			testHookOnConn()
 		}
-		conf.handleConn(hs, c, h)
+		conf.ServeConn(c, &ServeConnOpts{
+			Handler:    h,
+			BaseConfig: hs,
+		})
 	}
 	s.TLSNextProto[NextProtoTLS] = protoHandler
 	s.TLSNextProto["h2-14"] = protoHandler // temporary; see above.
 	return nil
 }
 
-func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
+// ServeConnOpts are options for the Server.ServeConn method.
+type ServeConnOpts struct {
+	// BaseConfig optionally sets the base configuration
+	// for values. If nil, defaults are used.
+	BaseConfig *http.Server
+
+	// Handler specifies which handler to use for processing
+	// requests. If nil, BaseConfig.Handler is used. If BaseConfig
+	// or BaseConfig.Handler is nil, http.DefaultServeMux is used.
+	Handler http.Handler
+}
+
+func (o *ServeConnOpts) baseConfig() *http.Server {
+	if o != nil && o.BaseConfig != nil {
+		return o.BaseConfig
+	}
+	return new(http.Server)
+}
+
+func (o *ServeConnOpts) handler() http.Handler {
+	if o != nil {
+		if o.Handler != nil {
+			return o.Handler
+		}
+		if o.BaseConfig != nil && o.BaseConfig.Handler != nil {
+			return o.BaseConfig.Handler
+		}
+	}
+	return http.DefaultServeMux
+}
+
+// ServeConn serves HTTP/2 requests on the provided connection and
+// blocks until the connection is no longer readable.
+//
+// ServeConn starts speaking HTTP/2 assuming that c has not had any
+// reads or writes. It writes its initial settings frame and expects
+// to be able to read the preface and settings frame from the
+// client. If c has a ConnectionState method like a *tls.Conn, the
+// ConnectionState is used to verify the TLS ciphersuite and to set
+// the Request.TLS field in Handlers.
+//
+// ServeConn does not support h2c by itself. Any h2c support must be
+// implemented in terms of providing a suitably-behaving net.Conn.
+//
+// The opts parameter is optional. If nil, default values are used.
+func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 	sc := &serverConn{
-		srv:              srv,
-		hs:               hs,
+		srv:              s,
+		hs:               opts.baseConfig(),
 		conn:             c,
 		remoteAddrStr:    c.RemoteAddr().String(),
 		bw:               newBufferedWriter(c),
-		handler:          h,
+		handler:          opts.handler(),
 		streams:          make(map[uint32]*stream),
 		readFrameCh:      make(chan readFrameResult),
 		wantWriteFrameCh: make(chan frameWriteMsg, 8),
 		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
 		bodyReadCh:       make(chan bodyReadMsg),         // buffering doesn't matter either way
 		doneServing:      make(chan struct{}),
-		advMaxStreams:    srv.maxConcurrentStreams(),
+		advMaxStreams:    s.maxConcurrentStreams(),
 		writeSched: writeScheduler{
 			maxFrameSize: initialMaxFrameSize,
 		},
@@ -232,10 +280,10 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 	sc.hpackDecoder.SetMaxStringLength(sc.maxHeaderStringLen())
 
 	fr := NewFramer(sc.bw, c)
-	fr.SetMaxReadFrameSize(srv.maxReadFrameSize())
+	fr.SetMaxReadFrameSize(s.maxReadFrameSize())
 	sc.framer = fr
 
-	if tc, ok := c.(*tls.Conn); ok {
+	if tc, ok := c.(connectionStater); ok {
 		sc.tlsState = new(tls.ConnectionState)
 		*sc.tlsState = tc.ConnectionState()
 		// 9.2 Use of TLS Features
@@ -265,7 +313,7 @@ func (srv *Server) handleConn(hs *http.Server, c net.Conn, h http.Handler) {
 			// So for now, do nothing here again.
 		}
 
-		if !srv.PermitProhibitedCipherSuites && isBadCipher(sc.tlsState.CipherSuite) {
+		if !s.PermitProhibitedCipherSuites && isBadCipher(sc.tlsState.CipherSuite) {
 			// "Endpoints MAY choose to generate a connection error
 			// (Section 5.4.1) of type INADEQUATE_SECURITY if one of
 			// the prohibited cipher suites are negotiated."
