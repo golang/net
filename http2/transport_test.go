@@ -387,7 +387,7 @@ func TestTransportBody(t *testing.T) {
 		defer res.Body.Close()
 		ri := <-gotc
 		if ri.err != nil {
-			t.Errorf("%#d: read error: %v", i, ri.err)
+			t.Errorf("#%d: read error: %v", i, ri.err)
 			continue
 		}
 		if got := string(ri.slurp); got != tt.body {
