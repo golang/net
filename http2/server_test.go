@@ -2515,7 +2515,7 @@ func TestCompressionErrorOnWrite(t *testing.T) {
 	defer st.Close()
 	st.greet()
 
-	maxAllowed := st.sc.maxHeaderStringLen()
+	maxAllowed := st.sc.framer.maxHeaderStringLen()
 
 	// Crank this up, now that we have a conn connected with the
 	// hpack.Decoder's max string length set has been initialized
@@ -2524,8 +2524,12 @@ func TestCompressionErrorOnWrite(t *testing.T) {
 	// the max string size.
 	serverConfig.MaxHeaderBytes = 1 << 20
 
-	// First a request with a header that's exactly the max allowed size.
+	// First a request with a header that's exactly the max allowed size
+	// for the hpack compression. It's still too long for the header list
+	// size, so we'll get the 431 error, but that keeps the compression
+	// context still valid.
 	hbf := st.encodeHeader("foo", strings.Repeat("a", maxAllowed))
+
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
 		BlockFragment: hbf,
@@ -2533,8 +2537,24 @@ func TestCompressionErrorOnWrite(t *testing.T) {
 		EndHeaders:    true,
 	})
 	h := st.wantHeaders()
-	if !h.HeadersEnded() || !h.StreamEnded() {
-		t.Errorf("Unexpected HEADER frame %v", h)
+	if !h.HeadersEnded() {
+		t.Fatalf("Got HEADERS without END_HEADERS set: %v", h)
+	}
+	headers := st.decodeHeader(h.HeaderBlockFragment())
+	want := [][2]string{
+		{":status", "431"},
+		{"content-type", "text/html; charset=utf-8"},
+		{"content-length", "63"},
+	}
+	if !reflect.DeepEqual(headers, want) {
+		t.Errorf("Headers mismatch.\n got: %q\nwant: %q\n", headers, want)
+	}
+	df := st.wantData()
+	if !strings.Contains(string(df.Data()), "HTTP Error 431") {
+		t.Errorf("Unexpected data body: %q", df.Data())
+	}
+	if !df.StreamEnded() {
+		t.Fatalf("expect data stream end")
 	}
 
 	// And now send one that's just one byte too big.
