@@ -1677,3 +1677,64 @@ func TestGzipReader_DoubleReadCrash(t *testing.T) {
 		t.Fatalf("second Read = %v, %v; want 0, %v", n, err2, err1)
 	}
 }
+
+func TestTransportNewTLSConfig(t *testing.T) {
+	tests := [...]struct {
+		conf *tls.Config
+		host string
+		want *tls.Config
+	}{
+		// Normal case.
+		0: {
+			conf: nil,
+			host: "foo.com",
+			want: &tls.Config{
+				ServerName: "foo.com",
+				NextProtos: []string{NextProtoTLS},
+			},
+		},
+
+		// User-provided name (bar.com) takes precedence:
+		1: {
+			conf: &tls.Config{
+				ServerName: "bar.com",
+			},
+			host: "foo.com",
+			want: &tls.Config{
+				ServerName: "bar.com",
+				NextProtos: []string{NextProtoTLS},
+			},
+		},
+
+		// NextProto is prepended:
+		2: {
+			conf: &tls.Config{
+				NextProtos: []string{"foo", "bar"},
+			},
+			host: "example.com",
+			want: &tls.Config{
+				ServerName: "example.com",
+				NextProtos: []string{NextProtoTLS, "foo", "bar"},
+			},
+		},
+
+		// NextProto is not duplicated:
+		3: {
+			conf: &tls.Config{
+				NextProtos: []string{"foo", "bar", NextProtoTLS},
+			},
+			host: "example.com",
+			want: &tls.Config{
+				ServerName: "example.com",
+				NextProtos: []string{"foo", "bar", NextProtoTLS},
+			},
+		},
+	}
+	for i, tt := range tests {
+		tr := &Transport{TLSClientConfig: tt.conf}
+		got := tr.newTLSConfig(tt.host)
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%d. got %#v; want %#v", i, got, tt.want)
+		}
+	}
+}
