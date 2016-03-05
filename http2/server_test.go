@@ -204,6 +204,13 @@ func (st *serverTester) awaitIdle() {
 }
 
 func (st *serverTester) Close() {
+	if st.t.Failed() {
+		// If we failed already (and are likely in a Fatal,
+		// unwindowing), force close the connection, so the
+		// httptest.Server doesn't wait forever for the conn
+		// to close.
+		st.cc.Close()
+	}
 	st.ts.Close()
 	if st.cc != nil {
 		st.cc.Close()
@@ -2759,6 +2766,7 @@ func TestServerDoesntWriteInvalidHeaders(t *testing.T) {
 }
 
 func BenchmarkServerGets(b *testing.B) {
+	defer disableGoroutineTracking()()
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
@@ -2790,6 +2798,7 @@ func BenchmarkServerGets(b *testing.B) {
 }
 
 func BenchmarkServerPosts(b *testing.B) {
+	defer disableGoroutineTracking()()
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
@@ -2999,6 +3008,76 @@ func TestServerNoDuplicateContentType(t *testing.T) {
 	}
 	if !reflect.DeepEqual(headers, want) {
 		t.Errorf("Headers mismatch.\n got: %q\nwant: %q\n", headers, want)
+	}
+}
+
+func disableGoroutineTracking() (restore func()) {
+	old := DebugGoroutines
+	DebugGoroutines = false
+	return func() { DebugGoroutines = old }
+}
+
+func BenchmarkServer_GetRequest(b *testing.B) {
+	defer disableGoroutineTracking()()
+	b.ReportAllocs()
+	const msg = "Hello, world."
+	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+		n, err := io.Copy(ioutil.Discard, r.Body)
+		if err != nil || n > 0 {
+			b.Error("Read %d bytes, error %v; want 0 bytes.", n, err)
+		}
+		io.WriteString(w, msg)
+	})
+	defer st.Close()
+
+	st.greet()
+	// Give the server quota to reply. (plus it has the the 64KB)
+	if err := st.fr.WriteWindowUpdate(0, uint32(b.N*len(msg))); err != nil {
+		b.Fatal(err)
+	}
+	hbf := st.encodeHeader(":method", "GET")
+	for i := 0; i < b.N; i++ {
+		streamID := uint32(1 + 2*i)
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: hbf,
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+		st.wantHeaders()
+		st.wantData()
+	}
+}
+
+func BenchmarkServer_PostRequest(b *testing.B) {
+	defer disableGoroutineTracking()()
+	b.ReportAllocs()
+	const msg = "Hello, world."
+	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+		n, err := io.Copy(ioutil.Discard, r.Body)
+		if err != nil || n > 0 {
+			b.Error("Read %d bytes, error %v; want 0 bytes.", n, err)
+		}
+		io.WriteString(w, msg)
+	})
+	defer st.Close()
+	st.greet()
+	// Give the server quota to reply. (plus it has the the 64KB)
+	if err := st.fr.WriteWindowUpdate(0, uint32(b.N*len(msg))); err != nil {
+		b.Fatal(err)
+	}
+	hbf := st.encodeHeader(":method", "POST")
+	for i := 0; i < b.N; i++ {
+		streamID := uint32(1 + 2*i)
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: hbf,
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		st.writeData(streamID, true, nil)
+		st.wantHeaders()
+		st.wantData()
 	}
 }
 
