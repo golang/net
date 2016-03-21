@@ -326,28 +326,28 @@ func randString(n int) string {
 	return string(b)
 }
 
-var bodyTests = []struct {
-	body         string
-	noContentLen bool
-}{
-	{body: "some message"},
-	{body: "some message", noContentLen: true},
-	{body: ""},
-	{body: "", noContentLen: true},
-	{body: strings.Repeat("a", 1<<20), noContentLen: true},
-	{body: strings.Repeat("a", 1<<20)},
-	{body: randString(16<<10 - 1)},
-	{body: randString(16 << 10)},
-	{body: randString(16<<10 + 1)},
-	{body: randString(512<<10 - 1)},
-	{body: randString(512 << 10)},
-	{body: randString(512<<10 + 1)},
-	{body: randString(1<<20 - 1)},
-	{body: randString(1 << 20)},
-	{body: randString(1<<20 + 2)},
-}
-
 func TestTransportBody(t *testing.T) {
+	bodyTests := []struct {
+		body         string
+		noContentLen bool
+	}{
+		{body: "some message"},
+		{body: "some message", noContentLen: true},
+		{body: ""},
+		{body: "", noContentLen: true},
+		{body: strings.Repeat("a", 1<<20), noContentLen: true},
+		{body: strings.Repeat("a", 1<<20)},
+		{body: randString(16<<10 - 1)},
+		{body: randString(16 << 10)},
+		{body: randString(16<<10 + 1)},
+		{body: randString(512<<10 - 1)},
+		{body: randString(512 << 10)},
+		{body: randString(512<<10 + 1)},
+		{body: randString(1<<20 - 1)},
+		{body: randString(1 << 20)},
+		{body: randString(1<<20 + 2)},
+	}
+
 	type reqInfo struct {
 		req   *http.Request
 		slurp []byte
