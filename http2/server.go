@@ -51,7 +51,6 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2026,7 +2025,12 @@ func (rws *responseWriterState) promoteUndeclaredTrailers() {
 		rws.declareTrailer(trailerKey)
 		rws.handlerHeader[http.CanonicalHeaderKey(trailerKey)] = vv
 	}
-	sort.Strings(rws.trailers)
+
+	if len(rws.trailers) > 1 {
+		sorter := sorterPool.Get().(*sorter)
+		sorter.SortStrings(rws.trailers)
+		sorterPool.Put(sorter)
+	}
 }
 
 func (w *responseWriter) Flush() {
