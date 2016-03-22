@@ -598,10 +598,11 @@ type readFrameResult struct {
 // It's run on its own goroutine.
 func (sc *serverConn) readFrames() {
 	gate := make(gate)
+	gateDone := gate.Done
 	for {
 		f, err := sc.framer.ReadFrame()
 		select {
-		case sc.readFrameCh <- readFrameResult{f, err, gate.Done}:
+		case sc.readFrameCh <- readFrameResult{f, err, gateDone}:
 		case <-sc.doneServing:
 			return
 		}
