@@ -1263,7 +1263,8 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 	}
 
 	streamEnded := f.StreamEnded()
-	if !streamEnded || cs.req.Method == "HEAD" {
+	isHead := cs.req.Method == "HEAD"
+	if !streamEnded || isHead {
 		res.ContentLength = -1
 		if clens := res.Header["Content-Length"]; len(clens) == 1 {
 			if clen64, err := strconv.ParseInt(clens[0], 10, 64); err == nil {
@@ -1278,7 +1279,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 		}
 	}
 
-	if streamEnded {
+	if streamEnded || isHead {
 		res.Body = noBody
 		return res, nil
 	}
