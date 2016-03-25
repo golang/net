@@ -1616,9 +1616,13 @@ func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*res
 		Trailer:    trailer,
 	}
 	if bodyOpen {
-		st.reqBuf = sc.getRequestBodyBuf()
+		// Disabled, per golang.org/issue/14960:
+		// st.reqBuf = sc.getRequestBodyBuf()
+		// TODO: remove this 64k of garbage per request (again, but without a data race):
+		buf := make([]byte, initialWindowSize)
+
 		body.pipe = &pipe{
-			b: &fixedBuffer{buf: st.reqBuf},
+			b: &fixedBuffer{buf: buf},
 		}
 
 		if vv, ok := header["Content-Length"]; ok {
