@@ -125,7 +125,19 @@ const (
 
 // The following gives names to various bit patterns used in opcode construction.
 
-const opClsMask uint16 = 0x7
+const (
+	opMaskCls uint16 = 0x7
+	// opClsLoad masks
+	opMaskLoadDest  = 0x01
+	opMaskLoadWidth = 0x18
+	opMaskLoadMode  = 0xe0
+	// opClsALU
+	opMaskOperandSrc = 0x08
+	opMaskOperator   = 0xf0
+	// opClsJump
+	opMaskJumpConst = 0x0f
+	opMaskJumpCond  = 0xf0
+)
 
 const (
 	// +---------------+-----------------+---+---+---+
@@ -179,9 +191,6 @@ const (
 )
 
 // Operator defined by ALUOp*
-const opALUOpMask = 0xf0
-
-const opALUSrcMask = 0x08
 
 const (
 	opALUSrcConstant uint16 = iota << 3

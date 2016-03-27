@@ -31,122 +31,133 @@ func (ri RawInstruction) Assemble() (RawInstruction, error) { return ri, nil }
 // Disassemble parses ri into an Instruction and returns it. If ri is
 // not recognized by this package, ri itself is returned.
 func (ri RawInstruction) Disassemble() Instruction {
-	switch ri.Op {
-	case opClsLoadA | opLoadWidth4 | opAddrModeImmediate:
-		return LoadConstant{Dst: RegA, Val: ri.K}
-	case opClsLoadX | opLoadWidth4 | opAddrModeImmediate:
-		return LoadConstant{Dst: RegX, Val: ri.K}
-
-	case opClsLoadA | opLoadWidth4 | opAddrModeScratch:
-		if ri.K > 15 {
-			return ri
-		}
-		return LoadScratch{Dst: RegA, N: int(ri.K)}
-	case opClsLoadX | opLoadWidth4 | opAddrModeScratch:
-		if ri.K > 15 {
-			return ri
-		}
-		return LoadScratch{Dst: RegX, N: int(ri.K)}
-
-	case opClsLoadA | opLoadWidth4 | opAddrModeAbsolute:
-		ext := Extension(uint32(ri.K) + 0x1000)
-		switch ext {
-		case ExtProto, ExtType, ExtPayloadOffset, ExtInterfaceIndex, ExtNetlinkAttr, ExtNetlinkAttrNested, ExtMark, ExtQueue, ExtLinkLayerType, ExtRXHash, ExtCPUID, ExtVLANTag, ExtVLANTagPresent, ExtVLANProto, ExtRand:
-			return LoadExtension{Num: ext}
+	switch ri.Op & opMaskCls {
+	case opClsLoadA, opClsLoadX:
+		reg := Register(ri.Op & opMaskLoadDest)
+		sz := 0
+		switch ri.Op & opMaskLoadWidth {
+		case opLoadWidth4:
+			sz = 4
+		case opLoadWidth2:
+			sz = 2
+		case opLoadWidth1:
+			sz = 1
 		default:
-			return LoadAbsolute{Off: ri.K, Size: 4}
+			return ri
 		}
-	case opClsLoadA | opLoadWidth2 | opAddrModeAbsolute:
-		return LoadAbsolute{Off: ri.K, Size: 2}
-	case opClsLoadA | opLoadWidth1 | opAddrModeAbsolute:
-		return LoadAbsolute{Off: ri.K, Size: 1}
-
-	case opClsLoadA | opLoadWidth4 | opAddrModeIndirect:
-		return LoadIndirect{Off: ri.K, Size: 4}
-	case opClsLoadA | opLoadWidth2 | opAddrModeIndirect:
-		return LoadIndirect{Off: ri.K, Size: 2}
-	case opClsLoadA | opLoadWidth1 | opAddrModeIndirect:
-		return LoadIndirect{Off: ri.K, Size: 1}
-
-	case opClsLoadX | opLoadWidth1 | opAddrModeIPv4HeaderLen:
-		return LoadIPv4HeaderLen{Off: ri.K}
-
-	case opClsLoadA | opLoadWidth4 | opAddrModePacketLen:
-		return LoadExtension{Num: ExtLen}
+		switch ri.Op & opMaskLoadMode {
+		case opAddrModeImmediate:
+			if sz != 4 {
+				return ri
+			}
+			return LoadConstant{Dst: reg, Val: ri.K}
+		case opAddrModeScratch:
+			if sz != 4 || ri.K > 15 {
+				return ri
+			}
+			return LoadScratch{Dst: reg, N: int(ri.K)}
+		case opAddrModeAbsolute:
+			return LoadAbsolute{Size: sz, Off: ri.K}
+		case opAddrModeIndirect:
+			return LoadIndirect{Size: sz, Off: ri.K}
+		case opAddrModePacketLen:
+			if sz != 4 {
+				return ri
+			}
+			return LoadExtension{Num: ExtLen}
+		case opAddrModeIPv4HeaderLen:
+			return LoadIPv4HeaderLen{Off: ri.K}
+		default:
+			return ri
+		}
 
 	case opClsStoreA:
-		if ri.K > 15 {
+		if ri.Op != opClsStoreA || ri.K > 15 {
 			return ri
 		}
 		return StoreScratch{Src: RegA, N: int(ri.K)}
+
 	case opClsStoreX:
-		if ri.K > 15 {
+		if ri.Op != opClsStoreX || ri.K > 15 {
 			return ri
 		}
 		return StoreScratch{Src: RegX, N: int(ri.K)}
 
-	case opClsALU | uint16(aluOpNeg):
-		return NegateA{}
-
-	case opClsJump | opJumpAlways:
-		return Jump{Skip: ri.K}
-	case opClsJump | opJumpEqual:
-		return JumpIf{
-			Cond:      JumpEqual,
-			Val:       ri.K,
-			SkipTrue:  ri.Jt,
-			SkipFalse: ri.Jf,
-		}
-	case opClsJump | opJumpGT:
-		return JumpIf{
-			Cond:      JumpGreaterThan,
-			Val:       ri.K,
-			SkipTrue:  ri.Jt,
-			SkipFalse: ri.Jf,
-		}
-	case opClsJump | opJumpGE:
-		return JumpIf{
-			Cond:      JumpGreaterOrEqual,
-			Val:       ri.K,
-			SkipTrue:  ri.Jt,
-			SkipFalse: ri.Jf,
-		}
-	case opClsJump | opJumpSet:
-		return JumpIf{
-			Cond:      JumpBitsSet,
-			Val:       ri.K,
-			SkipTrue:  ri.Jt,
-			SkipFalse: ri.Jf,
+	case opClsALU:
+		switch op := ALUOp(ri.Op & opMaskOperator); op {
+		case ALUOpAdd, ALUOpSub, ALUOpMul, ALUOpDiv, ALUOpOr, ALUOpAnd, ALUOpShiftLeft, ALUOpShiftRight, ALUOpMod, ALUOpXor:
+			if ri.Op&opMaskOperandSrc != 0 {
+				return ALUOpX{Op: op}
+			}
+			return ALUOpConstant{Op: op, Val: ri.K}
+		case aluOpNeg:
+			return NegateA{}
+		default:
+			return ri
 		}
 
-	case opClsReturn | opRetSrcA:
-		return RetA{}
-	case opClsReturn | opRetSrcConstant:
-		return RetConstant{Val: ri.K}
+	case opClsJump:
+		if ri.Op&opMaskJumpConst != opClsJump {
+			return ri
+		}
+		switch ri.Op & opMaskJumpCond {
+		case opJumpAlways:
+			return Jump{Skip: ri.K}
+		case opJumpEqual:
+			return JumpIf{
+				Cond:      JumpEqual,
+				Val:       ri.K,
+				SkipTrue:  ri.Jt,
+				SkipFalse: ri.Jf,
+			}
+		case opJumpGT:
+			return JumpIf{
+				Cond:      JumpGreaterThan,
+				Val:       ri.K,
+				SkipTrue:  ri.Jt,
+				SkipFalse: ri.Jf,
+			}
+		case opJumpGE:
+			return JumpIf{
+				Cond:      JumpGreaterOrEqual,
+				Val:       ri.K,
+				SkipTrue:  ri.Jt,
+				SkipFalse: ri.Jf,
+			}
+		case opJumpSet:
+			return JumpIf{
+				Cond:      JumpBitsSet,
+				Val:       ri.K,
+				SkipTrue:  ri.Jt,
+				SkipFalse: ri.Jf,
+			}
+		default:
+			return ri
+		}
 
-	case opClsMisc | opMiscTXA:
-		return TXA{}
-	case opClsMisc | opMiscTAX:
-		return TAX{}
-	}
+	case opClsReturn:
+		switch ri.Op {
+		case opClsReturn | opRetSrcA:
+			return RetA{}
+		case opClsReturn | opRetSrcConstant:
+			return RetConstant{Val: ri.K}
+		default:
+			return ri
+		}
 
-	// ALU operations require bitmasking to decode, so are done
-	// outside the main switch.
+	case opClsMisc:
+		switch ri.Op {
+		case opClsMisc | opMiscTAX:
+			return TAX{}
+		case opClsMisc | opMiscTXA:
+			return TXA{}
+		default:
+			return ri
+		}
 
-	if ri.Op&opClsMask != opClsALU {
-		return ri
-	}
-
-	op := ALUOp(ri.Op & opALUOpMask)
-	switch op {
-	case ALUOpAdd, ALUOpSub, ALUOpMul, ALUOpDiv, ALUOpOr, ALUOpAnd, ALUOpShiftLeft, ALUOpShiftRight, ALUOpMod, ALUOpXor:
 	default:
-		return ri
+		panic("unreachable") // switch is exhaustive on the bit pattern
 	}
-	if ri.Op&opALUSrcMask != 0 {
-		return ALUOpX{Op: op}
-	}
-	return ALUOpConstant{Op: op, Val: ri.K}
 }
 
 // LoadConstant loads Val into register Dst.
