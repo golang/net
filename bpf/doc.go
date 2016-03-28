@@ -4,16 +4,16 @@
 
 /*
 
-Package bpf implements marshalling and unmarshalling of programs
-for the Berkeley Packet Filter virtual machine.
+Package bpf implements marshaling and unmarshaling of programs for the
+Berkeley Packet Filter virtual machine.
 
-BPF's main use is to specify a packet filter for network taps, so
-that the kernel doesn't have to expensively copy every packet it
-sees to userspace. However, it's been repurposed to other areas
-where running user code in-kernel is needed. For example, Linux's
-seccomp uses BPF to apply security policies to system calls. For
-simplicity, this documentation refers only to packets, but other
-uses of BPF have their own data payloads.
+BPF's main use is to specify a packet filter for network taps, so that
+the kernel doesn't have to expensively copy every packet it sees to
+userspace. However, it's been repurposed to other areas where running
+user code in-kernel is needed. For example, Linux's seccomp uses BPF
+to apply security policies to system calls. For simplicity, this
+documentation refers only to packets, but other uses of BPF have their
+own data payloads.
 
 BPF programs run in a restricted virtual machine. It has almost no
 access to kernel functions, and while conditional branches are
