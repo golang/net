@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package webdav etc etc TODO.
+// Package webdav provides a WebDAV server implementation.
 package webdav // import "golang.org/x/net/webdav"
 
 import (
