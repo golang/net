@@ -9,11 +9,29 @@ package webdav
 
 import (
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	// As of https://go-review.googlesource.com/#/c/12772/ which was submitted
+	// in July 2015, this package uses an internal fork of the standard
+	// library's encoding/xml package, due to changes in the way namespaces
+	// were encoded. Such changes were introduced in the Go 1.5 cycle, but were
+	// rolled back in response to https://github.com/golang/go/issues/11841
+	//
+	// However, this package's exported API, specifically the Property and
+	// DeadPropsHolder types, need to refer to the standard library's version
+	// of the xml.Name type, as code that imports this package cannot refer to
+	// the internal version.
+	//
+	// This file therefore imports both the internal and external versions, as
+	// ixml and xml, and converts between them.
+	//
+	// In the long term, this package should use the standard library's version
+	// only, and the internal fork deleted, once
+	// https://github.com/golang/go/issues/13400 is resolved.
 	ixml "golang.org/x/net/webdav/internal/xml"
 )
 
@@ -116,7 +134,7 @@ func next(d *ixml.Decoder) (ixml.Token, error) {
 }
 
 // http://www.webdav.org/specs/rfc4918.html#ELEMENT_prop (for propfind)
-type propfindProps []ixml.Name
+type propfindProps []xml.Name
 
 // UnmarshalXML appends the property names enclosed within start to pn.
 //
@@ -143,7 +161,7 @@ func (pn *propfindProps) UnmarshalXML(d *ixml.Decoder, start ixml.StartElement) 
 			if _, ok := t.(ixml.EndElement); !ok {
 				return fmt.Errorf("unexpected token %T", t)
 			}
-			*pn = append(*pn, name)
+			*pn = append(*pn, xml.Name(name))
 		}
 	}
 }
@@ -190,7 +208,7 @@ func readPropfind(r io.Reader) (pf propfind, status int, err error) {
 // See http://www.webdav.org/specs/rfc4918.html#data.model.for.resource.properties
 type Property struct {
 	// XMLName is the fully qualified name that identifies this property.
-	XMLName ixml.Name
+	XMLName xml.Name
 
 	// Lang is an optional xml:lang attribute.
 	Lang string `xml:"xml:lang,attr,omitempty"`
@@ -203,6 +221,14 @@ type Property struct {
 	// XML namespace declarations. They must not rely on any XML
 	// namespace declarations within the scope of the XML document,
 	// even including the DAV: namespace.
+	InnerXML []byte `xml:",innerxml"`
+}
+
+// ixmlProperty is the same as the Property type except it holds an ixml.Name
+// instead of an xml.Name.
+type ixmlProperty struct {
+	XMLName  ixml.Name
+	Lang     string `xml:"xml:lang,attr,omitempty"`
 	InnerXML []byte `xml:",innerxml"`
 }
 
@@ -222,18 +248,42 @@ type propstat struct {
 	ResponseDescription string     `xml:"D:responsedescription,omitempty"`
 }
 
+// ixmlPropstat is the same as the propstat type except it holds an ixml.Name
+// instead of an xml.Name.
+type ixmlPropstat struct {
+	Prop                []ixmlProperty `xml:"D:prop>_ignored_"`
+	Status              string         `xml:"D:status"`
+	Error               *xmlError      `xml:"D:error"`
+	ResponseDescription string         `xml:"D:responsedescription,omitempty"`
+}
+
 // MarshalXML prepends the "D:" namespace prefix on properties in the DAV: namespace
 // before encoding. See multistatusWriter.
 func (ps propstat) MarshalXML(e *ixml.Encoder, start ixml.StartElement) error {
+	// Convert from a propstat to an ixmlPropstat.
+	ixmlPs := ixmlPropstat{
+		Prop:                make([]ixmlProperty, len(ps.Prop)),
+		Status:              ps.Status,
+		Error:               ps.Error,
+		ResponseDescription: ps.ResponseDescription,
+	}
 	for k, prop := range ps.Prop {
+		ixmlPs.Prop[k] = ixmlProperty{
+			XMLName:  ixml.Name(prop.XMLName),
+			Lang:     prop.Lang,
+			InnerXML: prop.InnerXML,
+		}
+	}
+
+	for k, prop := range ixmlPs.Prop {
 		if prop.XMLName.Space == "DAV:" {
 			prop.XMLName = ixml.Name{Space: "", Local: "D:" + prop.XMLName.Local}
-			ps.Prop[k] = prop
+			ixmlPs.Prop[k] = prop
 		}
 	}
 	// Distinct type to avoid infinite recursion of MarshalXML.
-	type newpropstat propstat
-	return e.EncodeElement(newpropstat(ps), start)
+	type newpropstat ixmlPropstat
+	return e.EncodeElement(newpropstat(ixmlPs), start)
 }
 
 // http://www.webdav.org/specs/rfc4918.html#ELEMENT_response
@@ -350,9 +400,6 @@ func (w *multistatusWriter) close() error {
 	return w.enc.Flush()
 }
 
-// http://www.webdav.org/specs/rfc4918.html#ELEMENT_prop (for proppatch)
-type proppatchProps []Property
-
 var xmlLangName = ixml.Name{Space: "http://www.w3.org/XML/1998/namespace", Local: "lang"}
 
 func xmlLang(s ixml.StartElement, d string) string {
@@ -393,6 +440,9 @@ func (v *xmlValue) UnmarshalXML(d *ixml.Decoder, start ixml.StartElement) error 
 	return nil
 }
 
+// http://www.webdav.org/specs/rfc4918.html#ELEMENT_prop (for proppatch)
+type proppatchProps []Property
+
 // UnmarshalXML appends the property names and values enclosed within start
 // to ps.
 //
@@ -416,7 +466,7 @@ func (ps *proppatchProps) UnmarshalXML(d *ixml.Decoder, start ixml.StartElement)
 			return nil
 		case ixml.StartElement:
 			p := Property{
-				XMLName: t.(ixml.StartElement).Name,
+				XMLName: xml.Name(t.(ixml.StartElement).Name),
 				Lang:    xmlLang(t.(ixml.StartElement), lang),
 			}
 			err = d.DecodeElement(((*xmlValue)(&p.InnerXML)), &elem)

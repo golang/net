@@ -5,14 +5,13 @@
 package webdav
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"os"
 	"reflect"
 	"sort"
 	"testing"
-
-	"golang.org/x/net/webdav/internal/xml"
 )
 
 func TestMemPS(t *testing.T) {

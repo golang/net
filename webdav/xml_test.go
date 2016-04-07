@@ -6,6 +6,7 @@ package webdav
 
 import (
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -176,7 +177,7 @@ func TestReadPropfind(t *testing.T) {
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
 			Allprop: new(struct{}),
-			Include: propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Include: propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: include followed by allprop",
@@ -188,7 +189,7 @@ func TestReadPropfind(t *testing.T) {
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
 			Allprop: new(struct{}),
-			Include: propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Include: propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: propfind",
@@ -198,7 +199,7 @@ func TestReadPropfind(t *testing.T) {
 			"</A:propfind>",
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
-			Prop:    propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Prop:    propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: prop with ignored comments",
@@ -211,7 +212,7 @@ func TestReadPropfind(t *testing.T) {
 			"</A:propfind>",
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
-			Prop:    propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Prop:    propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: propfind with ignored whitespace",
@@ -221,7 +222,7 @@ func TestReadPropfind(t *testing.T) {
 			"</A:propfind>",
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
-			Prop:    propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Prop:    propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: propfind with ignored mixed-content",
@@ -231,7 +232,7 @@ func TestReadPropfind(t *testing.T) {
 			"</A:propfind>",
 		wantPF: propfind{
 			XMLName: ixml.Name{Space: "DAV:", Local: "propfind"},
-			Prop:    propfindProps{ixml.Name{Space: "DAV:", Local: "displayname"}},
+			Prop:    propfindProps{xml.Name{Space: "DAV:", Local: "displayname"}},
 		},
 	}, {
 		desc: "propfind: propname with ignored element (section A.4)",
@@ -364,7 +365,7 @@ func TestMultistatusWriter(t *testing.T) {
 			Href: []string{"http://example.com/foo"},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: ixml.Name{
+					XMLName: xml.Name{
 						Space: "http://ns.example.com/",
 						Local: "Authors",
 					},
@@ -372,7 +373,7 @@ func TestMultistatusWriter(t *testing.T) {
 				Status: "HTTP/1.1 424 Failed Dependency",
 			}, {
 				Prop: []Property{{
-					XMLName: ixml.Name{
+					XMLName: xml.Name{
 						Space: "http://ns.example.com/",
 						Local: "Copyright-Owner",
 					},
@@ -427,13 +428,13 @@ func TestMultistatusWriter(t *testing.T) {
 			Href: []string{"http://example.com/foo"},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: ixml.Name{Space: "http://ns.example.com/boxschema/", Local: "bigbox"},
+					XMLName: xml.Name{Space: "http://ns.example.com/boxschema/", Local: "bigbox"},
 					InnerXML: []byte(`` +
 						`<BoxType xmlns="http://ns.example.com/boxschema/">` +
 						`Box type A` +
 						`</BoxType>`),
 				}, {
-					XMLName: ixml.Name{Space: "http://ns.example.com/boxschema/", Local: "author"},
+					XMLName: xml.Name{Space: "http://ns.example.com/boxschema/", Local: "author"},
 					InnerXML: []byte(`` +
 						`<Name xmlns="http://ns.example.com/boxschema/">` +
 						`J.J. Johnson` +
@@ -442,9 +443,9 @@ func TestMultistatusWriter(t *testing.T) {
 				Status: "HTTP/1.1 200 OK",
 			}, {
 				Prop: []Property{{
-					XMLName: ixml.Name{Space: "http://ns.example.com/boxschema/", Local: "DingALing"},
+					XMLName: xml.Name{Space: "http://ns.example.com/boxschema/", Local: "DingALing"},
 				}, {
-					XMLName: ixml.Name{Space: "http://ns.example.com/boxschema/", Local: "Random"},
+					XMLName: xml.Name{Space: "http://ns.example.com/boxschema/", Local: "Random"},
 				}},
 				Status:              "HTTP/1.1 403 Forbidden",
 				ResponseDescription: "The user does not have access to the DingALing property.",
@@ -494,7 +495,7 @@ func TestMultistatusWriter(t *testing.T) {
 		responses: []response{{
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: ixml.Name{
+					XMLName: xml.Name{
 						Space: "http://example.com/",
 						Local: "foo",
 					},
@@ -527,7 +528,7 @@ func TestMultistatusWriter(t *testing.T) {
 			Href: []string{"http://example.com/foo"},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: ixml.Name{
+					XMLName: xml.Name{
 						Space: "http://example.com/",
 						Local: "foo",
 					},
@@ -548,7 +549,7 @@ func TestMultistatusWriter(t *testing.T) {
 			},
 			Propstat: []propstat{{
 				Prop: []Property{{
-					XMLName: ixml.Name{
+					XMLName: xml.Name{
 						Space: "http://example.com/",
 						Local: "foo",
 					},
@@ -638,14 +639,14 @@ func TestReadProppatch(t *testing.T) {
 			`</D:propertyupdate>`,
 		wantPP: []Proppatch{{
 			Props: []Property{{
-				ixml.Name{Space: "http://ns.example.com/z/", Local: "Authors"},
+				xml.Name{Space: "http://ns.example.com/z/", Local: "Authors"},
 				"",
 				[]byte(`somevalue`),
 			}},
 		}, {
 			Remove: true,
 			Props: []Property{{
-				ixml.Name{Space: "http://ns.example.com/z/", Local: "Copyright-Owner"},
+				xml.Name{Space: "http://ns.example.com/z/", Local: "Copyright-Owner"},
 				"",
 				nil,
 			}},
@@ -663,7 +664,7 @@ func TestReadProppatch(t *testing.T) {
 			`</D:propertyupdate>`,
 		wantPP: []Proppatch{{
 			Props: []Property{{
-				ixml.Name{Space: "http://example.com/ns", Local: "foo"},
+				xml.Name{Space: "http://example.com/ns", Local: "foo"},
 				"en",
 				nil,
 			}},
