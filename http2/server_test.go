@@ -188,7 +188,7 @@ func (st *serverTester) loopNum() int {
 
 // awaitIdle heuristically awaits for the server conn's select loop to be idle.
 // The heuristic is that the server connection's serve loop must schedule
-// 50 times in a row without any channel sends or receives occuring.
+// 50 times in a row without any channel sends or receives occurring.
 func (st *serverTester) awaitIdle() {
 	remain := 50
 	last := st.loopNum()
