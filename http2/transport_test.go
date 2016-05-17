@@ -53,6 +53,51 @@ func TestTransportExternal(t *testing.T) {
 	res.Write(os.Stdout)
 }
 
+func startH2cServer(t *testing.T) net.Listener {
+	h2Server := &Server{}
+	l := newLocalListener(t)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		h2Server.ServeConn(conn, &ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "Hello, %v", r.URL.Path)
+		})})
+	}()
+	return l
+}
+
+func TestTransportH2c(t *testing.T) {
+	l := startH2cServer(t)
+	defer l.Close()
+	req, err := http.NewRequest("GET", "http://"+l.Addr().String()+"/foobar", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := &Transport{
+		AllowHTTP: true,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return net.Dial(network, addr)
+		},
+	}
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ProtoMajor != 2 {
+		t.Fatal("proto not h2c")
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(body), "Hello, /foobar"; got != want {
+		t.Fatalf("response got %v, want %v", got, want)
+	}
+}
+
 func TestTransport(t *testing.T) {
 	const body = "sup"
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
