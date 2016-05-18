@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2/hpack"
+	"golang.org/x/net/lex/httplex"
 )
 
 const (
@@ -632,12 +633,8 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, errClientConnUnusable
 	}
 
-	cs := cc.newStream()
-	cs.req = req
-	cs.trace = requestTrace(req)
-	hasBody := body != nil
-
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
+	var requestedGzip bool
 	if !cc.t.disableCompression() &&
 		req.Header.Get("Accept-Encoding") == "" &&
 		req.Header.Get("Range") == "" &&
@@ -654,13 +651,24 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		// We don't request gzip if the request is for a range, since
 		// auto-decoding a portion of a gzipped document will just fail
 		// anyway. See https://golang.org/issue/8923
-		cs.requestedGzip = true
+		requestedGzip = true
 	}
 
 	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,} (DATA is
 	// sent by writeRequestBody below, along with any Trailers,
 	// again in form HEADERS{1}, CONTINUATION{0,})
-	hdrs := cc.encodeHeaders(req, cs.requestedGzip, trailers, contentLen)
+	hdrs, err := cc.encodeHeaders(req, requestedGzip, trailers, contentLen)
+	if err != nil {
+		cc.mu.Unlock()
+		return nil, err
+	}
+
+	cs := cc.newStream()
+	cs.req = req
+	cs.trace = requestTrace(req)
+	hasBody := body != nil
+	cs.requestedGzip = requestedGzip
+
 	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
 	werr := cc.writeHeaders(cs.ID, endStream, hdrs)
@@ -936,12 +944,26 @@ type badStringError struct {
 func (e *badStringError) Error() string { return fmt.Sprintf("%s %q", e.what, e.str) }
 
 // requires cc.mu be held.
-func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) []byte {
+func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) ([]byte, error) {
 	cc.hbuf.Reset()
 
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
+	}
+
+	// Check for any invalid headers and return an error before we
+	// potentially pollute our hpack state. (We want to be able to
+	// continue to reuse the hpack encoder for future requests)
+	for k, vv := range req.Header {
+		if !httplex.ValidHeaderFieldName(k) {
+			return nil, fmt.Errorf("invalid HTTP header name %q", k)
+		}
+		for _, v := range vv {
+			if !httplex.ValidHeaderFieldValue(v) {
+				return nil, fmt.Errorf("invalid HTTP header value %q for header %q", v, k)
+			}
+		}
 	}
 
 	// 8.1.2.3 Request Pseudo-Header Fields
@@ -1000,7 +1022,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	if !didUA {
 		cc.writeHeader("user-agent", defaultUserAgent)
 	}
-	return cc.hbuf.Bytes()
+	return cc.hbuf.Bytes(), nil
 }
 
 // shouldSendReqContentLength reports whether the http2.Transport should send

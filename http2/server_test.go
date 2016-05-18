@@ -209,7 +209,9 @@ func (st *serverTester) Close() {
 		// unwindowing), force close the connection, so the
 		// httptest.Server doesn't wait forever for the conn
 		// to close.
-		st.cc.Close()
+		if st.cc != nil {
+			st.cc.Close()
+		}
 	}
 	st.ts.Close()
 	if st.cc != nil {

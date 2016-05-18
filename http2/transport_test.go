@@ -1666,6 +1666,68 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 	}
 }
 
+// golang.org/issue/14048
+func TestTransportFailsOnInvalidHeaders(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		var got []string
+		for k := range r.Header {
+			got = append(got, k)
+		}
+		sort.Strings(got)
+		w.Header().Set("Got-Header", strings.Join(got, ","))
+	}, optOnlyServer)
+	defer st.Close()
+
+	tests := [...]struct {
+		h       http.Header
+		wantErr string
+	}{
+		0: {
+			h:       http.Header{"with space": {"foo"}},
+			wantErr: `invalid HTTP header name "with space"`,
+		},
+		1: {
+			h:       http.Header{"name": {"Брэд"}},
+			wantErr: "", // okay
+		},
+		2: {
+			h:       http.Header{"имя": {"Brad"}},
+			wantErr: `invalid HTTP header name "имя"`,
+		},
+		3: {
+			h:       http.Header{"foo": {"foo\x01bar"}},
+			wantErr: `invalid HTTP header value "foo\x01bar" for header "foo"`,
+		},
+	}
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	for i, tt := range tests {
+		req, _ := http.NewRequest("GET", st.ts.URL, nil)
+		req.Header = tt.h
+		res, err := tr.RoundTrip(req)
+		var bad bool
+		if tt.wantErr == "" {
+			if err != nil {
+				bad = true
+				t.Errorf("case %d: error = %v; want no error", i, err)
+			}
+		} else {
+			if !strings.Contains(fmt.Sprint(err), tt.wantErr) {
+				bad = true
+				t.Errorf("case %d: error = %v; want error %q", i, err, tt.wantErr)
+			}
+		}
+		if err == nil {
+			if bad {
+				t.Logf("case %d: server got headers %q", i, res.Header.Get("Got-Header"))
+			}
+			res.Body.Close()
+		}
+	}
+}
+
 // Tests that gzipReader doesn't crash on a second Read call following
 // the first Read call's gzip.NewReader returning an error.
 func TestGzipReader_DoubleReadCrash(t *testing.T) {
