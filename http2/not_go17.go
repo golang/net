@@ -20,3 +20,11 @@ func reqContext(r *http.Request) fakeContext {
 func setResponseUncompressed(res *http.Response) {
 	// Nothing.
 }
+
+type clientTrace struct{}
+
+func requestTrace(*http.Request) *clientTrace { return nil }
+func traceGotConn(*http.Request, *ClientConn) {}
+func traceFirstResponseByte(*clientTrace)     {}
+func traceWroteHeaders(*clientTrace)          {}
+func traceWroteRequest(*clientTrace, error)   {}

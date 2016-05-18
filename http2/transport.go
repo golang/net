@@ -153,6 +153,8 @@ type ClientConn struct {
 	bw           *bufio.Writer
 	br           *bufio.Reader
 	fr           *Framer
+	lastActive   time.Time
+
 	// Settings from peer:
 	maxFrameSize         uint32
 	maxConcurrentStreams uint32
@@ -170,6 +172,7 @@ type ClientConn struct {
 type clientStream struct {
 	cc            *ClientConn
 	req           *http.Request
+	trace         *clientTrace // or nil
 	ID            uint32
 	resc          chan resAndError
 	bufPipe       pipe // buffered pipe with the flow-controlled response payload
@@ -288,6 +291,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 			t.vlogf("http2: Transport failed to get client conn for %s: %v", addr, err)
 			return nil, err
 		}
+		traceGotConn(req, cc)
 		res, err := cc.RoundTrip(req)
 		if shouldRetryRequest(req, err) {
 			continue
@@ -622,6 +626,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	cc.mu.Lock()
+	cc.lastActive = time.Now()
 	if cc.closed || !cc.canTakeNewRequestLocked() {
 		cc.mu.Unlock()
 		return nil, errClientConnUnusable
@@ -629,6 +634,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	cs := cc.newStream()
 	cs.req = req
+	cs.trace = requestTrace(req)
 	hasBody := body != nil
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
@@ -659,6 +665,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	endStream := !hasBody && !hasTrailers
 	werr := cc.writeHeaders(cs.ID, endStream, hdrs)
 	cc.wmu.Unlock()
+	traceWroteHeaders(cs.trace)
 	cc.mu.Unlock()
 
 	if werr != nil {
@@ -668,6 +675,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		cc.forgetStreamID(cs.ID)
 		// Don't bother sending a RST_STREAM (our write already failed;
 		// no need to keep writing)
+		traceWroteRequest(cs.trace, werr)
 		return nil, werr
 	}
 
@@ -679,6 +687,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			bodyCopyErrc <- cs.writeRequestBody(body, req.Body)
 		}()
 	} else {
+		traceWroteRequest(cs.trace, nil)
 		if d := cc.responseHeaderTimeout(); d != 0 {
 			timer := time.NewTimer(d)
 			defer timer.Stop()
@@ -743,6 +752,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			// forgetStreamID.
 			return nil, cs.resetErr
 		case err := <-bodyCopyErrc:
+			traceWroteRequest(cs.trace, err)
 			if err != nil {
 				return nil, err
 			}
@@ -1068,6 +1078,7 @@ func (cc *ClientConn) streamByID(id uint32, andRemove bool) *clientStream {
 	defer cc.mu.Unlock()
 	cs := cc.streams[id]
 	if andRemove && cs != nil && !cc.closed {
+		cc.lastActive = time.Now()
 		delete(cc.streams, id)
 		close(cs.done)
 	}
@@ -1196,6 +1207,13 @@ func (rl *clientConnReadLoop) processHeaders(f *MetaHeadersFrame) error {
 	} else {
 		return rl.processTrailers(cs, f)
 	}
+	if cs.trace != nil {
+		// TODO(bradfitz): move first response byte earlier,
+		// when we first read the 9 byte header, not waiting
+		// until all the HEADERS+CONTINUATION frames have been
+		// merged. This works for now.
+		traceFirstResponseByte(cs.trace)
+	}
 
 	res, err := rl.handleResponse(cs, f)
 	if err != nil {
@@ -1243,6 +1261,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 	if statusCode == 100 {
 		// Just skip 100-continue response headers for now.
 		// TODO: golang.org/issue/13851 for doing it properly.
+		// TODO: also call the httptrace.ClientTrace hooks
 		cs.pastHeaders = false // do it all again
 		return nil, nil
 	}
