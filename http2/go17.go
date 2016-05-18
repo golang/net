@@ -8,10 +8,32 @@ package http2
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"time"
 )
+
+type contextContext interface {
+	context.Context
+}
+
+func serverConnBaseContext(c net.Conn, opts *ServeConnOpts) (ctx contextContext, cancel func()) {
+	ctx, cancel = context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, http.LocalAddrContextKey, c.LocalAddr())
+	if hs := opts.baseConfig(); hs != nil {
+		ctx = context.WithValue(ctx, http.ServerContextKey, hs)
+	}
+	return
+}
+
+func contextWithCancel(ctx contextContext) (_ contextContext, cancel func()) {
+	return context.WithCancel(ctx)
+}
+
+func requestWithContext(req *http.Request, ctx contextContext) *http.Request {
+	return req.WithContext(ctx)
+}
 
 type clientTrace httptrace.ClientTrace
 

@@ -6,7 +6,12 @@
 
 package http2
 
-import "net/http"
+import (
+	"net"
+	"net/http"
+)
+
+type contextContext interface{}
 
 type fakeContext struct{}
 
@@ -28,3 +33,17 @@ func traceGotConn(*http.Request, *ClientConn) {}
 func traceFirstResponseByte(*clientTrace)     {}
 func traceWroteHeaders(*clientTrace)          {}
 func traceWroteRequest(*clientTrace, error)   {}
+
+func nop() {}
+
+func serverConnBaseContext(c net.Conn, opts *ServeConnOpts) (ctx contextContext, cancel func()) {
+	return nil, nop
+}
+
+func contextWithCancel(ctx contextContext) (_ contextContext, cancel func()) {
+	return ctx, nop
+}
+
+func requestWithContext(req *http.Request, ctx contextContext) *http.Request {
+	return req
+}

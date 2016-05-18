@@ -250,10 +250,14 @@ func (o *ServeConnOpts) handler() http.Handler {
 //
 // The opts parameter is optional. If nil, default values are used.
 func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
+	baseCtx, cancel := serverConnBaseContext(c, opts)
+	defer cancel()
+
 	sc := &serverConn{
 		srv:              s,
 		hs:               opts.baseConfig(),
 		conn:             c,
+		baseCtx:          baseCtx,
 		remoteAddrStr:    c.RemoteAddr().String(),
 		bw:               newBufferedWriter(c),
 		handler:          opts.handler(),
@@ -272,6 +276,7 @@ func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 		serveG:            newGoroutineLock(),
 		pushEnabled:       true,
 	}
+
 	sc.flow.add(initialWindowSize)
 	sc.inflow.add(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
@@ -373,6 +378,7 @@ type serverConn struct {
 	conn             net.Conn
 	bw               *bufferedWriter // writing to conn
 	handler          http.Handler
+	baseCtx          contextContext
 	framer           *Framer
 	doneServing      chan struct{}         // closed when serverConn.serve ends
 	readFrameCh      chan readFrameResult  // written by serverConn.readFrames
@@ -436,10 +442,12 @@ func (sc *serverConn) maxHeaderListSize() uint32 {
 // responseWriter's state field.
 type stream struct {
 	// immutable:
-	sc   *serverConn
-	id   uint32
-	body *pipe       // non-nil if expecting DATA frames
-	cw   closeWaiter // closed wait stream transitions to closed state
+	sc        *serverConn
+	id        uint32
+	body      *pipe       // non-nil if expecting DATA frames
+	cw        closeWaiter // closed wait stream transitions to closed state
+	ctx       contextContext
+	cancelCtx func()
 
 	// owned by serverConn's serve loop:
 	bodyBytes        int64   // body bytes seen so far
@@ -1157,6 +1165,7 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	}
 	if st != nil {
 		st.gotReset = true
+		st.cancelCtx()
 		sc.closeStream(st, StreamError{f.StreamID, f.ErrCode})
 	}
 	return nil
@@ -1380,10 +1389,13 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	}
 	sc.maxStreamID = id
 
+	ctx, cancelCtx := contextWithCancel(sc.baseCtx)
 	st = &stream{
-		sc:    sc,
-		id:    id,
-		state: stateOpen,
+		sc:        sc,
+		id:        id,
+		state:     stateOpen,
+		ctx:       ctx,
+		cancelCtx: cancelCtx,
 	}
 	if f.StreamEnded() {
 		st.state = stateHalfClosedRemote
@@ -1617,6 +1629,7 @@ func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*res
 		Body:       body,
 		Trailer:    trailer,
 	}
+	req = requestWithContext(req, st.ctx)
 	if bodyOpen {
 		// Disabled, per golang.org/issue/14960:
 		// st.reqBuf = sc.getRequestBodyBuf()
@@ -1661,6 +1674,7 @@ func (sc *serverConn) getRequestBodyBuf() []byte {
 func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) {
 	didPanic := true
 	defer func() {
+		rw.rws.stream.cancelCtx()
 		if didPanic {
 			e := recover()
 			// Same as net/http:
