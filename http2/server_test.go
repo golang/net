@@ -2660,13 +2660,11 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Trailer", "Server-Trailer-A, Server-Trailer-B")
 		w.Header().Add("Trailer", "Server-Trailer-C")
-
-		// TODO: decide if the server should filter these while
-		// writing the Trailer header in the response. Currently it
-		// appears net/http doesn't do this for http/1.1
 		w.Header().Add("Trailer", "Transfer-Encoding, Content-Length, Trailer") // filtered
+
+		// Regular headers:
 		w.Header().Set("Foo", "Bar")
-		w.Header().Set("Content-Length", "5")
+		w.Header().Set("Content-Length", "5") // len("Hello")
 
 		io.WriteString(w, "Hello")
 		if withFlush {
@@ -2681,6 +2679,8 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 		// otherwise-invalid "Trailer:" prefix:
 		w.Header().Set("Trailer:Post-Header-Trailer", "hi1")
 		w.Header().Set("Trailer:post-header-trailer2", "hi2")
+		w.Header().Set("Trailer:Range", "invalid")
+		w.Header().Set("Trailer:Foo\x01Bogus", "invalid")
 		w.Header().Set("Transfer-Encoding", "should not be included; Forbidden by RFC 2616 14.40")
 		w.Header().Set("Content-Length", "should not be included; Forbidden by RFC 2616 14.40")
 		w.Header().Set("Trailer", "should not be included; Forbidden by RFC 2616 14.40")

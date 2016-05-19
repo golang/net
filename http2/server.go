@@ -1474,6 +1474,12 @@ func (st *stream) processTrailerHeaders(f *MetaHeadersFrame) error {
 	if st.trailer != nil {
 		for _, hf := range f.RegularFields() {
 			key := sc.canonicalHeader(hf.Name)
+			if !ValidTrailerHeader(key) {
+				// TODO: send more details to the peer somehow. But http2 has
+				// no way to send debug data at a stream level. Discuss with
+				// HTTP folk.
+				return StreamError{st.id, ErrCodeProtocol}
+			}
 			st.trailer[key] = append(st.trailer[key], hf.Value)
 		}
 	}
@@ -1902,9 +1908,9 @@ func (rws *responseWriterState) hasTrailers() bool { return len(rws.trailers) !=
 // written in the trailers at the end of the response.
 func (rws *responseWriterState) declareTrailer(k string) {
 	k = http.CanonicalHeaderKey(k)
-	switch k {
-	case "Transfer-Encoding", "Content-Length", "Trailer":
+	if !ValidTrailerHeader(k) {
 		// Forbidden by RFC 2616 14.40.
+		rws.conn.logf("ignoring invalid trailer %q", k)
 		return
 	}
 	if !strSliceContains(rws.trailers, k) {
@@ -2226,4 +2232,39 @@ func new400Handler(err error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+}
+
+// ValidTrailerHeader reports whether name is a valid header field name to appear
+// in trailers.
+// See: http://tools.ietf.org/html/rfc7230#section-4.1.2
+func ValidTrailerHeader(name string) bool {
+	name = http.CanonicalHeaderKey(name)
+	if strings.HasPrefix(name, "If-") || badTrailer[name] {
+		return false
+	}
+	return true
+}
+
+var badTrailer = map[string]bool{
+	"Authorization":       true,
+	"Cache-Control":       true,
+	"Connection":          true,
+	"Content-Encoding":    true,
+	"Content-Length":      true,
+	"Content-Range":       true,
+	"Content-Type":        true,
+	"Expect":              true,
+	"Host":                true,
+	"Keep-Alive":          true,
+	"Max-Forwards":        true,
+	"Pragma":              true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Proxy-Connection":    true,
+	"Range":               true,
+	"Realm":               true,
+	"Te":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+	"Www-Authenticate":    true,
 }
