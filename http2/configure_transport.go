@@ -67,15 +67,6 @@ func registerHTTPSProtocol(t *http.Transport, rt http.RoundTripper) (err error) 
 	return nil
 }
 
-// noDialClientConnPool is an implementation of http2.ClientConnPool
-// which never dials.  We let the HTTP/1.1 client dial and use its TLS
-// connection instead.
-type noDialClientConnPool struct{ *clientConnPool }
-
-func (p noDialClientConnPool) GetClientConn(req *http.Request, addr string) (*ClientConn, error) {
-	return p.getClientConn(req, addr, noDialOnMiss)
-}
-
 // noDialH2RoundTripper is a RoundTripper which only tries to complete the request
 // if there's already has a cached connection to the host.
 type noDialH2RoundTripper struct{ t *Transport }
