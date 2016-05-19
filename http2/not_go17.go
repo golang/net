@@ -33,6 +33,8 @@ func traceGotConn(*http.Request, *ClientConn) {}
 func traceFirstResponseByte(*clientTrace)     {}
 func traceWroteHeaders(*clientTrace)          {}
 func traceWroteRequest(*clientTrace, error)   {}
+func traceGot100Continue(trace *clientTrace)  {}
+func traceWait100Continue(trace *clientTrace) {}
 
 func nop() {}
 

@@ -1,8 +1,8 @@
-// Copyright 2015 The Go Authors. All rights reserved.
+// Copyright 2016 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.6
+// +build go1.6
 
 package http2
 
@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-func configureTransport(t1 *http.Transport) (*Transport, error) {
-	return nil, errTransportVersion
-}
-
 func transportExpectContinueTimeout(t1 *http.Transport) time.Duration {
-	return 0
+	return t1.ExpectContinueTimeout
 }

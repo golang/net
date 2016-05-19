@@ -49,8 +49,8 @@ func traceGotConn(req *http.Request, cc *ClientConn) {
 	ci := httptrace.GotConnInfo{Conn: cc.tconn}
 	cc.mu.Lock()
 	ci.Reused = cc.nextStreamID > 1
-	ci.WasIdle = len(cc.streams) == 0
-	if ci.WasIdle {
+	ci.WasIdle = len(cc.streams) == 0 && ci.Reused
+	if ci.WasIdle && !cc.lastActive.IsZero() {
 		ci.IdleTime = time.Now().Sub(cc.lastActive)
 	}
 	cc.mu.Unlock()
@@ -61,6 +61,18 @@ func traceGotConn(req *http.Request, cc *ClientConn) {
 func traceWroteHeaders(trace *clientTrace) {
 	if trace != nil && trace.WroteHeaders != nil {
 		trace.WroteHeaders()
+	}
+}
+
+func traceGot100Continue(trace *clientTrace) {
+	if trace != nil && trace.Got100Continue != nil {
+		trace.Got100Continue()
+	}
+}
+
+func traceWait100Continue(trace *clientTrace) {
+	if trace != nil && trace.Wait100Continue != nil {
+		trace.Wait100Continue()
 	}
 }
 
