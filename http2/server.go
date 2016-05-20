@@ -1833,7 +1833,7 @@ type requestBody struct {
 
 func (b *requestBody) Close() error {
 	if b.pipe != nil {
-		b.pipe.CloseWithError(errClosedBody)
+		b.pipe.BreakWithError(errClosedBody)
 	}
 	b.closed = true
 	return nil
