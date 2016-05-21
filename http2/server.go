@@ -461,6 +461,7 @@ type stream struct {
 	sentReset        bool // only true once detached from streams map
 	gotReset         bool // only true once detacted from streams map
 	gotTrailerHeader bool // HEADER frame for trailers was seen
+	wroteHeaders     bool // whether we wrote headers (not status 100)
 	reqBuf           []byte
 
 	trailer    http.Header // accumulated trailers
@@ -848,7 +849,23 @@ func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) error {
 // If you're not on the serve goroutine, use writeFrameFromHandler instead.
 func (sc *serverConn) writeFrame(wm frameWriteMsg) {
 	sc.serveG.check()
-	sc.writeSched.add(wm)
+
+	var ignoreWrite bool
+
+	// Don't send a 100-continue response if we've already sent headers.
+	// See golang.org/issue/14030.
+	switch wm.write.(type) {
+	case *writeResHeaders:
+		wm.stream.wroteHeaders = true
+	case write100ContinueHeadersFrame:
+		if wm.stream.wroteHeaders {
+			ignoreWrite = true
+		}
+	}
+
+	if !ignoreWrite {
+		sc.writeSched.add(wm)
+	}
 	sc.scheduleFrameWrite()
 }
 

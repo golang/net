@@ -3244,3 +3244,54 @@ func TestCheckValidHTTP2Request(t *testing.T) {
 		}
 	}
 }
+
+// golang.org/issue/14030
+func TestExpect100ContinueAfterHandlerWrites(t *testing.T) {
+	const msg = "Hello"
+	const msg2 = "World"
+
+	doRead := make(chan bool, 1)
+	defer close(doRead) // fallback cleanup
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, msg)
+		w.(http.Flusher).Flush()
+
+		// Do a read, which might force a 100-continue status to be sent.
+		<-doRead
+		r.Body.Read(make([]byte, 10))
+
+		io.WriteString(w, msg2)
+
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	req, _ := http.NewRequest("POST", st.ts.URL, io.LimitReader(neverEnding('A'), 2<<20))
+	req.Header.Set("Expect", "100-continue")
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	buf := make([]byte, len(msg))
+	if _, err := io.ReadFull(res.Body, buf); err != nil {
+		t.Fatal(err)
+	}
+	if string(buf) != msg {
+		t.Fatalf("msg = %q; want %q", buf, msg)
+	}
+
+	doRead <- true
+
+	if _, err := io.ReadFull(res.Body, buf); err != nil {
+		t.Fatal(err)
+	}
+	if string(buf) != msg2 {
+		t.Fatalf("second msg = %q; want %q", buf, msg2)
+	}
+}
