@@ -2879,8 +2879,12 @@ func (c *issue53Conn) Close() error {
 	return nil
 }
 
-func (c *issue53Conn) LocalAddr() net.Addr                { return &net.TCPAddr{net.IP{127, 0, 0, 1}, 49706, ""} }
-func (c *issue53Conn) RemoteAddr() net.Addr               { return &net.TCPAddr{net.IP{127, 0, 0, 1}, 49706, ""} }
+func (c *issue53Conn) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 49706}
+}
+func (c *issue53Conn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 49706}
+}
 func (c *issue53Conn) SetDeadline(t time.Time) error      { return nil }
 func (c *issue53Conn) SetReadDeadline(t time.Time) error  { return nil }
 func (c *issue53Conn) SetWriteDeadline(t time.Time) error { return nil }
@@ -3026,7 +3030,7 @@ func BenchmarkServer_GetRequest(b *testing.B) {
 	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
 		n, err := io.Copy(ioutil.Discard, r.Body)
 		if err != nil || n > 0 {
-			b.Error("Read %d bytes, error %v; want 0 bytes.", n, err)
+			b.Errorf("Read %d bytes, error %v; want 0 bytes.", n, err)
 		}
 		io.WriteString(w, msg)
 	})
@@ -3058,7 +3062,7 @@ func BenchmarkServer_PostRequest(b *testing.B) {
 	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
 		n, err := io.Copy(ioutil.Discard, r.Body)
 		if err != nil || n > 0 {
-			b.Error("Read %d bytes, error %v; want 0 bytes.", n, err)
+			b.Errorf("Read %d bytes, error %v; want 0 bytes.", n, err)
 		}
 		io.WriteString(w, msg)
 	})

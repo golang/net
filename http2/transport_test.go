@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -787,7 +786,6 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 				return fmt.Errorf("Unexpected client frame %v", f)
 			}
 		}
-		return nil
 	}
 	ct.run()
 }
@@ -809,12 +807,12 @@ func TestTransportFullDuplex(t *testing.T) {
 	pr, pw := io.Pipe()
 	req, err := http.NewRequest("PUT", st.ts.URL, ioutil.NopCloser(pr))
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	req.ContentLength = -1
 	res, err := c.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
@@ -1578,7 +1576,6 @@ func testTransportResponseHeaderTimeout(t *testing.T, body bool) {
 				}
 			}
 		}
-		return nil
 	}
 	ct.run()
 }
@@ -1905,7 +1902,6 @@ func TestTransportReadHeadResponse(t *testing.T) {
 			<-clientDone
 			return nil
 		}
-		return nil
 	}
 	ct.run()
 }
@@ -1949,7 +1945,7 @@ func TestTransportHandlerBodyClose(t *testing.T) {
 		n, err := io.Copy(ioutil.Discard, res.Body)
 		res.Body.Close()
 		if n != bodySize || err != nil {
-			t.Fatalf("req#d: Copy = %d, %v; want %d, nil", i, n, err, bodySize)
+			t.Fatalf("req#%d: Copy = %d, %v; want %d, nil", i, n, err, bodySize)
 		}
 	}
 	tr.CloseIdleConnections()
