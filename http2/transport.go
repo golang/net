@@ -196,6 +196,7 @@ type clientStream struct {
 	done chan struct{} // closed when stream remove from cc.streams map; close calls guarded by cc.mu
 
 	// owned by clientConnReadLoop:
+	firstByte    bool // got the first response byte
 	pastHeaders  bool // got first MetaHeadersFrame (actual headers)
 	pastTrailers bool // got optional second MetaHeadersFrame (trailers)
 
@@ -1253,17 +1254,20 @@ func (rl *clientConnReadLoop) processHeaders(f *MetaHeadersFrame) error {
 		// was just something we canceled, ignore it.
 		return nil
 	}
+	if !cs.firstByte {
+		if cs.trace != nil {
+			// TODO(bradfitz): move first response byte earlier,
+			// when we first read the 9 byte header, not waiting
+			// until all the HEADERS+CONTINUATION frames have been
+			// merged. This works for now.
+			traceFirstResponseByte(cs.trace)
+		}
+		cs.firstByte = true
+	}
 	if !cs.pastHeaders {
 		cs.pastHeaders = true
 	} else {
 		return rl.processTrailers(cs, f)
-	}
-	if cs.trace != nil {
-		// TODO(bradfitz): move first response byte earlier,
-		// when we first read the 9 byte header, not waiting
-		// until all the HEADERS+CONTINUATION frames have been
-		// merged. This works for now.
-		traceFirstResponseByte(cs.trace)
 	}
 
 	res, err := rl.handleResponse(cs, f)
