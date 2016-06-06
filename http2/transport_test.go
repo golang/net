@@ -1956,3 +1956,58 @@ func TestTransportHandlerBodyClose(t *testing.T) {
 	}
 
 }
+
+// https://golang.org/issue/15930
+func TestTransportFlowControl(t *testing.T) {
+	const (
+		total  = 100 << 20 // 100MB
+		bufLen = 1 << 16
+	)
+
+	var wrote int64 // updated atomically
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, bufLen)
+		for wrote < total {
+			n, err := w.Write(b)
+			atomic.AddInt64(&wrote, int64(n))
+			if err != nil {
+				t.Errorf("ResponseWriter.Write error: %v", err)
+				break
+			}
+			w.(http.Flusher).Flush()
+		}
+	}, optOnlyServer)
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	req, err := http.NewRequest("GET", st.ts.URL, nil)
+	if err != nil {
+		t.Fatal("NewRequest error:", err)
+	}
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal("RoundTrip error:", err)
+	}
+	defer resp.Body.Close()
+
+	var read int64
+	b := make([]byte, bufLen)
+	for {
+		n, err := resp.Body.Read(b)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal("Read error:", err)
+		}
+		read += int64(n)
+
+		const max = transportDefaultStreamFlow
+		if w := atomic.LoadInt64(&wrote); -max > read-w || read-w > max {
+			t.Fatalf("Too much data inflight: server wrote %v bytes but client only received %v", w, read)
+		}
+
+		// Let the server get ahead of the client.
+		time.Sleep(1 * time.Millisecond)
+	}
+}

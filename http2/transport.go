@@ -1459,8 +1459,12 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 		cc.inflow.add(connAdd)
 	}
 	if err == nil { // No need to refresh if the stream is over or failed.
-		if v := cs.inflow.available(); v < transportDefaultStreamFlow-transportDefaultStreamMinRefresh {
-			streamAdd = transportDefaultStreamFlow - v
+		// Consider any buffered body data (read from the conn but not
+		// consumed by the client) when computing flow control for this
+		// stream.
+		v := int(cs.inflow.available()) + cs.bufPipe.b.Len()
+		if v < transportDefaultStreamFlow-transportDefaultStreamMinRefresh {
+			streamAdd = int32(transportDefaultStreamFlow - v)
 			cs.inflow.add(streamAdd)
 		}
 	}
