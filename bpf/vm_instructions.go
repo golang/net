@@ -103,6 +103,15 @@ func loadConstant(ins LoadConstant, regA uint32, regX uint32) (uint32, uint32) {
 	return regA, regX
 }
 
+func loadExtension(ins LoadExtension, in []byte) uint32 {
+	switch ins.Num {
+	case ExtLen:
+		return uint32(len(in))
+	default:
+		panic(fmt.Sprintf("unimplemented extension: %d", ins.Num))
+	}
+}
+
 func loadIndirect(ins LoadIndirect, in []byte, regX uint32) (uint32, bool) {
 	offset := int(ins.Off) + int(regX)
 	size := int(ins.Size)

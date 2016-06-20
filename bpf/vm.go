@@ -45,6 +45,13 @@ func NewVM(filter []Instruction) (*VM, error) {
 			case ALUOpDiv, ALUOpMod:
 				return nil, errors.New("cannot divide by zero using ALUOpConstant")
 			}
+		// Check for unknown extensions
+		case LoadExtension:
+			switch ins.Num {
+			case ExtLen:
+			default:
+				return nil, fmt.Errorf("extension %d not implemented", ins.Num)
+			}
 		}
 	}
 
@@ -84,9 +91,6 @@ func (v *VM) Run(in []byte) (int, error) {
 	// - NegateA:
 	//   - would require a change from uint32 registers to int32
 	//     registers
-	// - Extension:
-	//   - implement extensions that do not depend on kernel-specific
-	//     functionality, such as 'rand'
 
 	// TODO(mdlayher): add interop tests that check signedness of ALU
 	// operations against kernel implementation, and make sure Go
@@ -109,6 +113,8 @@ func (v *VM) Run(in []byte) (int, error) {
 			regA, ok = loadAbsolute(ins, in)
 		case LoadConstant:
 			regA, regX = loadConstant(ins, regA, regX)
+		case LoadExtension:
+			regA = loadExtension(ins, in)
 		case LoadIndirect:
 			regA, ok = loadIndirect(ins, in, regX)
 		case LoadMemShift:
