@@ -495,8 +495,17 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 func (cc *ClientConn) setGoAway(f *GoAwayFrame) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
+
+	old := cc.goAway
 	cc.goAway = f
-	cc.goAwayDebug = string(f.DebugData())
+
+	// Merge the previous and current GoAway error frames.
+	if cc.goAwayDebug == "" {
+		cc.goAwayDebug = string(f.DebugData())
+	}
+	if old != nil && old.ErrCode != ErrCodeNo {
+		cc.goAway.ErrCode = old.ErrCode
+	}
 }
 
 func (cc *ClientConn) CanTakeNewRequest() bool {

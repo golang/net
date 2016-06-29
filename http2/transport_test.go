@@ -2044,7 +2044,7 @@ func testTransportUsesGoAwayDebugError(t *testing.T, failMidBody bool) {
 			res.Body.Close()
 		}
 		want := GoAwayError{
-			LastStreamID: 0,
+			LastStreamID: 5,
 			ErrCode:      goAwayErrCode,
 			DebugData:    goAwayDebugData,
 		}
@@ -2077,7 +2077,10 @@ func testTransportUsesGoAwayDebugError(t *testing.T, failMidBody bool) {
 					BlockFragment: buf.Bytes(),
 				})
 			}
-			ct.fr.WriteGoAway(0, goAwayErrCode, []byte(goAwayDebugData))
+			// Write two GOAWAY frames, to test that the Transport takes
+			// the interesting parts of both.
+			ct.fr.WriteGoAway(5, ErrCodeNo, []byte(goAwayDebugData))
+			ct.fr.WriteGoAway(5, goAwayErrCode, nil)
 			ct.sc.Close()
 			<-clientDone
 			return nil
