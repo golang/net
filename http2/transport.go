@@ -139,9 +139,10 @@ func (t *Transport) initConnPool() {
 // ClientConn is the state of a single HTTP/2 client connection to an
 // HTTP/2 server.
 type ClientConn struct {
-	t        *Transport
-	tconn    net.Conn             // usually *tls.Conn, except specialized impls
-	tlsState *tls.ConnectionState // nil only for specialized impls
+	t         *Transport
+	tconn     net.Conn             // usually *tls.Conn, except specialized impls
+	tlsState  *tls.ConnectionState // nil only for specialized impls
+	singleUse bool                 // whether being used for a single http.Request
 
 	// readLoop goroutine fields:
 	readerDone chan struct{} // closed on error
@@ -515,6 +516,9 @@ func (cc *ClientConn) CanTakeNewRequest() bool {
 }
 
 func (cc *ClientConn) canTakeNewRequestLocked() bool {
+	if cc.singleUse && cc.nextStreamID > 1 {
+		return false
+	}
 	return cc.goAway == nil && !cc.closed &&
 		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
 		cc.nextStreamID < 2147483647
@@ -1223,7 +1227,7 @@ func (rl *clientConnReadLoop) cleanup() {
 
 func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
-	rl.closeWhenIdle = cc.t.disableKeepAlives()
+	rl.closeWhenIdle = cc.t.disableKeepAlives() || cc.singleUse
 	gotReply := false // ever saw a reply
 	for {
 		f, err := cc.fr.ReadFrame()

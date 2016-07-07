@@ -150,7 +150,9 @@ func TestTransport(t *testing.T) {
 func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, r.RemoteAddr)
-	}, optOnlyServer)
+	}, optOnlyServer, func(c net.Conn, st http.ConnState) {
+		t.Logf("conn %v is now state %v", c.RemoteAddr(), st)
+	})
 	defer st.Close()
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
