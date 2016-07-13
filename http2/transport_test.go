@@ -755,18 +755,18 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 				if f.StreamEnded() {
 					return fmt.Errorf("headers contains END_STREAM unexpectedly: %v", f)
 				}
-				time.Sleep(50 * time.Millisecond) // let client send body
-				enc.WriteField(hpack.HeaderField{Name: ":status", Value: strconv.Itoa(status)})
-				ct.fr.WriteHeaders(HeadersFrameParam{
-					StreamID:      f.StreamID,
-					EndHeaders:    true,
-					EndStream:     false,
-					BlockFragment: buf.Bytes(),
-				})
 			case *DataFrame:
 				dataLen := len(f.Data())
-				dataRecv += int64(dataLen)
 				if dataLen > 0 {
+					if dataRecv == 0 {
+						enc.WriteField(hpack.HeaderField{Name: ":status", Value: strconv.Itoa(status)})
+						ct.fr.WriteHeaders(HeadersFrameParam{
+							StreamID:      f.StreamID,
+							EndHeaders:    true,
+							EndStream:     false,
+							BlockFragment: buf.Bytes(),
+						})
+					}
 					if err := ct.fr.WriteWindowUpdate(0, uint32(dataLen)); err != nil {
 						return err
 					}
@@ -774,6 +774,8 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 						return err
 					}
 				}
+				dataRecv += int64(dataLen)
+
 				if !closed && ((status != 200 && dataRecv > 0) ||
 					(status == 200 && dataRecv == bodySize)) {
 					closed = true
