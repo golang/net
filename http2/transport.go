@@ -1593,7 +1593,7 @@ func (rl *clientConnReadLoop) endStreamError(cs *clientStream, err error) {
 	}
 	cs.bufPipe.closeWithErrorAndCode(err, code)
 	delete(rl.activeRes, cs.ID)
-	if cs.req.Close || cs.req.Header.Get("Connection") == "close" {
+	if isConnectionCloseRequest(cs.req) {
 		rl.closeWhenIdle = true
 	}
 }
@@ -1865,4 +1865,10 @@ func (s bodyWriterState) scheduleBodyWrite() {
 	if s.timer.Stop() {
 		s.timer.Reset(s.delay)
 	}
+}
+
+// isConnectionCloseRequest reports whether req should use its own
+// connection for a single request and then close the connection.
+func isConnectionCloseRequest(req *http.Request) bool {
+	return req.Close || httplex.HeaderValuesContainsToken(req.Header["Connection"], "close")
 }

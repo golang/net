@@ -53,7 +53,7 @@ const (
 )
 
 func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMiss bool) (*ClientConn, error) {
-	if req.Close && dialOnMiss {
+	if isConnectionCloseRequest(req) && dialOnMiss {
 		// It gets its own connection.
 		cc, err := p.t.dialClientConn(addr)
 		if err != nil {
