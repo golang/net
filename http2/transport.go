@@ -339,7 +339,7 @@ func shouldRetryRequest(req *http.Request, err error) bool {
 	return err == errClientConnUnusable
 }
 
-func (t *Transport) dialClientConn(addr string) (*ClientConn, error) {
+func (t *Transport) dialClientConn(addr string, singleUse bool) (*ClientConn, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -348,7 +348,7 @@ func (t *Transport) dialClientConn(addr string) (*ClientConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.NewClientConn(tconn)
+	return t.newClientConn(tconn, singleUse)
 }
 
 func (t *Transport) newTLSConfig(host string) *tls.Config {
@@ -409,6 +409,10 @@ func (t *Transport) expectContinueTimeout() time.Duration {
 }
 
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
+	return t.newClientConn(c, false)
+}
+
+func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn to %v", c.RemoteAddr())
 	}
@@ -426,6 +430,7 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 		initialWindowSize:    65535,    // spec default
 		maxConcurrentStreams: 1000,     // "infinite", per spec. 1000 seems good enough.
 		streams:              make(map[uint32]*clientStream),
+		singleUse:            singleUse,
 	}
 	cc.cond = sync.NewCond(&cc.mu)
 	cc.flow.add(int32(initialWindowSize))
