@@ -652,6 +652,19 @@ func (ct *clientTester) greet() {
 	}
 }
 
+func (ct *clientTester) readNonSettingsFrame() (Frame, error) {
+	for {
+		f, err := ct.fr.ReadFrame()
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := f.(*SettingsFrame); ok {
+			continue
+		}
+		return f, nil
+	}
+}
+
 func (ct *clientTester) cleanup() {
 	ct.tr.CloseIdleConnections()
 }
@@ -703,8 +716,12 @@ func TestTransportReqBodyAfterResponse_403(t *testing.T) { testTransportReqBodyA
 
 func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 	const bodySize = 10 << 20
+	clientDone := make(chan struct{})
 	ct := newClientTester(t)
 	ct.client = func() error {
+		defer ct.cc.(*net.TCPConn).CloseWrite()
+		defer close(clientDone)
+
 		var n int64 // atomic
 		req, err := http.NewRequest("PUT", "https://dummy.tld/", io.LimitReader(countingReader{&n}, bodySize))
 		if err != nil {
@@ -745,7 +762,15 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 		for {
 			f, err := ct.fr.ReadFrame()
 			if err != nil {
-				return err
+				select {
+				case <-clientDone:
+					// If the client's done, it
+					// will have reported any
+					// errors on its side.
+					return nil
+				default:
+					return err
+				}
 			}
 			//println(fmt.Sprintf("server got frame: %v", f))
 			switch f := f.(type) {
@@ -784,7 +809,6 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 					if err := ct.fr.WriteData(f.StreamID, true, nil); err != nil {
 						return err
 					}
-					return nil
 				}
 			default:
 				return fmt.Errorf("Unexpected client frame %v", f)
@@ -2090,7 +2114,7 @@ func testTransportUsesGoAwayDebugError(t *testing.T, failMidBody bool) {
 			// the interesting parts of both.
 			ct.fr.WriteGoAway(5, ErrCodeNo, []byte(goAwayDebugData))
 			ct.fr.WriteGoAway(5, goAwayErrCode, nil)
-			ct.sc.Close()
+			ct.sc.(*net.TCPConn).CloseWrite()
 			<-clientDone
 			return nil
 		}
@@ -2157,23 +2181,28 @@ func TestTransportReturnsUnusedFlowControl(t *testing.T) {
 
 		<-clientClosed
 
-		f, err := ct.fr.ReadFrame()
-		if err != nil {
-			return fmt.Errorf("ReadFrame while waiting for RSTStreamFrame: %v", err)
+		waitingFor := "RSTStreamFrame"
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return fmt.Errorf("ReadFrame while waiting for %s: %v", waitingFor, err)
+			}
+			if _, ok := f.(*SettingsFrame); ok {
+				continue
+			}
+			switch waitingFor {
+			case "RSTStreamFrame":
+				if rf, ok := f.(*RSTStreamFrame); !ok || rf.ErrCode != ErrCodeCancel {
+					return fmt.Errorf("Expected a WindowUpdateFrame with code cancel; got %v", summarizeFrame(f))
+				}
+				waitingFor = "WindowUpdateFrame"
+			case "WindowUpdateFrame":
+				if wuf, ok := f.(*WindowUpdateFrame); !ok || wuf.Increment != 4999 {
+					return fmt.Errorf("Expected WindowUpdateFrame for 4999 bytes; got %v", summarizeFrame(f))
+				}
+				return nil
+			}
 		}
-		if rf, ok := f.(*RSTStreamFrame); !ok || rf.ErrCode != ErrCodeCancel {
-			return fmt.Errorf("Expected a WindowUpdateFrame with code cancel; got %v", summarizeFrame(f))
-		}
-
-		// And wait for our flow control tokens back:
-		f, err = ct.fr.ReadFrame()
-		if err != nil {
-			return fmt.Errorf("ReadFrame while waiting for WindowUpdateFrame: %v", err)
-		}
-		if wuf, ok := f.(*WindowUpdateFrame); !ok || wuf.Increment != 4999 {
-			return fmt.Errorf("Expected WindowUpdateFrame for 4999 bytes; got %v", summarizeFrame(f))
-		}
-		return nil
 	}
 	ct.run()
 }
@@ -2228,7 +2257,7 @@ func TestTransportReturnsDataPaddingFlowControl(t *testing.T) {
 		pad := []byte("12345")
 		ct.fr.WriteDataPadded(hf.StreamID, false, make([]byte, 5000), pad) // without ending stream
 
-		f, err := ct.fr.ReadFrame()
+		f, err := ct.readNonSettingsFrame()
 		if err != nil {
 			return fmt.Errorf("ReadFrame while waiting for first WindowUpdateFrame: %v", err)
 		}
@@ -2237,7 +2266,7 @@ func TestTransportReturnsDataPaddingFlowControl(t *testing.T) {
 			return fmt.Errorf("Expected conn WindowUpdateFrame for %d bytes; got %v", wantBack, summarizeFrame(f))
 		}
 
-		f, err = ct.fr.ReadFrame()
+		f, err = ct.readNonSettingsFrame()
 		if err != nil {
 			return fmt.Errorf("ReadFrame while waiting for second WindowUpdateFrame: %v", err)
 		}
