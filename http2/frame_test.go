@@ -100,6 +100,77 @@ func TestWriteData(t *testing.T) {
 	}
 }
 
+func TestWriteDataPadded(t *testing.T) {
+	tests := [...]struct {
+		streamID   uint32
+		endStream  bool
+		data       []byte
+		pad        []byte
+		wantHeader FrameHeader
+	}{
+		// Unpadded:
+		0: {
+			streamID:  1,
+			endStream: true,
+			data:      []byte("foo"),
+			pad:       nil,
+			wantHeader: FrameHeader{
+				Type:     FrameData,
+				Flags:    FlagDataEndStream,
+				Length:   3,
+				StreamID: 1,
+			},
+		},
+
+		// Padded bit set, but no padding:
+		1: {
+			streamID:  1,
+			endStream: true,
+			data:      []byte("foo"),
+			pad:       []byte{},
+			wantHeader: FrameHeader{
+				Type:     FrameData,
+				Flags:    FlagDataEndStream | FlagDataPadded,
+				Length:   4,
+				StreamID: 1,
+			},
+		},
+
+		// Padded bit set, with padding:
+		2: {
+			streamID:  1,
+			endStream: false,
+			data:      []byte("foo"),
+			pad:       []byte("bar"),
+			wantHeader: FrameHeader{
+				Type:     FrameData,
+				Flags:    FlagDataPadded,
+				Length:   7,
+				StreamID: 1,
+			},
+		},
+	}
+	for i, tt := range tests {
+		fr, _ := testFramer()
+		fr.WriteDataPadded(tt.streamID, tt.endStream, tt.data, tt.pad)
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("%d. ReadFrame: %v", i, err)
+			continue
+		}
+		got := f.Header()
+		tt.wantHeader.valid = true
+		if got != tt.wantHeader {
+			t.Errorf("%d. read %+v; want %+v", i, got, tt.wantHeader)
+			continue
+		}
+		df := f.(*DataFrame)
+		if !bytes.Equal(df.Data(), tt.data) {
+			t.Errorf("%d. got %q; want %q", i, df.Data(), tt.data)
+		}
+	}
+}
+
 func TestWriteHeaders(t *testing.T) {
 	tests := []struct {
 		name      string

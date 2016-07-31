@@ -1581,16 +1581,20 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 		// by the peer? Tough without accumulating too much state.
 
 		// But at least return their flow control:
-		if len(data) > 0 {
+		if f.Length > 0 {
+			cc.mu.Lock()
+			cc.inflow.add(int32(f.Length))
+			cc.mu.Unlock()
+
 			cc.wmu.Lock()
-			cc.fr.WriteWindowUpdate(0, uint32(len(data)))
+			cc.fr.WriteWindowUpdate(0, uint32(f.Length))
 			cc.bw.Flush()
 			cc.wmu.Unlock()
 		}
 		return nil
 	}
-	if len(data) > 0 {
-		if cs.bufPipe.b == nil {
+	if f.Length > 0 {
+		if len(data) > 0 && cs.bufPipe.b == nil {
 			// Data frame after it's already closed?
 			cc.logf("http2: Transport received DATA frame for closed stream; closing connection")
 			return ConnectionError(ErrCodeProtocol)
@@ -1598,17 +1602,30 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 
 		// Check connection-level flow control.
 		cc.mu.Lock()
-		if cs.inflow.available() >= int32(len(data)) {
-			cs.inflow.take(int32(len(data)))
+		if cs.inflow.available() >= int32(f.Length) {
+			cs.inflow.take(int32(f.Length))
 		} else {
 			cc.mu.Unlock()
 			return ConnectionError(ErrCodeFlowControl)
 		}
+		// Return any padded flow control now, since we won't
+		// refund it later on body reads.
+		if pad := int32(f.Length) - int32(len(data)); pad > 0 {
+			cs.inflow.add(pad)
+			cc.inflow.add(pad)
+			cc.wmu.Lock()
+			cc.fr.WriteWindowUpdate(0, uint32(pad))
+			cc.fr.WriteWindowUpdate(cs.ID, uint32(pad))
+			cc.bw.Flush()
+			cc.wmu.Unlock()
+		}
 		cc.mu.Unlock()
 
-		if _, err := cs.bufPipe.Write(data); err != nil {
-			rl.endStreamError(cs, err)
-			return err
+		if len(data) > 0 {
+			if _, err := cs.bufPipe.Write(data); err != nil {
+				rl.endStreamError(cs, err)
+				return err
+			}
 		}
 	}
 

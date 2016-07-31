@@ -1298,15 +1298,15 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		// But still enforce their connection-level flow control,
 		// and return any flow control bytes since we're not going
 		// to consume them.
-		if int(sc.inflow.available()) < len(data) {
+		if sc.inflow.available() < int32(f.Length) {
 			return StreamError{id, ErrCodeFlowControl}
 		}
 		// Deduct the flow control from inflow, since we're
 		// going to immediately add it back in
 		// sendWindowUpdate, which also schedules sending the
 		// frames.
-		sc.inflow.take(int32(len(data)))
-		sc.sendWindowUpdate(nil, len(data)) // conn-level
+		sc.inflow.take(int32(f.Length))
+		sc.sendWindowUpdate(nil, int(f.Length)) // conn-level
 
 		return StreamError{id, ErrCodeStreamClosed}
 	}
@@ -1319,20 +1319,30 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		st.body.CloseWithError(fmt.Errorf("sender tried to send more than declared Content-Length of %d bytes", st.declBodyBytes))
 		return StreamError{id, ErrCodeStreamClosed}
 	}
-	if len(data) > 0 {
+	if f.Length > 0 {
 		// Check whether the client has flow control quota.
-		if int(st.inflow.available()) < len(data) {
+		if st.inflow.available() < int32(f.Length) {
 			return StreamError{id, ErrCodeFlowControl}
 		}
-		st.inflow.take(int32(len(data)))
-		wrote, err := st.body.Write(data)
-		if err != nil {
-			return StreamError{id, ErrCodeStreamClosed}
+		st.inflow.take(int32(f.Length))
+
+		if len(data) > 0 {
+			wrote, err := st.body.Write(data)
+			if err != nil {
+				return StreamError{id, ErrCodeStreamClosed}
+			}
+			if wrote != len(data) {
+				panic("internal error: bad Writer")
+			}
+			st.bodyBytes += int64(len(data))
 		}
-		if wrote != len(data) {
-			panic("internal error: bad Writer")
+
+		// Return any padded flow control now, since we won't
+		// refund it later on body reads.
+		if pad := int32(f.Length) - int32(len(data)); pad > 0 {
+			sc.sendWindowUpdate32(nil, pad)
+			sc.sendWindowUpdate32(st, pad)
 		}
-		st.bodyBytes += int64(len(data))
 	}
 	if f.StreamEnded() {
 		st.endStream()
