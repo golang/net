@@ -992,7 +992,7 @@ func TestMetaFrameHeader(t *testing.T) {
 					":path", "/", // bogus
 				))
 			},
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "pseudo header field after regular",
 		},
 		7: {
@@ -1003,7 +1003,7 @@ func TestMetaFrameHeader(t *testing.T) {
 					"foo", "bar",
 				))
 			},
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "invalid pseudo-header \":unknown\"",
 		},
 		8: {
@@ -1014,7 +1014,7 @@ func TestMetaFrameHeader(t *testing.T) {
 					":status", "100",
 				))
 			},
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "mix of request and response pseudo headers",
 		},
 		9: {
@@ -1025,7 +1025,7 @@ func TestMetaFrameHeader(t *testing.T) {
 					":method", "POST",
 				))
 			},
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "duplicate pseudo-header \":method\"",
 		},
 		10: {
@@ -1036,13 +1036,13 @@ func TestMetaFrameHeader(t *testing.T) {
 		11: {
 			name:          "invalid_field_name",
 			w:             func(f *Framer) { write(f, encodeHeaderRaw(t, "CapitalBad", "x")) },
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "invalid header field name \"CapitalBad\"",
 		},
 		12: {
 			name:          "invalid_field_value",
 			w:             func(f *Framer) { write(f, encodeHeaderRaw(t, "key", "bad_null\x00")) },
-			want:          StreamError{1, ErrCodeProtocol},
+			want:          streamError(1, ErrCodeProtocol),
 			wantErrReason: "invalid header field value \"bad_null\\x00\"",
 		},
 	}
@@ -1063,6 +1063,13 @@ func TestMetaFrameHeader(t *testing.T) {
 		got, err = f.ReadFrame()
 		if err != nil {
 			got = err
+
+			// Ignore the StreamError.Cause field, if it matches the wantErrReason.
+			// The test table above predates the Cause field.
+			if se, ok := err.(StreamError); ok && se.Cause != nil && se.Cause.Error() == tt.wantErrReason {
+				se.Cause = nil
+				got = se
+			}
 		}
 		if !reflect.DeepEqual(got, tt.want) {
 			if mhg, ok := got.(*MetaHeadersFrame); ok {

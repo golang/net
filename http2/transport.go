@@ -1229,7 +1229,11 @@ func (rl *clientConnReadLoop) run() error {
 		}
 		if se, ok := err.(StreamError); ok {
 			if cs := cc.streamByID(se.StreamID, true /*ended; remove it*/); cs != nil {
-				rl.endStreamError(cs, cc.fr.errDetail)
+				cs.cc.writeStreamReset(cs.ID, se.Code, err)
+				if se.Cause == nil {
+					se.Cause = cc.fr.errDetail
+				}
+				rl.endStreamError(cs, se)
 			}
 			continue
 		} else if err != nil {
@@ -1639,6 +1643,11 @@ func (rl *clientConnReadLoop) endStreamError(cs *clientStream, err error) {
 	if isConnectionCloseRequest(cs.req) {
 		rl.closeWhenIdle = true
 	}
+
+	select {
+	case cs.resc <- resAndError{err: err}:
+	default:
+	}
 }
 
 func (cs *clientStream) copyTrailers() {
@@ -1740,7 +1749,7 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 		// which closes this, so there
 		// isn't a race.
 	default:
-		err := StreamError{cs.ID, f.ErrCode}
+		err := streamError(cs.ID, f.ErrCode)
 		cs.resetErr = err
 		close(cs.peerReset)
 		cs.bufPipe.CloseWithError(err)

@@ -863,7 +863,7 @@ func parseWindowUpdateFrame(fh FrameHeader, p []byte) (Frame, error) {
 		if fh.StreamID == 0 {
 			return nil, ConnectionError(ErrCodeProtocol)
 		}
-		return nil, StreamError{fh.StreamID, ErrCodeProtocol}
+		return nil, streamError(fh.StreamID, ErrCodeProtocol)
 	}
 	return &WindowUpdateFrame{
 		FrameHeader: fh,
@@ -944,7 +944,7 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 		}
 	}
 	if len(p)-int(padLength) <= 0 {
-		return nil, StreamError{fh.StreamID, ErrCodeProtocol}
+		return nil, streamError(fh.StreamID, ErrCodeProtocol)
 	}
 	hf.headerFragBuf = p[:len(p)-int(padLength)]
 	return hf, nil
@@ -1483,14 +1483,14 @@ func (fr *Framer) readMetaFrame(hf *HeadersFrame) (*MetaHeadersFrame, error) {
 		if VerboseLogs {
 			log.Printf("http2: invalid header: %v", invalid)
 		}
-		return nil, StreamError{mh.StreamID, ErrCodeProtocol}
+		return nil, StreamError{mh.StreamID, ErrCodeProtocol, invalid}
 	}
 	if err := mh.checkPseudos(); err != nil {
 		fr.errDetail = err
 		if VerboseLogs {
 			log.Printf("http2: invalid pseudo headers: %v", err)
 		}
-		return nil, StreamError{mh.StreamID, ErrCodeProtocol}
+		return nil, StreamError{mh.StreamID, ErrCodeProtocol, err}
 	}
 	return mh, nil
 }

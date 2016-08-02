@@ -55,11 +55,6 @@ type serverTester struct {
 	// writing headers:
 	headerBuf bytes.Buffer
 	hpackEnc  *hpack.Encoder
-
-	// reading frames:
-	frc       chan Frame
-	frErrc    chan error
-	readTimer *time.Timer
 }
 
 func init() {
@@ -117,8 +112,6 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		t:      t,
 		ts:     ts,
 		logBuf: logBuf,
-		frc:    make(chan Frame, 1),
-		frErrc: make(chan error, 1),
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 	st.hpackDec = hpack.NewDecoder(initialHeaderTableSize, st.onHeaderField)
@@ -365,30 +358,31 @@ func (st *serverTester) writeDataPadded(streamID uint32, endStream bool, data, p
 	}
 }
 
-func (st *serverTester) readFrame() (Frame, error) {
+func readFrameTimeout(fr *Framer, wait time.Duration) (Frame, error) {
+	ch := make(chan interface{}, 1)
 	go func() {
-		fr, err := st.fr.ReadFrame()
+		fr, err := fr.ReadFrame()
 		if err != nil {
-			st.frErrc <- err
+			ch <- err
 		} else {
-			st.frc <- fr
+			ch <- fr
 		}
 	}()
-	t := st.readTimer
-	if t == nil {
-		t = time.NewTimer(2 * time.Second)
-		st.readTimer = t
-	}
-	t.Reset(2 * time.Second)
-	defer t.Stop()
+	t := time.NewTimer(wait)
 	select {
-	case f := <-st.frc:
-		return f, nil
-	case err := <-st.frErrc:
-		return nil, err
+	case v := <-ch:
+		t.Stop()
+		if fr, ok := v.(Frame); ok {
+			return fr, nil
+		}
+		return nil, v.(error)
 	case <-t.C:
 		return nil, errors.New("timeout waiting for frame")
 	}
+}
+
+func (st *serverTester) readFrame() (Frame, error) {
+	return readFrameTimeout(st.fr, 2*time.Second)
 }
 
 func (st *serverTester) wantHeaders() *HeadersFrame {

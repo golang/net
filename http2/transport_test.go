@@ -699,6 +699,28 @@ func (ct *clientTester) start(which string, errc chan<- error, fn func() error) 
 	}()
 }
 
+func (ct *clientTester) readFrame() (Frame, error) {
+	return readFrameTimeout(ct.fr, 2*time.Second)
+}
+
+func (ct *clientTester) firstHeaders() (*HeadersFrame, error) {
+	for {
+		f, err := ct.readFrame()
+		if err != nil {
+			return nil, fmt.Errorf("ReadFrame while waiting for Headers: %v", err)
+		}
+		switch f.(type) {
+		case *WindowUpdateFrame, *SettingsFrame:
+			continue
+		}
+		hf, ok := f.(*HeadersFrame)
+		if !ok {
+			return nil, fmt.Errorf("Got %T; want HeadersFrame", f)
+		}
+		return hf, nil
+	}
+}
+
 type countingReader struct {
 	n *int64
 }
@@ -1224,8 +1246,9 @@ func testInvalidTrailer(t *testing.T, trailers headerType, wantErr error, writeT
 			return fmt.Errorf("status code = %v; want 200", res.StatusCode)
 		}
 		slurp, err := ioutil.ReadAll(res.Body)
-		if err != wantErr {
-			return fmt.Errorf("res.Body ReadAll error = %q, %#v; want %T of %#v", slurp, err, wantErr, wantErr)
+		se, ok := err.(StreamError)
+		if !ok || se.Cause != wantErr {
+			return fmt.Errorf("res.Body ReadAll error = %q, %#v; want StreamError with cause %T, %#v", slurp, err, wantErr, wantErr)
 		}
 		if len(slurp) > 0 {
 			return fmt.Errorf("body = %q; want nothing", slurp)
@@ -2274,6 +2297,62 @@ func TestTransportReturnsDataPaddingFlowControl(t *testing.T) {
 			return fmt.Errorf("Expected stream WindowUpdateFrame for %d bytes; got %v", wantBack, summarizeFrame(f))
 		}
 		unblockClient <- true
+		return nil
+	}
+	ct.run()
+}
+
+// golang.org/issue/16572 -- RoundTrip shouldn't hang when it gets a
+// StreamError as a result of the response HEADERS
+func TestTransportReturnsErrorOnBadResponseHeaders(t *testing.T) {
+	ct := newClientTester(t)
+
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		if err == nil {
+			res.Body.Close()
+			return errors.New("unexpected successful GET")
+		}
+		want := StreamError{1, ErrCodeProtocol, headerFieldNameError("  content-type")}
+		if !reflect.DeepEqual(want, err) {
+			t.Errorf("RoundTrip error = %#v; want %#v", err, want)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+
+		hf, err := ct.firstHeaders()
+		if err != nil {
+			return err
+		}
+
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+		enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+		enc.WriteField(hpack.HeaderField{Name: "  content-type", Value: "bogus"}) // bogus spaces
+		ct.fr.WriteHeaders(HeadersFrameParam{
+			StreamID:      hf.StreamID,
+			EndHeaders:    true,
+			EndStream:     false,
+			BlockFragment: buf.Bytes(),
+		})
+
+		for {
+			fr, err := ct.readFrame()
+			if err != nil {
+				return fmt.Errorf("error waiting for RST_STREAM from client: %v", err)
+			}
+			if _, ok := fr.(*SettingsFrame); ok {
+				continue
+			}
+			if rst, ok := fr.(*RSTStreamFrame); !ok || rst.StreamID != 1 || rst.ErrCode != ErrCodeProtocol {
+				t.Errorf("Frame = %v; want RST_STREAM for stream 1 with ErrCodeProtocol", summarizeFrame(fr))
+			}
+			break
+		}
+
 		return nil
 	}
 	ct.run()
