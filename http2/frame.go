@@ -1419,6 +1419,9 @@ func (fr *Framer) readMetaFrame(hf *HeadersFrame) (*MetaHeadersFrame, error) {
 	hdec.SetEmitEnabled(true)
 	hdec.SetMaxStringLength(fr.maxHeaderStringLen())
 	hdec.SetEmitFunc(func(hf hpack.HeaderField) {
+		if VerboseLogs && logFrameReads {
+			log.Printf("http2: decoded hpack field %+v", hf)
+		}
 		if !httplex.ValidHeaderFieldValue(hf.Value) {
 			invalid = headerFieldValueError(hf.Value)
 		}
@@ -1477,10 +1480,16 @@ func (fr *Framer) readMetaFrame(hf *HeadersFrame) (*MetaHeadersFrame, error) {
 	}
 	if invalid != nil {
 		fr.errDetail = invalid
+		if VerboseLogs {
+			log.Printf("http2: invalid header: %v", invalid)
+		}
 		return nil, StreamError{mh.StreamID, ErrCodeProtocol}
 	}
 	if err := mh.checkPseudos(); err != nil {
 		fr.errDetail = err
+		if VerboseLogs {
+			log.Printf("http2: invalid pseudo headers: %v", err)
+		}
 		return nil, StreamError{mh.StreamID, ErrCodeProtocol}
 	}
 	return mh, nil
