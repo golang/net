@@ -108,6 +108,10 @@ type Server struct {
 	// closed with a GOAWAY frame. PING frames are not considered
 	// activity for the purposes of IdleTimeout.
 	IdleTimeout time.Duration
+
+	// NewWriteScheduler constructs a write scheduler for a connection.
+	// If nil, a default scheduler is chosen.
+	NewWriteScheduler func() WriteScheduler
 }
 
 func (s *Server) maxReadFrameSize() uint32 {
@@ -248,27 +252,31 @@ func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 	defer cancel()
 
 	sc := &serverConn{
-		srv:              s,
-		hs:               opts.baseConfig(),
-		conn:             c,
-		baseCtx:          baseCtx,
-		remoteAddrStr:    c.RemoteAddr().String(),
-		bw:               newBufferedWriter(c),
-		handler:          opts.handler(),
-		streams:          make(map[uint32]*stream),
-		readFrameCh:      make(chan readFrameResult),
-		wantWriteFrameCh: make(chan frameWriteMsg, 8),
-		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
-		bodyReadCh:       make(chan bodyReadMsg),         // buffering doesn't matter either way
-		doneServing:      make(chan struct{}),
-		advMaxStreams:    s.maxConcurrentStreams(),
-		writeSched: writeScheduler{
-			maxFrameSize: initialMaxFrameSize,
-		},
+		srv:               s,
+		hs:                opts.baseConfig(),
+		conn:              c,
+		baseCtx:           baseCtx,
+		remoteAddrStr:     c.RemoteAddr().String(),
+		bw:                newBufferedWriter(c),
+		handler:           opts.handler(),
+		streams:           make(map[uint32]*stream),
+		readFrameCh:       make(chan readFrameResult),
+		wantWriteFrameCh:  make(chan FrameWriteRequest, 8),
+		wroteFrameCh:      make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
+		bodyReadCh:        make(chan bodyReadMsg),         // buffering doesn't matter either way
+		doneServing:       make(chan struct{}),
+		advMaxStreams:     s.maxConcurrentStreams(),
 		initialWindowSize: initialWindowSize,
+		maxFrameSize:      initialMaxFrameSize,
 		headerTableSize:   initialHeaderTableSize,
 		serveG:            newGoroutineLock(),
 		pushEnabled:       true,
+	}
+
+	if s.NewWriteScheduler != nil {
+		sc.writeSched = s.NewWriteScheduler()
+	} else {
+		sc.writeSched = NewRandomWriteScheduler()
 	}
 
 	sc.flow.add(initialWindowSize)
@@ -350,16 +358,17 @@ type serverConn struct {
 	handler          http.Handler
 	baseCtx          contextContext
 	framer           *Framer
-	doneServing      chan struct{}         // closed when serverConn.serve ends
-	readFrameCh      chan readFrameResult  // written by serverConn.readFrames
-	wantWriteFrameCh chan frameWriteMsg    // from handlers -> serve
-	wroteFrameCh     chan frameWriteResult // from writeFrameAsync -> serve, tickles more frame writes
-	bodyReadCh       chan bodyReadMsg      // from handlers -> serve
-	testHookCh       chan func(int)        // code to run on the serve loop
-	flow             flow                  // conn-wide (not stream-specific) outbound flow control
-	inflow           flow                  // conn-wide inbound flow control
-	tlsState         *tls.ConnectionState  // shared by all handlers, like net/http
+	doneServing      chan struct{}          // closed when serverConn.serve ends
+	readFrameCh      chan readFrameResult   // written by serverConn.readFrames
+	wantWriteFrameCh chan FrameWriteRequest // from handlers -> serve
+	wroteFrameCh     chan frameWriteResult  // from writeFrameAsync -> serve, tickles more frame writes
+	bodyReadCh       chan bodyReadMsg       // from handlers -> serve
+	testHookCh       chan func(int)         // code to run on the serve loop
+	flow             flow                   // conn-wide (not stream-specific) outbound flow control
+	inflow           flow                   // conn-wide inbound flow control
+	tlsState         *tls.ConnectionState   // shared by all handlers, like net/http
 	remoteAddrStr    string
+	writeSched       WriteScheduler
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                goroutineLock // used to verify funcs are on serve()
@@ -373,14 +382,14 @@ type serverConn struct {
 	maxStreamID           uint32 // max ever seen
 	streams               map[uint32]*stream
 	initialWindowSize     int32
+	maxFrameSize          int32
 	headerTableSize       uint32
 	peerMaxHeaderListSize uint32            // zero means unknown (default)
 	canonHeader           map[string]string // http2-lower-case -> Go-Canonical-Case
 	writingFrame          bool              // started write goroutine but haven't heard back on wroteFrameCh
 	needsFrameFlush       bool              // last frame write wasn't a flush
-	writeSched            writeScheduler
-	inGoAway              bool // we've started to or sent GOAWAY
-	needToSendGoAway      bool // we need to schedule a GOAWAY frame write
+	inGoAway              bool              // we've started to or sent GOAWAY
+	needToSendGoAway      bool              // we need to schedule a GOAWAY frame write
 	goAwayCode            ErrCode
 	shutdownTimerCh       <-chan time.Time // nil until used
 	shutdownTimer         *time.Timer      // nil until used
@@ -598,17 +607,17 @@ func (sc *serverConn) readFrames() {
 
 // frameWriteResult is the message passed from writeFrameAsync to the serve goroutine.
 type frameWriteResult struct {
-	wm  frameWriteMsg // what was written (or attempted)
-	err error         // result of the writeFrame call
+	wr  FrameWriteRequest // what was written (or attempted)
+	err error             // result of the writeFrame call
 }
 
 // writeFrameAsync runs in its own goroutine and writes a single frame
 // and then reports when it's done.
 // At most one goroutine can be running writeFrameAsync at a time per
 // serverConn.
-func (sc *serverConn) writeFrameAsync(wm frameWriteMsg) {
-	err := wm.write.writeFrame(sc)
-	sc.wroteFrameCh <- frameWriteResult{wm, err}
+func (sc *serverConn) writeFrameAsync(wr FrameWriteRequest) {
+	err := wr.write.writeFrame(sc)
+	sc.wroteFrameCh <- frameWriteResult{wr, err}
 }
 
 func (sc *serverConn) closeAllStreamsOnConnClose() {
@@ -652,7 +661,7 @@ func (sc *serverConn) serve() {
 		sc.vlogf("http2: server connection from %v on %p", sc.conn.RemoteAddr(), sc.hs)
 	}
 
-	sc.writeFrame(frameWriteMsg{
+	sc.writeFrame(FrameWriteRequest{
 		write: writeSettings{
 			{SettingMaxFrameSize, sc.srv.maxReadFrameSize()},
 			{SettingMaxConcurrentStreams, sc.advMaxStreams},
@@ -690,8 +699,8 @@ func (sc *serverConn) serve() {
 	for {
 		loopNum++
 		select {
-		case wm := <-sc.wantWriteFrameCh:
-			sc.writeFrame(wm)
+		case wr := <-sc.wantWriteFrameCh:
+			sc.writeFrame(wr)
 		case res := <-sc.wroteFrameCh:
 			sc.wroteFrame(res)
 		case res := <-sc.readFrameCh:
@@ -764,7 +773,7 @@ func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStrea
 	ch := errChanPool.Get().(chan error)
 	writeArg := writeDataPool.Get().(*writeData)
 	*writeArg = writeData{stream.id, data, endStream}
-	err := sc.writeFrameFromHandler(frameWriteMsg{
+	err := sc.writeFrameFromHandler(FrameWriteRequest{
 		write:  writeArg,
 		stream: stream,
 		done:   ch,
@@ -800,17 +809,17 @@ func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStrea
 	return err
 }
 
-// writeFrameFromHandler sends wm to sc.wantWriteFrameCh, but aborts
+// writeFrameFromHandler sends wr to sc.wantWriteFrameCh, but aborts
 // if the connection has gone away.
 //
 // This must not be run from the serve goroutine itself, else it might
 // deadlock writing to sc.wantWriteFrameCh (which is only mildly
 // buffered and is read by serve itself). If you're on the serve
 // goroutine, call writeFrame instead.
-func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) error {
+func (sc *serverConn) writeFrameFromHandler(wr FrameWriteRequest) error {
 	sc.serveG.checkNotOn() // NOT
 	select {
-	case sc.wantWriteFrameCh <- wm:
+	case sc.wantWriteFrameCh <- wr:
 		return nil
 	case <-sc.doneServing:
 		// Serve loop is gone.
@@ -827,38 +836,38 @@ func (sc *serverConn) writeFrameFromHandler(wm frameWriteMsg) error {
 // make it onto the wire
 //
 // If you're not on the serve goroutine, use writeFrameFromHandler instead.
-func (sc *serverConn) writeFrame(wm frameWriteMsg) {
+func (sc *serverConn) writeFrame(wr FrameWriteRequest) {
 	sc.serveG.check()
 
 	var ignoreWrite bool
 
 	// Don't send a 100-continue response if we've already sent headers.
 	// See golang.org/issue/14030.
-	switch wm.write.(type) {
+	switch wr.write.(type) {
 	case *writeResHeaders:
-		wm.stream.wroteHeaders = true
+		wr.stream.wroteHeaders = true
 	case write100ContinueHeadersFrame:
-		if wm.stream.wroteHeaders {
+		if wr.stream.wroteHeaders {
 			ignoreWrite = true
 		}
 	}
 
 	if !ignoreWrite {
-		sc.writeSched.add(wm)
+		sc.writeSched.Push(wr)
 	}
 	sc.scheduleFrameWrite()
 }
 
-// startFrameWrite starts a goroutine to write wm (in a separate
+// startFrameWrite starts a goroutine to write wr (in a separate
 // goroutine since that might block on the network), and updates the
-// serve goroutine's state about the world, updated from info in wm.
-func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
+// serve goroutine's state about the world, updated from info in wr.
+func (sc *serverConn) startFrameWrite(wr FrameWriteRequest) {
 	sc.serveG.check()
 	if sc.writingFrame {
 		panic("internal error: can only be writing one frame at a time")
 	}
 
-	st := wm.stream
+	st := wr.stream
 	if st != nil {
 		switch st.state {
 		case stateHalfClosedLocal:
@@ -869,13 +878,13 @@ func (sc *serverConn) startFrameWrite(wm frameWriteMsg) {
 				sc.scheduleFrameWrite()
 				return
 			}
-			panic(fmt.Sprintf("internal error: attempt to send a write %v on a closed stream", wm))
+			panic(fmt.Sprintf("internal error: attempt to send a write %v on a closed stream", wr))
 		}
 	}
 
 	sc.writingFrame = true
 	sc.needsFrameFlush = true
-	go sc.writeFrameAsync(wm)
+	go sc.writeFrameAsync(wr)
 }
 
 // errHandlerPanicked is the error given to any callers blocked in a read from
@@ -892,24 +901,24 @@ func (sc *serverConn) wroteFrame(res frameWriteResult) {
 	}
 	sc.writingFrame = false
 
-	wm := res.wm
-	st := wm.stream
+	wr := res.wr
+	st := wr.stream
 
-	closeStream := endsStream(wm.write)
+	closeStream := endsStream(wr.write)
 
-	if _, ok := wm.write.(handlerPanicRST); ok {
+	if _, ok := wr.write.(handlerPanicRST); ok {
 		sc.closeStream(st, errHandlerPanicked)
 	}
 
 	// Reply (if requested) to the blocked ServeHTTP goroutine.
-	if ch := wm.done; ch != nil {
+	if ch := wr.done; ch != nil {
 		select {
 		case ch <- res.err:
 		default:
-			panic(fmt.Sprintf("unbuffered done channel passed in for type %T", wm.write))
+			panic(fmt.Sprintf("unbuffered done channel passed in for type %T", wr.write))
 		}
 	}
-	wm.write = nil // prevent use (assume it's tainted after wm.done send)
+	wr.write = nil // prevent use (assume it's tainted after wr.done send)
 
 	if closeStream {
 		if st == nil {
@@ -955,7 +964,7 @@ func (sc *serverConn) scheduleFrameWrite() {
 	}
 	if sc.needToSendGoAway {
 		sc.needToSendGoAway = false
-		sc.startFrameWrite(frameWriteMsg{
+		sc.startFrameWrite(FrameWriteRequest{
 			write: &writeGoAway{
 				maxStreamID: sc.maxStreamID,
 				code:        sc.goAwayCode,
@@ -965,17 +974,17 @@ func (sc *serverConn) scheduleFrameWrite() {
 	}
 	if sc.needToSendSettingsAck {
 		sc.needToSendSettingsAck = false
-		sc.startFrameWrite(frameWriteMsg{write: writeSettingsAck{}})
+		sc.startFrameWrite(FrameWriteRequest{write: writeSettingsAck{}})
 		return
 	}
 	if !sc.inGoAway {
-		if wm, ok := sc.writeSched.take(); ok {
-			sc.startFrameWrite(wm)
+		if wr, ok := sc.writeSched.Pop(); ok {
+			sc.startFrameWrite(wr)
 			return
 		}
 	}
 	if sc.needsFrameFlush {
-		sc.startFrameWrite(frameWriteMsg{write: flushFrameWriter{}})
+		sc.startFrameWrite(FrameWriteRequest{write: flushFrameWriter{}})
 		sc.needsFrameFlush = false // after startFrameWrite, since it sets this true
 		return
 	}
@@ -1006,7 +1015,7 @@ func (sc *serverConn) shutDownIn(d time.Duration) {
 
 func (sc *serverConn) resetStream(se StreamError) {
 	sc.serveG.check()
-	sc.writeFrame(frameWriteMsg{write: se})
+	sc.writeFrame(FrameWriteRequest{write: se})
 	if st, ok := sc.streams[se.StreamID]; ok {
 		st.sentReset = true
 		sc.closeStream(st, se)
@@ -1122,7 +1131,7 @@ func (sc *serverConn) processPing(f *PingFrame) error {
 	if sc.inGoAway {
 		return nil
 	}
-	sc.writeFrame(frameWriteMsg{write: writePingAck{f}})
+	sc.writeFrame(FrameWriteRequest{write: writePingAck{f}})
 	return nil
 }
 
@@ -1206,7 +1215,7 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 		p.CloseWithError(err)
 	}
 	st.cw.Close() // signals Handler's CloseNotifier, unblocks writes, etc
-	sc.writeSched.forgetStream(st.id)
+	sc.writeSched.CloseStream(st.id)
 }
 
 func (sc *serverConn) processSettings(f *SettingsFrame) error {
@@ -1251,7 +1260,7 @@ func (sc *serverConn) processSetting(s Setting) error {
 	case SettingInitialWindowSize:
 		return sc.processSettingInitialWindowSize(s.Val)
 	case SettingMaxFrameSize:
-		sc.writeSched.maxFrameSize = s.Val
+		sc.maxFrameSize = int32(s.Val) // the maximum valid s.Val is < 2^31
 	case SettingMaxHeaderListSize:
 		sc.peerMaxHeaderListSize = s.Val
 	default:
@@ -1458,8 +1467,9 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	st.inflow.add(initialWindowSize) // TODO: update this when we send a higher initial window size in the initial settings
 
 	sc.streams[id] = st
+	sc.writeSched.OpenStream(st.id, OpenStreamOptions{})
 	if f.HasPriority() {
-		adjustStreamPriority(sc.streams, st.id, f.Priority)
+		sc.writeSched.AdjustStream(st.id, f.Priority)
 	}
 	sc.curOpenStreams++
 	if sc.curOpenStreams == 1 {
@@ -1554,44 +1564,8 @@ func (sc *serverConn) processPriority(f *PriorityFrame) error {
 	if sc.inGoAway {
 		return nil
 	}
-	adjustStreamPriority(sc.streams, f.StreamID, f.PriorityParam)
+	sc.writeSched.AdjustStream(f.StreamID, f.PriorityParam)
 	return nil
-}
-
-func adjustStreamPriority(streams map[uint32]*stream, streamID uint32, priority PriorityParam) {
-	st, ok := streams[streamID]
-	if !ok {
-		// TODO: not quite correct (this streamID might
-		// already exist in the dep tree, but be closed), but
-		// close enough for now.
-		return
-	}
-	st.weight = priority.Weight
-	parent := streams[priority.StreamDep] // might be nil
-	if parent == st {
-		// if client tries to set this stream to be the parent of itself
-		// ignore and keep going
-		return
-	}
-
-	// section 5.3.3: If a stream is made dependent on one of its
-	// own dependencies, the formerly dependent stream is first
-	// moved to be dependent on the reprioritized stream's previous
-	// parent. The moved dependency retains its weight.
-	for piter := parent; piter != nil; piter = piter.parent {
-		if piter == st {
-			parent.parent = st.parent
-			break
-		}
-	}
-	st.parent = parent
-	if priority.Exclusive && (st.parent != nil || priority.StreamDep == 0) {
-		for _, openStream := range streams {
-			if openStream != st && openStream.parent == st.parent {
-				openStream.parent = st
-			}
-		}
-	}
 }
 
 func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*responseWriter, *http.Request, error) {
@@ -1758,7 +1732,7 @@ func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler 
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			sc.writeFrameFromHandler(frameWriteMsg{
+			sc.writeFrameFromHandler(FrameWriteRequest{
 				write:  handlerPanicRST{rw.rws.stream.id},
 				stream: rw.rws.stream,
 			})
@@ -1793,7 +1767,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 		// mutates it.
 		errc = errChanPool.Get().(chan error)
 	}
-	if err := sc.writeFrameFromHandler(frameWriteMsg{
+	if err := sc.writeFrameFromHandler(FrameWriteRequest{
 		write:  headerData,
 		stream: st,
 		done:   errc,
@@ -1816,7 +1790,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 
 // called from handler goroutines.
 func (sc *serverConn) write100ContinueHeaders(st *stream) {
-	sc.writeFrameFromHandler(frameWriteMsg{
+	sc.writeFrameFromHandler(FrameWriteRequest{
 		write:  write100ContinueHeadersFrame{st.id},
 		stream: st,
 	})
@@ -1887,7 +1861,7 @@ func (sc *serverConn) sendWindowUpdate32(st *stream, n int32) {
 	if st != nil {
 		streamID = st.id
 	}
-	sc.writeFrame(frameWriteMsg{
+	sc.writeFrame(FrameWriteRequest{
 		write:  writeWindowUpdate{streamID: streamID, n: uint32(n)},
 		stream: st,
 	})
