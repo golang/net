@@ -16,6 +16,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"sort"
@@ -162,14 +163,14 @@ type ClientConn struct {
 	br              *bufio.Reader
 	fr              *Framer
 	lastActive      time.Time
-
-	// Settings from peer:
+	// Settings from peer: (also guarded by mu)
 	maxFrameSize         uint32
 	maxConcurrentStreams uint32
 	initialWindowSize    uint32
-	hbuf                 bytes.Buffer // HPACK encoder writes into this
-	henc                 *hpack.Encoder
-	freeBuf              [][]byte
+
+	hbuf    bytes.Buffer // HPACK encoder writes into this
+	henc    *hpack.Encoder
+	freeBuf [][]byte
 
 	wmu  sync.Mutex // held while writing; acquire AFTER mu if holding both
 	werr error      // first write error that has occurred
@@ -427,8 +428,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		wantSettingsAck:      true,
 	}
 	if VerboseLogs {
-		t.vlogf("http2: Transport creating client conn %#x to %v", cc, c.RemoteAddr())
+		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())
 	}
+
 	cc.cond = sync.NewCond(&cc.mu)
 	cc.flow.add(int32(initialWindowSize))
 
@@ -498,7 +500,7 @@ func (cc *ClientConn) canTakeNewRequestLocked() bool {
 	}
 	return cc.goAway == nil && !cc.closed &&
 		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
-		cc.nextStreamID < 2147483647
+		cc.nextStreamID < math.MaxInt32
 }
 
 func (cc *ClientConn) closeIfIdle() {
@@ -513,9 +515,8 @@ func (cc *ClientConn) closeIfIdle() {
 	cc.mu.Unlock()
 
 	if VerboseLogs {
-		cc.vlogf("http2: Transport closing idle conn %#x (forSingleUse=%v, maxStream=%v)", cc, cc.singleUse, nextID-2)
+		cc.vlogf("http2: Transport closing idle conn %p (forSingleUse=%v, maxStream=%v)", cc, cc.singleUse, nextID-2)
 	}
-
 	cc.tconn.Close()
 }
 
@@ -1229,7 +1230,7 @@ func (rl *clientConnReadLoop) run() error {
 	for {
 		f, err := cc.fr.ReadFrame()
 		if err != nil {
-			cc.vlogf("http2: Transport readFrame error on conn %#x: (%T) %v", cc, err, err)
+			cc.vlogf("http2: Transport readFrame error on conn %p: (%T) %v", cc, err, err)
 		}
 		if se, ok := err.(StreamError); ok {
 			if cs := cc.streamByID(se.StreamID, true /*ended; remove it*/); cs != nil {
@@ -1282,7 +1283,7 @@ func (rl *clientConnReadLoop) run() error {
 		}
 		if err != nil {
 			if VerboseLogs {
-				cc.vlogf("http2: Transport conn %#x received error from processing frame %v: %v", cc, summarizeFrame(f), err)
+				cc.vlogf("http2: Transport conn %p received error from processing frame %v: %v", cc, summarizeFrame(f), err)
 			}
 			return err
 		}
@@ -1698,11 +1699,23 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 		case SettingMaxConcurrentStreams:
 			cc.maxConcurrentStreams = s.Val
 		case SettingInitialWindowSize:
-			// TODO: error if this is too large.
+			// Values above the maximum flow-control
+			// window size of 2^31-1 MUST be treated as a
+			// connection error (Section 5.4.1) of type
+			// FLOW_CONTROL_ERROR.
+			if s.Val > math.MaxInt32 {
+				return ConnectionError(ErrCodeFlowControl)
+			}
 
-			// TODO: adjust flow control of still-open
+			// Adjust flow control of currently-open
 			// frames by the difference of the old initial
 			// window size and this one.
+			delta := int32(s.Val) - int32(cc.initialWindowSize)
+			for _, cs := range cc.streams {
+				cs.flow.add(delta)
+			}
+			cc.cond.Broadcast()
+
 			cc.initialWindowSize = s.Val
 		default:
 			// TODO(bradfitz): handle more settings? SETTINGS_HEADER_TABLE_SIZE probably.

@@ -2230,6 +2230,76 @@ func TestTransportReturnsUnusedFlowControl(t *testing.T) {
 	ct.run()
 }
 
+// Issue 16612: adjust flow control on open streams when transport
+// receives SETTINGS with INITIAL_WINDOW_SIZE from server.
+func TestTransportAdjustsFlowControl(t *testing.T) {
+	ct := newClientTester(t)
+	clientDone := make(chan struct{})
+
+	const bodySize = 1 << 20
+
+	ct.client = func() error {
+		defer ct.cc.(*net.TCPConn).CloseWrite()
+		defer close(clientDone)
+
+		req, _ := http.NewRequest("POST", "https://dummy.tld/", struct{ io.Reader }{io.LimitReader(neverEnding('A'), bodySize)})
+		res, err := ct.tr.RoundTrip(req)
+		if err != nil {
+			return err
+		}
+		res.Body.Close()
+		return nil
+	}
+	ct.server = func() error {
+		_, err := io.ReadFull(ct.sc, make([]byte, len(ClientPreface)))
+		if err != nil {
+			return fmt.Errorf("reading client preface: %v", err)
+		}
+
+		var gotBytes int64
+		var sentSettings bool
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				select {
+				case <-clientDone:
+					return nil
+				default:
+					return fmt.Errorf("ReadFrame while waiting for Headers: %v", err)
+				}
+			}
+			switch f := f.(type) {
+			case *DataFrame:
+				gotBytes += int64(len(f.Data()))
+				// After we've got half the client's
+				// initial flow control window's worth
+				// of request body data, give it just
+				// enough flow control to finish.
+				if gotBytes >= initialWindowSize/2 && !sentSettings {
+					sentSettings = true
+
+					ct.fr.WriteSettings(Setting{ID: SettingInitialWindowSize, Val: bodySize})
+					ct.fr.WriteWindowUpdate(0, bodySize)
+					ct.fr.WriteSettingsAck()
+				}
+
+				if f.StreamEnded() {
+					var buf bytes.Buffer
+					enc := hpack.NewEncoder(&buf)
+					enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+					ct.fr.WriteHeaders(HeadersFrameParam{
+						StreamID:      f.StreamID,
+						EndHeaders:    true,
+						EndStream:     true,
+						BlockFragment: buf.Bytes(),
+					})
+				}
+			}
+		}
+	}
+	ct.run()
+}
+
 // See golang.org/issue/16556
 func TestTransportReturnsDataPaddingFlowControl(t *testing.T) {
 	ct := newClientTester(t)
