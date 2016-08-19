@@ -2427,3 +2427,44 @@ func TestTransportReturnsErrorOnBadResponseHeaders(t *testing.T) {
 	}
 	ct.run()
 }
+
+// byteAndEOFReader returns is in an io.Reader which reads one byte
+// (the underlying byte) and io.EOF at once in its Read call.
+type byteAndEOFReader byte
+
+func (b byteAndEOFReader) Read(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		panic("unexpected useless call")
+	}
+	p[0] = byte(b)
+	return 1, io.EOF
+}
+
+// Issue 16788: the Transport had a regression where it started
+// sending a spurious DATA frame with a duplicate END_STREAM bit after
+// the request body writer goroutine had already read an EOF from the
+// Request.Body and included the END_STREAM on a data-carrying DATA
+// frame.
+//
+// Notably, to trigger this, the requests need to use a Request.Body
+// which returns (non-0, io.EOF) and also needs to set the ContentLength
+// explicitly.
+func TestTransportBodyDoubleEndStream(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		// Nothing.
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	for i := 0; i < 2; i++ {
+		req, _ := http.NewRequest("POST", st.ts.URL, byteAndEOFReader('a'))
+		req.ContentLength = 1
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("failure on req %d: %v", i+1, err)
+		}
+		defer res.Body.Close()
+	}
+}
