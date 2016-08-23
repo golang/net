@@ -998,6 +998,22 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		host = req.URL.Host
 	}
 
+	var path string
+	if req.Method != "CONNECT" {
+		path = req.URL.RequestURI()
+		if !validPseudoPath(path) {
+			orig := path
+			path = strings.TrimPrefix(path, req.URL.Scheme+"://"+host)
+			if !validPseudoPath(path) {
+				if req.URL.Opaque != "" {
+					return nil, fmt.Errorf("invalid request :path %q from URL.Opaque = %q", orig, req.URL.Opaque)
+				} else {
+					return nil, fmt.Errorf("invalid request :path %q", orig)
+				}
+			}
+		}
+	}
+
 	// Check for any invalid headers and return an error before we
 	// potentially pollute our hpack state. (We want to be able to
 	// continue to reuse the hpack encoder for future requests)
@@ -1020,7 +1036,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	cc.writeHeader(":authority", host)
 	cc.writeHeader(":method", req.Method)
 	if req.Method != "CONNECT" {
-		cc.writeHeader(":path", req.URL.RequestURI())
+		cc.writeHeader(":path", path)
 		cc.writeHeader(":scheme", "https")
 	}
 	if trailers != "" {

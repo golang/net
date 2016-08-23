@@ -2468,3 +2468,132 @@ func TestTransportBodyDoubleEndStream(t *testing.T) {
 		defer res.Body.Close()
 	}
 }
+
+// golangorg/issue/16847
+func TestTransportRequestPathPseudo(t *testing.T) {
+	type result struct {
+		path string
+		err  string
+	}
+	tests := []struct {
+		req  *http.Request
+		want result
+	}{
+		0: {
+			req: &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Host: "foo.com",
+					Path: "/foo",
+				},
+			},
+			want: result{path: "/foo"},
+		},
+		// I guess we just don't let users request "//foo" as
+		// a path, since it's illegal to start with two
+		// slashes....
+		1: {
+			req: &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Host: "foo.com",
+					Path: "//foo",
+				},
+			},
+			want: result{err: `invalid request :path "//foo"`},
+		},
+
+		// Opaque with //$Matching_Hostname/path
+		2: {
+			req: &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Scheme: "https",
+					Opaque: "//foo.com/path",
+					Host:   "foo.com",
+					Path:   "/ignored",
+				},
+			},
+			want: result{path: "/path"},
+		},
+
+		// Opaque with some other Request.Host instead:
+		3: {
+			req: &http.Request{
+				Method: "GET",
+				Host:   "bar.com",
+				URL: &url.URL{
+					Scheme: "https",
+					Opaque: "//bar.com/path",
+					Host:   "foo.com",
+					Path:   "/ignored",
+				},
+			},
+			want: result{path: "/path"},
+		},
+
+		// Opaque without the leading "//":
+		4: {
+			req: &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Opaque: "/path",
+					Host:   "foo.com",
+					Path:   "/ignored",
+				},
+			},
+			want: result{path: "/path"},
+		},
+
+		// Opaque we can't handle:
+		5: {
+			req: &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Scheme: "https",
+					Opaque: "//unknown_host/path",
+					Host:   "foo.com",
+					Path:   "/ignored",
+				},
+			},
+			want: result{err: `invalid request :path "https://unknown_host/path" from URL.Opaque = "//unknown_host/path"`},
+		},
+
+		// A CONNECT request:
+		6: {
+			req: &http.Request{
+				Method: "CONNECT",
+				URL: &url.URL{
+					Host: "foo.com",
+				},
+			},
+			want: result{},
+		},
+	}
+	for i, tt := range tests {
+		cc := &ClientConn{}
+		cc.henc = hpack.NewEncoder(&cc.hbuf)
+		cc.mu.Lock()
+		hdrs, err := cc.encodeHeaders(tt.req, false, "", -1)
+		cc.mu.Unlock()
+		var got result
+		hpackDec := hpack.NewDecoder(initialHeaderTableSize, func(f hpack.HeaderField) {
+			if f.Name == ":path" {
+				got.path = f.Value
+			}
+		})
+		if err != nil {
+			got.err = err.Error()
+		} else if len(hdrs) > 0 {
+			if _, err := hpackDec.Write(hdrs); err != nil {
+				t.Errorf("%d. bogus hpack: %v", i, err)
+				continue
+			}
+		}
+		if got != tt.want {
+			t.Errorf("%d. got %+v; want %+v", i, got, tt.want)
+		}
+
+	}
+
+}
