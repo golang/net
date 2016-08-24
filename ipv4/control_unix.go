@@ -14,11 +14,11 @@ import (
 	"golang.org/x/net/internal/iana"
 )
 
-func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
+func setControlMessage(s uintptr, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
 	defer opt.Unlock()
 	if cf&FlagTTL != 0 && sockOpts[ssoReceiveTTL].name > 0 {
-		if err := setInt(fd, &sockOpts[ssoReceiveTTL], boolint(on)); err != nil {
+		if err := setInt(s, &sockOpts[ssoReceiveTTL], boolint(on)); err != nil {
 			return err
 		}
 		if on {
@@ -29,7 +29,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 	}
 	if sockOpts[ssoPacketInfo].name > 0 {
 		if cf&(FlagSrc|FlagDst|FlagInterface) != 0 {
-			if err := setInt(fd, &sockOpts[ssoPacketInfo], boolint(on)); err != nil {
+			if err := setInt(s, &sockOpts[ssoPacketInfo], boolint(on)); err != nil {
 				return err
 			}
 			if on {
@@ -40,7 +40,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 		}
 	} else {
 		if cf&FlagDst != 0 && sockOpts[ssoReceiveDst].name > 0 {
-			if err := setInt(fd, &sockOpts[ssoReceiveDst], boolint(on)); err != nil {
+			if err := setInt(s, &sockOpts[ssoReceiveDst], boolint(on)); err != nil {
 				return err
 			}
 			if on {
@@ -50,7 +50,7 @@ func setControlMessage(fd int, opt *rawOpt, cf ControlFlags, on bool) error {
 			}
 		}
 		if cf&FlagInterface != 0 && sockOpts[ssoReceiveInterface].name > 0 {
-			if err := setInt(fd, &sockOpts[ssoReceiveInterface], boolint(on)); err != nil {
+			if err := setInt(s, &sockOpts[ssoReceiveInterface], boolint(on)); err != nil {
 				return err
 			}
 			if on {

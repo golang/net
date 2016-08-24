@@ -6,6 +6,6 @@
 
 package ipv4
 
-func setInt(fd int, opt *sockOpt, v int) error {
+func setInt(s uintptr, opt *sockOpt, v int) error {
 	return errOpNoSupport
 }

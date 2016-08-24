@@ -8,10 +8,10 @@ package ipv4
 
 import "net"
 
-func setsockoptGroupReq(fd, name int, ifi *net.Interface, grp net.IP) error {
+func setsockoptGroupReq(s uintptr, name int, ifi *net.Interface, grp net.IP) error {
 	return errOpNoSupport
 }
 
-func setsockoptGroupSourceReq(fd, name int, ifi *net.Interface, grp, src net.IP) error {
+func setsockoptGroupSourceReq(s uintptr, name int, ifi *net.Interface, grp, src net.IP) error {
 	return errOpNoSupport
 }

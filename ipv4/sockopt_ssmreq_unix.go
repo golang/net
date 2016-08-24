@@ -16,7 +16,7 @@ import (
 
 var freebsd32o64 bool
 
-func setsockoptGroupReq(fd, name int, ifi *net.Interface, grp net.IP) error {
+func setsockoptGroupReq(s uintptr, name int, ifi *net.Interface, grp net.IP) error {
 	var gr sysGroupReq
 	if ifi != nil {
 		gr.Interface = uint32(ifi.Index)
@@ -35,10 +35,10 @@ func setsockoptGroupReq(fd, name int, ifi *net.Interface, grp net.IP) error {
 		p = unsafe.Pointer(&gr)
 		l = sysSizeofGroupReq
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(fd, iana.ProtocolIP, name, p, l))
+	return os.NewSyscallError("setsockopt", setsockopt(s, iana.ProtocolIP, name, p, l))
 }
 
-func setsockoptGroupSourceReq(fd, name int, ifi *net.Interface, grp, src net.IP) error {
+func setsockoptGroupSourceReq(s uintptr, name int, ifi *net.Interface, grp, src net.IP) error {
 	var gsr sysGroupSourceReq
 	if ifi != nil {
 		gsr.Interface = uint32(ifi.Index)
@@ -57,5 +57,5 @@ func setsockoptGroupSourceReq(fd, name int, ifi *net.Interface, grp, src net.IP)
 		p = unsafe.Pointer(&gsr)
 		l = sysSizeofGroupSourceReq
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(fd, iana.ProtocolIP, name, p, l))
+	return os.NewSyscallError("setsockopt", setsockopt(s, iana.ProtocolIP, name, p, l))
 }
