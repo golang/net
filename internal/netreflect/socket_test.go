@@ -62,15 +62,15 @@ func newLocalPacketListener(network string) (net.PacketConn, error) {
 
 func TestSocketOf(t *testing.T) {
 	for _, network := range []string{"tcp", "unix", "unixpacket"} {
-		switch network {
-		case "unix":
-			switch runtime.GOOS {
-			case "nacl", "plan9", "windows":
+		switch runtime.GOOS {
+		case "darwin":
+			if network == "unixpacket" {
 				continue
 			}
-		case "unixpacket":
-			switch runtime.GOOS {
-			case "darwin", "nacl", "plan9", "windows":
+		case "nacl", "plan9":
+			continue
+		case "windows":
+			if network == "unix" || network == "unixpacket" {
 				continue
 			}
 		}
@@ -101,10 +101,11 @@ func TestSocketOf(t *testing.T) {
 
 func TestPacketSocketOf(t *testing.T) {
 	for _, network := range []string{"udp", "unixgram"} {
-		switch network {
-		case "unixgram":
-			switch runtime.GOOS {
-			case "nacl", "plan9", "windows":
+		switch runtime.GOOS {
+		case "nacl", "plan9":
+			continue
+		case "windows":
+			if network == "unixgram" {
 				continue
 			}
 		}
