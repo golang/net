@@ -356,7 +356,7 @@ func (t *Transport) dialClientConn(addr string, singleUse bool) (*ClientConn, er
 func (t *Transport) newTLSConfig(host string) *tls.Config {
 	cfg := new(tls.Config)
 	if t.TLSClientConfig != nil {
-		*cfg = *t.TLSClientConfig
+		*cfg = *cloneTLSConfig(t.TLSClientConfig)
 	}
 	if !strSliceContains(cfg.NextProtos, NextProtoTLS) {
 		cfg.NextProtos = append([]string{NextProtoTLS}, cfg.NextProtos...)

@@ -510,7 +510,7 @@ func TestConfigureTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprintf("%#v", *t1); !strings.Contains(got, `"h2"`) {
+	if got := fmt.Sprintf("%#v", t1); !strings.Contains(got, `"h2"`) {
 		// Laziness, to avoid buildtags.
 		t.Errorf("stringification of HTTP/1 transport didn't contain \"h2\": %v", got)
 	}
@@ -2105,7 +2105,7 @@ func testTransportUsesGoAwayDebugError(t *testing.T, failMidBody bool) {
 			DebugData:    goAwayDebugData,
 		}
 		if !reflect.DeepEqual(err, want) {
-			t.Errorf("RoundTrip error = %T: %#v, want %T (%#T)", err, err, want, want)
+			t.Errorf("RoundTrip error = %T: %#v, want %T (%#v)", err, err, want, want)
 		}
 		return nil
 	}

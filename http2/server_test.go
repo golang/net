@@ -2931,51 +2931,43 @@ func (c *issue53Conn) SetWriteDeadline(t time.Time) error { return nil }
 // golang.org/issue/12895
 func TestConfigureServer(t *testing.T) {
 	tests := []struct {
-		name    string
-		in      http.Server
-		wantErr string
+		name      string
+		tlsConfig *tls.Config
+		wantErr   string
 	}{
 		{
 			name: "empty server",
-			in:   http.Server{},
 		},
 		{
 			name: "just the required cipher suite",
-			in: http.Server{
-				TLSConfig: &tls.Config{
-					CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
-				},
+			tlsConfig: &tls.Config{
+				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 			},
 		},
 		{
 			name: "missing required cipher suite",
-			in: http.Server{
-				TLSConfig: &tls.Config{
-					CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384},
-				},
+			tlsConfig: &tls.Config{
+				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384},
 			},
 			wantErr: "is missing HTTP/2-required TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
 		},
 		{
 			name: "required after bad",
-			in: http.Server{
-				TLSConfig: &tls.Config{
-					CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
-				},
+			tlsConfig: &tls.Config{
+				CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 			},
 			wantErr: "contains an HTTP/2-approved cipher suite (0xc02f), but it comes after",
 		},
 		{
 			name: "bad after required",
-			in: http.Server{
-				TLSConfig: &tls.Config{
-					CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_RC4_128_SHA},
-				},
+			tlsConfig: &tls.Config{
+				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_RC4_128_SHA},
 			},
 		},
 	}
 	for _, tt := range tests {
-		err := ConfigureServer(&tt.in, nil)
+		srv := &http.Server{TLSConfig: tt.tlsConfig}
+		err := ConfigureServer(srv, nil)
 		if (err != nil) != (tt.wantErr != "") {
 			if tt.wantErr != "" {
 				t.Errorf("%s: success, but want error", tt.name)
@@ -2986,7 +2978,7 @@ func TestConfigureServer(t *testing.T) {
 		if err != nil && tt.wantErr != "" && !strings.Contains(err.Error(), tt.wantErr) {
 			t.Errorf("%s: err = %v; want substring %q", tt.name, err, tt.wantErr)
 		}
-		if err == nil && !tt.in.TLSConfig.PreferServerCipherSuites {
+		if err == nil && !srv.TLSConfig.PreferServerCipherSuites {
 			t.Errorf("%s: PreferServerCipherSuite is false; want true", tt.name)
 		}
 	}
