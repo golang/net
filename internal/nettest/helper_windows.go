@@ -10,9 +10,11 @@ import (
 	"syscall"
 )
 
-// SupportsRawIPSocket reports whether the platform supports raw IP
-// sockets.
-func SupportsRawIPSocket() (string, bool) {
+func maxOpenFiles() int {
+	return 4 * defaultMaxOpenFiles /* actually it's 16581375 */
+}
+
+func supportsRawIPSocket() (string, bool) {
 	// From http://msdn.microsoft.com/en-us/library/windows/desktop/ms740548.aspx:
 	// Note: To use a socket of type SOCK_RAW requires administrative privileges.
 	// Users running Winsock applications that use raw sockets must be a member of
@@ -29,4 +31,8 @@ func SupportsRawIPSocket() (string, bool) {
 	}
 	syscall.Closesocket(s)
 	return "", true
+}
+
+func supportsIPv6MulticastDeliveryOnLoopback() bool {
+	return true
 }

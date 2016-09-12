@@ -10,11 +10,18 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"syscall"
 )
 
-// SupportsRawIPSocket reports whether the platform supports raw IP
-// sockets.
-func SupportsRawIPSocket() (string, bool) {
+func maxOpenFiles() int {
+	var rlim syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlim); err != nil {
+		return defaultMaxOpenFiles
+	}
+	return int(rlim.Cur)
+}
+
+func supportsRawIPSocket() (string, bool) {
 	if os.Getuid() != 0 {
 		return fmt.Sprintf("must be root on %s", runtime.GOOS), false
 	}

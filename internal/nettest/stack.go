@@ -29,6 +29,19 @@ func SupportsIPv6() bool {
 	return true
 }
 
+// SupportsRawIPSocket reports whether the platform supports raw IP
+// sockets.
+func SupportsRawIPSocket() (string, bool) {
+	return supportsRawIPSocket()
+}
+
+// SupportsIPv6MulticastDeliveryOnLoopback reports whether the
+// platform supports IPv6 multicast packet delivery on software
+// loopback interface.
+func SupportsIPv6MulticastDeliveryOnLoopback() bool {
+	return supportsIPv6MulticastDeliveryOnLoopback()
+}
+
 // ProtocolNotSupported reports whether err is a protocol not
 // supported error.
 func ProtocolNotSupported(err error) bool {
