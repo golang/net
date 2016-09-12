@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2/hpack"
+	"golang.org/x/net/idna"
 	"golang.org/x/net/lex/httplex"
 )
 
@@ -285,14 +286,18 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 // authorityAddr returns a given authority (a host/IP, or host:port / ip:port)
 // and returns a host:port. The port 443 is added if needed.
 func authorityAddr(scheme string, authority string) (addr string) {
-	if _, _, err := net.SplitHostPort(authority); err == nil {
-		return authority
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil { // authority didn't have a port
+		port = "443"
+		if scheme == "http" {
+			port = "80"
+		}
+		host = authority
 	}
-	port := "443"
-	if scheme == "http" {
-		port = "80"
+	if a, err := idna.ToASCII(host); err == nil {
+		host = a
 	}
-	return net.JoinHostPort(authority, port)
+	return net.JoinHostPort(host, port)
 }
 
 // RoundTripOpt is like RoundTrip, but takes options.
@@ -996,6 +1001,10 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
+	}
+	host, err := httplex.PunycodeHostPort(host)
+	if err != nil {
+		return nil, err
 	}
 
 	var path string
