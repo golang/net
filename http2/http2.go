@@ -343,7 +343,7 @@ func (s *sorter) Keys(h http.Header) []string {
 }
 
 func (s *sorter) SortStrings(ss []string) {
-	// Our sorter works on s.v, which sorter owners, so
+	// Our sorter works on s.v, which sorter owns, so
 	// stash it away while we sort the user's buffer.
 	save := s.v
 	s.v = ss
