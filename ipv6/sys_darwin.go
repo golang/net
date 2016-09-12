@@ -6,6 +6,8 @@ package ipv6
 
 import (
 	"net"
+	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -35,68 +37,38 @@ var (
 func init() {
 	// Seems like kern.osreldate is veiled on latest OS X. We use
 	// kern.osrelease instead.
-	osver, err := syscall.Sysctl("kern.osrelease")
+	s, err := syscall.Sysctl("kern.osrelease")
 	if err != nil {
 		return
 	}
-	var i int
-	for i = range osver {
-		if osver[i] == '.' {
-			break
-		}
+	ss := strings.Split(s, ".")
+	if len(ss) == 0 {
+		return
 	}
 	// The IP_PKTINFO and protocol-independent multicast API were
-	// introduced in OS X 10.7 (Darwin 11.0.0). But it looks like
-	// those features require OS X 10.8 (Darwin 12.0.0) and above.
+	// introduced in OS X 10.7 (Darwin 11). But it looks like
+	// those features require OS X 10.8 (Darwin 12) or above.
 	// See http://support.apple.com/kb/HT1633.
-	if i > 2 || i == 2 && osver[0] >= '1' && osver[1] >= '2' {
-		ctlOpts[ctlTrafficClass].name = sysIPV6_TCLASS
-		ctlOpts[ctlTrafficClass].length = 4
-		ctlOpts[ctlTrafficClass].marshal = marshalTrafficClass
-		ctlOpts[ctlTrafficClass].parse = parseTrafficClass
-		ctlOpts[ctlHopLimit].name = sysIPV6_HOPLIMIT
-		ctlOpts[ctlHopLimit].marshal = marshalHopLimit
-		ctlOpts[ctlPacketInfo].name = sysIPV6_PKTINFO
-		ctlOpts[ctlPacketInfo].marshal = marshalPacketInfo
-		ctlOpts[ctlNextHop].name = sysIPV6_NEXTHOP
-		ctlOpts[ctlNextHop].length = sysSizeofSockaddrInet6
-		ctlOpts[ctlNextHop].marshal = marshalNextHop
-		ctlOpts[ctlNextHop].parse = parseNextHop
-		ctlOpts[ctlPathMTU].name = sysIPV6_PATHMTU
-		ctlOpts[ctlPathMTU].length = sysSizeofIPv6Mtuinfo
-		ctlOpts[ctlPathMTU].marshal = marshalPathMTU
-		ctlOpts[ctlPathMTU].parse = parsePathMTU
-		sockOpts[ssoTrafficClass].level = iana.ProtocolIPv6
-		sockOpts[ssoTrafficClass].name = sysIPV6_TCLASS
-		sockOpts[ssoTrafficClass].typ = ssoTypeInt
-		sockOpts[ssoReceiveTrafficClass].level = iana.ProtocolIPv6
-		sockOpts[ssoReceiveTrafficClass].name = sysIPV6_RECVTCLASS
-		sockOpts[ssoReceiveTrafficClass].typ = ssoTypeInt
-		sockOpts[ssoReceiveHopLimit].name = sysIPV6_RECVHOPLIMIT
-		sockOpts[ssoReceivePacketInfo].name = sysIPV6_RECVPKTINFO
-		sockOpts[ssoReceivePathMTU].level = iana.ProtocolIPv6
-		sockOpts[ssoReceivePathMTU].name = sysIPV6_RECVPATHMTU
-		sockOpts[ssoReceivePathMTU].typ = ssoTypeInt
-		sockOpts[ssoPathMTU].level = iana.ProtocolIPv6
-		sockOpts[ssoPathMTU].name = sysIPV6_PATHMTU
-		sockOpts[ssoPathMTU].typ = ssoTypeMTUInfo
-		sockOpts[ssoJoinGroup].name = sysMCAST_JOIN_GROUP
-		sockOpts[ssoJoinGroup].typ = ssoTypeGroupReq
-		sockOpts[ssoLeaveGroup].name = sysMCAST_LEAVE_GROUP
-		sockOpts[ssoLeaveGroup].typ = ssoTypeGroupReq
-		sockOpts[ssoJoinSourceGroup].level = iana.ProtocolIPv6
-		sockOpts[ssoJoinSourceGroup].name = sysMCAST_JOIN_SOURCE_GROUP
-		sockOpts[ssoJoinSourceGroup].typ = ssoTypeGroupSourceReq
-		sockOpts[ssoLeaveSourceGroup].level = iana.ProtocolIPv6
-		sockOpts[ssoLeaveSourceGroup].name = sysMCAST_LEAVE_SOURCE_GROUP
-		sockOpts[ssoLeaveSourceGroup].typ = ssoTypeGroupSourceReq
-		sockOpts[ssoBlockSourceGroup].level = iana.ProtocolIPv6
-		sockOpts[ssoBlockSourceGroup].name = sysMCAST_BLOCK_SOURCE
-		sockOpts[ssoBlockSourceGroup].typ = ssoTypeGroupSourceReq
-		sockOpts[ssoUnblockSourceGroup].level = iana.ProtocolIPv6
-		sockOpts[ssoUnblockSourceGroup].name = sysMCAST_UNBLOCK_SOURCE
-		sockOpts[ssoUnblockSourceGroup].typ = ssoTypeGroupSourceReq
+	if mjver, err := strconv.Atoi(ss[0]); err != nil || mjver < 12 {
+		return
 	}
+	ctlOpts[ctlTrafficClass] = ctlOpt{sysIPV6_TCLASS, 4, marshalTrafficClass, parseTrafficClass}
+	ctlOpts[ctlHopLimit] = ctlOpt{sysIPV6_HOPLIMIT, 4, marshalHopLimit, parseHopLimit}
+	ctlOpts[ctlPacketInfo] = ctlOpt{sysIPV6_PKTINFO, sysSizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo}
+	ctlOpts[ctlNextHop] = ctlOpt{sysIPV6_NEXTHOP, sysSizeofSockaddrInet6, marshalNextHop, parseNextHop}
+	ctlOpts[ctlPathMTU] = ctlOpt{sysIPV6_PATHMTU, sysSizeofIPv6Mtuinfo, marshalPathMTU, parsePathMTU}
+	sockOpts[ssoTrafficClass] = sockOpt{iana.ProtocolIPv6, sysIPV6_TCLASS, ssoTypeInt}
+	sockOpts[ssoReceiveTrafficClass] = sockOpt{iana.ProtocolIPv6, sysIPV6_RECVTCLASS, ssoTypeInt}
+	sockOpts[ssoReceiveHopLimit] = sockOpt{iana.ProtocolIPv6, sysIPV6_RECVHOPLIMIT, ssoTypeInt}
+	sockOpts[ssoReceivePacketInfo] = sockOpt{iana.ProtocolIPv6, sysIPV6_RECVPKTINFO, ssoTypeInt}
+	sockOpts[ssoReceivePathMTU] = sockOpt{iana.ProtocolIPv6, sysIPV6_RECVPATHMTU, ssoTypeInt}
+	sockOpts[ssoPathMTU] = sockOpt{iana.ProtocolIPv6, sysIPV6_PATHMTU, ssoTypeMTUInfo}
+	sockOpts[ssoJoinGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_JOIN_GROUP, ssoTypeGroupReq}
+	sockOpts[ssoLeaveGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_LEAVE_GROUP, ssoTypeGroupReq}
+	sockOpts[ssoJoinSourceGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_JOIN_SOURCE_GROUP, ssoTypeGroupSourceReq}
+	sockOpts[ssoLeaveSourceGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_LEAVE_SOURCE_GROUP, ssoTypeGroupSourceReq}
+	sockOpts[ssoBlockSourceGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_BLOCK_SOURCE, ssoTypeGroupSourceReq}
+	sockOpts[ssoUnblockSourceGroup] = sockOpt{iana.ProtocolIPv6, sysMCAST_UNBLOCK_SOURCE, ssoTypeGroupSourceReq}
 }
 
 func (sa *sysSockaddrInet6) setSockaddr(ip net.IP, i int) {
