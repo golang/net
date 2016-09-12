@@ -2468,3 +2468,24 @@ func TestTransportBodyDoubleEndStream(t *testing.T) {
 		defer res.Body.Close()
 	}
 }
+
+// golang.org/issue/17071 -- don't sniff the first byte of the request body
+// before we've determined that the ClientConn is usable.
+func TestRoundTripDoesntConsumeRequestBodyEarly(t *testing.T) {
+	const body = "foo"
+	req, _ := http.NewRequest("POST", "http://foo.com/", ioutil.NopCloser(strings.NewReader(body)))
+	cc := &ClientConn{
+		closed: true,
+	}
+	_, err := cc.RoundTrip(req)
+	if err != errClientConnUnusable {
+		t.Fatalf("RoundTrip = %v; want errClientConnUnusable", err)
+	}
+	slurp, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		t.Errorf("ReadAll = %v", err)
+	}
+	if string(slurp) != body {
+		t.Errorf("Body = %q; want %q", slurp, body)
+	}
+}
