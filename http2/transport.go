@@ -656,15 +656,15 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	hasTrailers := trailers != ""
 
-	body, contentLen := bodyAndLength(req)
-	hasBody := body != nil
-
 	cc.mu.Lock()
 	cc.lastActive = time.Now()
 	if cc.closed || !cc.canTakeNewRequestLocked() {
 		cc.mu.Unlock()
 		return nil, errClientConnUnusable
 	}
+
+	body, contentLen := bodyAndLength(req)
+	hasBody := body != nil
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
 	var requestedGzip bool
