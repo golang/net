@@ -1830,8 +1830,14 @@ func TestServer_Response_LargeWrite(t *testing.T) {
 
 // Test that the handler can't write more than the client allows
 func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
-	const size = 1 << 20
-	const maxFrameSize = 16 << 10
+	// Make these reads. Before each read, the client adds exactly enough
+	// flow-control to satisfy the read. Numbers chosen arbitrarily.
+	reads := []int{123, 1, 13, 127}
+	size := 0
+	for _, n := range reads {
+		size += n
+	}
+
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		w.(http.Flusher).Flush()
 		n, err := w.Write(bytes.Repeat([]byte("a"), size))
@@ -1845,17 +1851,12 @@ func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 	}, func(st *serverTester) {
 		// Set the window size to something explicit for this test.
 		// It's also how much initial data we expect.
-		const initWindowSize = 123
-		if err := st.fr.WriteSettings(
-			Setting{SettingInitialWindowSize, initWindowSize},
-			Setting{SettingMaxFrameSize, maxFrameSize},
-		); err != nil {
+		if err := st.fr.WriteSettings(Setting{SettingInitialWindowSize, uint32(reads[0])}); err != nil {
 			t.Fatal(err)
 		}
 		st.wantSettingsAck()
 
 		getSlash(st) // make the single request
-		defer func() { st.fr.WriteRSTStream(1, ErrCodeCancel) }()
 
 		hf := st.wantHeaders()
 		if hf.StreamEnded() {
@@ -1866,11 +1867,11 @@ func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 		}
 
 		df := st.wantData()
-		if got := len(df.Data()); got != initWindowSize {
-			t.Fatalf("Initial window size = %d but got DATA with %d bytes", initWindowSize, got)
+		if got := len(df.Data()); got != reads[0] {
+			t.Fatalf("Initial window size = %d but got DATA with %d bytes", reads[0], got)
 		}
 
-		for _, quota := range []int{1, 13, 127} {
+		for _, quota := range reads[1:] {
 			if err := st.fr.WriteWindowUpdate(1, uint32(quota)); err != nil {
 				t.Fatal(err)
 			}
@@ -1878,10 +1879,6 @@ func TestServer_Response_LargeWrite_FlowControlled(t *testing.T) {
 			if int(quota) != len(df.Data()) {
 				t.Fatalf("read %d bytes after giving %d quota", len(df.Data()), quota)
 			}
-		}
-
-		if err := st.fr.WriteRSTStream(1, ErrCodeCancel); err != nil {
-			t.Fatal(err)
 		}
 	})
 }
@@ -2314,9 +2311,9 @@ func (st *serverTester) decodeHeader(headerBlock []byte) (pairs [][2]string) {
 	return st.decodedHeaders
 }
 
-// testServerResponse sets up an idle HTTP/2 connection and lets you
-// write a single request with writeReq, and then reply to it in some way with the provided handler,
-// and then verify the output with the serverTester again (assuming the handler returns nil)
+// testServerResponse sets up an idle HTTP/2 connection. The client function should
+// write a single request that must be handled by the handler. This waits up to 5s
+// for client to return, then up to an additional 2s for the handler to return.
 func testServerResponse(t testing.TB,
 	handler func(http.ResponseWriter, *http.Request) error,
 	client func(*serverTester),
@@ -2339,9 +2336,8 @@ func testServerResponse(t testing.TB,
 
 	select {
 	case <-donec:
-		return
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
+		t.Fatal("timeout in client")
 	}
 
 	select {
@@ -2350,7 +2346,7 @@ func testServerResponse(t testing.TB,
 			t.Fatalf("Error in handler: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Error("timeout waiting for handler to finish")
+		t.Fatal("timeout in handler")
 	}
 }
 
@@ -3195,23 +3191,23 @@ func TestServerHandleCustomConn(t *testing.T) {
 
 // golang.org/issue/14214
 func TestServer_Rejects_ConnHeaders(t *testing.T) {
-	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
-		t.Errorf("should not get to Handler")
-		return nil
-	}, func(st *serverTester) {
-		st.bodylessReq1("connection", "foo")
-		hf := st.wantHeaders()
-		goth := st.decodeHeader(hf.HeaderBlockFragment())
-		wanth := [][2]string{
-			{":status", "400"},
-			{"content-type", "text/plain; charset=utf-8"},
-			{"x-content-type-options", "nosniff"},
-			{"content-length", "51"},
-		}
-		if !reflect.DeepEqual(goth, wanth) {
-			t.Errorf("Got headers %v; want %v", goth, wanth)
-		}
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not get to Handler")
 	})
+	defer st.Close()
+	st.greet()
+	st.bodylessReq1("connection", "foo")
+	hf := st.wantHeaders()
+	goth := st.decodeHeader(hf.HeaderBlockFragment())
+	wanth := [][2]string{
+		{":status", "400"},
+		{"content-type", "text/plain; charset=utf-8"},
+		{"x-content-type-options", "nosniff"},
+		{"content-length", "51"},
+	}
+	if !reflect.DeepEqual(goth, wanth) {
+		t.Errorf("Got headers %v; want %v", goth, wanth)
+	}
 }
 
 type hpackEncoder struct {
