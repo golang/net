@@ -325,7 +325,7 @@ func fetchAndParseRIB(af int, typ RIBType) ([]Message, error) {
 	return ms, nil
 }
 
-// propVirtual is a proprietary viertual network interface.
+// propVirtual is a proprietary virtual network interface.
 type propVirtual struct {
 	name         string
 	addr, mask   string
