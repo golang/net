@@ -151,6 +151,9 @@ type ClientConn struct {
 	readerDone chan struct{} // closed on error
 	readerErr  error         // set before readerDone is closed
 
+	idleTimeout time.Duration // or 0 for never
+	idleTimer   *time.Timer
+
 	mu              sync.Mutex // guards following
 	cond            *sync.Cond // hold mu; broadcast on flow/closed changes
 	flow            flow       // our conn-level flow control quota (cs.flow is per stream)
@@ -435,6 +438,10 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		wantSettingsAck:      true,
 		pings:                make(map[[8]byte]chan struct{}),
 	}
+	if d := t.idleConnTimeout(); d != 0 {
+		cc.idleTimeout = d
+		cc.idleTimer = time.AfterFunc(d, cc.onIdleTimeout)
+	}
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())
 	}
@@ -509,6 +516,16 @@ func (cc *ClientConn) canTakeNewRequestLocked() bool {
 	return cc.goAway == nil && !cc.closed &&
 		int64(len(cc.streams)+1) < int64(cc.maxConcurrentStreams) &&
 		cc.nextStreamID < math.MaxInt32
+}
+
+// onIdleTimeout is called from a time.AfterFunc goroutine.  It will
+// only be called when we're idle, but because we're coming from a new
+// goroutine, there could be a new request coming in at the same time,
+// so this simply calls the synchronized closeIfIdle to shut down this
+// connection. The timer could just call closeIfIdle, but this is more
+// clear.
+func (cc *ClientConn) onIdleTimeout() {
+	cc.closeIfIdle()
 }
 
 func (cc *ClientConn) closeIfIdle() {
@@ -651,6 +668,9 @@ func bodyAndLength(req *http.Request) (body io.Reader, contentLen int64) {
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := checkConnHeaders(req); err != nil {
 		return nil, err
+	}
+	if cc.idleTimer != nil {
+		cc.idleTimer.Stop()
 	}
 
 	trailers, err := commaSeparatedTrailers(req)
@@ -1176,6 +1196,9 @@ func (cc *ClientConn) streamByID(id uint32, andRemove bool) *clientStream {
 	if andRemove && cs != nil && !cc.closed {
 		cc.lastActive = time.Now()
 		delete(cc.streams, id)
+		if len(cc.streams) == 0 && cc.idleTimer != nil {
+			cc.idleTimer.Reset(cc.idleTimeout)
+		}
 		close(cs.done)
 		cc.cond.Broadcast() // wake up checkResetOrDone via clientStream.awaitFlowControl
 	}
@@ -1231,6 +1254,10 @@ func (rl *clientConnReadLoop) cleanup() {
 	defer cc.tconn.Close()
 	defer cc.t.connPool().MarkDead(cc)
 	defer close(cc.readerDone)
+
+	if cc.idleTimer != nil {
+		cc.idleTimer.Stop()
+	}
 
 	// Close any response bodies if the server closes prematurely.
 	// TODO: also do this if we've written the headers but not
