@@ -52,6 +52,16 @@ func TestTransportExternal(t *testing.T) {
 	res.Write(os.Stdout)
 }
 
+type fakeTLSConn struct {
+	net.Conn
+}
+
+func (c *fakeTLSConn) ConnectionState() tls.ConnectionState {
+	return tls.ConnectionState{
+		Version: tls.VersionTLS12,
+	}
+}
+
 func startH2cServer(t *testing.T) net.Listener {
 	h2Server := &Server{}
 	l := newLocalListener(t)
@@ -61,8 +71,8 @@ func startH2cServer(t *testing.T) net.Listener {
 			t.Error(err)
 			return
 		}
-		h2Server.ServeConn(conn, &ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "Hello, %v", r.URL.Path)
+		h2Server.ServeConn(&fakeTLSConn{conn}, &ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "Hello, %v, http: %v", r.URL.Path, r.TLS == nil)
 		})})
 	}()
 	return l
@@ -92,7 +102,7 @@ func TestTransportH2c(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(body), "Hello, /foobar"; got != want {
+	if got, want := string(body), "Hello, /foobar, http: true"; got != want {
 		t.Fatalf("response got %v, want %v", got, want)
 	}
 }
