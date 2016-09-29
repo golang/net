@@ -12,7 +12,10 @@ import (
 	"net/http"
 )
 
-type contextContext interface{}
+type contextContext interface {
+	Done() <-chan struct{}
+	Err() error
+}
 
 type fakeContext struct{}
 
