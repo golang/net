@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -160,6 +161,7 @@ type ClientConn struct {
 	goAwayDebug     string                   // goAway frame's debug data, retained as a string
 	streams         map[uint32]*clientStream // client-initiated
 	nextStreamID    uint32
+	pings           map[[8]byte]chan struct{} // in flight ping data to notification channel
 	bw              *bufio.Writer
 	br              *bufio.Reader
 	fr              *Framer
@@ -431,6 +433,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		streams:              make(map[uint32]*clientStream),
 		singleUse:            singleUse,
 		wantSettingsAck:      true,
+		pings:                make(map[[8]byte]chan struct{}),
 	}
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())
@@ -1815,10 +1818,56 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 	return nil
 }
 
+// Ping sends a PING frame to the server and waits for the ack.
+// Public implementation is in go17.go and not_go17.go
+func (cc *ClientConn) ping(ctx contextContext) error {
+	c := make(chan struct{})
+	// Generate a random payload
+	var p [8]byte
+	for {
+		if _, err := rand.Read(p[:]); err != nil {
+			return err
+		}
+		cc.mu.Lock()
+		// check for dup before insert
+		if _, found := cc.pings[p]; !found {
+			cc.pings[p] = c
+			cc.mu.Unlock()
+			break
+		}
+		cc.mu.Unlock()
+	}
+	cc.wmu.Lock()
+	if err := cc.fr.WritePing(false, p); err != nil {
+		cc.wmu.Unlock()
+		return err
+	}
+	if err := cc.bw.Flush(); err != nil {
+		cc.wmu.Unlock()
+		return err
+	}
+	cc.wmu.Unlock()
+	select {
+	case <-c:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-cc.readerDone:
+		// connection closed
+		return cc.readerErr
+	}
+}
+
 func (rl *clientConnReadLoop) processPing(f *PingFrame) error {
 	if f.IsAck() {
-		// 6.7 PING: " An endpoint MUST NOT respond to PING frames
-		// containing this flag."
+		cc := rl.cc
+		cc.mu.Lock()
+		defer cc.mu.Unlock()
+		// If ack, notify listener if any
+		if c, ok := cc.pings[f.Data]; ok {
+			close(c)
+			delete(cc.pings, f.Data)
+		}
 		return nil
 	}
 	cc := rl.cc

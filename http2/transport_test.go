@@ -39,6 +39,13 @@ var (
 
 var tlsConfigInsecure = &tls.Config{InsecureSkipVerify: true}
 
+type testContext struct{}
+
+func (testContext) Done() <-chan struct{}                   { return make(chan struct{}) }
+func (testContext) Err() error                              { panic("should not be called") }
+func (testContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, false }
+func (testContext) Value(key interface{}) interface{}       { return nil }
+
 func TestTransportExternal(t *testing.T) {
 	if !*extNet {
 		t.Skip("skipping external network test")
@@ -2626,5 +2633,19 @@ func TestRoundTripDoesntConsumeRequestBodyEarly(t *testing.T) {
 	}
 	if string(slurp) != body {
 		t.Errorf("Body = %q; want %q", slurp, body)
+	}
+}
+
+func TestClientConnPing(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {}, optOnlyServer)
+	defer st.Close()
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	cc, err := tr.dialClientConn(st.ts.Listener.Addr().String(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cc.Ping(testContext{}); err != nil {
+		t.Fatal(err)
 	}
 }

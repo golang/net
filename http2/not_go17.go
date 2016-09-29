@@ -75,3 +75,7 @@ func cloneTLSConfig(c *tls.Config) *tls.Config {
 		CurvePreferences:         c.CurvePreferences,
 	}
 }
+
+func (cc *ClientConn) Ping(ctx contextContext) error {
+	return cc.ping(ctx)
+}

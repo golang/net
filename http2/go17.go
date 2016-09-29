@@ -92,3 +92,8 @@ func requestTrace(req *http.Request) *clientTrace {
 	trace := httptrace.ContextClientTrace(req.Context())
 	return (*clientTrace)(trace)
 }
+
+// Ping sends a PING frame to the server and waits for the ack.
+func (cc *ClientConn) Ping(ctx context.Context) error {
+	return cc.ping(ctx)
+}
