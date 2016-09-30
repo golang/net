@@ -643,6 +643,11 @@ func bodyAndLength(req *http.Request) (body io.Reader, contentLen int64) {
 	if req.ContentLength != 0 {
 		return req.Body, req.ContentLength
 	}
+	// Don't try to sniff the size if they're doing an expect
+	// request (Issue 16002):
+	if req.Header.Get("Expect") == "100-continue" {
+		return req.Body, -1
+	}
 
 	// We have a body but a zero content length. Test to see if
 	// it's actually zero or just unset.
