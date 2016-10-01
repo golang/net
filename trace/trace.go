@@ -91,7 +91,7 @@ var DebugUseAfterFinish = false
 // It returns two bools; the first indicates whether the page may be viewed at all,
 // and the second indicates whether sensitive events will be shown.
 //
-// AuthRequest may be replaced by a program to customise its authorisation requirements.
+// AuthRequest may be replaced by a program to customize its authorization requirements.
 //
 // The default AuthRequest function returns (true, true) if and only if the request
 // comes from localhost/127.0.0.1/[::1].
