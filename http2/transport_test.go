@@ -1707,12 +1707,12 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		{
 			key:   "Upgrade",
 			value: []string{"anything"},
-			want:  "ERROR: http2: invalid Upgrade request header",
+			want:  "ERROR: http2: invalid Upgrade request header: [\"anything\"]",
 		},
 		{
 			key:   "Connection",
 			value: []string{"foo"},
-			want:  "ERROR: http2: invalid Connection request header",
+			want:  "ERROR: http2: invalid Connection request header: [\"foo\"]",
 		},
 		{
 			key:   "Connection",
@@ -1722,7 +1722,7 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		{
 			key:   "Connection",
 			value: []string{"close", "something-else"},
-			want:  "ERROR: http2: invalid Connection request header",
+			want:  "ERROR: http2: invalid Connection request header: [\"close\" \"something-else\"]",
 		},
 		{
 			key:   "Connection",
@@ -1742,7 +1742,7 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		{
 			key:   "Transfer-Encoding",
 			value: []string{"foo"},
-			want:  "ERROR: http2: invalid Transfer-Encoding request header",
+			want:  "ERROR: http2: invalid Transfer-Encoding request header: [\"foo\"]",
 		},
 		{
 			key:   "Transfer-Encoding",
@@ -1752,7 +1752,7 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		{
 			key:   "Transfer-Encoding",
 			value: []string{"chunked", "other"},
-			want:  "ERROR: http2: invalid Transfer-Encoding request header",
+			want:  "ERROR: http2: invalid Transfer-Encoding request header: [\"chunked\" \"other\"]",
 		},
 		{
 			key:   "Content-Length",

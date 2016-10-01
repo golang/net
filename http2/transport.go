@@ -624,13 +624,13 @@ func (cc *ClientConn) responseHeaderTimeout() time.Duration {
 // Certain headers are special-cased as okay but not transmitted later.
 func checkConnHeaders(req *http.Request) error {
 	if v := req.Header.Get("Upgrade"); v != "" {
-		return errors.New("http2: invalid Upgrade request header")
+		return fmt.Errorf("http2: invalid Upgrade request header: %q", req.Header["Upgrade"])
 	}
 	if v := req.Header.Get("Transfer-Encoding"); (v != "" && v != "chunked") || len(req.Header["Transfer-Encoding"]) > 1 {
-		return errors.New("http2: invalid Transfer-Encoding request header")
+		return fmt.Errorf("http2: invalid Transfer-Encoding request header: %q", req.Header["Transfer-Encoding"])
 	}
 	if v := req.Header.Get("Connection"); (v != "" && v != "close" && v != "keep-alive") || len(req.Header["Connection"]) > 1 {
-		return errors.New("http2: invalid Connection request header")
+		return fmt.Errorf("http2: invalid Connection request header: %q", req.Header["Connection"])
 	}
 	return nil
 }
