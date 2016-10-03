@@ -7,18 +7,23 @@
 package ipv6
 
 func (f *sysICMPv6Filter) accept(typ ICMPType) {
-	// TODO(mikio): implement this
+	f.X__icmp6_filt[typ>>5] |= 1 << (uint32(typ) & 31)
 }
 
 func (f *sysICMPv6Filter) block(typ ICMPType) {
-	// TODO(mikio): implement this
+	f.X__icmp6_filt[typ>>5] &^= 1 << (uint32(typ) & 31)
 }
 
 func (f *sysICMPv6Filter) setAll(block bool) {
-	// TODO(mikio): implement this
+	for i := range f.X__icmp6_filt {
+		if block {
+			f.X__icmp6_filt[i] = 0
+		} else {
+			f.X__icmp6_filt[i] = 1<<32 - 1
+		}
+	}
 }
 
 func (f *sysICMPv6Filter) willBlock(typ ICMPType) bool {
-	// TODO(mikio): implement this
-	return false
+	return f.X__icmp6_filt[typ>>5]&(1<<(uint32(typ)&31)) == 0
 }

@@ -9,6 +9,8 @@
 package ipv6
 
 /*
+#include <sys/socket.h>
+
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
 */
@@ -53,6 +55,13 @@ const (
 
 	sysIPV6_RECVDSTOPTS = C.IPV6_RECVDSTOPTS
 
+	sysMCAST_JOIN_GROUP         = C.MCAST_JOIN_GROUP
+	sysMCAST_LEAVE_GROUP        = C.MCAST_LEAVE_GROUP
+	sysMCAST_BLOCK_SOURCE       = C.MCAST_BLOCK_SOURCE
+	sysMCAST_UNBLOCK_SOURCE     = C.MCAST_UNBLOCK_SOURCE
+	sysMCAST_JOIN_SOURCE_GROUP  = C.MCAST_JOIN_SOURCE_GROUP
+	sysMCAST_LEAVE_SOURCE_GROUP = C.MCAST_LEAVE_SOURCE_GROUP
+
 	sysIPV6_PREFER_SRC_HOME   = C.IPV6_PREFER_SRC_HOME
 	sysIPV6_PREFER_SRC_COA    = C.IPV6_PREFER_SRC_COA
 	sysIPV6_PREFER_SRC_PUBLIC = C.IPV6_PREFER_SRC_PUBLIC
@@ -76,14 +85,19 @@ const (
 
 	sysICMP6_FILTER = C.ICMP6_FILTER
 
-	sysSizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
-	sysSizeofInet6Pktinfo  = C.sizeof_struct_in6_pktinfo
-	sysSizeofIPv6Mtuinfo   = C.sizeof_struct_ip6_mtuinfo
+	sysSizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
+	sysSizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
+	sysSizeofInet6Pktinfo    = C.sizeof_struct_in6_pktinfo
+	sysSizeofIPv6Mtuinfo     = C.sizeof_struct_ip6_mtuinfo
 
-	sysSizeofIPv6Mreq = C.sizeof_struct_ipv6_mreq
+	sysSizeofIPv6Mreq       = C.sizeof_struct_ipv6_mreq
+	sysSizeofGroupReq       = C.sizeof_struct_group_req
+	sysSizeofGroupSourceReq = C.sizeof_struct_group_source_req
 
 	sysSizeofICMPv6Filter = C.sizeof_struct_icmp6_filter
 )
+
+type sysSockaddrStorage C.struct_sockaddr_storage
 
 type sysSockaddrInet6 C.struct_sockaddr_in6
 
@@ -92,5 +106,9 @@ type sysInet6Pktinfo C.struct_in6_pktinfo
 type sysIPv6Mtuinfo C.struct_ip6_mtuinfo
 
 type sysIPv6Mreq C.struct_ipv6_mreq
+
+type sysGroupReq C.struct_group_req
+
+type sysGroupSourceReq C.struct_group_source_req
 
 type sysICMPv6Filter C.struct_icmp6_filter
