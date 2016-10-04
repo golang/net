@@ -87,18 +87,18 @@ func (mreq *sysIPv6Mreq) setIfindex(i int) {
 }
 
 func (gr *sysGroupReq) setGroup(grp net.IP) {
-	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gr.Pad_cgo_0[0]))
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(uintptr(unsafe.Pointer(gr)) + 4))
 	sa.Len = sysSizeofSockaddrInet6
 	sa.Family = syscall.AF_INET6
 	copy(sa.Addr[:], grp)
 }
 
 func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
-	sa := (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Pad_cgo_0[0]))
+	sa := (*sysSockaddrInet6)(unsafe.Pointer(uintptr(unsafe.Pointer(gsr)) + 4))
 	sa.Len = sysSizeofSockaddrInet6
 	sa.Family = syscall.AF_INET6
 	copy(sa.Addr[:], grp)
-	sa = (*sysSockaddrInet6)(unsafe.Pointer(&gsr.Pad_cgo_1[0]))
+	sa = (*sysSockaddrInet6)(unsafe.Pointer(uintptr(unsafe.Pointer(gsr)) + 132))
 	sa.Len = sysSizeofSockaddrInet6
 	sa.Family = syscall.AF_INET6
 	copy(sa.Addr[:], src)
