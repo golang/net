@@ -78,18 +78,18 @@ func (pi *sysInetPktinfo) setIfindex(i int) {
 }
 
 func (gr *sysGroupReq) setGroup(grp net.IP) {
-	sa := (*sysSockaddrInet)(unsafe.Pointer(&gr.Pad_cgo_0[0]))
+	sa := (*sysSockaddrInet)(unsafe.Pointer(uintptr(unsafe.Pointer(gr)) + 4))
 	sa.Len = sysSizeofSockaddrInet
 	sa.Family = syscall.AF_INET
 	copy(sa.Addr[:], grp)
 }
 
 func (gsr *sysGroupSourceReq) setSourceGroup(grp, src net.IP) {
-	sa := (*sysSockaddrInet)(unsafe.Pointer(&gsr.Pad_cgo_0[0]))
+	sa := (*sysSockaddrInet)(unsafe.Pointer(uintptr(unsafe.Pointer(gsr)) + 4))
 	sa.Len = sysSizeofSockaddrInet
 	sa.Family = syscall.AF_INET
 	copy(sa.Addr[:], grp)
-	sa = (*sysSockaddrInet)(unsafe.Pointer(&gsr.Pad_cgo_1[0]))
+	sa = (*sysSockaddrInet)(unsafe.Pointer(uintptr(unsafe.Pointer(gsr)) + 132))
 	sa.Len = sysSizeofSockaddrInet
 	sa.Family = syscall.AF_INET
 	copy(sa.Addr[:], src)
