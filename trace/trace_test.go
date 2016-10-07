@@ -5,7 +5,6 @@
 package trace
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -67,30 +66,6 @@ func TestAuthRequest(t *testing.T) {
 		any, sensitive := AuthRequest(req)
 		if any != tt.want || sensitive != tt.want {
 			t.Errorf("AuthRequest(%q) = %t, %t; want %t, %t", tt.host, any, sensitive, tt.want, tt.want)
-		}
-	}
-}
-
-func benchmarkTrace(b *testing.B, maxEvents, numEvents int) {
-	numSpans := (b.N + numEvents + 1) / numEvents
-
-	for i := 0; i < numSpans; i++ {
-		tr := New("test", "test")
-		tr.SetMaxEvents(maxEvents)
-		for j := 0; j < numEvents; j++ {
-			tr.LazyPrintf("%d", j)
-		}
-		tr.Finish()
-	}
-}
-
-func BenchmarkTrace(b *testing.B) {
-	for _, maxEvents := range []int{0, 10, 100, 1000} {
-		for _, numEvents := range []int{2, 10, 100, 1000, 10000} {
-			name := fmt.Sprintf("%d-%d", maxEvents, numEvents)
-			b.Run(name, func(b *testing.B) {
-				benchmarkTrace(b, maxEvents, numEvents)
-			})
 		}
 	}
 }
