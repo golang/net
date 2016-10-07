@@ -6,15 +6,15 @@
 
 package ipv6
 
-func (f *sysICMPv6Filter) accept(typ ICMPType) {
+func (f *icmpv6Filter) accept(typ ICMPType) {
 	f.X__icmp6_filt[typ>>5] |= 1 << (uint32(typ) & 31)
 }
 
-func (f *sysICMPv6Filter) block(typ ICMPType) {
+func (f *icmpv6Filter) block(typ ICMPType) {
 	f.X__icmp6_filt[typ>>5] &^= 1 << (uint32(typ) & 31)
 }
 
-func (f *sysICMPv6Filter) setAll(block bool) {
+func (f *icmpv6Filter) setAll(block bool) {
 	for i := range f.X__icmp6_filt {
 		if block {
 			f.X__icmp6_filt[i] = 0
@@ -24,6 +24,6 @@ func (f *sysICMPv6Filter) setAll(block bool) {
 	}
 }
 
-func (f *sysICMPv6Filter) willBlock(typ ICMPType) bool {
+func (f *icmpv6Filter) willBlock(typ ICMPType) bool {
 	return f.X__icmp6_filt[typ>>5]&(1<<(uint32(typ)&31)) == 0
 }

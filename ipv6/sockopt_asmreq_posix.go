@@ -13,10 +13,10 @@ import (
 )
 
 func setsockoptIPMreq(s uintptr, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
-	var mreq sysIPv6Mreq
+	var mreq ipv6Mreq
 	copy(mreq.Multiaddr[:], grp)
 	if ifi != nil {
 		mreq.setIfindex(ifi.Index)
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(s, opt.level, opt.name, unsafe.Pointer(&mreq), sysSizeofIPv6Mreq))
+	return os.NewSyscallError("setsockopt", setsockopt(s, opt.level, opt.name, unsafe.Pointer(&mreq), sizeofIPv6Mreq))
 }
