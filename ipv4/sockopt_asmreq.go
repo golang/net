@@ -8,7 +8,7 @@ package ipv4
 
 import "net"
 
-func setIPMreqInterface(mreq *sysIPMreq, ifi *net.Interface) error {
+func setIPMreqInterface(mreq *ipMreq, ifi *net.Interface) error {
 	if ifi == nil {
 		return nil
 	}
