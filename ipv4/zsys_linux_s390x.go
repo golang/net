@@ -1,8 +1,6 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo -godefs defs_linux.go
 
-// +build linux,s390x
-
 package ipv4
 
 const (
