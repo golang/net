@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.3
-
 package websocket
 
 import (
@@ -17,7 +15,7 @@ func dialWithDialer(dialer *net.Dialer, config *Config) (conn net.Conn, err erro
 		conn, err = dialer.Dial("tcp", parseAuthority(config.Location))
 
 	case "wss":
-		conn, err = tls.Dial("tcp", parseAuthority(config.Location), config.TlsConfig)
+		conn, err = tls.DialWithDialer(dialer, "tcp", parseAuthority(config.Location), config.TlsConfig)
 
 	default:
 		err = ErrBadScheme
