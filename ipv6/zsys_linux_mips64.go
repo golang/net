@@ -1,8 +1,6 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo -godefs defs_linux.go
 
-// +build linux,mips64
-
 package ipv6
 
 const (
