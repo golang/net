@@ -391,6 +391,40 @@ func randString(n int) string {
 	return string(b)
 }
 
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) { panic("unexpected Read") }
+func (panicReader) Close() error             { panic("unexpected Close") }
+
+func TestActualContentLength(t *testing.T) {
+	tests := []struct {
+		req  *http.Request
+		want int64
+	}{
+		// Verify we don't read from Body:
+		0: {
+			req:  &http.Request{Body: panicReader{}},
+			want: -1,
+		},
+		// nil Body means 0, regardless of ContentLength:
+		1: {
+			req:  &http.Request{Body: nil, ContentLength: 5},
+			want: 0,
+		},
+		// ContentLength is used if set.
+		2: {
+			req:  &http.Request{Body: panicReader{}, ContentLength: 5},
+			want: 5,
+		},
+	}
+	for i, tt := range tests {
+		got := actualContentLength(tt.req)
+		if got != tt.want {
+			t.Errorf("test[%d]: got %d; want %d", i, got, tt.want)
+		}
+	}
+}
+
 func TestTransportBody(t *testing.T) {
 	bodyTests := []struct {
 		body         string
@@ -398,8 +432,6 @@ func TestTransportBody(t *testing.T) {
 	}{
 		{body: "some message"},
 		{body: "some message", noContentLen: true},
-		{body: ""},
-		{body: "", noContentLen: true},
 		{body: strings.Repeat("a", 1<<20), noContentLen: true},
 		{body: strings.Repeat("a", 1<<20)},
 		{body: randString(16<<10 - 1)},
