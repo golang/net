@@ -884,7 +884,12 @@ func (sc *serverConn) startFrameWrite(wr FrameWriteRequest) {
 
 	sc.writingFrame = true
 	sc.needsFrameFlush = true
-	go sc.writeFrameAsync(wr)
+	if wr.write.staysWithinBuffer(sc.bw.Available()) {
+		err := wr.write.writeFrame(sc)
+		sc.wroteFrame(frameWriteResult{wr, err})
+	} else {
+		go sc.writeFrameAsync(wr)
+	}
 }
 
 // errHandlerPanicked is the error given to any callers blocked in a read from

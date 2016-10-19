@@ -18,6 +18,11 @@ import (
 // writeFramer is implemented by any type that is used to write frames.
 type writeFramer interface {
 	writeFrame(writeContext) error
+
+	// staysWithinBuffer reports whether this writer promises that
+	// it will only write less than or equal to size bytes, and it
+	// won't Flush the write context.
+	staysWithinBuffer(size int) bool
 }
 
 // writeContext is the interface needed by the various frame writer
@@ -62,7 +67,15 @@ func (flushFrameWriter) writeFrame(ctx writeContext) error {
 	return ctx.Flush()
 }
 
+func (flushFrameWriter) staysWithinBuffer(max int) bool { return false }
+
 type writeSettings []Setting
+
+func (s writeSettings) staysWithinBuffer(max int) bool {
+	const settingSize = 6 // uint16 + uint32
+	return frameHeaderLen+settingSize*len(s) <= max
+
+}
 
 func (s writeSettings) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteSettings([]Setting(s)...)
@@ -83,6 +96,8 @@ func (p *writeGoAway) writeFrame(ctx writeContext) error {
 	return err
 }
 
+func (*writeGoAway) staysWithinBuffer(max int) bool { return false } // flushes
+
 type writeData struct {
 	streamID  uint32
 	p         []byte
@@ -97,6 +112,10 @@ func (w *writeData) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteData(w.streamID, w.endStream, w.p)
 }
 
+func (w *writeData) staysWithinBuffer(max int) bool {
+	return frameHeaderLen+len(w.p) <= max
+}
+
 // handlerPanicRST is the message sent from handler goroutines when
 // the handler panics.
 type handlerPanicRST struct {
@@ -107,9 +126,13 @@ func (hp handlerPanicRST) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteRSTStream(hp.StreamID, ErrCodeInternal)
 }
 
+func (hp handlerPanicRST) staysWithinBuffer(max int) bool { return frameHeaderLen+4 <= max }
+
 func (se StreamError) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteRSTStream(se.StreamID, se.Code)
 }
+
+func (se StreamError) staysWithinBuffer(max int) bool { return frameHeaderLen+4 <= max }
 
 type writePingAck struct{ pf *PingFrame }
 
@@ -117,11 +140,15 @@ func (w writePingAck) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WritePing(true, w.pf.Data)
 }
 
+func (w writePingAck) staysWithinBuffer(max int) bool { return frameHeaderLen+len(w.pf.Data) <= max }
+
 type writeSettingsAck struct{}
 
 func (writeSettingsAck) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteSettingsAck()
 }
+
+func (writeSettingsAck) staysWithinBuffer(max int) bool { return frameHeaderLen <= max }
 
 // writeResHeaders is a request to write a HEADERS and 0+ CONTINUATION frames
 // for HTTP response headers or trailers from a server handler.
@@ -142,6 +169,17 @@ func encKV(enc *hpack.Encoder, k, v string) {
 		log.Printf("http2: server encoding header %q = %q", k, v)
 	}
 	enc.WriteField(hpack.HeaderField{Name: k, Value: v})
+}
+
+func (w *writeResHeaders) staysWithinBuffer(max int) bool {
+	// TODO: this is a common one. It'd be nice to return true
+	// here and get into the fast path if we could be clever and
+	// calculate the size fast enough, or at least a conservative
+	// uppper bound that usually fires. (Maybe if w.h and
+	// w.trailers are nil, so we don't need to enumerate it.)
+	// Otherwise I'm afraid that just calculating the length to
+	// answer this question would be slower than the ~2µs benefit.
+	return false
 }
 
 func (w *writeResHeaders) writeFrame(ctx writeContext) error {
@@ -220,10 +258,17 @@ func (w write100ContinueHeadersFrame) writeFrame(ctx writeContext) error {
 	})
 }
 
+func (w write100ContinueHeadersFrame) staysWithinBuffer(max int) bool {
+	// Sloppy but conservative:
+	return 9+2*(len(":status")+len("100")) <= max
+}
+
 type writeWindowUpdate struct {
 	streamID uint32 // or 0 for conn-level
 	n        uint32
 }
+
+func (wu writeWindowUpdate) staysWithinBuffer(max int) bool { return frameHeaderLen+4 <= max }
 
 func (wu writeWindowUpdate) writeFrame(ctx writeContext) error {
 	return ctx.Framer().WriteWindowUpdate(wu.streamID, wu.n)

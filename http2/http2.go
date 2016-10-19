@@ -254,12 +254,25 @@ func newBufferedWriter(w io.Writer) *bufferedWriter {
 	return &bufferedWriter{w: w}
 }
 
+// bufWriterPoolBufferSize is the size of bufio.Writer's
+// buffers created using bufWriterPool.
+//
+// TODO: pick a less arbitrary value? this is a bit under
+// (3 x typical 1500 byte MTU) at least. Other than that,
+// not much thought went into it.
+const bufWriterPoolBufferSize = 4 << 10
+
 var bufWriterPool = sync.Pool{
 	New: func() interface{} {
-		// TODO: pick something better? this is a bit under
-		// (3 x typical 1500 byte MTU) at least.
-		return bufio.NewWriterSize(nil, 4<<10)
+		return bufio.NewWriterSize(nil, bufWriterPoolBufferSize)
 	},
+}
+
+func (w *bufferedWriter) Available() int {
+	if w.bw == nil {
+		return bufWriterPoolBufferSize
+	}
+	return w.bw.Available()
 }
 
 func (w *bufferedWriter) Write(p []byte) (n int, err error) {
