@@ -76,19 +76,6 @@ func newControlMessage(opt *rawOpt) (oob []byte) {
 	}
 	if l > 0 {
 		oob = make([]byte, l)
-		b := oob
-		if opt.isset(FlagTrafficClass) && ctlOpts[ctlTrafficClass].name > 0 {
-			b = ctlOpts[ctlTrafficClass].marshal(b, nil)
-		}
-		if opt.isset(FlagHopLimit) && ctlOpts[ctlHopLimit].name > 0 {
-			b = ctlOpts[ctlHopLimit].marshal(b, nil)
-		}
-		if opt.isset(flagPacketInfo) && ctlOpts[ctlPacketInfo].name > 0 {
-			b = ctlOpts[ctlPacketInfo].marshal(b, nil)
-		}
-		if opt.isset(FlagPathMTU) && ctlOpts[ctlPathMTU].name > 0 {
-			b = ctlOpts[ctlPathMTU].marshal(b, nil)
-		}
 	}
 	opt.RUnlock()
 	return
