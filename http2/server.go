@@ -1858,16 +1858,19 @@ func (sc *serverConn) sendWindowUpdate32(st *stream, n int32) {
 	}
 }
 
+// requestBody is the Handler's Request.Body type.
+// Read and Close may be called concurrently.
 type requestBody struct {
 	stream        *stream
 	conn          *serverConn
-	closed        bool
+	closed        bool  // for use by Close only
+	sawEOF        bool  // for use by Read only
 	pipe          *pipe // non-nil if we have a HTTP entity message body
 	needsContinue bool  // need to send a 100-continue
 }
 
 func (b *requestBody) Close() error {
-	if b.pipe != nil {
+	if b.pipe != nil && !b.closed {
 		b.pipe.BreakWithError(errClosedBody)
 	}
 	b.closed = true
@@ -1879,12 +1882,15 @@ func (b *requestBody) Read(p []byte) (n int, err error) {
 		b.needsContinue = false
 		b.conn.write100ContinueHeaders(b.stream)
 	}
-	if b.pipe == nil {
+	if b.pipe == nil || b.sawEOF {
 		return 0, io.EOF
 	}
 	n, err = b.pipe.Read(p)
 	if err == io.EOF {
-		b.pipe = nil
+		b.sawEOF = true
+	}
+	if b.conn == nil && inTests {
+		return
 	}
 	b.conn.noteBodyReadFromHandler(b.stream, n, err)
 	return

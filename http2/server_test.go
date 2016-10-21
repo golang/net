@@ -3372,3 +3372,27 @@ func TestUnreadFlowControlReturned_Server(t *testing.T) {
 	}
 
 }
+
+// grpc-go closes the Request.Body currently with a Read.
+// Verify that it doesn't race.
+// See https://github.com/grpc/grpc-go/pull/938
+func TestRequestBodyReadCloseRace(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		body := &requestBody{
+			pipe: &pipe{
+				b: new(bytes.Buffer),
+			},
+		}
+		body.pipe.CloseWithError(io.EOF)
+
+		done := make(chan bool, 1)
+		buf := make([]byte, 10)
+		go func() {
+			time.Sleep(1 * time.Millisecond)
+			body.Close()
+			done <- true
+		}()
+		body.Read(buf)
+		<-done
+	}
+}

@@ -36,6 +36,7 @@ var (
 	VerboseLogs    bool
 	logFrameWrites bool
 	logFrameReads  bool
+	inTests        bool
 )
 
 func init() {
