@@ -1122,7 +1122,14 @@ func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 	sc.serveG.check()
 	switch {
 	case f.StreamID != 0: // stream-level flow control
-		st := sc.streams[f.StreamID]
+		state, st := sc.state(f.StreamID)
+		if state == stateIdle {
+			// Section 5.1: "Receiving any frame other than HEADERS
+			// or PRIORITY on a stream in this state MUST be
+			// treated as a connection error (Section 5.4.1) of
+			// type PROTOCOL_ERROR."
+			return ConnectionError(ErrCodeProtocol)
+		}
 		if st == nil {
 			// "WINDOW_UPDATE can be sent by a peer that has sent a
 			// frame bearing the END_STREAM flag. This means that a
@@ -1274,8 +1281,15 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	// or "half closed (local)" state, the recipient MUST respond
 	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
 	id := f.Header().StreamID
-	st, ok := sc.streams[id]
-	if !ok || st.state != stateOpen || st.gotTrailerHeader {
+	state, st := sc.state(id)
+	if id == 0 || state == stateIdle {
+		// Section 5.1: "Receiving any frame other than HEADERS
+		// or PRIORITY on a stream in this state MUST be
+		// treated as a connection error (Section 5.4.1) of
+		// type PROTOCOL_ERROR."
+		return ConnectionError(ErrCodeProtocol)
+	}
+	if st == nil || state != stateOpen || st.gotTrailerHeader {
 		// This includes sending a RST_STREAM if the stream is
 		// in stateHalfClosedLocal (which currently means that
 		// the http.Handler returned, so it's done reading &

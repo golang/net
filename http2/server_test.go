@@ -937,13 +937,46 @@ func TestServer_Request_Reject_Pseudo_Unknown(t *testing.T) {
 
 func testRejectRequest(t *testing.T, send func(*serverTester)) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server request made it to handler; should've been rejected")
+		t.Error("server request made it to handler; should've been rejected")
 	})
 	defer st.Close()
 
 	st.greet()
 	send(st)
 	st.wantRSTStream(1, ErrCodeProtocol)
+}
+
+func testRejectRequestWithProtocolError(t *testing.T, send func(*serverTester)) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server request made it to handler; should've been rejected")
+	}, optQuiet)
+	defer st.Close()
+
+	st.greet()
+	send(st)
+	gf := st.wantGoAway()
+	if gf.ErrCode != ErrCodeProtocol {
+		t.Errorf("err code = %v; want %v", gf.ErrCode, ErrCodeProtocol)
+	}
+}
+
+// Section 5.1, on idle connections: "Receiving any frame other than
+// HEADERS or PRIORITY on a stream in this state MUST be treated as a
+// connection error (Section 5.4.1) of type PROTOCOL_ERROR."
+func TestRejectFrameOnIdle_WindowUpdate(t *testing.T) {
+	testRejectRequestWithProtocolError(t, func(st *serverTester) {
+		st.fr.WriteWindowUpdate(123, 456)
+	})
+}
+func TestRejectFrameOnIdle_Data(t *testing.T) {
+	testRejectRequestWithProtocolError(t, func(st *serverTester) {
+		st.fr.WriteData(123, true, nil)
+	})
+}
+func TestRejectFrameOnIdle_RSTStream(t *testing.T) {
+	testRejectRequestWithProtocolError(t, func(st *serverTester) {
+		st.fr.WriteRSTStream(123, ErrCodeCancel)
+	})
 }
 
 func TestServer_Request_Connect(t *testing.T) {
