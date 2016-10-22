@@ -5,6 +5,7 @@
 package webdav
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -333,6 +334,12 @@ loop:
 	return []Propstat{pstat}, nil
 }
 
+func escapeXML(s string) string {
+	var buf bytes.Buffer
+	xml.EscapeText(&buf, []byte(s))
+	return buf.String()
+}
+
 func findResourceType(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
 	if fi.IsDir() {
 		return `<D:collection xmlns:D="DAV:"/>`, nil
@@ -345,7 +352,7 @@ func findDisplayName(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) 
 		// Hide the real name of a possibly prefixed root directory.
 		return "", nil
 	}
-	return fi.Name(), nil
+	return escapeXML(fi.Name()), nil
 }
 
 func findContentLength(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
