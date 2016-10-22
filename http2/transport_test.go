@@ -1947,8 +1947,17 @@ func TestTransportNewTLSConfig(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
+		// Ignore the session ticket keys part, which ends up populating
+		// unexported fields in the Config:
+		if tt.conf != nil {
+			tt.conf.SessionTicketsDisabled = true
+		}
+
 		tr := &Transport{TLSClientConfig: tt.conf}
 		got := tr.newTLSConfig(tt.host)
+
+		got.SessionTicketsDisabled = false
+
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%d. got %#v; want %#v", i, got, tt.want)
 		}

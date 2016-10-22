@@ -86,12 +86,15 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	}
 
 	var onlyServer, quiet bool
+	h2server := new(Server)
 	for _, opt := range opts {
 		switch v := opt.(type) {
 		case func(*tls.Config):
 			v(tlsConfig)
 		case func(*httptest.Server):
 			v(ts)
+		case func(*Server):
+			v(h2server)
 		case serverTesterOpt:
 			switch v {
 			case optOnlyServer:
@@ -106,7 +109,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		}
 	}
 
-	ConfigureServer(ts.Config, &Server{})
+	ConfigureServer(ts.Config, h2server)
 
 	st := &serverTester{
 		t:      t,
@@ -3404,6 +3407,52 @@ func TestUnreadFlowControlReturned_Server(t *testing.T) {
 		res.Body.Close()
 	}
 
+}
+
+func TestServerIdleTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+	}, func(h2s *Server) {
+		h2s.IdleTimeout = 500 * time.Millisecond
+	})
+	defer st.Close()
+
+	st.greet()
+	ga := st.wantGoAway()
+	if ga.ErrCode != ErrCodeNo {
+		t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
+	}
+}
+
+func TestServerIdleTimeout_AfterRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	const timeout = 250 * time.Millisecond
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(timeout * 2)
+	}, func(h2s *Server) {
+		h2s.IdleTimeout = timeout
+	})
+	defer st.Close()
+
+	st.greet()
+
+	// Send a request which takes twice the timeout. Verifies the
+	// idle timeout doesn't fire while we're in a request:
+	st.bodylessReq1()
+	st.wantHeaders()
+
+	// But the idle timeout should be rearmed after the request
+	// is done:
+	ga := st.wantGoAway()
+	if ga.ErrCode != ErrCodeNo {
+		t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
+	}
 }
 
 // grpc-go closes the Request.Body currently with a Read.
