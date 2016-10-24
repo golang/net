@@ -256,6 +256,12 @@ func (st *serverTester) writeHeaders(p HeadersFrameParam) {
 	}
 }
 
+func (st *serverTester) writePriority(id uint32, p PriorityParam) {
+	if err := st.fr.WritePriority(id, p); err != nil {
+		st.t.Fatalf("Error writing PRIORITY: %v", err)
+	}
+}
+
 func (st *serverTester) encodeHeaderField(k, v string) {
 	err := st.hpackEnc.WriteField(hpack.HeaderField{Name: k, Value: v})
 	if err != nil {
@@ -1478,6 +1484,36 @@ func TestServer_Rejects_Continuation0(t *testing.T) {
 		if err := st.fr.WriteContinuation(0, true, st.encodeHeader()); err != nil {
 			t.Fatal(err)
 		}
+	})
+}
+
+// No PRIORITY on stream 0.
+func TestServer_Rejects_Priority0(t *testing.T) {
+	testServerRejectsConn(t, func(st *serverTester) {
+		st.fr.AllowIllegalWrites = true
+		st.writePriority(0, PriorityParam{StreamDep: 1})
+	})
+}
+
+// No HEADERS frame with a self-dependence.
+func TestServer_Rejects_HeadersSelfDependence(t *testing.T) {
+	testServerRejectsStream(t, ErrCodeProtocol, func(st *serverTester) {
+		st.fr.AllowIllegalWrites = true
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1,
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+			Priority:      PriorityParam{StreamDep: 1},
+		})
+	})
+}
+
+// No PRIORTY frame with a self-dependence.
+func TestServer_Rejects_PrioritySelfDependence(t *testing.T) {
+	testServerRejectsStream(t, ErrCodeProtocol, func(st *serverTester) {
+		st.fr.AllowIllegalWrites = true
+		st.writePriority(1, PriorityParam{StreamDep: 1})
 	})
 }
 

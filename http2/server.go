@@ -1473,9 +1473,6 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 
 	sc.streams[id] = st
 	sc.writeSched.OpenStream(st.id, OpenStreamOptions{})
-	if f.HasPriority() {
-		sc.writeSched.AdjustStream(st.id, f.Priority)
-	}
 	sc.curOpenStreams++
 	if sc.curOpenStreams == 1 {
 		sc.setConnState(http.StateActive)
@@ -1497,6 +1494,12 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 		// a way for users to adjust server parameters at
 		// runtime.
 		return streamError(st.id, ErrCodeRefusedStream)
+	}
+	if f.HasPriority() {
+		if err := checkPriority(f.StreamID, f.Priority); err != nil {
+			return err
+		}
+		sc.writeSched.AdjustStream(st.id, f.Priority)
 	}
 
 	rw, req, err := sc.newWriterAndRequest(st, f)
@@ -1565,9 +1568,23 @@ func (st *stream) processTrailerHeaders(f *MetaHeadersFrame) error {
 	return nil
 }
 
+func checkPriority(streamID uint32, p PriorityParam) error {
+	if streamID == p.StreamDep {
+		// Section 5.3.1: "A stream cannot depend on itself. An endpoint MUST treat
+		// this as a stream error (Section 5.4.2) of type PROTOCOL_ERROR."
+		// Section 5.3.3 says that a stream can depend on one of its dependencies,
+		// so it's only self-dependencies that are forbidden.
+		return streamError(streamID, ErrCodeProtocol)
+	}
+	return nil
+}
+
 func (sc *serverConn) processPriority(f *PriorityFrame) error {
 	if sc.inGoAway {
 		return nil
+	}
+	if err := checkPriority(f.StreamID, f.PriorityParam); err != nil {
+		return err
 	}
 	sc.writeSched.AdjustStream(f.StreamID, f.PriorityParam)
 	return nil
