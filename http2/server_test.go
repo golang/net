@@ -287,37 +287,42 @@ func (st *serverTester) encodeHeaderRaw(headers ...string) []byte {
 // encodeHeader encodes headers and returns their HPACK bytes. headers
 // must contain an even number of key/value pairs.  There may be
 // multiple pairs for keys (e.g. "cookie").  The :method, :path, and
-// :scheme headers default to GET, / and https.
+// :scheme headers default to GET, / and https. The :authority header
+// defaults to st.ts.Listener.Addr().
 func (st *serverTester) encodeHeader(headers ...string) []byte {
 	if len(headers)%2 == 1 {
 		panic("odd number of kv args")
 	}
 
 	st.headerBuf.Reset()
+	defaultAuthority := st.ts.Listener.Addr().String()
 
 	if len(headers) == 0 {
 		// Fast path, mostly for benchmarks, so test code doesn't pollute
 		// profiles when we're looking to improve server allocations.
 		st.encodeHeaderField(":method", "GET")
-		st.encodeHeaderField(":path", "/")
 		st.encodeHeaderField(":scheme", "https")
+		st.encodeHeaderField(":authority", defaultAuthority)
+		st.encodeHeaderField(":path", "/")
 		return st.headerBuf.Bytes()
 	}
 
 	if len(headers) == 2 && headers[0] == ":method" {
 		// Another fast path for benchmarks.
 		st.encodeHeaderField(":method", headers[1])
-		st.encodeHeaderField(":path", "/")
 		st.encodeHeaderField(":scheme", "https")
+		st.encodeHeaderField(":authority", defaultAuthority)
+		st.encodeHeaderField(":path", "/")
 		return st.headerBuf.Bytes()
 	}
 
 	pseudoCount := map[string]int{}
-	keys := []string{":method", ":path", ":scheme"}
+	keys := []string{":method", ":scheme", ":authority", ":path"}
 	vals := map[string][]string{
-		":method": {"GET"},
-		":path":   {"/"},
-		":scheme": {"https"},
+		":method":    {"GET"},
+		":scheme":    {"https"},
+		":authority": {defaultAuthority},
+		":path":      {"/"},
 	}
 	for len(headers) > 0 {
 		k, v := headers[0], headers[1]
@@ -512,7 +517,18 @@ func (st *serverTester) wantSettingsAck() {
 	if !sf.Header().Flags.Has(FlagSettingsAck) {
 		st.t.Fatal("Settings Frame didn't have ACK set")
 	}
+}
 
+func (st *serverTester) wantPushPromise() *PushPromiseFrame {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatal(err)
+	}
+	ppf, ok := f.(*PushPromiseFrame)
+	if !ok {
+		st.t.Fatalf("Wanted PushPromise, received %T", ppf)
+	}
+	return ppf
 }
 
 func TestServer(t *testing.T) {
@@ -767,7 +783,7 @@ func TestServer_Request_Get_Host(t *testing.T) {
 	testServerRequest(t, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: st.encodeHeader("host", host),
+			BlockFragment: st.encodeHeader(":authority", "", "host", host),
 			EndStream:     true,
 			EndHeaders:    true,
 		})
@@ -3314,40 +3330,40 @@ func (he *hpackEncoder) encodeHeaderRaw(t *testing.T, headers ...string) []byte 
 
 func TestCheckValidHTTP2Request(t *testing.T) {
 	tests := []struct {
-		req  *http.Request
+		h    http.Header
 		want error
 	}{
 		{
-			req:  &http.Request{Header: http.Header{"Te": {"trailers"}}},
+			h:    http.Header{"Te": {"trailers"}},
 			want: nil,
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Te": {"trailers", "bogus"}}},
+			h:    http.Header{"Te": {"trailers", "bogus"}},
 			want: errors.New(`request header "TE" may only be "trailers" in HTTP/2`),
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Foo": {""}}},
+			h:    http.Header{"Foo": {""}},
 			want: nil,
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Connection": {""}}},
+			h:    http.Header{"Connection": {""}},
 			want: errors.New(`request header "Connection" is not valid in HTTP/2`),
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Proxy-Connection": {""}}},
+			h:    http.Header{"Proxy-Connection": {""}},
 			want: errors.New(`request header "Proxy-Connection" is not valid in HTTP/2`),
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Keep-Alive": {""}}},
+			h:    http.Header{"Keep-Alive": {""}},
 			want: errors.New(`request header "Keep-Alive" is not valid in HTTP/2`),
 		},
 		{
-			req:  &http.Request{Header: http.Header{"Upgrade": {""}}},
+			h:    http.Header{"Upgrade": {""}},
 			want: errors.New(`request header "Upgrade" is not valid in HTTP/2`),
 		},
 	}
 	for i, tt := range tests {
-		got := checkValidHTTP2Request(tt.req)
+		got := checkValidHTTP2RequestHeaders(tt.h)
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%d. checkValidHTTP2Request = %v; want %v", i, got, tt.want)
 		}
