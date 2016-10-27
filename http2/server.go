@@ -129,14 +129,26 @@ func (s *Server) maxConcurrentStreams() uint32 {
 	return defaultMaxStreams
 }
 
+// List of funcs for ConfigureServer to run. Both h1 and h2 are guaranteed
+// to be non-nil.
+var configServerFuncs []func(h1 *http.Server, h2 *Server) error
+
 // ConfigureServer adds HTTP/2 support to a net/http Server.
 //
 // The configuration conf may be nil.
 //
 // ConfigureServer must be called before s begins serving.
 func ConfigureServer(s *http.Server, conf *Server) error {
+	if s == nil {
+		panic("nil *http.Server")
+	}
 	if conf == nil {
 		conf = new(Server)
+	}
+	for _, fn := range configServerFuncs {
+		if err := fn(s, conf); err != nil {
+			return err
+		}
 	}
 
 	if s.TLSConfig == nil {
@@ -1544,12 +1556,10 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	// The net/http package sets the read deadline from the
 	// http.Server.ReadTimeout during the TLS handshake, but then
 	// passes the connection off to us with the deadline already
-	// set. Disarm it here after the request headers are read, similar
-	// to how the http1 server works.
-	// Unlike http1, though, we never re-arm it yet, though.
-	// TODO(bradfitz): figure out golang.org/issue/14204
-	// (IdleTimeout) and how this relates. Maybe the default
-	// IdleTimeout is ReadTimeout.
+	// set. Disarm it here after the request headers are read,
+	// similar to how the http1 server works. Here it's
+	// technically more like the http1 Server's ReadHeaderTimeout
+	// (in Go 1.8), though. That's a more sane option anyway.
 	if sc.hs.ReadTimeout != 0 {
 		sc.conn.SetReadDeadline(time.Time{})
 	}
