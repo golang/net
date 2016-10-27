@@ -392,9 +392,11 @@ type serverConn struct {
 	headerTableSize       uint32
 	peerMaxHeaderListSize uint32            // zero means unknown (default)
 	canonHeader           map[string]string // http2-lower-case -> Go-Canonical-Case
-	writingFrame          bool              // started write goroutine but haven't heard back on wroteFrameCh
+	writingFrame          bool              // started writing a frame (on serve goroutine or separate)
+	writingFrameAsync     bool              // started a frame on its own goroutine but haven't heard back on wroteFrameCh
 	needsFrameFlush       bool              // last frame write wasn't a flush
 	inGoAway              bool              // we've started to or sent GOAWAY
+	inFrameScheduleLoop   bool              // whether we're in the scheduleFrameWrite loop
 	needToSendGoAway      bool              // we need to schedule a GOAWAY frame write
 	goAwayCode            ErrCode
 	shutdownTimerCh       <-chan time.Time // nil until used
@@ -893,6 +895,7 @@ func (sc *serverConn) startFrameWrite(wr FrameWriteRequest) {
 		var err error
 		wpp.promisedID, err = wpp.allocatePromisedID()
 		if err != nil {
+			sc.writingFrameAsync = false
 			if wr.done != nil {
 				wr.done <- err
 			}
@@ -903,9 +906,11 @@ func (sc *serverConn) startFrameWrite(wr FrameWriteRequest) {
 	sc.writingFrame = true
 	sc.needsFrameFlush = true
 	if wr.write.staysWithinBuffer(sc.bw.Available()) {
+		sc.writingFrameAsync = false
 		err := wr.write.writeFrame(sc)
 		sc.wroteFrame(frameWriteResult{wr, err})
 	} else {
+		sc.writingFrameAsync = true
 		go sc.writeFrameAsync(wr)
 	}
 }
@@ -923,6 +928,7 @@ func (sc *serverConn) wroteFrame(res frameWriteResult) {
 		panic("internal error: expected to be already writing a frame")
 	}
 	sc.writingFrame = false
+	sc.writingFrameAsync = false
 
 	wr := res.wr
 	st := wr.stream
@@ -982,35 +988,40 @@ func (sc *serverConn) wroteFrame(res frameWriteResult) {
 // flush the write buffer.
 func (sc *serverConn) scheduleFrameWrite() {
 	sc.serveG.check()
-	if sc.writingFrame {
+	if sc.writingFrame || sc.inFrameScheduleLoop {
 		return
 	}
-	if sc.needToSendGoAway {
-		sc.needToSendGoAway = false
-		sc.startFrameWrite(FrameWriteRequest{
-			write: &writeGoAway{
-				maxStreamID: sc.maxStreamID,
-				code:        sc.goAwayCode,
-			},
-		})
-		return
-	}
-	if sc.needToSendSettingsAck {
-		sc.needToSendSettingsAck = false
-		sc.startFrameWrite(FrameWriteRequest{write: writeSettingsAck{}})
-		return
-	}
-	if !sc.inGoAway {
-		if wr, ok := sc.writeSched.Pop(); ok {
-			sc.startFrameWrite(wr)
-			return
+	sc.inFrameScheduleLoop = true
+	for !sc.writingFrameAsync {
+		if sc.needToSendGoAway {
+			sc.needToSendGoAway = false
+			sc.startFrameWrite(FrameWriteRequest{
+				write: &writeGoAway{
+					maxStreamID: sc.maxStreamID,
+					code:        sc.goAwayCode,
+				},
+			})
+			continue
 		}
+		if sc.needToSendSettingsAck {
+			sc.needToSendSettingsAck = false
+			sc.startFrameWrite(FrameWriteRequest{write: writeSettingsAck{}})
+			continue
+		}
+		if !sc.inGoAway {
+			if wr, ok := sc.writeSched.Pop(); ok {
+				sc.startFrameWrite(wr)
+				continue
+			}
+		}
+		if sc.needsFrameFlush {
+			sc.startFrameWrite(FrameWriteRequest{write: flushFrameWriter{}})
+			sc.needsFrameFlush = false // after startFrameWrite, since it sets this true
+			continue
+		}
+		break
 	}
-	if sc.needsFrameFlush {
-		sc.startFrameWrite(FrameWriteRequest{write: flushFrameWriter{}})
-		sc.needsFrameFlush = false // after startFrameWrite, since it sets this true
-		return
-	}
+	sc.inFrameScheduleLoop = false
 }
 
 func (sc *serverConn) goAway(code ErrCode) {
