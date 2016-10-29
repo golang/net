@@ -335,9 +335,23 @@ loop:
 }
 
 func escapeXML(s string) string {
-	var buf bytes.Buffer
-	xml.EscapeText(&buf, []byte(s))
-	return buf.String()
+	for i := 0; i < len(s); i++ {
+		// As an optimization, if s contains only ASCII letters, digits or a
+		// few special characters, the escaped value is s itself and we don't
+		// need to allocate a buffer and convert between string and []byte.
+		switch c := s[i]; {
+		case c == ' ' || c == '_' ||
+			('+' <= c && c <= '9') || // Digits as well as + , - . and /
+			('A' <= c && c <= 'Z') ||
+			('a' <= c && c <= 'z'):
+			continue
+		}
+		// Otherwise, go through the full escaping process.
+		var buf bytes.Buffer
+		xml.EscapeText(&buf, []byte(s))
+		return buf.String()
+	}
+	return s
 }
 
 func findResourceType(fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
