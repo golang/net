@@ -238,7 +238,7 @@ func (app *h2i) Main() error {
 }
 
 func (app *h2i) logf(format string, args ...interface{}) {
-	fmt.Fprintf(app.term, format+"\n", args...)
+	fmt.Fprintf(app.term, format+"\r\n", args...)
 }
 
 func (app *h2i) readConsole() error {
@@ -435,9 +435,9 @@ func (app *h2i) readFrames() error {
 				return nil
 			})
 		case *http2.WindowUpdateFrame:
-			app.logf("  Window-Increment = %v\n", f.Increment)
+			app.logf("  Window-Increment = %v", f.Increment)
 		case *http2.GoAwayFrame:
-			app.logf("  Last-Stream-ID = %d; Error-Code = %v (%d)\n", f.LastStreamID, f.ErrCode, f.ErrCode)
+			app.logf("  Last-Stream-ID = %d; Error-Code = %v (%d)", f.LastStreamID, f.ErrCode, f.ErrCode)
 		case *http2.DataFrame:
 			app.logf("  %q", f.Data())
 		case *http2.HeadersFrame:
