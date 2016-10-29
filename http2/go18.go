@@ -25,10 +25,6 @@ func (w *responseWriter) Push(target string, opts *http.PushOptions) error {
 	return w.push(target, internalOpts)
 }
 
-func init() {
-	configServerFuncs = append(configServerFuncs, configureServer18)
-}
-
 func configureServer18(h1 *http.Server, h2 *Server) error {
 	if h2.IdleTimeout == 0 {
 		if h1.IdleTimeout != 0 {

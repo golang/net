@@ -145,10 +145,8 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 	if conf == nil {
 		conf = new(Server)
 	}
-	for _, fn := range configServerFuncs {
-		if err := fn(s, conf); err != nil {
-			return err
-		}
+	if err := configureServer18(s, conf); err != nil {
+		return err
 	}
 
 	if s.TLSConfig == nil {
