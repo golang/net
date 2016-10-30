@@ -213,6 +213,13 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 	return nil
 }
 
+// h1ServerShutdownChan if non-nil provides a func to return a channel
+// that will be closed when the provided *http.Server wants to shut
+// down. This is initialized via an init func in net/http (via its
+// mangled name from x/tools/cmd/bundle). This is only used when http2
+// is bundled into std for now.
+var h1ServerShutdownChan func(*http.Server) <-chan struct{}
+
 // ServeConnOpts are options for the Server.ServeConn method.
 type ServeConnOpts struct {
 	// BaseConfig optionally sets the base configuration
@@ -710,6 +717,11 @@ func (sc *serverConn) serve() {
 		sc.idleTimerCh = sc.idleTimer.C
 	}
 
+	var gracefulShutdownCh <-chan struct{}
+	if sc.hs != nil && h1ServerShutdownChan != nil {
+		gracefulShutdownCh = h1ServerShutdownChan(sc.hs)
+	}
+
 	go sc.readFrames() // closed by defer sc.conn.Close above
 
 	settingsTimer := time.NewTimer(firstSettingsTimeout)
@@ -737,6 +749,9 @@ func (sc *serverConn) serve() {
 		case <-settingsTimer.C:
 			sc.logf("timeout waiting for SETTINGS frames from %v", sc.conn.RemoteAddr())
 			return
+		case <-gracefulShutdownCh:
+			gracefulShutdownCh = nil
+			sc.goAwayIn(ErrCodeNo, 0)
 		case <-sc.shutdownTimerCh:
 			sc.vlogf("GOAWAY close timer fired; closing conn from %v", sc.conn.RemoteAddr())
 			return
@@ -745,6 +760,10 @@ func (sc *serverConn) serve() {
 			sc.goAway(ErrCodeNo)
 		case fn := <-sc.testHookCh:
 			fn(loopNum)
+		}
+
+		if sc.inGoAway && sc.curClientStreams == 0 && !sc.needToSendGoAway && !sc.writingFrame {
+			return
 		}
 	}
 }
@@ -1018,7 +1037,7 @@ func (sc *serverConn) scheduleFrameWrite() {
 			sc.startFrameWrite(FrameWriteRequest{write: writeSettingsAck{}})
 			continue
 		}
-		if !sc.inGoAway {
+		if !sc.inGoAway || sc.goAwayCode == ErrCodeNo {
 			if wr, ok := sc.writeSched.Pop(); ok {
 				sc.startFrameWrite(wr)
 				continue
@@ -1036,14 +1055,23 @@ func (sc *serverConn) scheduleFrameWrite() {
 
 func (sc *serverConn) goAway(code ErrCode) {
 	sc.serveG.check()
+	var forceCloseIn time.Duration
+	if code != ErrCodeNo {
+		forceCloseIn = 250 * time.Millisecond
+	} else {
+		// TODO: configurable
+		forceCloseIn = 1 * time.Second
+	}
+	sc.goAwayIn(code, forceCloseIn)
+}
+
+func (sc *serverConn) goAwayIn(code ErrCode, forceCloseIn time.Duration) {
+	sc.serveG.check()
 	if sc.inGoAway {
 		return
 	}
-	if code != ErrCodeNo {
-		sc.shutDownIn(250 * time.Millisecond)
-	} else {
-		// TODO: configurable
-		sc.shutDownIn(1 * time.Second)
+	if forceCloseIn != 0 {
+		sc.shutDownIn(forceCloseIn)
 	}
 	sc.inGoAway = true
 	sc.needToSendGoAway = true
