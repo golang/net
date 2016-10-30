@@ -48,7 +48,7 @@ func TestPrefix(t *testing.T) {
 			req.Header.Add(headers[0], headers[1])
 			headers = headers[2:]
 		}
-		res, err := http.DefaultClient.Do(req)
+		res, err := http.DefaultTransport.RoundTrip(req)
 		if err != nil {
 			return nil, err
 		}
