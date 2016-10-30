@@ -168,7 +168,7 @@ func (app *h2i) Main() error {
 
 	app.framer = http2.NewFramer(tc, tc)
 
-	oldState, err := terminal.MakeRaw(0)
+	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		return err
 	}
