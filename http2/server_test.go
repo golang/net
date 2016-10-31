@@ -3533,8 +3533,8 @@ func TestRequestBodyReadCloseRace(t *testing.T) {
 
 func TestServerGracefulShutdown(t *testing.T) {
 	shutdownCh := make(chan struct{})
-	defer func() { h1ServerShutdownChan = nil }()
-	h1ServerShutdownChan = func(*http.Server) <-chan struct{} { return shutdownCh }
+	defer func() { testh1ServerShutdownChan = nil }()
+	testh1ServerShutdownChan = func(*http.Server) <-chan struct{} { return shutdownCh }
 
 	var st *serverTester
 	handlerDone := make(chan struct{})

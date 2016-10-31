@@ -129,10 +129,6 @@ func (s *Server) maxConcurrentStreams() uint32 {
 	return defaultMaxStreams
 }
 
-// List of funcs for ConfigureServer to run. Both h1 and h2 are guaranteed
-// to be non-nil.
-var configServerFuncs []func(h1 *http.Server, h2 *Server) error
-
 // ConfigureServer adds HTTP/2 support to a net/http Server.
 //
 // The configuration conf may be nil.
@@ -212,13 +208,6 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 	s.TLSNextProto["h2-14"] = protoHandler // temporary; see above.
 	return nil
 }
-
-// h1ServerShutdownChan if non-nil provides a func to return a channel
-// that will be closed when the provided *http.Server wants to shut
-// down. This is initialized via an init func in net/http (via its
-// mangled name from x/tools/cmd/bundle). This is only used when http2
-// is bundled into std for now.
-var h1ServerShutdownChan func(*http.Server) <-chan struct{}
 
 // ServeConnOpts are options for the Server.ServeConn method.
 type ServeConnOpts struct {
@@ -718,7 +707,7 @@ func (sc *serverConn) serve() {
 	}
 
 	var gracefulShutdownCh <-chan struct{}
-	if sc.hs != nil && h1ServerShutdownChan != nil {
+	if sc.hs != nil {
 		gracefulShutdownCh = h1ServerShutdownChan(sc.hs)
 	}
 
@@ -2646,3 +2635,28 @@ var badTrailer = map[string]bool{
 	"Transfer-Encoding":   true,
 	"Www-Authenticate":    true,
 }
+
+// h1ServerShutdownChan returns a channel that will be closed when the
+// provided *http.Server wants to shut down.
+//
+// This is a somewhat hacky way to get at http1 innards. It works
+// when the http2 code is bundled into the net/http package in the
+// standard library. The alternatives ended up making the cmd/go tool
+// depend on http Servers. This is the lightest option for now.
+// This is tested via the TestServeShutdown* tests in net/http.
+func h1ServerShutdownChan(hs *http.Server) <-chan struct{} {
+	if fn := testh1ServerShutdownChan; fn != nil {
+		return fn(hs)
+	}
+	var x interface{} = hs
+	type I interface {
+		getDoneChan() <-chan struct{}
+	}
+	if hs, ok := x.(I); ok {
+		return hs.getDoneChan()
+	}
+	return nil
+}
+
+// optional test hook for h1ServerShutdownChan.
+var testh1ServerShutdownChan func(hs *http.Server) <-chan struct{}
