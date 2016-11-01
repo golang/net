@@ -2523,6 +2523,12 @@ func (sc *serverConn) startPush(msg startPushRequest) {
 
 		// http://tools.ietf.org/html/rfc7540#section-5.1.1.
 		// Streams initiated by the server MUST use even-numbered identifiers.
+		// A server that is unable to establish a new stream identifier can send a GOAWAY
+		// frame so that the client is forced to open a new connection for new streams.
+		if sc.maxPushPromiseID+2 >= 1<<31 {
+			sc.goAwayIn(ErrCodeNo, 0)
+			return 0, ErrPushLimitReached
+		}
 		sc.maxPushPromiseID += 2
 		promisedID := sc.maxPushPromiseID
 
