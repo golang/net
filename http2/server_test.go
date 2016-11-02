@@ -80,9 +80,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		// The h2-14 is temporary, until curl is updated. (as used by unit tests
-		// in Docker)
-		NextProtos: []string{NextProtoTLS, "h2-14"},
+		NextProtos:         []string{NextProtoTLS},
 	}
 
 	var onlyServer, quiet bool
