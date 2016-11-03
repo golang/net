@@ -1185,7 +1185,7 @@ func (sc *serverConn) processPing(f *PingFrame) error {
 		// PROTOCOL_ERROR."
 		return ConnectionError(ErrCodeProtocol)
 	}
-	if sc.inGoAway {
+	if sc.inGoAway && sc.goAwayCode != ErrCodeNo {
 		return nil
 	}
 	sc.writeFrame(FrameWriteRequest{write: writePingAck{f}})
@@ -1194,9 +1194,6 @@ func (sc *serverConn) processPing(f *PingFrame) error {
 
 func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 	sc.serveG.check()
-	if sc.inGoAway {
-		return nil
-	}
 	switch {
 	case f.StreamID != 0: // stream-level flow control
 		state, st := sc.state(f.StreamID)
@@ -1229,9 +1226,6 @@ func (sc *serverConn) processWindowUpdate(f *WindowUpdateFrame) error {
 
 func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 	sc.serveG.check()
-	if sc.inGoAway {
-		return nil
-	}
 
 	state, st := sc.state(f.StreamID)
 	if state == stateIdle {
@@ -1289,9 +1283,6 @@ func (sc *serverConn) processSettings(f *SettingsFrame) error {
 			// hang up on them anyway.
 			return ConnectionError(ErrCodeProtocol)
 		}
-		return nil
-	}
-	if sc.inGoAway {
 		return nil
 	}
 	if err := f.ForeachSetting(sc.processSetting); err != nil {
@@ -1365,7 +1356,7 @@ func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
 
 func (sc *serverConn) processData(f *DataFrame) error {
 	sc.serveG.check()
-	if sc.inGoAway {
+	if sc.inGoAway && sc.goAwayCode != ErrCodeNo {
 		return nil
 	}
 	data := f.Data()
