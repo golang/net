@@ -386,8 +386,8 @@ type serverConn struct {
 	advMaxStreams         uint32 // our SETTINGS_MAX_CONCURRENT_STREAMS advertised the client
 	curClientStreams      uint32 // number of open streams initiated by the client
 	curPushedStreams      uint32 // number of open streams initiated by server push
-	maxStreamID           uint32 // max ever seen from client
-	maxPushPromiseID      uint32 // ID of the last push promise, or 0 if there have been no pushes
+	maxClientStreamID     uint32 // max ever seen from client (odd), or 0 if there have been no client requests
+	maxPushPromiseID      uint32 // ID of the last push promise (even), or 0 if there have been no pushes
 	streams               map[uint32]*stream
 	initialWindowSize     int32
 	maxFrameSize          int32
@@ -477,8 +477,14 @@ func (sc *serverConn) state(streamID uint32) (streamState, *stream) {
 	// a client sends a HEADERS frame on stream 7 without ever sending a
 	// frame on stream 5, then stream 5 transitions to the "closed"
 	// state when the first frame for stream 7 is sent or received."
-	if streamID <= sc.maxStreamID {
-		return stateClosed, nil
+	if streamID%2 == 1 {
+		if streamID <= sc.maxClientStreamID {
+			return stateClosed, nil
+		}
+	} else {
+		if streamID <= sc.maxPushPromiseID {
+			return stateClosed, nil
+		}
 	}
 	return stateIdle, nil
 }
@@ -1011,7 +1017,7 @@ func (sc *serverConn) scheduleFrameWrite() {
 			sc.needToSendGoAway = false
 			sc.startFrameWrite(FrameWriteRequest{
 				write: &writeGoAway{
-					maxStreamID: sc.maxStreamID,
+					maxStreamID: sc.maxClientStreamID,
 					code:        sc.goAwayCode,
 				},
 			})
@@ -1495,10 +1501,10 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	// endpoint has opened or reserved. [...]  An endpoint that
 	// receives an unexpected stream identifier MUST respond with
 	// a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
-	if id <= sc.maxStreamID {
+	if id <= sc.maxClientStreamID {
 		return ConnectionError(ErrCodeProtocol)
 	}
-	sc.maxStreamID = id
+	sc.maxClientStreamID = id
 
 	if sc.idleTimer != nil {
 		sc.idleTimer.Stop()
