@@ -312,7 +312,7 @@ type Framer struct {
 	MaxHeaderListSize uint32
 
 	// TODO: track which type of frame & with which flags was sent
-	// last.  Then return an error (unless AllowIllegalWrites) if
+	// last. Then return an error (unless AllowIllegalWrites) if
 	// we're in the middle of a header block and a
 	// non-Continuation or Continuation on a different stream is
 	// attempted to be written.
@@ -663,7 +663,7 @@ type SettingsFrame struct {
 func parseSettingsFrame(fh FrameHeader, p []byte) (Frame, error) {
 	if fh.Flags.Has(FlagSettingsAck) && fh.Length > 0 {
 		// When this (ACK 0x1) bit is set, the payload of the
-		// SETTINGS frame MUST be empty.  Receipt of a
+		// SETTINGS frame MUST be empty. Receipt of a
 		// SETTINGS frame with the ACK flag set and a length
 		// field value other than 0 MUST be treated as a
 		// connection error (Section 5.4.1) of type
@@ -672,7 +672,7 @@ func parseSettingsFrame(fh FrameHeader, p []byte) (Frame, error) {
 	}
 	if fh.StreamID != 0 {
 		// SETTINGS frames always apply to a connection,
-		// never a single stream.  The stream identifier for a
+		// never a single stream. The stream identifier for a
 		// SETTINGS frame MUST be zero (0x0).  If an endpoint
 		// receives a SETTINGS frame whose stream identifier
 		// field is anything other than 0x0, the endpoint MUST
@@ -923,7 +923,7 @@ func parseHeadersFrame(fh FrameHeader, p []byte) (_ Frame, err error) {
 		FrameHeader: fh,
 	}
 	if fh.StreamID == 0 {
-		// HEADERS frames MUST be associated with a stream.  If a HEADERS frame
+		// HEADERS frames MUST be associated with a stream. If a HEADERS frame
 		// is received whose stream identifier field is 0x0, the recipient MUST
 		// respond with a connection error (Section 5.4.1) of type
 		// PROTOCOL_ERROR.
@@ -1045,7 +1045,7 @@ type PriorityParam struct {
 	Exclusive bool
 
 	// Weight is the stream's zero-indexed weight. It should be
-	// set together with StreamDep, or neither should be set.  Per
+	// set together with StreamDep, or neither should be set. Per
 	// the spec, "Add one to the value to obtain a weight between
 	// 1 and 256."
 	Weight uint8
