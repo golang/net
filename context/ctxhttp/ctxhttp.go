@@ -68,6 +68,16 @@ func Post(ctx context.Context, client *http.Client, url string, bodyType string,
 	return Do(ctx, client, req)
 }
 
+// Put issues a POST request via the Do function.
+func Put(ctx context.Context, client *http.Client, url string, bodyType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", bodyType)
+	return Do(ctx, client, req)
+}
+
 // PostForm issues a POST request via the Do function.
 func PostForm(ctx context.Context, client *http.Client, url string, data url.Values) (*http.Response, error) {
 	return Post(ctx, client, url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
