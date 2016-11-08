@@ -1166,6 +1166,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 		return sc.processResetStream(f)
 	case *PriorityFrame:
 		return sc.processPriority(f)
+	case *GoAwayFrame:
+		return sc.processGoAway(f)
 	case *PushPromiseFrame:
 		// A client cannot push. Thus, servers MUST treat the receipt of a PUSH_PROMISE
 		// frame as a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
@@ -1438,6 +1440,20 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	if f.StreamEnded() {
 		st.endStream()
 	}
+	return nil
+}
+
+func (sc *serverConn) processGoAway(f *GoAwayFrame) error {
+	sc.serveG.check()
+	if f.ErrCode != ErrCodeNo {
+		sc.logf("http2: received GOAWAY %+v, starting graceful shutdown", f)
+	} else {
+		sc.vlogf("http2: received GOAWAY %+v, starting graceful shutdown", f)
+	}
+	sc.goAwayIn(ErrCodeNo, 0)
+	// http://tools.ietf.org/html/rfc7540#section-6.8
+	// We should not create any new streams, which means we should disable push.
+	sc.pushEnabled = false
 	return nil
 }
 

@@ -427,3 +427,39 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 	}
 	close(finishedPush)
 }
+
+func TestServer_Push_RejectAfterGoAway(t *testing.T) {
+	ready := make(chan struct{})
+	errc := make(chan error, 2)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-ready:
+		case <-time.After(5 * time.Second):
+			errc <- fmt.Errorf("timeout waiting for GOAWAY to be processed")
+		}
+		if got, want := w.(http.Pusher).Push("https://"+r.Host+"/pushed", nil), http.ErrNotSupported; got != want {
+			errc <- fmt.Errorf("Push()=%v, want %v", got, want)
+		}
+		errc <- nil
+	})
+	defer st.Close()
+	st.greet()
+	getSlash(st)
+
+	// Send GOAWAY and wait for it to be processed.
+	st.fr.WriteGoAway(1, ErrCodeNo, nil)
+	go func() {
+		done := false
+		for !done {
+			st.sc.testHookCh <- func(loopNum int) {
+				if !st.sc.pushEnabled {
+					close(ready)
+					done = true
+				}
+			}
+		}
+	}()
+	if err := <-errc; err != nil {
+		t.Error(err)
+	}
+}
