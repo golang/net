@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -429,6 +430,7 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 }
 
 func TestServer_Push_RejectAfterGoAway(t *testing.T) {
+	var readyOnce sync.Once
 	ready := make(chan struct{})
 	errc := make(chan error, 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -449,12 +451,15 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	// Send GOAWAY and wait for it to be processed.
 	st.fr.WriteGoAway(1, ErrCodeNo, nil)
 	go func() {
-		done := false
-		for !done {
+		for {
+			select {
+			case <-ready:
+				return
+			default:
+			}
 			st.sc.testHookCh <- func(loopNum int) {
 				if !st.sc.pushEnabled {
-					close(ready)
-					done = true
+					readyOnce.Do(func() { close(ready) })
 				}
 			}
 		}
