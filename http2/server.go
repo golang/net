@@ -2276,8 +2276,9 @@ func (w *responseWriter) CloseNotify() <-chan bool {
 	if ch == nil {
 		ch = make(chan bool, 1)
 		rws.closeNotifierCh = ch
+		cw := rws.stream.cw
 		go func() {
-			rws.stream.cw.Wait() // wait for close
+			cw.Wait() // wait for close
 			ch <- true
 		}()
 	}
