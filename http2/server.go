@@ -1856,15 +1856,17 @@ func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler 
 		rw.rws.stream.cancelCtx()
 		if didPanic {
 			e := recover()
-			// Same as net/http:
-			const size = 64 << 10
-			buf := make([]byte, size)
-			buf = buf[:runtime.Stack(buf, false)]
 			sc.writeFrameFromHandler(FrameWriteRequest{
 				write:  handlerPanicRST{rw.rws.stream.id},
 				stream: rw.rws.stream,
 			})
-			sc.logf("http2: panic serving %v: %v\n%s", sc.conn.RemoteAddr(), e, buf)
+			// Same as net/http:
+			if shouldLogPanic(e) {
+				const size = 64 << 10
+				buf := make([]byte, size)
+				buf = buf[:runtime.Stack(buf, false)]
+				sc.logf("http2: panic serving %v: %v\n%s", sc.conn.RemoteAddr(), e, buf)
+			}
 			return
 		}
 		rw.handlerDone()
