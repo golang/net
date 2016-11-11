@@ -742,7 +742,7 @@ func (sc *serverConn) serve() {
 			return
 		case <-gracefulShutdownCh:
 			gracefulShutdownCh = nil
-			sc.goAwayIn(ErrCodeNo, 0)
+			sc.startGracefulShutdown()
 		case <-sc.shutdownTimerCh:
 			sc.vlogf("GOAWAY close timer fired; closing conn from %v", sc.conn.RemoteAddr())
 			return
@@ -1044,6 +1044,13 @@ func (sc *serverConn) scheduleFrameWrite() {
 	sc.inFrameScheduleLoop = false
 }
 
+// startGracefulShutdown sends a GOAWAY with ErrCodeNo to tell the
+// client we're gracefully shutting down. The connection isn't closed
+// until all current streams are done.
+func (sc *serverConn) startGracefulShutdown() {
+	sc.goAwayIn(ErrCodeNo, 0)
+}
+
 func (sc *serverConn) goAway(code ErrCode) {
 	sc.serveG.check()
 	var forceCloseIn time.Duration
@@ -1263,12 +1270,15 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 	} else {
 		sc.curClientStreams--
 	}
-	if sc.curClientStreams+sc.curPushedStreams == 0 {
-		sc.setConnState(http.StateIdle)
-	}
 	delete(sc.streams, st.id)
-	if len(sc.streams) == 0 && sc.srv.IdleTimeout != 0 {
-		sc.idleTimer.Reset(sc.srv.IdleTimeout)
+	if len(sc.streams) == 0 {
+		sc.setConnState(http.StateIdle)
+		if sc.srv.IdleTimeout != 0 {
+			sc.idleTimer.Reset(sc.srv.IdleTimeout)
+		}
+		if h1ServerKeepAlivesDisabled(sc.hs) {
+			sc.startGracefulShutdown()
+		}
 	}
 	if p := st.body; p != nil {
 		// Return any buffered unread bytes worth of conn-level flow control.
@@ -1450,7 +1460,7 @@ func (sc *serverConn) processGoAway(f *GoAwayFrame) error {
 	} else {
 		sc.vlogf("http2: received GOAWAY %+v, starting graceful shutdown", f)
 	}
-	sc.goAwayIn(ErrCodeNo, 0)
+	sc.startGracefulShutdown()
 	// http://tools.ietf.org/html/rfc7540#section-6.8
 	// We should not create any new streams, which means we should disable push.
 	sc.pushEnabled = false
@@ -2529,7 +2539,7 @@ func (sc *serverConn) startPush(msg startPushRequest) {
 		// A server that is unable to establish a new stream identifier can send a GOAWAY
 		// frame so that the client is forced to open a new connection for new streams.
 		if sc.maxPushPromiseID+2 >= 1<<31 {
-			sc.goAwayIn(ErrCodeNo, 0)
+			sc.startGracefulShutdown()
 			return 0, ErrPushLimitReached
 		}
 		sc.maxPushPromiseID += 2
@@ -2678,3 +2688,17 @@ func h1ServerShutdownChan(hs *http.Server) <-chan struct{} {
 
 // optional test hook for h1ServerShutdownChan.
 var testh1ServerShutdownChan func(hs *http.Server) <-chan struct{}
+
+// h1ServerKeepAlivesDisabled reports whether hs has its keep-alives
+// disabled. See comments on h1ServerShutdownChan above for why
+// the code is written this way.
+func h1ServerKeepAlivesDisabled(hs *http.Server) bool {
+	var x interface{} = hs
+	type I interface {
+		doKeepAlives() bool
+	}
+	if hs, ok := x.(I); ok {
+		return !hs.doKeepAlives()
+	}
+	return false
+}
