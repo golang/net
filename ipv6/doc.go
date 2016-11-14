@@ -16,6 +16,9 @@
 // MLDv1 and MLDv2 are defined in RFC 2710 and RFC 3810.
 // Source-specific multicast is defined in RFC 4607.
 //
+// On Darwin, this package requires OS X Mavericks version 10.9 or
+// above, or equivalent.
+//
 //
 // Unicasting
 //
