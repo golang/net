@@ -9,10 +9,8 @@
 // manipulation of IPv6 facilities.
 //
 // The IPv6 protocol is defined in RFC 2460.
-// Basic and advanced socket interface extensions are defined in RFC
-// 3493 and RFC 3542.
-// Socket interface extensions for multicast source filters are
-// defined in RFC 3678.
+// Socket interface extensions are defined in RFC 3493, RFC 3542 and
+// RFC 3678.
 // MLDv1 and MLDv2 are defined in RFC 2710 and RFC 3810.
 // Source-specific multicast is defined in RFC 4607.
 //
