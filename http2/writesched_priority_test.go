@@ -524,3 +524,18 @@ func TestPriorityWeights(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestPriorityRstStreamOnNonOpenStreams(t *testing.T) {
+	ws := NewPriorityWriteScheduler(&PriorityWriteSchedulerConfig{
+		MaxClosedNodesInTree: 0,
+		MaxIdleNodesInTree:   0,
+	})
+	ws.OpenStream(1, OpenStreamOptions{})
+	ws.CloseStream(1)
+	ws.Push(FrameWriteRequest{write: streamError(1, ErrCodeProtocol)})
+	ws.Push(FrameWriteRequest{write: streamError(2, ErrCodeProtocol)})
+
+	if err := checkPopAll(ws, []uint32{1, 2}); err != nil {
+		t.Error(err)
+	}
+}

@@ -25,7 +25,9 @@ type WriteScheduler interface {
 	// https://tools.ietf.org/html/rfc7540#section-5.1
 	AdjustStream(streamID uint32, priority PriorityParam)
 
-	// Push queues a frame in the scheduler.
+	// Push queues a frame in the scheduler. In most cases, this will not be
+	// called with wr.StreamID()!=0 unless that stream is currently open. The one
+	// exception is RST_STREAM frames, which may be sent on idle or closed streams.
 	Push(wr FrameWriteRequest)
 
 	// Pop dequeues the next frame to write. Returns false if no frames can
