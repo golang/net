@@ -2443,7 +2443,7 @@ func (w *responseWriter) push(target string, opts pushOptions) error {
 	}
 	for k := range opts.Header {
 		if strings.HasPrefix(k, ":") {
-			return fmt.Errorf("promised request headers cannot include psuedo header %q", k)
+			return fmt.Errorf("promised request headers cannot include pseudo header %q", k)
 		}
 		// These headers are meaningful only if the request has a body,
 		// but PUSH_PROMISE requests cannot have a body.
