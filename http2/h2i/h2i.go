@@ -42,7 +42,7 @@ import (
 
 // Flags
 var (
-	flagNextProto = flag.String("nextproto", "h2,h2-14", "Comma-separated list of NPN/ALPN protocol names to negotiate.")
+	flagNextProto = flag.String("nextproto", "h2", "Comma-separated list of NPN/ALPN protocol names to negotiate.")
 	flagInsecure  = flag.Bool("insecure", false, "Whether to skip TLS cert validation")
 	flagSettings  = flag.String("settings", "empty", "comma-separated list of KEY=value settings for the initial SETTINGS frame. The magic value 'empty' sends an empty initial settings frame, and the magic value 'omit' causes no initial settings frame to be sent.")
 )
@@ -84,6 +84,14 @@ func usage() {
 func withPort(host string) string {
 	if _, _, err := net.SplitHostPort(host); err != nil {
 		return net.JoinHostPort(host, "443")
+	}
+	return host
+}
+
+// withoutPort removes ":*" if present.
+func withoutPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
 	}
 	return host
 }
@@ -134,7 +142,7 @@ func main() {
 
 func (app *h2i) Main() error {
 	cfg := &tls.Config{
-		ServerName:         app.host,
+		ServerName:         withoutPort(app.host),
 		NextProtos:         strings.Split(*flagNextProto, ","),
 		InsecureSkipVerify: *flagInsecure,
 	}
