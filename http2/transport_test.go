@@ -2747,7 +2747,6 @@ func TestTransportCancelDataResponseRace(t *testing.T) {
 }
 
 func TestTransportRetryAfterGOAWAY(t *testing.T) {
-	t.Skip("to be unskipped by https://go-review.googlesource.com/c/33971/")
 	var dialer struct {
 		sync.Mutex
 		count int
@@ -2765,6 +2764,9 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 		dialer.Lock()
 		defer dialer.Unlock()
 		dialer.count++
+		if dialer.count == 3 {
+			return nil, errors.New("unexpected number of dials")
+		}
 		cc, err := net.Dial("tcp", ln.Addr().String())
 		if err != nil {
 			return nil, fmt.Errorf("dial error: %v", err)
@@ -2797,9 +2799,19 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 	go func() {
 		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
 		res, err := tr.RoundTrip(req)
-		t.Logf("client got %T, %v", res, err)
+		if res != nil {
+			res.Body.Close()
+			if got := res.Header.Get("Foo"); got != "bar" {
+				err = fmt.Errorf("foo header = %q; want bar", got)
+			}
+		}
+		if err != nil {
+			err = fmt.Errorf("RoundTrip: %v", err)
+		}
 		errs <- err
 	}()
+
+	connToClose := make(chan io.Closer, 2)
 
 	// Server for the first request.
 	go func() {
@@ -2810,6 +2822,7 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 			return
 		}
 
+		connToClose <- ct.cc
 		ct.greet()
 		hf, err := ct.firstHeaders()
 		if err != nil {
@@ -2821,7 +2834,6 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 			errs <- fmt.Errorf("server1 failed writing GOAWAY: %v", err)
 			return
 		}
-		ct.cc.(*net.TCPConn).Close()
 		errs <- nil
 	}()
 
@@ -2834,17 +2846,19 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 			return
 		}
 
+		connToClose <- ct.cc
 		ct.greet()
 		hf, err := ct.firstHeaders()
 		if err != nil {
 			errs <- fmt.Errorf("server2 failed reading HEADERS: %v", err)
 			return
 		}
-		t.Logf("server2 Got %v", hf)
+		t.Logf("server2 got %v", hf)
 
 		var buf bytes.Buffer
 		enc := hpack.NewEncoder(&buf)
 		enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+		enc.WriteField(hpack.HeaderField{Name: "foo", Value: "bar"})
 		err = ct.fr.WriteHeaders(HeadersFrameParam{
 			StreamID:      hf.StreamID,
 			EndHeaders:    true,
@@ -2852,7 +2866,7 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 			BlockFragment: buf.Bytes(),
 		})
 		if err != nil {
-			errs <- fmt.Errorf("server2 failed writin responseg HEADERS: %v", err)
+			errs <- fmt.Errorf("server2 failed writing response HEADERS: %v", err)
 		} else {
 			errs <- nil
 		}
@@ -2866,6 +2880,15 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 			}
 		case <-time.After(1 * time.Second):
 			t.Errorf("timed out")
+		}
+	}
+
+	for {
+		select {
+		case c := <-connToClose:
+			c.Close()
+		default:
+			return
 		}
 	}
 }
