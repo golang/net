@@ -25,7 +25,7 @@ var (
 // MakePipe creates a connection between two endpoints and returns the pair
 // as c1 and c2, such that anything written to c1 is read by c2 and vice-versa.
 // The stop function closes all resources, including c1, c2, and the underlying
-// net.Listener (if there is one).
+// net.Listener (if there is one), and should not be nil.
 type MakePipe func() (c1, c2 net.Conn, stop func(), err error)
 
 // TestConn tests that a net.Conn implementation properly satisfies the interface.
