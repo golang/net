@@ -315,6 +315,10 @@ func authorityAddr(scheme string, authority string) (addr string) {
 	if a, err := idna.ToASCII(host); err == nil {
 		host = a
 	}
+	// IPv6 address literal, without a port:
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return host + ":" + port
+	}
 	return net.JoinHostPort(host, port)
 }
 
