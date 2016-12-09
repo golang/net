@@ -1262,6 +1262,7 @@ func testServerPostUnblock(t *testing.T,
 		inHandler <- true
 		errc <- handler(w, r)
 	})
+	defer st.Close()
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
@@ -1279,7 +1280,6 @@ func testServerPostUnblock(t *testing.T,
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for Handler to return")
 	}
-	st.Close()
 }
 
 func TestServer_RSTStream_Unblocks_Read(t *testing.T) {
