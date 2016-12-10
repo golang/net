@@ -2073,10 +2073,11 @@ func TestTransportHandlerBodyClose(t *testing.T) {
 
 // https://golang.org/issue/15930
 func TestTransportFlowControl(t *testing.T) {
-	const (
-		total  = 100 << 20 // 100MB
-		bufLen = 1 << 16
-	)
+	const bufLen = 64 << 10
+	var total int64 = 100 << 20 // 100MB
+	if testing.Short() {
+		total = 10 << 20
+	}
 
 	var wrote int64 // updated atomically
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
