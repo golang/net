@@ -944,7 +944,7 @@ func (sc *serverConn) startFrameWrite(wr FrameWriteRequest) {
 				panic(fmt.Sprintf("internal error: attempt to send frame on a half-closed-local stream: %v", wr))
 			}
 		case stateClosed:
-			panic(fmt.Sprintf("internal error: attempt to send frame a closed stream: %v", wr))
+			panic(fmt.Sprintf("internal error: attempt to send frame on a closed stream: %v", wr))
 		}
 	}
 	if wpp, ok := wr.write.(*writePushPromise); ok {
