@@ -2589,7 +2589,7 @@ func (sc *serverConn) startPush(msg startPushRequest) {
 			scheme:    msg.url.Scheme,
 			authority: msg.url.Host,
 			path:      msg.url.RequestURI(),
-			header:    msg.header,
+			header:    cloneHeader(msg.header), // clone since handler runs concurrently with writing the PUSH_PROMISE
 		})
 		if err != nil {
 			// Should not happen, since we've already validated msg.url.
