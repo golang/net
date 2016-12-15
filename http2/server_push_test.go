@@ -244,6 +244,50 @@ func TestServer_Push_Success(t *testing.T) {
 	}
 }
 
+func TestServer_Push_SuccessNoRace(t *testing.T) {
+	// Regression test for issue #18326. Ensure the request handler can mutate
+	// pushed request headers without racing with the PUSH_PROMISE write.
+	errc := make(chan error, 2)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RequestURI() {
+		case "/":
+			opt := &http.PushOptions{
+				Header: http.Header{"User-Agent": {"testagent"}},
+			}
+			if err := w.(http.Pusher).Push("/pushed", opt); err != nil {
+				errc <- fmt.Errorf("error pushing: %v", err)
+				return
+			}
+			w.WriteHeader(200)
+			errc <- nil
+
+		case "/pushed":
+			// Update request header, ensure there is no race.
+			r.Header.Set("User-Agent", "newagent")
+			r.Header.Set("Cookie", "cookie")
+			w.WriteHeader(200)
+			errc <- nil
+
+		default:
+			errc <- fmt.Errorf("unknown RequestURL %q", r.URL.RequestURI())
+		}
+	})
+
+	// Send one request, which should push one response.
+	st.greet()
+	getSlash(st)
+	for k := 0; k < 2; k++ {
+		select {
+		case <-time.After(2 * time.Second):
+			t.Errorf("timeout waiting for handler %d to finish", k)
+		case err := <-errc:
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func TestServer_Push_RejectRecursivePush(t *testing.T) {
 	// Expect two requests, but might get three if there's a bug and the second push succeeds.
 	errc := make(chan error, 3)
