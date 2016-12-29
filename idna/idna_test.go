@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// This file contains a few basic functional tests.
+// Full tests are done in x/text/internal/export/idna.
+
 package idna
 
 import (
@@ -38,6 +41,3 @@ func TestIDNA(t *testing.T) {
 		}
 	}
 }
-
-// TODO(nigeltao): test errors, once we've specified when ToASCII and ToUnicode
-// return errors.
