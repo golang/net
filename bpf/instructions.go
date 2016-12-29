@@ -57,6 +57,9 @@ func (ri RawInstruction) Disassemble() Instruction {
 			}
 			return LoadScratch{Dst: reg, N: int(ri.K)}
 		case opAddrModeAbsolute:
+			if ri.K > extOffset+0xffffffff {
+				return LoadExtension{Num: Extension(-extOffset + ri.K)}
+			}
 			return LoadAbsolute{Size: sz, Off: ri.K}
 		case opAddrModeIndirect:
 			return LoadIndirect{Size: sz, Off: ri.K}
@@ -259,7 +262,7 @@ func (a LoadExtension) Assemble() (RawInstruction, error) {
 	if a.Num == ExtLen {
 		return assembleLoad(RegA, 4, opAddrModePacketLen, 0)
 	}
-	return assembleLoad(RegA, 4, opAddrModeAbsolute, uint32(-0x1000+a.Num))
+	return assembleLoad(RegA, 4, opAddrModeAbsolute, uint32(extOffset+a.Num))
 }
 
 // StoreScratch stores register Src into scratch[N].
