@@ -182,3 +182,18 @@ func TestAsmDisasm(t *testing.T) {
 		}
 	}
 }
+
+func TestDisasmJumpIf(t *testing.T) {
+	for _, instr := range allInstructions {
+		if jumpIfInstr, ok := instr.(JumpIf); ok {
+			gotAsm, err := jumpIfInstr.Assemble()
+			if err != nil {
+				t.Fatalf("assembly of '%#v' failed: %s", jumpIfInstr, err)
+			}
+			got := gotAsm.Disassemble()
+			if !reflect.DeepEqual(jumpIfInstr, got) {
+				t.Errorf("program mutated by disassembly, expected: %#v, got: %#v", jumpIfInstr, got)
+			}
+		}
+	}
+}

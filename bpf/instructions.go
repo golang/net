@@ -104,6 +104,14 @@ func (ri RawInstruction) Disassemble() Instruction {
 		case opJumpAlways:
 			return Jump{Skip: ri.K}
 		case opJumpEqual:
+			if ri.Jt == 0 {
+				return JumpIf{
+					Cond:      JumpNotEqual,
+					Val:       ri.K,
+					SkipTrue:  ri.Jf,
+					SkipFalse: 0,
+				}
+			}
 			return JumpIf{
 				Cond:      JumpEqual,
 				Val:       ri.K,
@@ -111,6 +119,14 @@ func (ri RawInstruction) Disassemble() Instruction {
 				SkipFalse: ri.Jf,
 			}
 		case opJumpGT:
+			if ri.Jt == 0 {
+				return JumpIf{
+					Cond:      JumpLessOrEqual,
+					Val:       ri.K,
+					SkipTrue:  ri.Jf,
+					SkipFalse: 0,
+				}
+			}
 			return JumpIf{
 				Cond:      JumpGreaterThan,
 				Val:       ri.K,
@@ -118,6 +134,14 @@ func (ri RawInstruction) Disassemble() Instruction {
 				SkipFalse: ri.Jf,
 			}
 		case opJumpGE:
+			if ri.Jt == 0 {
+				return JumpIf{
+					Cond:      JumpLessThan,
+					Val:       ri.K,
+					SkipTrue:  ri.Jf,
+					SkipFalse: 0,
+				}
+			}
 			return JumpIf{
 				Cond:      JumpGreaterOrEqual,
 				Val:       ri.K,
