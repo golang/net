@@ -473,7 +473,7 @@ func (app *h2i) encodeHeaders(req *http.Request) []byte {
 		host = req.URL.Host
 	}
 
-	path := req.URL.Path
+	path := req.RequestURI
 	if path == "" {
 		path = "/"
 	}
