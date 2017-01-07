@@ -143,11 +143,6 @@ func TestInterop(t *testing.T) {
 }
 
 // Check that assembly and disassembly match each other.
-//
-// Because we offer "fake" jump conditions that don't appear in the
-// machine code, disassembly won't be a 1:1 match with the original
-// source, although the behavior will be identical. However,
-// reassembling the disassembly should produce an identical program.
 func TestAsmDisasm(t *testing.T) {
 	prog1, err := Assemble(allInstructions)
 	if err != nil {
@@ -155,59 +150,24 @@ func TestAsmDisasm(t *testing.T) {
 	}
 	t.Logf("Assembled program is %d instructions long", len(prog1))
 
-	src, allDecoded := Disassemble(prog1)
+	got, allDecoded := Disassemble(prog1)
 	if !allDecoded {
 		t.Errorf("Disassemble(Assemble(allInstructions)) produced unrecognized instructions:")
-		for i, inst := range src {
+		for i, inst := range got {
 			if r, ok := inst.(RawInstruction); ok {
 				t.Logf("  insn %d, %#v --> %#v", i+1, allInstructions[i], r)
 			}
 		}
 	}
 
-	prog2, err := Assemble(src)
-	if err != nil {
-		t.Fatalf("assembly of Disassemble(Assemble(allInstructions)) failed: %s", err)
+	if len(allInstructions) != len(got) {
+		t.Fatalf("disassembly changed program size: %d insns before, %d insns after", len(allInstructions), len(got))
 	}
-
-	if len(prog2) != len(prog1) {
-		t.Fatalf("disassembly changed program size: %d insns before, %d insns after", len(prog1), len(prog2))
-	}
-	if !reflect.DeepEqual(prog1, prog2) {
+	if !reflect.DeepEqual(allInstructions, got) {
 		t.Errorf("program mutated by disassembly:")
-		for i := range prog2 {
-			if !reflect.DeepEqual(prog1[i], prog2[i]) {
-				t.Logf("  insn %d, s: %#v, p1: %#v, p2: %#v", i+1, allInstructions[i], prog1[i], prog2[i])
-			}
-		}
-	}
-}
-
-func TestDisasmJumpIf(t *testing.T) {
-	for _, instr := range allInstructions {
-		if jumpIfInstr, ok := instr.(JumpIf); ok {
-			gotAsm, err := jumpIfInstr.Assemble()
-			if err != nil {
-				t.Fatalf("assembly of '%#v' failed: %s", jumpIfInstr, err)
-			}
-			got := gotAsm.Disassemble()
-			if !reflect.DeepEqual(jumpIfInstr, got) {
-				t.Errorf("program mutated by disassembly, expected: %#v, got: %#v", jumpIfInstr, got)
-			}
-		}
-	}
-}
-
-func TestDisasmExtensions(t *testing.T) {
-	for _, instr := range allInstructions {
-		if extInstr, ok := instr.(LoadExtension); ok {
-			gotAsm, err := extInstr.Assemble()
-			if err != nil {
-				t.Fatalf("assembly of '%#v' failed: %s", extInstr, err)
-			}
-			got := gotAsm.Disassemble()
-			if !reflect.DeepEqual(extInstr, got) {
-				t.Errorf("program mutated by disassembly, expected: %#v, got: %#v", extInstr, got)
+		for i := range got {
+			if !reflect.DeepEqual(allInstructions[i], got[i]) {
+				t.Logf("  insn %d, s: %#v, p1: %#v, got: %#v", i+1, allInstructions[i], prog1[i], got[i])
 			}
 		}
 	}
