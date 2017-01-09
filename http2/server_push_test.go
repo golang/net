@@ -431,7 +431,9 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 	const body = "foo"
 
 	startedPromise := make(chan bool)
+	gotPromise := make(chan bool)
 	finishedPush := make(chan bool)
+
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.RequestURI() {
 		case "/":
@@ -442,6 +444,8 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 			// Don't finish this request until the push finishes so we don't
 			// nondeterministically interleave output frames with the push.
 			<-finishedPush
+		case "/pushed":
+			<-gotPromise
 		}
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
@@ -459,10 +463,11 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 	}
 	getSlash(st)
 	<-startedPromise
+	st.wantPushPromise()
 	if got, want := st.streamState(2), stateHalfClosedRemote; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
-	st.wantPushPromise()
+	close(gotPromise)
 	st.wantHeaders()
 	if df := st.wantData(); !df.StreamEnded() {
 		t.Fatal("expected END_STREAM flag on DATA")
