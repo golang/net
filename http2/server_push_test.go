@@ -430,7 +430,6 @@ func TestServer_Push_RejectForbiddenHeader(t *testing.T) {
 func TestServer_Push_StateTransitions(t *testing.T) {
 	const body = "foo"
 
-	startedPromise := make(chan bool)
 	gotPromise := make(chan bool)
 	finishedPush := make(chan bool)
 
@@ -440,7 +439,6 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 			if err := w.(http.Pusher).Push("/pushed", nil); err != nil {
 				t.Errorf("Push error: %v", err)
 			}
-			close(startedPromise)
 			// Don't finish this request until the push finishes so we don't
 			// nondeterministically interleave output frames with the push.
 			<-finishedPush
@@ -462,11 +460,15 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
 	getSlash(st)
-	<-startedPromise
+	// After the PUSH_PROMISE is sent, the stream should be stateHalfClosedRemote.
 	st.wantPushPromise()
 	if got, want := st.streamState(2), stateHalfClosedRemote; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
+	// We stall the HTTP handler for "/pushed" until the above check. If we don't
+	// stall the handler, then the handler might write HEADERS and DATA and finish
+	// the stream before we check st.streamState(2) -- should that happen, we'll
+	// see stateClosed and fail the above check.
 	close(gotPromise)
 	st.wantHeaders()
 	if df := st.wantData(); !df.StreamEnded() {
