@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package nettest provides utilities for IP testing.
+// Package nettest provides utilities for network testing.
 package nettest // import "golang.org/x/net/internal/nettest"
 
 import (
@@ -62,7 +62,7 @@ func TestableNetwork(network string) bool {
 	// This is based on logic from standard library's
 	// net/platform_test.go.
 	switch network {
-	case "unix":
+	case "unix", "unixgram":
 		switch runtime.GOOS {
 		case "android", "nacl", "plan9", "windows":
 			return false
