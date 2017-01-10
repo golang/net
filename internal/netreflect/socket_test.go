@@ -7,7 +7,6 @@ package netreflect_test
 import (
 	"net"
 	"os"
-	"runtime"
 	"testing"
 
 	"golang.org/x/net/internal/netreflect"
@@ -16,17 +15,8 @@ import (
 
 func TestSocketOf(t *testing.T) {
 	for _, network := range []string{"tcp", "unix", "unixpacket"} {
-		switch runtime.GOOS {
-		case "darwin":
-			if network == "unixpacket" {
-				continue
-			}
-		case "nacl", "plan9":
+		if !nettest.TestableNetwork(network) {
 			continue
-		case "windows":
-			if network == "unix" || network == "unixpacket" {
-				continue
-			}
 		}
 		ln, err := nettest.NewLocalListener(network)
 		if err != nil {
@@ -55,13 +45,8 @@ func TestSocketOf(t *testing.T) {
 
 func TestPacketSocketOf(t *testing.T) {
 	for _, network := range []string{"udp", "unixgram"} {
-		switch runtime.GOOS {
-		case "nacl", "plan9":
+		if !nettest.TestableNetwork(network) {
 			continue
-		case "windows":
-			if network == "unixgram" {
-				continue
-			}
 		}
 		c, err := nettest.NewLocalPacketListener(network)
 		if err != nil {
