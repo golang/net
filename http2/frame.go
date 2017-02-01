@@ -600,6 +600,7 @@ var (
 	errStreamID    = errors.New("invalid stream ID")
 	errDepStreamID = errors.New("invalid dependent stream ID")
 	errPadLength   = errors.New("pad length too large")
+	errPadBytes    = errors.New("padding bytes must all be zeros unless AllowIllegalWrites is enabled")
 )
 
 func validStreamIDOrZero(streamID uint32) bool {
@@ -623,6 +624,7 @@ func (f *Framer) WriteData(streamID uint32, endStream bool, data []byte) error {
 //
 // If pad is nil, the padding bit is not sent.
 // The length of pad must not exceed 255 bytes.
+// The bytes of pad must all be zero, unless f.AllowIllegalWrites is set.
 //
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility not to violate the maximum frame size
@@ -631,8 +633,18 @@ func (f *Framer) WriteDataPadded(streamID uint32, endStream bool, data, pad []by
 	if !validStreamID(streamID) && !f.AllowIllegalWrites {
 		return errStreamID
 	}
-	if len(pad) > 255 {
-		return errPadLength
+	if len(pad) > 0 {
+		if len(pad) > 255 {
+			return errPadLength
+		}
+		if !f.AllowIllegalWrites {
+			for _, b := range pad {
+				if b != 0 {
+					// "Padding octets MUST be set to zero when sending."
+					return errPadBytes
+				}
+			}
+		}
 	}
 	var flags Flags
 	if endStream {

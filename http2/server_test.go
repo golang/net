@@ -1192,7 +1192,7 @@ func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
 		EndStream:     false,
 		EndHeaders:    true,
 	})
-	st.writeDataPadded(1, false, []byte("abcdef"), []byte("1234"))
+	st.writeDataPadded(1, false, []byte("abcdef"), []byte{0, 0, 0, 0})
 
 	// Expect to immediately get our 5 bytes of padding back for
 	// both the connection and stream (4 bytes of padding + 1 byte of length)
