@@ -324,8 +324,8 @@ func addrsSpace(as []Addr) int {
 	return l
 }
 
-// marshalAddrs marshals as returns a bitmap indicating which address
-// is stored in b.
+// marshalAddrs marshals as and returns a bitmap indicating which
+// address is stored in b.
 func marshalAddrs(b []byte, as []Addr) (uint, error) {
 	var attrs uint
 	for i, a := range as {
