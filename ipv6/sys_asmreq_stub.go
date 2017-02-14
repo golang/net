@@ -6,18 +6,12 @@
 
 package ipv6
 
-type icmpv6Filter struct {
-}
+import (
+	"net"
 
-func (f *icmpv6Filter) accept(typ ICMPType) {
-}
+	"golang.org/x/net/internal/socket"
+)
 
-func (f *icmpv6Filter) block(typ ICMPType) {
-}
-
-func (f *icmpv6Filter) setAll(block bool) {
-}
-
-func (f *icmpv6Filter) willBlock(typ ICMPType) bool {
-	return false
+func (so *sockOpt) setIPMreq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
+	return errOpNoSupport
 }

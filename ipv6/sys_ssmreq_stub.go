@@ -6,12 +6,16 @@
 
 package ipv6
 
-import "net"
+import (
+	"net"
 
-func setsockoptGroupReq(s uintptr, opt *sockOpt, ifi *net.Interface, grp net.IP) error {
+	"golang.org/x/net/internal/socket"
+)
+
+func (so *sockOpt) setGroupReq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	return errOpNoSupport
 }
 
-func setsockoptGroupSourceReq(s uintptr, opt *sockOpt, ifi *net.Interface, grp, src net.IP) error {
+func (so *sockOpt) setGroupSourceReq(c *socket.Conn, ifi *net.Interface, grp, src net.IP) error {
 	return errOpNoSupport
 }
