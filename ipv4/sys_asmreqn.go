@@ -8,18 +8,17 @@ package ipv4
 
 import (
 	"net"
-	"os"
 	"unsafe"
 
-	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/socket"
 )
 
-func getsockoptIPMreqn(s uintptr, name int) (*net.Interface, error) {
-	var mreqn ipMreqn
-	l := uint32(sizeofIPMreqn)
-	if err := getsockopt(s, iana.ProtocolIP, name, unsafe.Pointer(&mreqn), &l); err != nil {
-		return nil, os.NewSyscallError("getsockopt", err)
+func (so *sockOpt) getIPMreqn(c *socket.Conn) (*net.Interface, error) {
+	b := make([]byte, so.Len)
+	if _, err := so.Get(c, b); err != nil {
+		return nil, err
 	}
+	mreqn := (*ipMreqn)(unsafe.Pointer(&b[0]))
 	if mreqn.Ifindex == 0 {
 		return nil, nil
 	}
@@ -30,7 +29,7 @@ func getsockoptIPMreqn(s uintptr, name int) (*net.Interface, error) {
 	return ifi, nil
 }
 
-func setsockoptIPMreqn(s uintptr, name int, ifi *net.Interface, grp net.IP) error {
+func (so *sockOpt) setIPMreqn(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	var mreqn ipMreqn
 	if ifi != nil {
 		mreqn.Ifindex = int32(ifi.Index)
@@ -38,5 +37,6 @@ func setsockoptIPMreqn(s uintptr, name int, ifi *net.Interface, grp net.IP) erro
 	if grp != nil {
 		mreqn.Multiaddr = [4]byte{grp[0], grp[1], grp[2], grp[3]}
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(s, iana.ProtocolIP, name, unsafe.Pointer(&mreqn), sizeofIPMreqn))
+	b := (*[sizeofIPMreqn]byte)(unsafe.Pointer(&mreqn))[:sizeofIPMreqn]
+	return so.Set(c, b)
 }

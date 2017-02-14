@@ -6,7 +6,43 @@
 
 package ipv4
 
-import "net"
+import (
+	"net"
+	"unsafe"
+
+	"golang.org/x/net/internal/socket"
+)
+
+func (so *sockOpt) setIPMreq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
+	mreq := ipMreq{Multiaddr: [4]byte{grp[0], grp[1], grp[2], grp[3]}}
+	if err := setIPMreqInterface(&mreq, ifi); err != nil {
+		return err
+	}
+	b := (*[sizeofIPMreq]byte)(unsafe.Pointer(&mreq))[:sizeofIPMreq]
+	return so.Set(c, b)
+}
+
+func (so *sockOpt) getMulticastIf(c *socket.Conn) (*net.Interface, error) {
+	var b [4]byte
+	if _, err := so.Get(c, b[:]); err != nil {
+		return nil, err
+	}
+	ifi, err := netIP4ToInterface(net.IPv4(b[0], b[1], b[2], b[3]))
+	if err != nil {
+		return nil, err
+	}
+	return ifi, nil
+}
+
+func (so *sockOpt) setMulticastIf(c *socket.Conn, ifi *net.Interface) error {
+	ip, err := netInterfaceToIP4(ifi)
+	if err != nil {
+		return err
+	}
+	var b [4]byte
+	copy(b[:], ip)
+	return so.Set(c, b[:])
+}
 
 func setIPMreqInterface(mreq *ipMreq, ifi *net.Interface) error {
 	if ifi == nil {

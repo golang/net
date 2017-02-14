@@ -27,7 +27,7 @@ func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.
 			return 0, nil, nil, err
 		}
 	case *net.IPConn:
-		if sockOpts[ssoStripHeader].name > 0 {
+		if _, ok := sockOpts[ssoStripHeader]; ok {
 			if n, oobn, _, src, err = c.ReadMsgIP(b, oob); err != nil {
 				return 0, nil, nil, err
 			}

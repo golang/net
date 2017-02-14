@@ -8,54 +8,47 @@ package ipv4
 
 import (
 	"net"
-	"os"
 	"unsafe"
 
-	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/socket"
 )
 
 var freebsd32o64 bool
 
-func setsockoptGroupReq(s uintptr, name int, ifi *net.Interface, grp net.IP) error {
+func (so *sockOpt) setGroupReq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	var gr groupReq
 	if ifi != nil {
 		gr.Interface = uint32(ifi.Index)
 	}
 	gr.setGroup(grp)
-	var p unsafe.Pointer
-	var l uint32
+	var b []byte
 	if freebsd32o64 {
 		var d [sizeofGroupReq + 4]byte
 		s := (*[sizeofGroupReq]byte)(unsafe.Pointer(&gr))
 		copy(d[:4], s[:4])
 		copy(d[8:], s[4:])
-		p = unsafe.Pointer(&d[0])
-		l = sizeofGroupReq + 4
+		b = d[:]
 	} else {
-		p = unsafe.Pointer(&gr)
-		l = sizeofGroupReq
+		b = (*[sizeofGroupReq]byte)(unsafe.Pointer(&gr))[:sizeofGroupReq]
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(s, iana.ProtocolIP, name, p, l))
+	return so.Set(c, b)
 }
 
-func setsockoptGroupSourceReq(s uintptr, name int, ifi *net.Interface, grp, src net.IP) error {
+func (so *sockOpt) setGroupSourceReq(c *socket.Conn, ifi *net.Interface, grp, src net.IP) error {
 	var gsr groupSourceReq
 	if ifi != nil {
 		gsr.Interface = uint32(ifi.Index)
 	}
 	gsr.setSourceGroup(grp, src)
-	var p unsafe.Pointer
-	var l uint32
+	var b []byte
 	if freebsd32o64 {
 		var d [sizeofGroupSourceReq + 4]byte
 		s := (*[sizeofGroupSourceReq]byte)(unsafe.Pointer(&gsr))
 		copy(d[:4], s[:4])
 		copy(d[8:], s[4:])
-		p = unsafe.Pointer(&d[0])
-		l = sizeofGroupSourceReq + 4
+		b = d[:]
 	} else {
-		p = unsafe.Pointer(&gsr)
-		l = sizeofGroupSourceReq
+		b = (*[sizeofGroupSourceReq]byte)(unsafe.Pointer(&gsr))[:sizeofGroupSourceReq]
 	}
-	return os.NewSyscallError("setsockopt", setsockopt(s, iana.ProtocolIP, name, p, l))
+	return so.Set(c, b)
 }

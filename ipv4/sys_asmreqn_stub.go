@@ -6,12 +6,16 @@
 
 package ipv4
 
-import "net"
+import (
+	"net"
 
-func getsockoptIPMreqn(s uintptr, name int) (*net.Interface, error) {
+	"golang.org/x/net/internal/socket"
+)
+
+func (so *sockOpt) getIPMreqn(c *socket.Conn) (*net.Interface, error) {
 	return nil, errOpNoSupport
 }
 
-func setsockoptIPMreqn(s uintptr, name int, ifi *net.Interface, grp net.IP) error {
+func (so *sockOpt) setIPMreqn(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	return errOpNoSupport
 }
