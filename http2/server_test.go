@@ -260,11 +260,52 @@ func (st *serverTester) Close() {
 // greet initiates the client's HTTP/2 connection into a state where
 // frames may be sent.
 func (st *serverTester) greet() {
+	st.greetAndCheckSettings(func(Setting) error { return nil })
+}
+
+func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error) {
 	st.writePreface()
 	st.writeInitialSettings()
-	st.wantSettings()
+	st.wantSettings().ForeachSetting(checkSetting)
 	st.writeSettingsAck()
-	st.wantSettingsAck()
+
+	// The initial WINDOW_UPDATE and SETTINGS ACK can come in any order.
+	var gotSettingsAck bool
+	var gotWindowUpdate bool
+
+	for i := 0; i < 2; i++ {
+		f, err := st.readFrame()
+		if err != nil {
+			st.t.Fatal(err)
+		}
+		switch f := f.(type) {
+		case *SettingsFrame:
+			if !f.Header().Flags.Has(FlagSettingsAck) {
+				st.t.Fatal("Settings Frame didn't have ACK set")
+			}
+			gotSettingsAck = true
+
+		case *WindowUpdateFrame:
+			if f.FrameHeader.StreamID != 0 {
+				st.t.Fatalf("WindowUpdate StreamID = %d; want 0", f.FrameHeader.StreamID, 0)
+			}
+			incr := uint32((&Server{}).initialConnRecvWindowSize() - initialWindowSize)
+			if f.Increment != incr {
+				st.t.Fatalf("WindowUpdate increment = %d; want %d", f.Increment, incr)
+			}
+			gotWindowUpdate = true
+
+		default:
+			st.t.Fatalf("Wanting a settings ACK or window update, received a %T", f)
+		}
+	}
+
+	if !gotSettingsAck {
+		st.t.Fatalf("Didn't get a settings ACK")
+	}
+	if !gotWindowUpdate {
+		st.t.Fatalf("Didn't get a window update")
+	}
 }
 
 func (st *serverTester) writePreface() {
@@ -584,12 +625,7 @@ func TestServer(t *testing.T) {
 		server sends in the HTTP/2 connection.
 	`)
 
-	st.writePreface()
-	st.writeInitialSettings()
-	st.wantSettings()
-	st.writeSettingsAck()
-	st.wantSettingsAck()
-
+	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
 		BlockFragment: st.encodeHeader(),
@@ -2601,11 +2637,9 @@ func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 	defer st.Close()
 
 	// shake hands
-	st.writePreface()
-	st.writeInitialSettings()
 	frameSize := defaultMaxReadFrameSize
 	var advHeaderListSize *uint32
-	st.wantSettings().ForeachSetting(func(s Setting) error {
+	st.greetAndCheckSettings(func(s Setting) error {
 		switch s.ID {
 		case SettingMaxFrameSize:
 			if s.Val < minMaxFrameSize {
@@ -2620,8 +2654,6 @@ func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 		}
 		return nil
 	})
-	st.writeSettingsAck()
-	st.wantSettingsAck()
 
 	if advHeaderListSize == nil {
 		t.Errorf("server didn't advertise a max header list size")
