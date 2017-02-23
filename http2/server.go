@@ -463,10 +463,9 @@ type stream struct {
 	numTrailerValues int64
 	weight           uint8
 	state            streamState
-	resetQueued      bool   // RST_STREAM queued for write; set by sc.resetStream
-	gotTrailerHeader bool   // HEADER frame for trailers was seen
-	wroteHeaders     bool   // whether we wrote headers (not status 100)
-	reqBuf           []byte // if non-nil, body pipe buffer to return later at EOF
+	resetQueued      bool // RST_STREAM queued for write; set by sc.resetStream
+	gotTrailerHeader bool // HEADER frame for trailers was seen
+	wroteHeaders     bool // whether we wrote headers (not status 100)
 
 	trailer    http.Header // accumulated trailers
 	reqTrailer http.Header // handler's Request.Trailer
@@ -1785,15 +1784,13 @@ func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*res
 		return nil, nil, err
 	}
 	if bodyOpen {
-		st.reqBuf = getRequestBodyBuf()
-		req.Body.(*requestBody).pipe = &pipe{
-			b: &fixedBuffer{buf: st.reqBuf},
-		}
-
 		if vv, ok := rp.header["Content-Length"]; ok {
 			req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
 		} else {
 			req.ContentLength = -1
+		}
+		req.Body.(*requestBody).pipe = &pipe{
+			b: &dataBuffer{expected: req.ContentLength},
 		}
 	}
 	return rw, req, nil
@@ -1890,24 +1887,6 @@ func (sc *serverConn) newWriterAndRequestNoBody(st *stream, rp requestParam) (*r
 	return rw, req, nil
 }
 
-var reqBodyCache = make(chan []byte, 8)
-
-func getRequestBodyBuf() []byte {
-	select {
-	case b := <-reqBodyCache:
-		return b
-	default:
-		return make([]byte, initialWindowSize)
-	}
-}
-
-func putRequestBodyBuf(b []byte) {
-	select {
-	case reqBodyCache <- b:
-	default:
-	}
-}
-
 // Run on its own goroutine.
 func (sc *serverConn) runHandler(rw *responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) {
 	didPanic := true
@@ -2001,12 +1980,6 @@ func (sc *serverConn) noteBodyReadFromHandler(st *stream, n int, err error) {
 		select {
 		case sc.bodyReadCh <- bodyReadMsg{st, n}:
 		case <-sc.doneServing:
-		}
-	}
-	if err == io.EOF {
-		if buf := st.reqBuf; buf != nil {
-			st.reqBuf = nil // shouldn't matter; field unused by other
-			putRequestBodyBuf(buf)
 		}
 	}
 }
