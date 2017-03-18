@@ -6,13 +6,7 @@
 
 package ipv6
 
-import (
-	"os"
-	"syscall"
-
-	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/socket"
-)
+import "golang.org/x/net/internal/socket"
 
 func setControlMessage(c *socket.Conn, opt *rawOpt, cf ControlFlags, on bool) error {
 	opt.Lock()
@@ -58,97 +52,4 @@ func setControlMessage(c *socket.Conn, opt *rawOpt, cf ControlFlags, on bool) er
 		}
 	}
 	return nil
-}
-
-func newControlMessage(opt *rawOpt) (oob []byte) {
-	opt.RLock()
-	var l int
-	if opt.isset(FlagTrafficClass) && ctlOpts[ctlTrafficClass].name > 0 {
-		l += syscall.CmsgSpace(ctlOpts[ctlTrafficClass].length)
-	}
-	if opt.isset(FlagHopLimit) && ctlOpts[ctlHopLimit].name > 0 {
-		l += syscall.CmsgSpace(ctlOpts[ctlHopLimit].length)
-	}
-	if opt.isset(flagPacketInfo) && ctlOpts[ctlPacketInfo].name > 0 {
-		l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
-	}
-	if opt.isset(FlagPathMTU) && ctlOpts[ctlPathMTU].name > 0 {
-		l += syscall.CmsgSpace(ctlOpts[ctlPathMTU].length)
-	}
-	if l > 0 {
-		oob = make([]byte, l)
-	}
-	opt.RUnlock()
-	return
-}
-
-func parseControlMessage(b []byte) (*ControlMessage, error) {
-	if len(b) == 0 {
-		return nil, nil
-	}
-	cmsgs, err := syscall.ParseSocketControlMessage(b)
-	if err != nil {
-		return nil, os.NewSyscallError("parse socket control message", err)
-	}
-	cm := &ControlMessage{}
-	for _, m := range cmsgs {
-		if m.Header.Level != iana.ProtocolIPv6 {
-			continue
-		}
-		switch int(m.Header.Type) {
-		case ctlOpts[ctlTrafficClass].name:
-			ctlOpts[ctlTrafficClass].parse(cm, m.Data[:])
-		case ctlOpts[ctlHopLimit].name:
-			ctlOpts[ctlHopLimit].parse(cm, m.Data[:])
-		case ctlOpts[ctlPacketInfo].name:
-			ctlOpts[ctlPacketInfo].parse(cm, m.Data[:])
-		case ctlOpts[ctlPathMTU].name:
-			ctlOpts[ctlPathMTU].parse(cm, m.Data[:])
-		}
-	}
-	return cm, nil
-}
-
-func marshalControlMessage(cm *ControlMessage) (oob []byte) {
-	if cm == nil {
-		return
-	}
-	var l int
-	tclass := false
-	if ctlOpts[ctlTrafficClass].name > 0 && cm.TrafficClass > 0 {
-		tclass = true
-		l += syscall.CmsgSpace(ctlOpts[ctlTrafficClass].length)
-	}
-	hoplimit := false
-	if ctlOpts[ctlHopLimit].name > 0 && cm.HopLimit > 0 {
-		hoplimit = true
-		l += syscall.CmsgSpace(ctlOpts[ctlHopLimit].length)
-	}
-	pktinfo := false
-	if ctlOpts[ctlPacketInfo].name > 0 && (cm.Src.To16() != nil && cm.Src.To4() == nil || cm.IfIndex > 0) {
-		pktinfo = true
-		l += syscall.CmsgSpace(ctlOpts[ctlPacketInfo].length)
-	}
-	nexthop := false
-	if ctlOpts[ctlNextHop].name > 0 && cm.NextHop.To16() != nil && cm.NextHop.To4() == nil {
-		nexthop = true
-		l += syscall.CmsgSpace(ctlOpts[ctlNextHop].length)
-	}
-	if l > 0 {
-		oob = make([]byte, l)
-		b := oob
-		if tclass {
-			b = ctlOpts[ctlTrafficClass].marshal(b, cm)
-		}
-		if hoplimit {
-			b = ctlOpts[ctlHopLimit].marshal(b, cm)
-		}
-		if pktinfo {
-			b = ctlOpts[ctlPacketInfo].marshal(b, cm)
-		}
-		if nexthop {
-			b = ctlOpts[ctlNextHop].marshal(b, cm)
-		}
-	}
-	return
 }

@@ -123,6 +123,6 @@ func NewPacketConn(c net.PacketConn) *PacketConn {
 	return &PacketConn{
 		genericOpt:     genericOpt{Conn: cc},
 		dgramOpt:       dgramOpt{Conn: cc},
-		payloadHandler: payloadHandler{PacketConn: c},
+		payloadHandler: payloadHandler{PacketConn: c, Conn: cc},
 	}
 }
