@@ -7,10 +7,11 @@
 package socket
 
 import (
+	"errors"
 	"net"
 	"os"
-
-	"golang.org/x/net/internal/netreflect"
+	"reflect"
+	"runtime"
 )
 
 // A Conn represents a raw connection.
@@ -24,7 +25,7 @@ func NewConn(c net.Conn) (*Conn, error) {
 }
 
 func (o *Option) get(c *Conn, b []byte) (int, error) {
-	s, err := netreflect.SocketOf(c.c)
+	s, err := socketOf(c.c)
 	if err != nil {
 		return 0, err
 	}
@@ -33,9 +34,29 @@ func (o *Option) get(c *Conn, b []byte) (int, error) {
 }
 
 func (o *Option) set(c *Conn, b []byte) error {
-	s, err := netreflect.SocketOf(c.c)
+	s, err := socketOf(c.c)
 	if err != nil {
 		return err
 	}
 	return os.NewSyscallError("setsockopt", setsockopt(s, o.Level, o.Name, b))
+}
+
+func socketOf(c net.Conn) (uintptr, error) {
+	switch c.(type) {
+	case *net.TCPConn, *net.UDPConn, *net.IPConn:
+		v := reflect.ValueOf(c)
+		switch e := v.Elem(); e.Kind() {
+		case reflect.Struct:
+			fd := e.FieldByName("conn").FieldByName("fd")
+			switch e := fd.Elem(); e.Kind() {
+			case reflect.Struct:
+				sysfd := e.FieldByName("sysfd")
+				if runtime.GOOS == "windows" {
+					return uintptr(sysfd.Uint()), nil
+				}
+				return uintptr(sysfd.Int()), nil
+			}
+		}
+	}
+	return 0, errors.New("invalid type")
 }
