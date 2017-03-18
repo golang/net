@@ -11,15 +11,3 @@ import "golang.org/x/net/internal/socket"
 func setControlMessage(c *socket.Conn, opt *rawOpt, cf ControlFlags, on bool) error {
 	return errOpNoSupport
 }
-
-func newControlMessage(opt *rawOpt) []byte {
-	return nil
-}
-
-func parseControlMessage(b []byte) (*ControlMessage, error) {
-	return nil, errOpNoSupport
-}
-
-func marshalControlMessage(cm *ControlMessage) []byte {
-	return nil
-}

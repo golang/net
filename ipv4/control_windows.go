@@ -14,18 +14,3 @@ func setControlMessage(c *socket.Conn, opt *rawOpt, cf ControlFlags, on bool) er
 	// TODO(mikio): implement this
 	return syscall.EWINDOWS
 }
-
-func newControlMessage(opt *rawOpt) []byte {
-	// TODO(mikio): implement this
-	return nil
-}
-
-func parseControlMessage(b []byte) (*ControlMessage, error) {
-	// TODO(mikio): implement this
-	return nil, syscall.EWINDOWS
-}
-
-func marshalControlMessage(cm *ControlMessage) []byte {
-	// TODO(mikio): implement this
-	return nil
-}

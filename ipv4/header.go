@@ -51,7 +51,7 @@ func (h *Header) String() string {
 	return fmt.Sprintf("ver=%d hdrlen=%d tos=%#x totallen=%d id=%#x flags=%#x fragoff=%#x ttl=%d proto=%d cksum=%#x src=%v dst=%v", h.Version, h.Len, h.TOS, h.TotalLen, h.ID, h.Flags, h.FragOff, h.TTL, h.Protocol, h.Checksum, h.Src, h.Dst)
 }
 
-// Marshal returns the binary encoding of the IPv4 header h.
+// Marshal returns the binary encoding of h.
 func (h *Header) Marshal() ([]byte, error) {
 	if h == nil {
 		return nil, syscall.EINVAL
@@ -98,26 +98,24 @@ func (h *Header) Marshal() ([]byte, error) {
 	return b, nil
 }
 
-// ParseHeader parses b as an IPv4 header.
-func ParseHeader(b []byte) (*Header, error) {
-	if len(b) < HeaderLen {
-		return nil, errHeaderTooShort
+// Parse parses b as an IPv4 header and sotres the result in h.
+func (h *Header) Parse(b []byte) error {
+	if h == nil || len(b) < HeaderLen {
+		return errHeaderTooShort
 	}
 	hdrlen := int(b[0]&0x0f) << 2
 	if hdrlen > len(b) {
-		return nil, errBufferTooShort
+		return errBufferTooShort
 	}
-	h := &Header{
-		Version:  int(b[0] >> 4),
-		Len:      hdrlen,
-		TOS:      int(b[1]),
-		ID:       int(binary.BigEndian.Uint16(b[4:6])),
-		TTL:      int(b[8]),
-		Protocol: int(b[9]),
-		Checksum: int(binary.BigEndian.Uint16(b[10:12])),
-		Src:      net.IPv4(b[12], b[13], b[14], b[15]),
-		Dst:      net.IPv4(b[16], b[17], b[18], b[19]),
-	}
+	h.Version = int(b[0] >> 4)
+	h.Len = hdrlen
+	h.TOS = int(b[1])
+	h.ID = int(binary.BigEndian.Uint16(b[4:6]))
+	h.TTL = int(b[8])
+	h.Protocol = int(b[9])
+	h.Checksum = int(binary.BigEndian.Uint16(b[10:12]))
+	h.Src = net.IPv4(b[12], b[13], b[14], b[15])
+	h.Dst = net.IPv4(b[16], b[17], b[18], b[19])
 	switch runtime.GOOS {
 	case "darwin", "dragonfly", "netbsd":
 		h.TotalLen = int(socket.NativeEndian.Uint16(b[2:4])) + hdrlen
@@ -139,9 +137,23 @@ func ParseHeader(b []byte) (*Header, error) {
 	}
 	h.Flags = HeaderFlags(h.FragOff&0xe000) >> 13
 	h.FragOff = h.FragOff & 0x1fff
-	if hdrlen-HeaderLen > 0 {
-		h.Options = make([]byte, hdrlen-HeaderLen)
-		copy(h.Options, b[HeaderLen:])
+	optlen := hdrlen - HeaderLen
+	if optlen > 0 && len(b) >= hdrlen {
+		if cap(h.Options) < optlen {
+			h.Options = make([]byte, optlen)
+		} else {
+			h.Options = h.Options[:optlen]
+		}
+		copy(h.Options, b[HeaderLen:hdrlen])
+	}
+	return nil
+}
+
+// ParseHeader parses b as an IPv4 header.
+func ParseHeader(b []byte) (*Header, error) {
+	h := new(Header)
+	if err := h.Parse(b); err != nil {
+		return nil, err
 	}
 	return h, nil
 }

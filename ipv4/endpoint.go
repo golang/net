@@ -105,12 +105,7 @@ func NewPacketConn(c net.PacketConn) *PacketConn {
 	p := &PacketConn{
 		genericOpt:     genericOpt{Conn: cc},
 		dgramOpt:       dgramOpt{Conn: cc},
-		payloadHandler: payloadHandler{PacketConn: c},
-	}
-	if _, ok := c.(*net.IPConn); ok {
-		if so, ok := sockOpts[ssoStripHeader]; ok {
-			so.SetInt(p.dgramOpt.Conn, boolint(true))
-		}
+		payloadHandler: payloadHandler{PacketConn: c, Conn: cc},
 	}
 	return p
 }
@@ -140,7 +135,7 @@ func (c *RawConn) SetDeadline(t time.Time) error {
 	if !c.packetHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.packetHandler.c.SetDeadline(t)
+	return c.packetHandler.IPConn.SetDeadline(t)
 }
 
 // SetReadDeadline sets the read deadline associated with the
@@ -149,7 +144,7 @@ func (c *RawConn) SetReadDeadline(t time.Time) error {
 	if !c.packetHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.packetHandler.c.SetReadDeadline(t)
+	return c.packetHandler.IPConn.SetReadDeadline(t)
 }
 
 // SetWriteDeadline sets the write deadline associated with the
@@ -158,7 +153,7 @@ func (c *RawConn) SetWriteDeadline(t time.Time) error {
 	if !c.packetHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.packetHandler.c.SetWriteDeadline(t)
+	return c.packetHandler.IPConn.SetWriteDeadline(t)
 }
 
 // Close closes the endpoint.
@@ -166,7 +161,7 @@ func (c *RawConn) Close() error {
 	if !c.packetHandler.ok() {
 		return syscall.EINVAL
 	}
-	return c.packetHandler.c.Close()
+	return c.packetHandler.IPConn.Close()
 }
 
 // NewRawConn returns a new RawConn using c as its underlying
@@ -179,7 +174,7 @@ func NewRawConn(c net.PacketConn) (*RawConn, error) {
 	r := &RawConn{
 		genericOpt:    genericOpt{Conn: cc},
 		dgramOpt:      dgramOpt{Conn: cc},
-		packetHandler: packetHandler{c: c.(*net.IPConn)},
+		packetHandler: packetHandler{IPConn: c.(*net.IPConn), Conn: cc},
 	}
 	so, ok := sockOpts[ssoHeaderPrepend]
 	if !ok {
