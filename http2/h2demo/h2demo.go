@@ -87,6 +87,7 @@ href="https://golang.org/s/http2bug">file a bug</a>.</p>
   <li>GET <a href="/reqinfo">/reqinfo</a> to dump the request + headers received</li>
   <li>GET <a href="/clockstream">/clockstream</a> streams the current time every second</li>
   <li>GET <a href="/gophertiles">/gophertiles</a> to see a page with a bunch of images</li>
+  <li>GET <a href="/serverpush">/serverpush</a> to see a page with server push</li>
   <li>GET <a href="/file/gopher.png">/file/gopher.png</a> for a small file (does If-Modified-Since, Content-Range, etc)</li>
   <li>GET <a href="/file/go.src.tar.gz">/file/go.src.tar.gz</a> for a larger file (~10 MB)</li>
   <li>GET <a href="/redirect">/redirect</a> to redirect back to / (this page)</li>
@@ -168,8 +169,11 @@ var (
 
 // fileServer returns a file-serving handler that proxies URL.
 // It lazily fetches URL on the first access and caches its contents forever.
-func fileServer(url string) http.Handler {
+func fileServer(url string, latency time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if latency > 0 {
+			time.Sleep(latency)
+		}
 		hi, err := fsGrp.Do(url, func() (interface{}, error) {
 			fsMu.Lock()
 			if h, ok := fsCache[url]; ok {
@@ -249,12 +253,17 @@ func registerHandlers() {
 		mux2.ServeHTTP(w, r)
 	})
 	mux2.HandleFunc("/", home)
-	mux2.Handle("/file/gopher.png", fileServer("https://golang.org/doc/gopher/frontpage.png"))
-	mux2.Handle("/file/go.src.tar.gz", fileServer("https://storage.googleapis.com/golang/go1.4.1.src.tar.gz"))
+	mux2.Handle("/file/gopher.png", fileServer("https://golang.org/doc/gopher/frontpage.png", 0))
+	mux2.Handle("/file/go.src.tar.gz", fileServer("https://storage.googleapis.com/golang/go1.4.1.src.tar.gz", 0))
 	mux2.HandleFunc("/reqinfo", reqInfoHandler)
 	mux2.HandleFunc("/crc32", crcHandler)
 	mux2.HandleFunc("/ECHO", echoCapitalHandler)
 	mux2.HandleFunc("/clockstream", clockStreamHandler)
+	mux2.HandleFunc("/serverpush", pushHandler)
+	mux2.Handle("/serverpush/static/jquery.min.js", fileServer("https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js", 100*time.Millisecond))
+	mux2.Handle("/serverpush/static/godocs.js", fileServer("https://golang.org/lib/godoc/godocs.js", 100*time.Millisecond))
+	mux2.Handle("/serverpush/static/playground.js", fileServer("https://golang.org/lib/godoc/playground.js", 100*time.Millisecond))
+	mux2.Handle("/serverpush/static/style.css", fileServer("https://golang.org/lib/godoc/style.css", 100*time.Millisecond))
 	mux2.Handle("/gophertiles", tiles)
 	mux2.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -265,6 +274,37 @@ func registerHandlers() {
 		buf := make([]byte, 2<<20)
 		w.Write(stripHomedir.ReplaceAll(buf[:runtime.Stack(buf, true)], nil))
 	})
+}
+
+var pushResources = []string{
+	"/serverpush/static/jquery.min.js",
+	"/serverpush/static/godocs.js",
+	"/serverpush/static/playground.js",
+	"/serverpush/static/style.css",
+}
+
+func pushHandler(w http.ResponseWriter, r *http.Request) {
+	cacheBust := time.Now().UnixNano()
+	if pusher, ok := w.(http.Pusher); ok {
+		for _, resource := range pushResources {
+			url := fmt.Sprintf("%s?%d", resource, cacheBust)
+			if err := pusher.Push(url, nil); err != nil {
+				log.Printf("Failed to push %v: %v", resource, err)
+			}
+		}
+	}
+	time.Sleep(100 * time.Millisecond) // fake network latency + parsing time
+	if err := pushTmpl.Execute(w, struct {
+		CacheBust int64
+		HTTPSHost string
+		HTTPHost  string
+	}{
+		CacheBust: cacheBust,
+		HTTPSHost: httpsHost(),
+		HTTPHost:  httpHost(),
+	}); err != nil {
+		log.Printf("Executing server push template: %v", err)
+	}
 }
 
 func newGopherTilesHandler() http.Handler {
@@ -393,7 +433,11 @@ func serveProdTLS() error {
 			GetCertificate: m.GetCertificate,
 		},
 	}
-	http2.ConfigureServer(srv, &http2.Server{})
+	http2.ConfigureServer(srv, &http2.Server{
+		NewWriteScheduler: func() http2.WriteScheduler {
+			return http2.NewPriorityWriteScheduler(nil)
+		},
+	})
 	ln, err := net.Listen("tcp", ":443")
 	if err != nil {
 		return err
