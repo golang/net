@@ -231,14 +231,18 @@ func clockStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 func registerHandlers() {
 	tiles := newGopherTilesHandler()
+	push := newPushHandler()
 
 	mux2 := http.NewServeMux()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS == nil {
-			if r.URL.Path == "/gophertiles" {
-				tiles.ServeHTTP(w, r)
-				return
-			}
+		switch {
+		case r.URL.Path == "/gophertiles":
+			tiles.ServeHTTP(w, r) // allow HTTP/2 + HTTP/1.x
+			return
+		case strings.HasPrefix(r.URL.Path, "/serverpush"):
+			push.ServeHTTP(w, r) // allow HTTP/2 + HTTP/1.x
+			return
+		case r.TLS == nil: // do not allow HTTP/1.x for anything else
 			http.Redirect(w, r, "https://"+httpsHost()+"/", http.StatusFound)
 			return
 		}
@@ -259,11 +263,6 @@ func registerHandlers() {
 	mux2.HandleFunc("/crc32", crcHandler)
 	mux2.HandleFunc("/ECHO", echoCapitalHandler)
 	mux2.HandleFunc("/clockstream", clockStreamHandler)
-	mux2.HandleFunc("/serverpush", pushHandler)
-	mux2.Handle("/serverpush/static/jquery.min.js", fileServer("https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js", 100*time.Millisecond))
-	mux2.Handle("/serverpush/static/godocs.js", fileServer("https://golang.org/lib/godoc/godocs.js", 100*time.Millisecond))
-	mux2.Handle("/serverpush/static/playground.js", fileServer("https://golang.org/lib/godoc/playground.js", 100*time.Millisecond))
-	mux2.Handle("/serverpush/static/style.css", fileServer("https://golang.org/lib/godoc/style.css", 100*time.Millisecond))
 	mux2.Handle("/gophertiles", tiles)
 	mux2.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -276,35 +275,44 @@ func registerHandlers() {
 	})
 }
 
-var pushResources = []string{
-	"/serverpush/static/jquery.min.js",
-	"/serverpush/static/godocs.js",
-	"/serverpush/static/playground.js",
-	"/serverpush/static/style.css",
+var pushResources = map[string]http.Handler{
+	"/serverpush/static/jquery.min.js": fileServer("https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js", 100*time.Millisecond),
+	"/serverpush/static/godocs.js":     fileServer("https://golang.org/lib/godoc/godocs.js", 100*time.Millisecond),
+	"/serverpush/static/playground.js": fileServer("https://golang.org/lib/godoc/playground.js", 100*time.Millisecond),
+	"/serverpush/static/style.css":     fileServer("https://golang.org/lib/godoc/style.css", 100*time.Millisecond),
 }
 
-func pushHandler(w http.ResponseWriter, r *http.Request) {
-	cacheBust := time.Now().UnixNano()
-	if pusher, ok := w.(http.Pusher); ok {
-		for _, resource := range pushResources {
-			url := fmt.Sprintf("%s?%d", resource, cacheBust)
-			if err := pusher.Push(url, nil); err != nil {
-				log.Printf("Failed to push %v: %v", resource, err)
+func newPushHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for path, handler := range pushResources {
+			if r.URL.Path == path {
+				handler.ServeHTTP(w, r)
+				return
 			}
 		}
-	}
-	time.Sleep(100 * time.Millisecond) // fake network latency + parsing time
-	if err := pushTmpl.Execute(w, struct {
-		CacheBust int64
-		HTTPSHost string
-		HTTPHost  string
-	}{
-		CacheBust: cacheBust,
-		HTTPSHost: httpsHost(),
-		HTTPHost:  httpHost(),
-	}); err != nil {
-		log.Printf("Executing server push template: %v", err)
-	}
+
+		cacheBust := time.Now().UnixNano()
+		if pusher, ok := w.(http.Pusher); ok {
+			for path := range pushResources {
+				url := fmt.Sprintf("%s?%d", path, cacheBust)
+				if err := pusher.Push(url, nil); err != nil {
+					log.Printf("Failed to push %v: %v", path, err)
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond) // fake network latency + parsing time
+		if err := pushTmpl.Execute(w, struct {
+			CacheBust int64
+			HTTPSHost string
+			HTTPHost  string
+		}{
+			CacheBust: cacheBust,
+			HTTPSHost: httpsHost(),
+			HTTPHost:  httpHost(),
+		}); err != nil {
+			log.Printf("Executing server push template: %v", err)
+		}
+	})
 }
 
 func newGopherTilesHandler() http.Handler {
