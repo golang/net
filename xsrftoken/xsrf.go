@@ -36,6 +36,9 @@ func Generate(key, userID, actionID string) string {
 
 // generateTokenAtTime is like Generate, but returns a token that expires 24 hours from now.
 func generateTokenAtTime(key, userID, actionID string, now time.Time) string {
+	if len(key) == 0 {
+		panic("zero length xsrf secret key")
+	}
 	// Round time up and convert to milliseconds.
 	milliTime := (now.UnixNano() + 1e6 - 1) / 1e6
 
