@@ -126,6 +126,11 @@ type Server struct {
 	// NewWriteScheduler constructs a write scheduler for a connection.
 	// If nil, a default scheduler is chosen.
 	NewWriteScheduler func() WriteScheduler
+
+	// Internal state. This is a pointer (rather than embedded directly)
+	// so that we don't embed a Mutex in this struct, which will make the
+	// struct non-copyable, which might break some callers.
+	state *serverInternalState
 }
 
 func (s *Server) initialConnRecvWindowSize() int32 {
@@ -156,6 +161,40 @@ func (s *Server) maxConcurrentStreams() uint32 {
 	return defaultMaxStreams
 }
 
+type serverInternalState struct {
+	mu          sync.Mutex
+	activeConns map[*serverConn]struct{}
+}
+
+func (s *serverInternalState) registerConn(sc *serverConn) {
+	if s == nil {
+		return // if the Server was used without calling ConfigureServer
+	}
+	s.mu.Lock()
+	s.activeConns[sc] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *serverInternalState) unregisterConn(sc *serverConn) {
+	if s == nil {
+		return // if the Server was used without calling ConfigureServer
+	}
+	s.mu.Lock()
+	delete(s.activeConns, sc)
+	s.mu.Unlock()
+}
+
+func (s *serverInternalState) startGracefulShutdown() {
+	if s == nil {
+		return // if the Server was used without calling ConfigureServer
+	}
+	s.mu.Lock()
+	for sc := range s.activeConns {
+		sc.startGracefulShutdown()
+	}
+	s.mu.Unlock()
+}
+
 // ConfigureServer adds HTTP/2 support to a net/http Server.
 //
 // The configuration conf may be nil.
@@ -168,7 +207,11 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 	if conf == nil {
 		conf = new(Server)
 	}
+	conf.state = &serverInternalState{activeConns: make(map[*serverConn]struct{})}
 	if err := configureServer18(s, conf); err != nil {
+		return err
+	}
+	if err := configureServer19(s, conf); err != nil {
 		return err
 	}
 
@@ -304,6 +347,9 @@ func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 		serveG:                      newGoroutineLock(),
 		pushEnabled:                 true,
 	}
+
+	s.state.registerConn(sc)
+	defer s.state.unregisterConn(sc)
 
 	// The net/http package sets the write deadline from the
 	// http.Server.WriteTimeout during the TLS handshake, but then
@@ -445,6 +491,9 @@ type serverConn struct {
 	// Owned by the writeFrameAsync goroutine:
 	headerWriteBuf bytes.Buffer
 	hpackEncoder   *hpack.Encoder
+
+	// Used by startGracefulShutdown.
+	shutdownOnce sync.Once
 }
 
 func (sc *serverConn) maxHeaderListSize() uint32 {
@@ -749,15 +798,6 @@ func (sc *serverConn) serve() {
 		defer sc.idleTimer.Stop()
 	}
 
-	var gracefulShutdownCh chan struct{}
-	if sc.hs != nil {
-		ch := h1ServerShutdownChan(sc.hs)
-		if ch != nil {
-			gracefulShutdownCh = make(chan struct{})
-			go sc.awaitGracefulShutdown(ch, gracefulShutdownCh)
-		}
-	}
-
 	go sc.readFrames() // closed by defer sc.conn.Close above
 
 	settingsTimer := time.AfterFunc(firstSettingsTimeout, sc.onSettingsTimer)
@@ -786,14 +826,11 @@ func (sc *serverConn) serve() {
 			}
 		case m := <-sc.bodyReadCh:
 			sc.noteBodyRead(m.st, m.n)
-		case <-gracefulShutdownCh:
-			gracefulShutdownCh = nil
-			sc.startGracefulShutdown()
 		case msg := <-sc.serveMsgCh:
 			switch v := msg.(type) {
 			case func(int):
 				v(loopNum) // for testing
-			case *timerMessage:
+			case *serverMessage:
 				switch v {
 				case settingsTimerMsg:
 					sc.logf("timeout waiting for SETTINGS frames from %v", sc.conn.RemoteAddr())
@@ -804,6 +841,8 @@ func (sc *serverConn) serve() {
 				case shutdownTimerMsg:
 					sc.vlogf("GOAWAY close timer fired; closing conn from %v", sc.conn.RemoteAddr())
 					return
+				case gracefulShutdownMsg:
+					sc.startGracefulShutdownInternal()
 				default:
 					panic("unknown timer")
 				}
@@ -828,13 +867,14 @@ func (sc *serverConn) awaitGracefulShutdown(sharedCh <-chan struct{}, privateCh 
 	}
 }
 
-type timerMessage int
+type serverMessage int
 
-// Timeout message values sent to serveMsgCh.
+// Message values sent to serveMsgCh.
 var (
-	settingsTimerMsg = new(timerMessage)
-	idleTimerMsg     = new(timerMessage)
-	shutdownTimerMsg = new(timerMessage)
+	settingsTimerMsg    = new(serverMessage)
+	idleTimerMsg        = new(serverMessage)
+	shutdownTimerMsg    = new(serverMessage)
+	gracefulShutdownMsg = new(serverMessage)
 )
 
 func (sc *serverConn) onSettingsTimer() { sc.sendServeMsg(settingsTimerMsg) }
@@ -1166,10 +1206,19 @@ func (sc *serverConn) scheduleFrameWrite() {
 	sc.inFrameScheduleLoop = false
 }
 
-// startGracefulShutdown sends a GOAWAY with ErrCodeNo to tell the
-// client we're gracefully shutting down. The connection isn't closed
-// until all current streams are done.
+// startGracefulShutdown gracefully shuts down a connection. This
+// sends GOAWAY with ErrCodeNo to tell the client we're gracefully
+// shutting down. The connection isn't closed until all current
+// streams are done.
+//
+// startGracefulShutdown returns immediately; it does not wait until
+// the connection has shut down.
 func (sc *serverConn) startGracefulShutdown() {
+	sc.serveG.checkNotOn() // NOT
+	sc.shutdownOnce.Do(func() { sc.sendServeMsg(gracefulShutdownMsg) })
+}
+
+func (sc *serverConn) startGracefulShutdownInternal() {
 	sc.goAwayIn(ErrCodeNo, 0)
 }
 
@@ -1399,7 +1448,7 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 			sc.idleTimer.Reset(sc.srv.IdleTimeout)
 		}
 		if h1ServerKeepAlivesDisabled(sc.hs) {
-			sc.startGracefulShutdown()
+			sc.startGracefulShutdownInternal()
 		}
 	}
 	if p := st.body; p != nil {
@@ -1586,7 +1635,7 @@ func (sc *serverConn) processGoAway(f *GoAwayFrame) error {
 	} else {
 		sc.vlogf("http2: received GOAWAY %+v, starting graceful shutdown", f)
 	}
-	sc.startGracefulShutdown()
+	sc.startGracefulShutdownInternal()
 	// http://tools.ietf.org/html/rfc7540#section-6.8
 	// We should not create any new streams, which means we should disable push.
 	sc.pushEnabled = false
@@ -2653,7 +2702,7 @@ func (sc *serverConn) startPush(msg *startPushRequest) {
 		// A server that is unable to establish a new stream identifier can send a GOAWAY
 		// frame so that the client is forced to open a new connection for new streams.
 		if sc.maxPushPromiseID+2 >= 1<<31 {
-			sc.startGracefulShutdown()
+			sc.startGracefulShutdownInternal()
 			return 0, ErrPushLimitReached
 		}
 		sc.maxPushPromiseID += 2
@@ -2777,31 +2826,6 @@ var badTrailer = map[string]bool{
 	"Transfer-Encoding":   true,
 	"Www-Authenticate":    true,
 }
-
-// h1ServerShutdownChan returns a channel that will be closed when the
-// provided *http.Server wants to shut down.
-//
-// This is a somewhat hacky way to get at http1 innards. It works
-// when the http2 code is bundled into the net/http package in the
-// standard library. The alternatives ended up making the cmd/go tool
-// depend on http Servers. This is the lightest option for now.
-// This is tested via the TestServeShutdown* tests in net/http.
-func h1ServerShutdownChan(hs *http.Server) <-chan struct{} {
-	if fn := testh1ServerShutdownChan; fn != nil {
-		return fn(hs)
-	}
-	var x interface{} = hs
-	type I interface {
-		getDoneChan() <-chan struct{}
-	}
-	if hs, ok := x.(I); ok {
-		return hs.getDoneChan()
-	}
-	return nil
-}
-
-// optional test hook for h1ServerShutdownChan.
-var testh1ServerShutdownChan func(hs *http.Server) <-chan struct{}
 
 // h1ServerKeepAlivesDisabled reports whether hs has its keep-alives
 // disabled. See comments on h1ServerShutdownChan above for why
