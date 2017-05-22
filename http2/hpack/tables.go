@@ -125,10 +125,6 @@ func (t *headerFieldTable) idToIndex(id uint64) uint64 {
 	return k + 1
 }
 
-func pair(name, value string) HeaderField {
-	return HeaderField{Name: name, Value: value}
-}
-
 // http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-07#appendix-B
 var staticTable = newStaticTable()
 var staticTableEntries = [...]HeaderField{
