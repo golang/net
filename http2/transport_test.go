@@ -2959,8 +2959,7 @@ func TestTransportAllocationsAfterResponseBodyClose(t *testing.T) {
 		t.Fatalf("res.Body = %T; want transportResponseBody", res.Body)
 	}
 	if trb.cs.bufPipe.b != nil {
-		// TODO(tombergan,bradfitz): turn this into an error:
-		t.Logf("response body pipe is still open")
+		t.Errorf("response body pipe is still open")
 	}
 
 	gotErr := <-writeErr
