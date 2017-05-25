@@ -1420,6 +1420,20 @@ func (sc *serverConn) processResetStream(f *RSTStreamFrame) error {
 		// (Section 5.4.1) of type PROTOCOL_ERROR.
 		return ConnectionError(ErrCodeProtocol)
 	}
+
+	switch f.ErrCode {
+	case ErrCodeRefusedStream:
+		if sc.pushEnabled {
+			sc.pushEnabled = false
+			sc.vlogf("http2: push disabled due to client RST frame with code REFUSED_STREAM")
+		}
+	case ErrCodeProtocol:
+		if sc.pushEnabled {
+			sc.pushEnabled = false
+			sc.vlogf("http2: push disabled due to client RST frame with code PROTOCOL_ERROR")
+		}
+	}
+
 	if st != nil {
 		st.cancelCtx()
 		sc.closeStream(st, streamError(f.StreamID, f.ErrCode))
