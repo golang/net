@@ -573,6 +573,10 @@ func (c *hybiServerHandshaker) AcceptHandshake(buf *bufio.Writer) (err error) {
 	return buf.Flush()
 }
 
+func (c *hybiServerHandshaker) HandshakeConfig() *Config {
+	return c.Config
+}
+
 func (c *hybiServerHandshaker) NewServerConn(buf *bufio.ReadWriter, rwc io.ReadWriteCloser, request *http.Request) *Conn {
 	return newHybiServerConn(c.Config, buf, rwc, request)
 }

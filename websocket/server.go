@@ -8,12 +8,25 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 )
 
-func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Request, config *Config, handshake func(*Config, *http.Request) error) (conn *Conn, err error) {
-	var hs serverHandshaker = &hybiServerHandshaker{Config: config}
-	code, err := hs.ReadHandshake(buf.Reader, req)
+var ErrNoHijacker = fmt.Errorf("ResponseWriter does not implement http.Hijacker interface")
+
+type HandshakeFn func(*Config, *http.Request) error
+
+func upgrade(r *http.Request, w http.ResponseWriter, hs serverHandshaker, handshake HandshakeFn) (conn net.Conn, buf *bufio.ReadWriter, err error) {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		return nil, nil, ErrNoHijacker
+	}
+	conn, buf, err = hijacker.Hijack()
+	if err != nil {
+		return
+	}
+
+	code, err := hs.ReadHandshake(buf.Reader, r)
 	if err == ErrBadWebSocketVersion {
 		fmt.Fprintf(buf, "HTTP/1.1 %03d %s\r\n", code, http.StatusText(code))
 		fmt.Fprintf(buf, "Sec-WebSocket-Version: %s\r\n", SupportedProtocolVersion)
@@ -30,7 +43,7 @@ func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Requ
 		return
 	}
 	if handshake != nil {
-		err = handshake(config, req)
+		err = handshake(hs.HandshakeConfig(), r)
 		if err != nil {
 			code = http.StatusForbidden
 			fmt.Fprintf(buf, "HTTP/1.1 %03d %s\r\n", code, http.StatusText(code))
@@ -47,8 +60,21 @@ func newServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, req *http.Requ
 		buf.Flush()
 		return
 	}
-	conn = hs.NewServerConn(buf, rwc, req)
+
 	return
+}
+
+// Upgrade upgrades request to WebSocket protocol.
+// It returns plain net.Conn and buffer, corresponding to that conn.
+func Upgrade(r *http.Request, w http.ResponseWriter, c *Config, handshake HandshakeFn) (net.Conn, *bufio.ReadWriter, error) {
+	hs := &hybiServerHandshaker{Config: c}
+	return upgrade(r, w, hs, handshake)
+}
+
+// NewServerConn wraps upgraded rwc into Conn.
+func NewServerConn(rwc io.ReadWriteCloser, buf *bufio.ReadWriter, r *http.Request, c *Config) *Conn {
+	hs := &hybiServerHandshaker{Config: c}
+	return hs.NewServerConn(buf, rwc, r)
 }
 
 // Server represents a server of a WebSocket.
@@ -59,7 +85,7 @@ type Server struct {
 	// Handshake is an optional function in WebSocket handshake.
 	// For example, you can check, or don't check Origin header.
 	// Another example, you can select config.Protocol.
-	Handshake func(*Config, *http.Request) error
+	Handshake HandshakeFn
 
 	// Handler handles a WebSocket connection.
 	Handler
@@ -70,19 +96,18 @@ func (s Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s.serveWebSocket(w, req)
 }
 
-func (s Server) serveWebSocket(w http.ResponseWriter, req *http.Request) {
-	rwc, buf, err := w.(http.Hijacker).Hijack()
+func (s Server) serveWebSocket(w http.ResponseWriter, r *http.Request) {
+	hs := &hybiServerHandshaker{Config: &s.Config}
+	rwc, buf, err := upgrade(r, w, hs, s.Handshake)
 	if err != nil {
-		panic("Hijack failed: " + err.Error())
+		return
 	}
 	// The server should abort the WebSocket connection if it finds
 	// the client did not send a handshake that matches with protocol
 	// specification.
 	defer rwc.Close()
-	conn, err := newServerConn(rwc, buf, req, &s.Config, s.Handshake)
-	if err != nil {
-		return
-	}
+
+	conn := hs.NewServerConn(buf, rwc, r)
 	if conn == nil {
 		panic("unexpected nil conn")
 	}
