@@ -175,6 +175,9 @@ func (m ControlMessage) Parse() ([]ControlMessage, error) {
 	for len(m) >= controlHeaderLen() {
 		h := (*cmsghdr)(unsafe.Pointer(&m[0]))
 		l := h.len()
+		if l <= 0 {
+			return nil, errors.New("invalid header length")
+		}
 		if uint64(l) < uint64(controlHeaderLen()) {
 			return nil, errors.New("invalid message length")
 		}
