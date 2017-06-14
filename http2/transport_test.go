@@ -2529,7 +2529,7 @@ func TestTransportBodyDoubleEndStream(t *testing.T) {
 	}
 }
 
-// golangorg/issue/16847
+// golang.org/issue/16847, golang.org/issue/19103
 func TestTransportRequestPathPseudo(t *testing.T) {
 	type result struct {
 		path string
@@ -2549,9 +2549,9 @@ func TestTransportRequestPathPseudo(t *testing.T) {
 			},
 			want: result{path: "/foo"},
 		},
-		// I guess we just don't let users request "//foo" as
-		// a path, since it's illegal to start with two
-		// slashes....
+		// In Go 1.7, we accepted paths of "//foo".
+		// In Go 1.8, we rejected it (issue 16847).
+		// In Go 1.9, we accepted it again (issue 19103).
 		1: {
 			req: &http.Request{
 				Method: "GET",
@@ -2560,7 +2560,7 @@ func TestTransportRequestPathPseudo(t *testing.T) {
 					Path: "//foo",
 				},
 			},
-			want: result{err: `invalid request :path "//foo"`},
+			want: result{path: "//foo"},
 		},
 
 		// Opaque with //$Matching_Hostname/path
