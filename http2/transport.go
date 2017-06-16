@@ -694,7 +694,7 @@ func checkConnHeaders(req *http.Request) error {
 // req.ContentLength, where 0 actually means zero (not unknown) and -1
 // means unknown.
 func actualContentLength(req *http.Request) int64 {
-	if req.Body == nil {
+	if req.Body == nil || reqBodyIsNoBody(req.Body) {
 		return 0
 	}
 	if req.ContentLength != 0 {
@@ -725,8 +725,8 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	body := req.Body
-	hasBody := body != nil
 	contentLen := actualContentLength(req)
+	hasBody := contentLen != 0
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
 	var requestedGzip bool

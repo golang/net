@@ -417,6 +417,11 @@ func TestActualContentLength(t *testing.T) {
 			req:  &http.Request{Body: panicReader{}, ContentLength: 5},
 			want: 5,
 		},
+		// http.NoBody means 0, not -1.
+		3: {
+			req:  &http.Request{Body: go18httpNoBody()},
+			want: 0,
+		},
 	}
 	for i, tt := range tests {
 		got := actualContentLength(tt.req)
@@ -2968,4 +2973,43 @@ func TestTransportAllocationsAfterResponseBodyClose(t *testing.T) {
 	} else if gotErr != errStreamClosed {
 		t.Errorf("Handler Write err = %v; want errStreamClosed", gotErr)
 	}
+}
+
+// Issue 18891: make sure Request.Body == NoBody means no DATA frame
+// is ever sent, even if empty.
+func TestTransportNoBodyMeansNoDATA(t *testing.T) {
+	ct := newClientTester(t)
+
+	unblockClient := make(chan bool)
+
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", go18httpNoBody())
+		ct.tr.RoundTrip(req)
+		<-unblockClient
+		return nil
+	}
+	ct.server = func() error {
+		defer close(unblockClient)
+		defer ct.cc.(*net.TCPConn).Close()
+		ct.greet()
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return fmt.Errorf("ReadFrame while waiting for Headers: %v", err)
+			}
+			switch f := f.(type) {
+			default:
+				return fmt.Errorf("Got %T; want HeadersFrame", f)
+			case *WindowUpdateFrame, *SettingsFrame:
+				continue
+			case *HeadersFrame:
+				if !f.StreamEnded() {
+					return fmt.Errorf("got headers frame without END_STREAM")
+				}
+				return nil
+			}
+		}
+	}
+	ct.run()
 }
