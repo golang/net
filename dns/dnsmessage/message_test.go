@@ -159,6 +159,65 @@ func TestNamePackUnpack(t *testing.T) {
 	}
 }
 
+func checkErrorPrefix(err error, prefix string) bool {
+	e, ok := err.(*nestedError)
+	return ok && e.s == prefix
+}
+
+func TestHeaderUnpackError(t *testing.T) {
+	wants := []string{
+		"id",
+		"bits",
+		"questions",
+		"answers",
+		"authorities",
+		"additionals",
+	}
+	var buf []byte
+	var h header
+	for _, want := range wants {
+		n, err := h.unpack(buf, 0)
+		if n != 0 || !checkErrorPrefix(err, want) {
+			t.Errorf("got h.unpack([%d]byte, 0) = %d, %v, want = 0, %s", len(buf), n, err, want)
+		}
+		buf = append(buf, 0, 0)
+	}
+}
+
+func TestParserStart(t *testing.T) {
+	const want = "unpacking header"
+	var p Parser
+	for i := 0; i <= 1; i++ {
+		_, err := p.Start([]byte{})
+		if !checkErrorPrefix(err, want) {
+			t.Errorf("got p.Start(nil) = _, %v, want = _, %s", err, want)
+		}
+	}
+}
+
+func TestResourceNotStarted(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(*Parser) error
+	}{
+		{"CNAMEResource", func(p *Parser) error { _, err := p.CNAMEResource(); return err }},
+		{"MXResource", func(p *Parser) error { _, err := p.MXResource(); return err }},
+		{"NSResource", func(p *Parser) error { _, err := p.NSResource(); return err }},
+		{"PTRResource", func(p *Parser) error { _, err := p.PTRResource(); return err }},
+		{"SOAResource", func(p *Parser) error { _, err := p.SOAResource(); return err }},
+		{"TXTResource", func(p *Parser) error { _, err := p.TXTResource(); return err }},
+		{"SRVResource", func(p *Parser) error { _, err := p.SRVResource(); return err }},
+		{"AResource", func(p *Parser) error { _, err := p.AResource(); return err }},
+		{"AAAAResource", func(p *Parser) error { _, err := p.AAAAResource(); return err }},
+	}
+
+	for _, test := range tests {
+		if err := test.fn(&Parser{}); err != ErrNotStarted {
+			t.Errorf("got _, %v = p.%s(), want = _, %v", err, test.name, ErrNotStarted)
+		}
+	}
+}
+
 func TestDNSPackUnpack(t *testing.T) {
 	wants := []Message{
 		{
@@ -410,8 +469,43 @@ func TestBuilder(t *testing.T) {
 		t.Fatal("b.StartAnswers():", err)
 	}
 	for _, a := range msg.Answers {
-		if err := b.AResource(a.Header, *a.Body.(*AResource)); err != nil {
-			t.Fatalf("b.AResource(%#v): %v", a, err)
+		switch a.Header.Type {
+		case TypeA:
+			if err := b.AResource(a.Header, *a.Body.(*AResource)); err != nil {
+				t.Fatalf("b.AResource(%#v): %v", a, err)
+			}
+		case TypeNS:
+			if err := b.NSResource(a.Header, *a.Body.(*NSResource)); err != nil {
+				t.Fatalf("b.NSResource(%#v): %v", a, err)
+			}
+		case TypeCNAME:
+			if err := b.CNAMEResource(a.Header, *a.Body.(*CNAMEResource)); err != nil {
+				t.Fatalf("b.CNAMEResource(%#v): %v", a, err)
+			}
+		case TypeSOA:
+			if err := b.SOAResource(a.Header, *a.Body.(*SOAResource)); err != nil {
+				t.Fatalf("b.SOAResource(%#v): %v", a, err)
+			}
+		case TypePTR:
+			if err := b.PTRResource(a.Header, *a.Body.(*PTRResource)); err != nil {
+				t.Fatalf("b.PTRResource(%#v): %v", a, err)
+			}
+		case TypeMX:
+			if err := b.MXResource(a.Header, *a.Body.(*MXResource)); err != nil {
+				t.Fatalf("b.MXResource(%#v): %v", a, err)
+			}
+		case TypeTXT:
+			if err := b.TXTResource(a.Header, *a.Body.(*TXTResource)); err != nil {
+				t.Fatalf("b.TXTResource(%#v): %v", a, err)
+			}
+		case TypeAAAA:
+			if err := b.AAAAResource(a.Header, *a.Body.(*AAAAResource)); err != nil {
+				t.Fatalf("b.AAAAResource(%#v): %v", a, err)
+			}
+		case TypeSRV:
+			if err := b.SRVResource(a.Header, *a.Body.(*SRVResource)); err != nil {
+				t.Fatalf("b.SRVResource(%#v): %v", a, err)
+			}
 		}
 	}
 
@@ -458,7 +552,7 @@ func ExampleHeaderSearch() {
 			},
 		},
 		Answers: []Resource{
-			Resource{
+			{
 				ResourceHeader{
 					Name:  mustNewName("foo.bar.example.com."),
 					Type:  TypeA,
@@ -466,7 +560,7 @@ func ExampleHeaderSearch() {
 				},
 				&AResource{[4]byte{127, 0, 0, 1}},
 			},
-			Resource{
+			{
 				ResourceHeader{
 					Name:  mustNewName("bar.example.com."),
 					Type:  TypeA,
@@ -567,28 +661,28 @@ func BenchmarkParsing(b *testing.B) {
 			},
 		},
 		Answers: []Resource{
-			Resource{
+			{
 				ResourceHeader{
 					Name:  name,
 					Class: ClassINET,
 				},
 				&AResource{[4]byte{}},
 			},
-			Resource{
+			{
 				ResourceHeader{
 					Name:  name,
 					Class: ClassINET,
 				},
 				&AAAAResource{[16]byte{}},
 			},
-			Resource{
+			{
 				ResourceHeader{
 					Name:  name,
 					Class: ClassINET,
 				},
 				&CNAMEResource{name},
 			},
-			Resource{
+			{
 				ResourceHeader{
 					Name:  name,
 					Class: ClassINET,
@@ -709,45 +803,110 @@ func BenchmarkBuilding(b *testing.B) {
 }
 
 func largeTestMsg() Message {
+	name := mustNewName("foo.bar.example.com.")
 	return Message{
 		Header: Header{Response: true, Authoritative: true},
 		Questions: []Question{
 			{
-				Name:  mustNewName("foo.bar.example.com."),
+				Name:  name,
 				Type:  TypeA,
 				Class: ClassINET,
 			},
 		},
 		Answers: []Resource{
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeA,
 					Class: ClassINET,
 				},
 				&AResource{[4]byte{127, 0, 0, 1}},
 			},
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeA,
 					Class: ClassINET,
 				},
 				&AResource{[4]byte{127, 0, 0, 2}},
 			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeAAAA,
+					Class: ClassINET,
+				},
+				&AAAAResource{[16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeCNAME,
+					Class: ClassINET,
+				},
+				&CNAMEResource{mustNewName("alias.example.com.")},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeSOA,
+					Class: ClassINET,
+				},
+				&SOAResource{
+					NS:      mustNewName("ns1.example.com."),
+					MBox:    mustNewName("mb.example.com."),
+					Serial:  1,
+					Refresh: 2,
+					Retry:   3,
+					Expire:  4,
+					MinTTL:  5,
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypePTR,
+					Class: ClassINET,
+				},
+				&PTRResource{mustNewName("ptr.example.com.")},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeMX,
+					Class: ClassINET,
+				},
+				&MXResource{
+					7,
+					mustNewName("mx.example.com."),
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeSRV,
+					Class: ClassINET,
+				},
+				&SRVResource{
+					8,
+					9,
+					11,
+					mustNewName("srv.example.com."),
+				},
+			},
 		},
 		Authorities: []Resource{
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeNS,
 					Class: ClassINET,
 				},
 				&NSResource{mustNewName("ns1.example.com.")},
 			},
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeNS,
 					Class: ClassINET,
 				},
@@ -755,17 +914,17 @@ func largeTestMsg() Message {
 			},
 		},
 		Additionals: []Resource{
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeTXT,
 					Class: ClassINET,
 				},
 				&TXTResource{"So Long, and Thanks for All the Fish"},
 			},
-			Resource{
+			{
 				ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  name,
 					Type:  TypeTXT,
 					Class: ClassINET,
 				},
