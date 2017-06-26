@@ -1209,7 +1209,7 @@ func (b *Builder) Finish() ([]byte, error) {
 	return b.msg, nil
 }
 
-// An ResourceHeader is the header of a DNS resource record. There are
+// A ResourceHeader is the header of a DNS resource record. There are
 // many types of DNS resource records, but they all share the same header.
 type ResourceHeader struct {
 	// Name is the domain name for which this resource record pertains.
