@@ -534,6 +534,45 @@ func TestBuilder(t *testing.T) {
 	}
 }
 
+func TestResourcePack(t *testing.T) {
+	for _, m := range []Message{
+		{
+			Questions: []Question{
+				{
+					Name:  mustNewName("."),
+					Type:  TypeAAAA,
+					Class: ClassINET,
+				},
+			},
+			Answers: []Resource{{ResourceHeader{}, nil}},
+		},
+		{
+			Questions: []Question{
+				{
+					Name:  mustNewName("."),
+					Type:  TypeAAAA,
+					Class: ClassINET,
+				},
+			},
+			Authorities: []Resource{{ResourceHeader{}, (*NSResource)(nil)}},
+		},
+		{
+			Questions: []Question{
+				{
+					Name:  mustNewName("."),
+					Type:  TypeA,
+					Class: ClassINET,
+				},
+			},
+			Additionals: []Resource{{ResourceHeader{}, nil}},
+		},
+	} {
+		if _, err := m.Pack(); err == nil {
+			t.Errorf("should fail: %v", m)
+		}
+	}
+}
+
 func BenchmarkParsing(b *testing.B) {
 	b.ReportAllocs()
 
