@@ -535,40 +535,57 @@ func TestBuilder(t *testing.T) {
 }
 
 func TestResourcePack(t *testing.T) {
-	for _, m := range []Message{
+	for _, tt := range []struct {
+		m   Message
+		err error
+	}{
 		{
-			Questions: []Question{
-				{
-					Name:  mustNewName("."),
-					Type:  TypeAAAA,
-					Class: ClassINET,
+			Message{
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeAAAA,
+						Class: ClassINET,
+					},
 				},
+				Answers: []Resource{{ResourceHeader{}, nil}},
 			},
-			Answers: []Resource{{ResourceHeader{}, nil}},
+			&nestedError{"packing Answer", errNilResouceBody},
 		},
 		{
-			Questions: []Question{
-				{
-					Name:  mustNewName("."),
-					Type:  TypeAAAA,
-					Class: ClassINET,
+			Message{
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeAAAA,
+						Class: ClassINET,
+					},
+				},
+				Authorities: []Resource{{ResourceHeader{}, (*NSResource)(nil)}},
+			},
+			&nestedError{"packing Authority",
+				&nestedError{"ResourceHeader",
+					&nestedError{"Name", errNonCanonicalName},
 				},
 			},
-			Authorities: []Resource{{ResourceHeader{}, (*NSResource)(nil)}},
 		},
 		{
-			Questions: []Question{
-				{
-					Name:  mustNewName("."),
-					Type:  TypeA,
-					Class: ClassINET,
+			Message{
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeA,
+						Class: ClassINET,
+					},
 				},
+				Additionals: []Resource{{ResourceHeader{}, nil}},
 			},
-			Additionals: []Resource{{ResourceHeader{}, nil}},
+			&nestedError{"packing Additional", errNilResouceBody},
 		},
 	} {
-		if _, err := m.Pack(); err == nil {
-			t.Errorf("should fail: %v", m)
+		_, err := tt.m.Pack()
+		if !reflect.DeepEqual(err, tt.err) {
+			t.Errorf("got %v for %v; want %v", err, tt.m, tt.err)
 		}
 	}
 }
