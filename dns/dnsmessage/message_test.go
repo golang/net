@@ -20,6 +20,14 @@ func mustNewName(name string) Name {
 	return n
 }
 
+func mustEDNS0ResourceHeader(l int, extrc RCode, do bool) ResourceHeader {
+	h := ResourceHeader{Class: ClassINET}
+	if err := h.SetEDNS0(l, extrc, do); err != nil {
+		panic(err)
+	}
+	return h
+}
+
 func (m *Message) String() string {
 	s := fmt.Sprintf("Message: %#v\n", &m.Header)
 	if len(m.Questions) > 0 {
@@ -569,6 +577,7 @@ func TestBuilderResourceError(t *testing.T) {
 		{"SRVResource", func(b *Builder) error { return b.SRVResource(ResourceHeader{}, SRVResource{}) }},
 		{"AResource", func(b *Builder) error { return b.AResource(ResourceHeader{}, AResource{}) }},
 		{"AAAAResource", func(b *Builder) error { return b.AAAAResource(ResourceHeader{}, AAAAResource{}) }},
+		{"OPTResource", func(b *Builder) error { return b.OPTResource(ResourceHeader{}, OPTResource{}) }},
 	}
 
 	envs := []struct {
@@ -675,8 +684,15 @@ func TestBuilder(t *testing.T) {
 		t.Fatal("b.StartAdditionals():", err)
 	}
 	for _, a := range msg.Additionals {
-		if err := b.TXTResource(a.Header, *a.Body.(*TXTResource)); err != nil {
-			t.Fatalf("b.TXTResource(%#v): %v", a, err)
+		switch a.Body.(type) {
+		case *TXTResource:
+			if err := b.TXTResource(a.Header, *a.Body.(*TXTResource)); err != nil {
+				t.Fatalf("Builder.TXTResource(%#v) = %v", a, err)
+			}
+		case *OPTResource:
+			if err := b.OPTResource(a.Header, *a.Body.(*OPTResource)); err != nil {
+				t.Fatalf("Builder.OPTResource(%#v) = %v", a, err)
+			}
 		}
 	}
 
@@ -741,6 +757,145 @@ func TestResourcePack(t *testing.T) {
 		_, err := tt.m.Pack()
 		if !reflect.DeepEqual(err, tt.err) {
 			t.Errorf("got %v for %v; want %v", err, tt.m, tt.err)
+		}
+	}
+}
+
+func TestOptionPackUnpack(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		w        []byte // wire format of m.Additionals
+		m        Message
+		dnssecOK bool
+		extRCode RCode
+	}{
+		{
+			name: "without EDNS(0) options",
+			w: []byte{
+				0x00, 0x00, 0x29, 0x10, 0x00, 0xfe, 0x00, 0x80,
+				0x00, 0x00, 0x00,
+			},
+			m: Message{
+				Header: Header{RCode: RCodeFormatError},
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeA,
+						Class: ClassINET,
+					},
+				},
+				Additionals: []Resource{
+					{
+						mustEDNS0ResourceHeader(4096, 0xfe0|RCodeFormatError, true),
+						&OPTResource{},
+					},
+				},
+			},
+			dnssecOK: true,
+			extRCode: 0xfe0 | RCodeFormatError,
+		},
+		{
+			name: "with EDNS(0) options",
+			w: []byte{
+				0x00, 0x00, 0x29, 0x10, 0x00, 0xff, 0x00, 0x00,
+				0x00, 0x00, 0x0c, 0x00, 0x0c, 0x00, 0x02, 0x00,
+				0x00, 0x00, 0x0b, 0x00, 0x02, 0x12, 0x34,
+			},
+			m: Message{
+				Header: Header{RCode: RCodeServerFailure},
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeAAAA,
+						Class: ClassINET,
+					},
+				},
+				Additionals: []Resource{
+					{
+						mustEDNS0ResourceHeader(4096, 0xff0|RCodeServerFailure, false),
+						&OPTResource{
+							Options: []Option{
+								{
+									Code: 12, // see RFC 7828
+									Data: []byte{0x00, 0x00},
+								},
+								{
+									Code: 11, // see RFC 7830
+									Data: []byte{0x12, 0x34},
+								},
+							},
+						},
+					},
+				},
+			},
+			dnssecOK: false,
+			extRCode: 0xff0 | RCodeServerFailure,
+		},
+		{
+			// Containing multiple OPT resources in a
+			// message is invalid, but it's necessary for
+			// protocol conformance testing.
+			name: "with multiple OPT resources",
+			w: []byte{
+				0x00, 0x00, 0x29, 0x10, 0x00, 0xff, 0x00, 0x00,
+				0x00, 0x00, 0x06, 0x00, 0x0b, 0x00, 0x02, 0x12,
+				0x34, 0x00, 0x00, 0x29, 0x10, 0x00, 0xff, 0x00,
+				0x00, 0x00, 0x00, 0x06, 0x00, 0x0c, 0x00, 0x02,
+				0x00, 0x00,
+			},
+			m: Message{
+				Header: Header{RCode: RCodeNameError},
+				Questions: []Question{
+					{
+						Name:  mustNewName("."),
+						Type:  TypeAAAA,
+						Class: ClassINET,
+					},
+				},
+				Additionals: []Resource{
+					{
+						mustEDNS0ResourceHeader(4096, 0xff0|RCodeNameError, false),
+						&OPTResource{
+							Options: []Option{
+								{
+									Code: 11, // see RFC 7830
+									Data: []byte{0x12, 0x34},
+								},
+							},
+						},
+					},
+					{
+						mustEDNS0ResourceHeader(4096, 0xff0|RCodeNameError, false),
+						&OPTResource{
+							Options: []Option{
+								{
+									Code: 12, // see RFC 7828
+									Data: []byte{0x00, 0x00},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		w, err := tt.m.Pack()
+		if err != nil {
+			t.Errorf("Message.Pack() for %s = %v", tt.name, err)
+			continue
+		}
+		if !bytes.Equal(w[len(w)-len(tt.w):], tt.w) {
+			t.Errorf("got Message.Pack() for %s = %#v, want %#v", tt.name, w[len(w)-len(tt.w):], tt.w)
+			continue
+		}
+		var m Message
+		if err := m.Unpack(w); err != nil {
+			t.Errorf("Message.Unpack() for %s = %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(m.Additionals, tt.m.Additionals) {
+			t.Errorf("got Message.Pack/Unpack() roundtrip for %s = %+v, want %+v", tt.name, m, tt.m)
+			continue
 		}
 	}
 }
@@ -837,6 +992,10 @@ func benchmarkParsing(tb testing.TB, buf []byte) {
 			if _, err := p.NSResource(); err != nil {
 				tb.Fatal("p.NSResource():", err)
 			}
+		case TypeOPT:
+			if _, err := p.OPTResource(); err != nil {
+				tb.Fatal("Parser.OPTResource() =", err)
+			}
 		default:
 			tb.Fatalf("unknown type: %T", h)
 		}
@@ -913,6 +1072,15 @@ func benchmarkBuilding(tb testing.TB, name Name, buf []byte) {
 	nsr := NSResource{name}
 	if err := bld.NSResource(hdr, nsr); err != nil {
 		tb.Fatalf("bld.NSResource(%+v, %+v): %v", hdr, nsr, err)
+	}
+
+	extrc := 0xfe0 | RCodeNotImplemented
+	if err := (&hdr).SetEDNS0(4096, extrc, true); err != nil {
+		tb.Fatalf("ResourceHeader.SetEDNS0(4096, %#x, true) = %v", extrc, err)
+	}
+	optr := OPTResource{}
+	if err := bld.OPTResource(hdr, optr); err != nil {
+		tb.Fatalf("Builder.OPTResource(%+v, %+v) = %v", hdr, optr, err)
 	}
 
 	if _, err := bld.Finish(); err != nil {
@@ -1131,6 +1299,17 @@ func largeTestMsg() Message {
 					Class: ClassINET,
 				},
 				&TXTResource{[]string{"Hamster Huey and the Gooey Kablooie"}},
+			},
+			{
+				mustEDNS0ResourceHeader(4096, 0xfe0|RCodeSuccess, false),
+				&OPTResource{
+					Options: []Option{
+						{
+							Code: 10, // see RFC 7873
+							Data: []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+						},
+					},
+				},
 			},
 		},
 	}
