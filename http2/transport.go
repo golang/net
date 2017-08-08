@@ -354,8 +354,8 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 				select {
 				case <-time.After(time.Second * time.Duration(backoff)):
 					continue
-				case <-req.Context().Done():
-					return nil, req.Context().Err()
+				case <-reqContext(req).Done():
+					return nil, reqContext(req).Err()
 				}
 			}
 		}
