@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
@@ -3036,6 +3037,60 @@ func TestTransportRetryHasLimit(t *testing.T) {
 	ct.run()
 }
 
+func TestTransportResponseDataBeforeHeaders(t *testing.T) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		defer ct.cc.(*net.TCPConn).CloseWrite()
+		req := httptest.NewRequest("GET", "https://dummy.tld/", nil)
+		// First request is normal to ensure the check is per stream and not per connection.
+		_, err := ct.tr.RoundTrip(req)
+		if err != nil {
+			return fmt.Errorf("RoundTrip expected no error, got: %v", err)
+		}
+		// Second request returns a DATA frame with no HEADERS.
+		resp, err := ct.tr.RoundTrip(req)
+		if err == nil {
+			return fmt.Errorf("RoundTrip expected error, got response: %+v", resp)
+		}
+		if err, ok := err.(StreamError); !ok || err.Code != ErrCodeProtocol {
+			return fmt.Errorf("expected stream PROTOCOL_ERROR, got: %v", err)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err == io.EOF {
+				return nil
+			} else if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *WindowUpdateFrame, *SettingsFrame:
+			case *HeadersFrame:
+				switch f.StreamID {
+				case 1:
+					// Send a valid response to first request.
+					var buf bytes.Buffer
+					enc := hpack.NewEncoder(&buf)
+					enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+					ct.fr.WriteHeaders(HeadersFrameParam{
+						StreamID:      f.StreamID,
+						EndHeaders:    true,
+						EndStream:     true,
+						BlockFragment: buf.Bytes(),
+					})
+				case 3:
+					ct.fr.WriteData(f.StreamID, true, []byte("payload"))
+				}
+			default:
+				return fmt.Errorf("Unexpected client frame %v", f)
+			}
+		}
+	}
+	ct.run()
+}
 func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 	const maxConcurrent = 2
 
