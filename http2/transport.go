@@ -1911,11 +1911,11 @@ func (rl *clientConnReadLoop) endStreamError(cs *clientStream, err error) {
 		err = io.EOF
 		code = cs.copyTrailers
 	}
-	cs.bufPipe.closeWithErrorAndCode(err, code)
-	delete(rl.activeRes, cs.ID)
 	if isConnectionCloseRequest(cs.req) {
 		rl.closeWhenIdle = true
 	}
+	cs.bufPipe.closeWithErrorAndCode(err, code)
+	delete(rl.activeRes, cs.ID)
 
 	select {
 	case cs.resc <- resAndError{err: err}:
