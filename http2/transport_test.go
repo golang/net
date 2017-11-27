@@ -3788,6 +3788,46 @@ func TestTransportResponseAndResetWithoutConsumingBodyRace(t *testing.T) {
 	}
 }
 
+// Verify transport doesn't crash when receiving bogus response lacking a :status header.
+// Issue 22880.
+func TestTransportHandlesInvalidStatuslessResponse(t *testing.T) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		_, err := ct.tr.RoundTrip(req)
+		const substr = "malformed response from server: missing status pseudo header"
+		if !strings.Contains(fmt.Sprint(err), substr) {
+			return fmt.Errorf("RoundTrip error = %v; want substring %q", err, substr)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				enc.WriteField(hpack.HeaderField{Name: "content-type", Value: "text/html"}) // no :status header
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     false, // we'll send some DATA to try to crash the transport
+					BlockFragment: buf.Bytes(),
+				})
+				ct.fr.WriteData(f.StreamID, true, []byte("payload"))
+				return nil
+			}
+		}
+	}
+	ct.run()
+}
+
 func BenchmarkClientRequestHeaders(b *testing.B) {
 	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0) })
 	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 10) })

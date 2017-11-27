@@ -1567,6 +1567,7 @@ func (rl *clientConnReadLoop) processHeaders(f *MetaHeadersFrame) error {
 		}
 		// Any other error type is a stream error.
 		cs.cc.writeStreamReset(f.StreamID, ErrCodeProtocol, err)
+		cc.forgetStreamID(cs.ID)
 		cs.resc <- resAndError{err: err}
 		return nil // return nil from process* funcs to keep conn alive
 	}
@@ -1596,11 +1597,11 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 
 	status := f.PseudoValue("status")
 	if status == "" {
-		return nil, errors.New("missing status pseudo header")
+		return nil, errors.New("malformed response from server: missing status pseudo header")
 	}
 	statusCode, err := strconv.Atoi(status)
 	if err != nil {
-		return nil, errors.New("malformed non-numeric status pseudo header")
+		return nil, errors.New("malformed response from server: malformed non-numeric status pseudo header")
 	}
 
 	if statusCode == 100 {
