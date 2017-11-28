@@ -1523,6 +1523,13 @@ func (rl *clientConnReadLoop) run() error {
 
 func (rl *clientConnReadLoop) processHeaders(f *MetaHeadersFrame) error {
 	cc := rl.cc
+	cs := cc.streamByID(f.StreamID, false)
+	if cs == nil {
+		// We'd get here if we canceled a request while the
+		// server had its response still in flight. So if this
+		// was just something we canceled, ignore it.
+		return nil
+	}
 	if f.StreamEnded() {
 		// Issue 20521: If the stream has ended, streamByID() causes
 		// clientStream.done to be closed, which causes the request's bodyWriter
@@ -1531,14 +1538,15 @@ func (rl *clientConnReadLoop) processHeaders(f *MetaHeadersFrame) error {
 		// Deferring stream closure allows the header processing to occur first.
 		// clientConn.RoundTrip may still receive the bodyWriter error first, but
 		// the fix for issue 16102 prioritises any response.
-		defer cc.streamByID(f.StreamID, true)
-	}
-	cs := cc.streamByID(f.StreamID, false)
-	if cs == nil {
-		// We'd get here if we canceled a request while the
-		// server had its response still in flight. So if this
-		// was just something we canceled, ignore it.
-		return nil
+		//
+		// Issue 22413: If there is no request body, we should close the
+		// stream before writing to cs.resc so that the stream is closed
+		// immediately once RoundTrip returns.
+		if cs.req.Body != nil {
+			defer cc.forgetStreamID(f.StreamID)
+		} else {
+			cc.forgetStreamID(f.StreamID)
+		}
 	}
 	if !cs.firstByte {
 		if cs.trace != nil {
