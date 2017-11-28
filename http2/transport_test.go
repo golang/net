@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -2291,6 +2292,11 @@ func TestTransportReadHeadResponse(t *testing.T) {
 }
 
 func TestTransportReadHeadResponseWithBody(t *testing.T) {
+	// This test use not valid response format.
+	// Discarding logger output to not spam tests output.
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
 	response := "redirecting to /elsewhere"
 	ct := newClientTester(t)
 	clientDone := make(chan struct{})
@@ -3383,6 +3389,11 @@ func TestTransportRetryHasLimit(t *testing.T) {
 }
 
 func TestTransportResponseDataBeforeHeaders(t *testing.T) {
+	// This test use not valid response format.
+	// Discarding logger output to not spam tests output.
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(os.Stderr)
+
 	ct := newClientTester(t)
 	ct.client = func() error {
 		defer ct.cc.(*net.TCPConn).CloseWrite()
