@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.9
-// +build linux netbsd
+// +build linux
 
 package socket
 
