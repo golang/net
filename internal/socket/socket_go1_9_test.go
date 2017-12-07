@@ -145,7 +145,7 @@ func TestUDP(t *testing.T) {
 		}
 	})
 	switch runtime.GOOS {
-	case "android", "linux":
+	case "android", "linux", "netbsd":
 		t.Run("Messages", func(t *testing.T) {
 			data := []byte("HELLO-R-U-THERE")
 			wmbs := bytes.SplitAfter(data, []byte("-"))
@@ -233,7 +233,7 @@ func BenchmarkUDP(b *testing.B) {
 			}
 		})
 		switch runtime.GOOS {
-		case "android", "linux":
+		case "android", "linux", "netbsd":
 			wms := make([]socket.Message, M)
 			for i := range wms {
 				wms[i].Buffers = [][]byte{data}
