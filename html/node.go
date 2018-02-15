@@ -21,7 +21,8 @@ const (
 	scopeMarkerNode
 )
 
-// Section 12.2.3.3 says "scope markers are inserted when entering applet
+// TODO(namusyaka): These elements should be updated.
+// Section 12.2.4.3 says "The markers are inserted when entering applet
 // elements, buttons, object elements, marquees, table cells, and table
 // captions, and are used to prevent formatting from 'leaking'".
 var scopeMarker = Node{Type: scopeMarkerNode}
