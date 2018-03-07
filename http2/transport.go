@@ -321,7 +321,9 @@ func (noCachedConnError) Error() string             { return "http2: no cached c
 // or its equivalent renamed type in net/http2's h2_bundle.go. Both types
 // may coexist in the same running program.
 func isNoCachedConnError(err error) bool {
-	_, ok := err.(interface{ IsHTTP2NoCachedConnError() })
+	_, ok := err.(interface {
+		IsHTTP2NoCachedConnError()
+	})
 	return ok
 }
 
@@ -334,6 +336,8 @@ type RoundTripOpt struct {
 	// no cached connection is available, RoundTripOpt
 	// will return ErrNoCachedConn.
 	OnlyCachedConn bool
+
+	Priority *PriorityParam
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -375,7 +379,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 			return nil, err
 		}
 		traceGotConn(req, cc)
-		res, gotErrAfterReqBodyWrite, err := cc.roundTrip(req)
+		res, gotErrAfterReqBodyWrite, err := cc.roundTrip(req, opt.Priority)
 		if err != nil && retry <= 6 {
 			if req, err = shouldRetryRequest(req, err, gotErrAfterReqBodyWrite); err == nil {
 				// After the first retry, do exponential backoff with 10% jitter.
@@ -763,11 +767,11 @@ func actualContentLength(req *http.Request) int64 {
 }
 
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, _, err := cc.roundTrip(req)
+	resp, _, err := cc.roundTrip(req, nil)
 	return resp, err
 }
 
-func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAfterReqBodyWrite bool, err error) {
+func (cc *ClientConn) roundTrip(req *http.Request, priority *PriorityParam) (res *http.Response, gotErrAfterReqBodyWrite bool, err error) {
 	if err := checkConnHeaders(req); err != nil {
 		return nil, false, err
 	}
@@ -831,6 +835,9 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
 	werr := cc.writeHeaders(cs.ID, endStream, int(cc.maxFrameSize), hdrs)
+	if priority != nil {
+		cc.fr.WritePriority(cs.ID, *priority)
+	}
 	cc.wmu.Unlock()
 	traceWroteHeaders(cs.trace)
 	cc.mu.Unlock()
