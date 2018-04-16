@@ -2270,7 +2270,7 @@ func ParseFragment(r io.Reader, context *Node) ([]*Node, error) {
 	}
 	p.doc.AppendChild(root)
 	p.oe = nodeStack{root}
-	if context.DataAtom == a.Template {
+	if context != nil && context.DataAtom == a.Template {
 		p.templateStack = append(p.templateStack, inTemplateIM)
 	}
 	p.resetInsertionMode()

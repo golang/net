@@ -380,6 +380,11 @@ func TestNodeConsistency(t *testing.T) {
 	}
 }
 
+func TestParseFragmentWithNilContext(t *testing.T) {
+	// This shouldn't panic.
+	ParseFragment(strings.NewReader("<p>hello</p>"), nil)
+}
+
 func BenchmarkParser(b *testing.B) {
 	buf, err := ioutil.ReadFile("testdata/go1.html")
 	if err != nil {
