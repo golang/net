@@ -29,7 +29,7 @@ func TestMemPS(t *testing.T) {
 			for i, p := range pst.Props {
 				switch p.XMLName {
 				case xml.Name{Space: "DAV:", Local: "getlastmodified"}:
-					p.InnerXML = []byte(fi.ModTime().Format(http.TimeFormat))
+					p.InnerXML = []byte(fi.ModTime().UTC().Format(http.TimeFormat))
 					pst.Props[i] = p
 				case xml.Name{Space: "DAV:", Local: "getetag"}:
 					if fi.IsDir() {

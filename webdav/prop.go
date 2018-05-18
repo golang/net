@@ -376,7 +376,7 @@ func findContentLength(ctx context.Context, fs FileSystem, ls LockSystem, name s
 }
 
 func findLastModified(ctx context.Context, fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
-	return fi.ModTime().Format(http.TimeFormat), nil
+	return fi.ModTime().UTC().Format(http.TimeFormat), nil
 }
 
 func findContentType(ctx context.Context, fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
