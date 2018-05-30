@@ -75,7 +75,7 @@ const (
 
 	AuthMethodNotRequired         AuthMethod = 0x00 // no authentication required
 	AuthMethodUsernamePassword    AuthMethod = 0x02 // use username/password
-	AuthMethodNoAcceptableMethods AuthMethod = 0xff // no acceptable authetication methods
+	AuthMethodNoAcceptableMethods AuthMethod = 0xff // no acceptable authentication methods
 
 	StatusSucceeded Reply = 0x00
 )
