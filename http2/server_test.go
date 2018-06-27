@@ -3762,6 +3762,7 @@ func TestIssue20704Race(t *testing.T) {
 
 func TestServer_Rejects_TooSmall(t *testing.T) {
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		ioutil.ReadAll(r.Body)
 		return nil
 	}, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
