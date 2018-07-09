@@ -2024,12 +2024,22 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		},
 		{
 			key:   "Connection",
+			value: []string{"CLoSe"},
+			want:  "Accept-Encoding,User-Agent",
+		},
+		{
+			key:   "Connection",
 			value: []string{"close", "something-else"},
 			want:  "ERROR: http2: invalid Connection request header: [\"close\" \"something-else\"]",
 		},
 		{
 			key:   "Connection",
 			value: []string{"keep-alive"},
+			want:  "Accept-Encoding,User-Agent",
+		},
+		{
+			key:   "Connection",
+			value: []string{"Keep-ALIVE"},
 			want:  "Accept-Encoding,User-Agent",
 		},
 		{
