@@ -1291,9 +1291,16 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		return nil, errRequestHeaderListSize
 	}
 
+	trace := requestTrace(req)
+	traceHeaders := traceHasWroteHeaderField(trace)
+
 	// Header list size is ok. Write the headers.
 	enumerateHeaders(func(name, value string) {
-		cc.writeHeader(strings.ToLower(name), value)
+		name = strings.ToLower(name)
+		cc.writeHeader(name, value)
+		if traceHeaders {
+			traceWroteHeaderField(trace, name, value)
+		}
 	})
 
 	return cc.hbuf.Bytes(), nil
