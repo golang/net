@@ -37,6 +37,7 @@ func setResponseUncompressed(res *http.Response) {
 type clientTrace struct{}
 
 func requestTrace(*http.Request) *clientTrace { return nil }
+func traceGetConn(*http.Request, string)      {}
 func traceGotConn(*http.Request, *ClientConn) {}
 func traceFirstResponseByte(*clientTrace)     {}
 func traceWroteHeaders(*clientTrace)          {}

@@ -50,6 +50,14 @@ func (t *Transport) idleConnTimeout() time.Duration {
 
 func setResponseUncompressed(res *http.Response) { res.Uncompressed = true }
 
+func traceGetConn(req *http.Request, hostPort string) {
+	trace := httptrace.ContextClientTrace(req.Context())
+	if trace == nil || trace.GetConn == nil {
+		return
+	}
+	trace.GetConn(hostPort)
+}
+
 func traceGotConn(req *http.Request, cc *ClientConn) {
 	trace := httptrace.ContextClientTrace(req.Context())
 	if trace == nil || trace.GotConn == nil {
