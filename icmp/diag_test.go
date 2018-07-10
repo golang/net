@@ -17,9 +17,9 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
+	"golang.org/x/net/nettest"
 )
 
 var testDiag = flag.Bool("diag", false, "whether to test ICMP message exchange with external network")
@@ -68,8 +68,8 @@ func TestDiag(t *testing.T) {
 		}
 	})
 	t.Run("Ping/Privileged", func(t *testing.T) {
-		if m, ok := nettest.SupportsRawIPSocket(); !ok {
-			t.Skip(m)
+		if !nettest.SupportsRawSocket() {
+			t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 		}
 		for i, dt := range []diagTest{
 			{
@@ -100,8 +100,8 @@ func TestDiag(t *testing.T) {
 		}
 	})
 	t.Run("Probe/Privileged", func(t *testing.T) {
-		if m, ok := nettest.SupportsRawIPSocket(); !ok {
-			t.Skip(m)
+		if !nettest.SupportsRawSocket() {
+			t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 		}
 		for i, dt := range []diagTest{
 			{

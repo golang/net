@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/nettest"
 )
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
@@ -23,8 +23,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
-	if ifi == nil {
+	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -42,7 +41,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			if nettest.ProtocolNotSupported(err) {
+			if protocolNotSupported(err) {
 				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}
@@ -74,11 +73,10 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if m, ok := nettest.SupportsRawIPSocket(); !ok {
-		t.Skip(m)
+	if !nettest.SupportsRawSocket() {
+		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
-	if ifi == nil {
+	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -112,7 +110,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			if nettest.ProtocolNotSupported(err) {
+			if protocolNotSupported(err) {
 				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}
@@ -160,11 +158,10 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if m, ok := nettest.SupportsRawIPSocket(); !ok {
-		t.Skip(m)
+	if !nettest.SupportsRawSocket() {
+		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
-	if ifi == nil {
+	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -206,7 +203,7 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			Dst:      dst.IP,
 		}
 		if err := r.SetControlMessage(cf, toggle); err != nil {
-			if nettest.ProtocolNotSupported(err) {
+			if protocolNotSupported(err) {
 				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}

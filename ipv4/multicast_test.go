@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/nettest"
 )
 
 var packetConnReadWriteMulticastUDPTests = []struct {
@@ -32,8 +32,8 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
-	if ifi == nil {
+	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
+	if err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -82,7 +82,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 		for i, toggle := range []bool{true, false, true} {
 			if err := p.SetControlMessage(cf, toggle); err != nil {
-				if nettest.ProtocolNotSupported(err) {
+				if protocolNotSupported(err) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
@@ -120,11 +120,11 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if m, ok := nettest.SupportsRawIPSocket(); !ok {
-		t.Skip(m)
+	if !nettest.SupportsRawSocket() {
+		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
-	if ifi == nil {
+	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
+	if err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -184,7 +184,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := p.SetControlMessage(cf, toggle); err != nil {
-				if nettest.ProtocolNotSupported(err) {
+				if protocolNotSupported(err) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
@@ -234,11 +234,11 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
-	if m, ok := nettest.SupportsRawIPSocket(); !ok {
-		t.Skip(m)
+	if !nettest.SupportsRawSocket() {
+		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
-	if ifi == nil {
+	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
+	if err != nil {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -305,7 +305,7 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 				Dst:      tt.grp.IP,
 			}
 			if err := r.SetControlMessage(cf, toggle); err != nil {
-				if nettest.ProtocolNotSupported(err) {
+				if protocolNotSupported(err) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}

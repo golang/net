@@ -4,14 +4,9 @@
 
 // +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
 
-package nettest
+package netutil
 
-import (
-	"fmt"
-	"os"
-	"runtime"
-	"syscall"
-)
+import "syscall"
 
 func maxOpenFiles() int {
 	var rlim syscall.Rlimit
@@ -19,11 +14,4 @@ func maxOpenFiles() int {
 		return defaultMaxOpenFiles
 	}
 	return int(rlim.Cur)
-}
-
-func supportsRawIPSocket() (string, bool) {
-	if os.Getuid() != 0 {
-		return fmt.Sprintf("must be root on %s", runtime.GOOS), false
-	}
-	return "", true
 }

@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"golang.org/x/net/internal/iana"
-	"golang.org/x/net/internal/nettest"
 	"golang.org/x/net/ipv6"
+	"golang.org/x/net/nettest"
 )
 
 func BenchmarkReadWriteUnicast(b *testing.B) {
@@ -53,7 +53,7 @@ func BenchmarkReadWriteUnicast(b *testing.B) {
 			TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 			HopLimit:     1,
 		}
-		ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+		ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 		if ifi != nil {
 			cm.IfIndex = ifi.Index
 		}
@@ -91,7 +91,8 @@ func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 		HopLimit:     1,
 		Src:          net.IPv6loopback,
 	}
-	if ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); ifi != nil {
+	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+	if ifi != nil {
 		cm.IfIndex = ifi.Index
 	}
 
@@ -221,7 +222,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !supportsIPv6 {
+	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
 	}
 
@@ -234,12 +235,12 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	defer p.Close()
 
 	dst := c.LocalAddr()
-	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
 
 	if err := p.SetControlMessage(cf, true); err != nil { // probe before test
-		if nettest.ProtocolNotSupported(err) {
+		if protocolNotSupported(err) {
 			t.Skipf("not supported on %s", runtime.GOOS)
 		}
 		t.Fatal(err)
@@ -357,11 +358,11 @@ func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, data []byte, dst net.Addr, batch bool) {
 	t.Helper()
 
-	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 
 	if err := p.SetControlMessage(cf, true); err != nil { // probe before test
-		if nettest.ProtocolNotSupported(err) {
+		if protocolNotSupported(err) {
 			t.Skipf("not supported on %s", runtime.GOOS)
 		}
 		t.Fatal(err)

@@ -4,7 +4,7 @@
 
 // +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
 
-package nettest
+package ipv6_test
 
 import (
 	"os"
