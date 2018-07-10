@@ -3844,17 +3844,17 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 
 func TestServer_Headers_HalfCloseRemote(t *testing.T) {
 	var st *serverTester
-	inHandler := make(chan bool)
+	writeData := make(chan bool)
 	writeHeaders := make(chan bool)
 	leaveHandler := make(chan bool)
 	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		inHandler <- true
 		if st.stream(1) == nil {
 			t.Errorf("nil stream 1 in handler")
 		}
 		if got, want := st.streamState(1), stateOpen; got != want {
 			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
+		writeData <- true
 		if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != io.EOF {
 			t.Errorf("body read = %d, %v; want 0, EOF", n, err)
 		}
@@ -3873,7 +3873,7 @@ func TestServer_Headers_HalfCloseRemote(t *testing.T) {
 		EndStream:     false, // keep it open
 		EndHeaders:    true,
 	})
-	<-inHandler
+	<-writeData
 	st.writeData(1, true, nil)
 
 	<-writeHeaders
