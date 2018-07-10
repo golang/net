@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package nettest provides utilities for network testing.
 package nettest
 
 import (
@@ -16,11 +15,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-)
-
-var (
-	aLongTimeAgo = time.Unix(233431200, 0)
-	neverTimeout = time.Time{}
 )
 
 // MakePipe creates a connection between two endpoints and returns the pair
@@ -96,7 +90,7 @@ func testBasicIO(t *testing.T, c1, c2 net.Conn) {
 	}()
 
 	if got := <-dataCh; !bytes.Equal(got, want) {
-		t.Errorf("transmitted data differs")
+		t.Error("transmitted data differs")
 	}
 }
 
