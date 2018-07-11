@@ -424,27 +424,36 @@ func shouldRetryRequest(req *http.Request, err error, afterBodyWrite bool) (*htt
 	if !canRetryError(err) {
 		return nil, err
 	}
-	if !afterBodyWrite {
-		return req, nil
-	}
 	// If the Body is nil (or http.NoBody), it's safe to reuse
 	// this request and its Body.
 	if req.Body == nil || reqBodyIsNoBody(req.Body) {
 		return req, nil
 	}
-	// Otherwise we depend on the Request having its GetBody
-	// func defined.
+
+	// If the request body can be reset back to its original
+	// state via the optional req.GetBody, do that.
 	getBody := reqGetBody(req) // Go 1.8: getBody = req.GetBody
-	if getBody == nil {
-		return nil, fmt.Errorf("http2: Transport: cannot retry err [%v] after Request.Body was written; define Request.GetBody to avoid this error", err)
+	if getBody != nil {
+		// TODO: consider a req.Body.Close here? or audit that all caller paths do?
+		body, err := getBody()
+		if err != nil {
+			return nil, err
+		}
+		newReq := *req
+		newReq.Body = body
+		return &newReq, nil
 	}
-	body, err := getBody()
-	if err != nil {
-		return nil, err
+
+	// The Request.Body can't reset back to the beginning, but we
+	// don't seem to have started to read from it yet, so reuse
+	// the request directly. The "afterBodyWrite" means the
+	// bodyWrite process has started, which becomes true before
+	// the first Read.
+	if !afterBodyWrite {
+		return req, nil
 	}
-	newReq := *req
-	newReq.Body = body
-	return &newReq, nil
+
+	return nil, fmt.Errorf("http2: Transport: cannot retry err [%v] after Request.Body was written; define Request.GetBody to avoid this error", err)
 }
 
 func canRetryError(err error) bool {

@@ -4046,3 +4046,46 @@ func TestClientConnShutdown(t *testing.T) {
 func TestClientConnShutdownCancel(t *testing.T) {
 	testClientConnClose(t, shutdownCancel)
 }
+
+// Issue 25009: use Request.GetBody if present, even if it seems like
+// we might not need it. Apparently something else can still read from
+// the original request body. Data race? In any case, rewinding
+// unconditionally on retry is a nicer model anyway and should
+// simplify code in the future (after the Go 1.11 freeze)
+func TestTransportUsesGetBodyWhenPresent(t *testing.T) {
+	calls := 0
+	someBody := func() io.ReadCloser {
+		return struct{ io.ReadCloser }{ioutil.NopCloser(bytes.NewReader(nil))}
+	}
+	req := &http.Request{
+		Body: someBody(),
+		GetBody: func() (io.ReadCloser, error) {
+			calls++
+			return someBody(), nil
+		},
+	}
+
+	afterBodyWrite := false // pretend we haven't read+written the body yet
+	req2, err := shouldRetryRequest(req, errClientConnUnusable, afterBodyWrite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("Calls = %d; want 1", calls)
+	}
+	if req2 == req {
+		t.Error("req2 changed")
+	}
+	if req2 == nil {
+		t.Fatal("req2 is nil")
+	}
+	if req2.Body == nil {
+		t.Fatal("req2.Body is nil")
+	}
+	if req2.GetBody == nil {
+		t.Fatal("req2.GetBody is nil")
+	}
+	if req2.Body == req.Body {
+		t.Error("req2.Body unchanged")
+	}
+}
