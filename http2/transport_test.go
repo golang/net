@@ -4161,3 +4161,25 @@ func TestTransportUsesGetBodyWhenPresent(t *testing.T) {
 		t.Error("req2.Body unchanged")
 	}
 }
+
+// Issue 22891: verify that the "https" altproto we register with net/http
+// is a certain type: a struct with one field with our *http2.Transport in it.
+func TestNoDialH2RoundTripperType(t *testing.T) {
+	t1 := new(http.Transport)
+	t2 := new(Transport)
+	rt := noDialH2RoundTripper{t2}
+	if err := registerHTTPSProtocol(t1, rt); err != nil {
+		t.Fatal(err)
+	}
+	rv := reflect.ValueOf(rt)
+	if rv.Type().Kind() != reflect.Struct {
+		t.Fatalf("kind = %v; net/http expects struct", rv.Type().Kind())
+	}
+	if n := rv.Type().NumField(); n != 1 {
+		t.Fatalf("fields = %d; net/http expects 1", n)
+	}
+	v := rv.Field(0)
+	if _, ok := v.Interface().(*Transport); !ok {
+		t.Fatalf("wrong kind %T; want *Transport", v.Interface())
+	}
+}
