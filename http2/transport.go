@@ -1763,11 +1763,24 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 	}
 
 	header := make(http.Header)
-	var trailerValue string
+	res := &http.Response{
+		Proto:      "HTTP/2.0",
+		ProtoMajor: 2,
+		Header:     header,
+		StatusCode: statusCode,
+		Status:     status + " " + http.StatusText(statusCode),
+	}
 	for _, hf := range f.RegularFields() {
 		key := http.CanonicalHeaderKey(hf.Name)
 		if key == "Trailer" {
-			trailerValue = hf.Value
+			t := res.Trailer
+			if t == nil {
+				t = make(http.Header)
+				res.Trailer = t
+			}
+			foreachHeaderElement(hf.Value, func(v string) {
+				t[http.CanonicalHeaderKey(v)] = nil
+			})
 		} else {
 			header[key] = append(header[key], hf.Value)
 		}
@@ -1792,24 +1805,6 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 		}
 		cs.pastHeaders = false // do it all again
 		return nil, nil
-	}
-
-	res := &http.Response{
-		Proto:      "HTTP/2.0",
-		ProtoMajor: 2,
-		Header:     header,
-		StatusCode: statusCode,
-		Status:     status + " " + http.StatusText(statusCode),
-	}
-	if trailerValue != "" {
-		t := res.Trailer
-		if t == nil {
-			t = make(http.Header)
-			res.Trailer = t
-		}
-		foreachHeaderElement(trailerValue, func(v string) {
-			t[http.CanonicalHeaderKey(v)] = nil
-		})
 	}
 
 	streamEnded := f.StreamEnded()
