@@ -762,7 +762,7 @@ func (f *SettingsFrame) HasDuplicates() bool {
 		return false
 	}
 	// If it's small enough (the common case), just do the n^2
-	// thing and a map allocation.
+	// thing and avoid a map allocation.
 	if num < 10 {
 		for i := 0; i < num; i++ {
 			idi := f.Setting(i).ID
