@@ -28,6 +28,7 @@ import (
 
 var (
 	errInvalidConn      = errors.New("invalid connection")
+	errInvalidProtocol  = errors.New("invalid protocol")
 	errMessageTooShort  = errors.New("message too short")
 	errHeaderTooShort   = errors.New("header too short")
 	errBufferTooShort   = errors.New("buffer too short")
@@ -80,7 +81,7 @@ func (m *Message) Marshal(psh []byte) ([]byte, error) {
 	case ipv6.ICMPType:
 		mtype = int(typ)
 	default:
-		return nil, errInvalidConn
+		return nil, errInvalidProtocol
 	}
 	b := []byte{byte(mtype), byte(m.Code), 0, 0}
 	if m.Type.Protocol() == iana.ProtocolIPv6ICMP && psh != nil {
@@ -143,7 +144,7 @@ func ParseMessage(proto int, b []byte) (*Message, error) {
 	case iana.ProtocolIPv6ICMP:
 		m.Type = ipv6.ICMPType(b[0])
 	default:
-		return nil, errInvalidConn
+		return nil, errInvalidProtocol
 	}
 	if fn, ok := parseFns[m.Type]; !ok {
 		m.Body, err = parseDefaultMessageBody(proto, b[4:])
