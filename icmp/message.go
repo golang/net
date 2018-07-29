@@ -131,7 +131,8 @@ var parseFns = map[Type]func(int, Type, []byte) (MessageBody, error){
 }
 
 // ParseMessage parses b as an ICMP message.
-// Proto must be either the ICMPv4 or ICMPv6 protocol number.
+// The provided proto must be either the ICMPv4 or ICMPv6 protocol
+// number.
 func ParseMessage(proto int, b []byte) (*Message, error) {
 	if len(b) < 4 {
 		return nil, errMessageTooShort
