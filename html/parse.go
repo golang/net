@@ -255,7 +255,7 @@ func (p *parser) fosterParent(n *Node) {
 		}
 	}
 
-	if template != nil && (table == nil || j < i) {
+	if template != nil && (table == nil || j > i) {
 		template.AppendChild(n)
 		return
 	}

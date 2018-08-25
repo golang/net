@@ -1131,6 +1131,20 @@
 |   <body>
 
 #data
+<template><template><table>Foo
+#errors
+#document
+| <html>
+|   <head>
+|     <template>
+|       content
+|         <template>
+|           content
+|             "Foo"
+|             <table>
+|   <body>
+
+#data
 <template><template><frame>
 #errors
 #document
@@ -1296,4 +1310,17 @@
 |     <template>
 |       content
 |         "Foo"
+|   <body>
+
+#data
+<template><a><table><a>
+#errors
+#document
+| <html>
+|   <head>
+|     <template>
+|       content
+|         <a>
+|           <a>
+|           <table>
 |   <body>
