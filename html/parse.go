@@ -984,6 +984,14 @@ func inBodyIM(p *parser) bool {
 			p.acknowledgeSelfClosingTag()
 			p.popUntil(buttonScope, a.P)
 			p.parseImpliedToken(StartTagToken, a.Form, a.Form.String())
+			if p.form == nil {
+				// NOTE: The 'isindex' element has been removed,
+				// and the 'template' element has not been designed to be
+				// collaborative with the index element.
+				//
+				// Ignore the token.
+				return true
+			}
 			if action != "" {
 				p.form.Attr = []Attribute{{Key: "action", Val: action}}
 			}
