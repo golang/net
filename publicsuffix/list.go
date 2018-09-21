@@ -42,31 +42,15 @@
 // Instead, the calculation is data driven. This package provides a
 // pre-compiled snapshot of Mozilla's PSL (Public Suffix List) data at
 // https://publicsuffix.org/
-package publicsuffix // import "golang.org/x/net/publicsuffix"
+package publicsuffix
 
 // TODO: specify case sensitivity and leading/trailing dot behavior for
 // func PublicSuffix and func EffectiveTLDPlusOne.
 
 import (
 	"fmt"
-	"net/http/cookiejar"
 	"strings"
 )
-
-// List implements the cookiejar.PublicSuffixList interface by calling the
-// PublicSuffix function.
-var List cookiejar.PublicSuffixList = list{}
-
-type list struct{}
-
-func (list) PublicSuffix(domain string) string {
-	ps, _ := PublicSuffix(domain)
-	return ps
-}
-
-func (list) String() string {
-	return version
-}
 
 // PublicSuffix returns the public suffix of the domain using a copy of the
 // publicsuffix.org database compiled into the library.

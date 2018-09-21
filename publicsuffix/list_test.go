@@ -233,14 +233,14 @@ var publicSuffixTestCases = []struct {
 func BenchmarkPublicSuffix(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, tc := range publicSuffixTestCases {
-			List.PublicSuffix(tc.domain)
+			PublicSuffix(tc.domain)
 		}
 	}
 }
 
 func TestPublicSuffix(t *testing.T) {
 	for _, tc := range publicSuffixTestCases {
-		got := List.PublicSuffix(tc.domain)
+		got, _ := PublicSuffix(tc.domain)
 		if got != tc.want {
 			t.Errorf("%q: got %q, want %q", tc.domain, got, tc.want)
 		}
