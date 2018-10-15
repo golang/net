@@ -1586,6 +1586,8 @@ func (sc *serverConn) processData(f *DataFrame) error {
 	// "open" or "half-closed (local)" state, the recipient MUST respond with a
 	// stream error (Section 5.4.2) of type STREAM_CLOSED.
 	if state == stateClosed {
+		sc.inflow.take(int32(f.Length))
+		sc.sendWindowUpdate(nil, int(f.Length))
 		return streamError(id, ErrCodeStreamClosed)
 	}
 	if st == nil || state != stateOpen || st.gotTrailerHeader || st.resetQueued {
