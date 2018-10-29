@@ -7,6 +7,7 @@ package http2
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -31,7 +32,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
 	"golang.org/x/net/http2/hpack"
 )
 
@@ -424,7 +424,7 @@ func TestActualContentLength(t *testing.T) {
 		},
 		// http.NoBody means 0, not -1.
 		3: {
-			req:  &http.Request{Body: go18httpNoBody()},
+			req:  &http.Request{Body: http.NoBody},
 			want: 0,
 		},
 	}
@@ -564,9 +564,6 @@ func TestTransportDialTLS(t *testing.T) {
 func TestConfigureTransport(t *testing.T) {
 	t1 := &http.Transport{}
 	err := ConfigureTransport(t1)
-	if err == errTransportVersion {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3784,7 +3781,7 @@ func TestTransportNoBodyMeansNoDATA(t *testing.T) {
 	unblockClient := make(chan bool)
 
 	ct.client = func() error {
-		req, _ := http.NewRequest("GET", "https://dummy.tld/", go18httpNoBody())
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", http.NoBody)
 		ct.tr.RoundTrip(req)
 		<-unblockClient
 		return nil
@@ -4024,8 +4021,8 @@ func testClientConnClose(t *testing.T, closeMode closeMode) {
 	}
 	switch closeMode {
 	case shutdownCancel:
-		if err = cc.Shutdown(canceledCtx); err != errCanceled {
-			t.Errorf("got %v, want %v", err, errCanceled)
+		if err = cc.Shutdown(canceledCtx); err != context.Canceled {
+			t.Errorf("got %v, want %v", err, context.Canceled)
 		}
 		if cc.closing == false {
 			t.Error("expected closing to be true")
