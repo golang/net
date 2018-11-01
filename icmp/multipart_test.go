@@ -232,11 +232,6 @@ func TestMarshalAndParseMultipartMessage(t *testing.T) {
 							Type:  2,
 							Index: 911,
 						},
-						&icmp.InterfaceIdent{
-							Class: 3,
-							Type:  1,
-							Name:  "en101",
-						},
 					},
 				},
 			},
