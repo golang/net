@@ -154,15 +154,13 @@ func (zc *ipv6ZoneCache) name(zone int) string {
 	zoneCache.RLock()
 	name, ok := zoneCache.toName[zone]
 	zoneCache.RUnlock()
-	if !ok {
-		if !updated {
-			zoneCache.update(nil, true)
-			zoneCache.RLock()
-			name, ok = zoneCache.toName[zone]
-			zoneCache.RUnlock()
-		}
+	if !ok && !updated {
+		zoneCache.update(nil, true)
+		zoneCache.RLock()
+		name, ok = zoneCache.toName[zone]
+		zoneCache.RUnlock()
 	}
-	if !ok {
+	if !ok { // last resort
 		name = strconv.Itoa(zone)
 	}
 	return name
@@ -173,15 +171,13 @@ func (zc *ipv6ZoneCache) index(zone string) int {
 	zoneCache.RLock()
 	index, ok := zoneCache.toIndex[zone]
 	zoneCache.RUnlock()
-	if !ok {
-		if !updated {
-			zoneCache.update(nil, true)
-			zoneCache.RLock()
-			index, ok = zoneCache.toIndex[zone]
-			zoneCache.RUnlock()
-		}
+	if !ok && !updated {
+		zoneCache.update(nil, true)
+		zoneCache.RLock()
+		index, ok = zoneCache.toIndex[zone]
+		zoneCache.RUnlock()
 	}
-	if !ok {
+	if !ok { // last resort
 		index, _ = strconv.Atoi(zone)
 	}
 	return index
