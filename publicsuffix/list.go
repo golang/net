@@ -72,12 +72,15 @@ func (list) String() string {
 // publicsuffix.org database compiled into the library.
 //
 // icann is whether the public suffix is managed by the Internet Corporation
-// for Assigned Names and Numbers. If not, the public suffix is privately
-// managed. For example, foo.org and foo.co.uk are ICANN domains,
-// foo.dyndns.org and foo.blogspot.co.uk are private domains.
+// for Assigned Names and Numbers. If not, the public suffix is either a
+// privately managed domain (and in practice, not a top level domain) or an
+// unmanaged top level domain (and not explicitly mentioned in the
+// publicsuffix.org list). For example, "foo.org" and "foo.co.uk" are ICANN
+// domains, "foo.dyndns.org" and "foo.blogspot.co.uk" are private domains and
+// "cromulent" is an unmanaged top level domain.
 //
-// Use cases for distinguishing ICANN domains like foo.com from private
-// domains like foo.appspot.com can be found at
+// Use cases for distinguishing ICANN domains like "foo.com" from private
+// domains like "foo.appspot.com" can be found at
 // https://wiki.mozilla.org/Public_Suffix_List/Use_Cases
 func PublicSuffix(domain string) (publicSuffix string, icann bool) {
 	lo, hi := uint32(0), uint32(numTLD)
