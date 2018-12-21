@@ -1795,6 +1795,57 @@ func TestTransportChecksResponseHeaderListSize(t *testing.T) {
 	ct.run()
 }
 
+func TestTransportCookieHeaderSplit(t *testing.T) {
+	ct := newClientTester(t)
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		req.Header.Add("Cookie", "a=b;c=d;  e=f;")
+		req.Header.Add("Cookie", "e=f;g=h; ")
+		req.Header.Add("Cookie", "i=j")
+		_, err := ct.tr.RoundTrip(req)
+		return err
+	}
+	ct.server = func() error {
+		ct.greet()
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				dec := hpack.NewDecoder(initialHeaderTableSize, nil)
+				hfs, err := dec.DecodeFull(f.HeaderBlockFragment())
+				if err != nil {
+					return err
+				}
+				got := []string{}
+				want := []string{"a=b", "c=d", "e=f", "e=f", "g=h", "i=j"}
+				for _, hf := range hfs {
+					if hf.Name == "cookie" {
+						got = append(got, hf.Value)
+					}
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("Cookies = %#v, want %#v", got, want)
+				}
+
+				var buf bytes.Buffer
+				enc := hpack.NewEncoder(&buf)
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+				return nil
+			}
+		}
+	}
+	ct.run()
+}
+
 // Test that the Transport returns a typed error from Response.Body.Read calls
 // when the server sends an error. (here we use a panic, since that should generate
 // a stream error, but others like cancel should be similar)
