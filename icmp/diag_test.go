@@ -6,6 +6,7 @@ package icmp_test
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
+var testDiag = flag.Bool("diag", false, "whether to test ICMP message exchange with external network")
+
 type diagTest struct {
 	network, address string
 	protocol         int
@@ -28,7 +31,7 @@ type diagTest struct {
 }
 
 func TestDiag(t *testing.T) {
-	if testing.Short() {
+	if !*testDiag {
 		t.Skip("avoid external network")
 	}
 
