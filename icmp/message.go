@@ -34,6 +34,7 @@ var (
 	errHeaderTooShort   = errors.New("header too short")
 	errBufferTooShort   = errors.New("buffer too short")
 	errOpNoSupport      = errors.New("operation not supported")
+	errInvalidBody      = errors.New("invalid body")
 	errNoExtension      = errors.New("no extension")
 	errInvalidExtension = errors.New("invalid extension")
 )
@@ -150,7 +151,7 @@ func ParseMessage(proto int, b []byte) (*Message, error) {
 		return nil, errInvalidProtocol
 	}
 	if fn, ok := parseFns[m.Type]; !ok {
-		m.Body, err = parseDefaultMessageBody(proto, b[4:])
+		m.Body, err = parseRawBody(proto, b[4:])
 	} else {
 		m.Body, err = fn(proto, m.Type, b[4:])
 	}
