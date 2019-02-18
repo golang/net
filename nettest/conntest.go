@@ -239,7 +239,7 @@ func testPastTimeout(t *testing.T, c1, c2 net.Conn) {
 	testRoundtrip(t, c1)
 }
 
-// testPresentTimeout tests that a deadline set while there are pending
+// testPresentTimeout tests that a past deadline set while there are pending
 // Read and Write operations immediately times out those operations.
 func testPresentTimeout(t *testing.T, c1, c2 net.Conn) {
 	var wg sync.WaitGroup
