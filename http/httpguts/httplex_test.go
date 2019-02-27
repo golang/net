@@ -14,7 +14,7 @@ func isCtl(c rune) bool { return c <= 31 || c == 127 }
 
 func isSeparator(c rune) bool {
 	switch c {
-	case '(', ')', '<', '>', '@', ',', ';', ':', '\\', '"', '/', '[', ']', '?', '=', '{', '}', ' ', '\t':
+	case '(', ')', '<', '>', '@', ',', ';', ':', '\\', '"', '/', '?', '=', '{', '}', ' ', '\t':
 		return true
 	}
 	return false

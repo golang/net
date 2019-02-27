@@ -14,6 +14,8 @@ import (
 
 var isTokenTable = [127]bool{
 	'!':  true,
+	'[':  true,
+	']':  true,
 	'#':  true,
 	'$':  true,
 	'%':  true,
