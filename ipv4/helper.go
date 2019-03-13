@@ -18,7 +18,6 @@ var (
 	errHeaderTooShort           = errors.New("header too short")
 	errExtHeaderTooShort        = errors.New("extension header too short")
 	errInvalidConnType          = errors.New("invalid conn type")
-	errOpNoSupport              = errors.New("operation not supported")
 	errNoSuchInterface          = errors.New("no such interface")
 	errNoSuchMulticastInterface = errors.New("no such multicast interface")
 	errNotImplemented           = errors.New("not implemented on " + runtime.GOOS + "/" + runtime.GOARCH)
