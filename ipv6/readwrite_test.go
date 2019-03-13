@@ -19,6 +19,11 @@ import (
 )
 
 func BenchmarkReadWriteUnicast(b *testing.B) {
+	switch runtime.GOOS {
+	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+		b.Skipf("not supported on %s", runtime.GOOS)
+	}
+
 	c, err := nettest.NewLocalPacketListener("udp6")
 	if err != nil {
 		b.Skipf("not supported on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
@@ -66,7 +71,7 @@ func BenchmarkReadWriteUnicast(b *testing.B) {
 
 func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 	switch runtime.GOOS {
-	case "js", "nacl", "plan9", "windows":
+	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		b.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -213,7 +218,7 @@ func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 
 func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "js", "nacl", "plan9", "windows":
+	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -297,7 +302,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 	switch runtime.GOOS {
-	case "js", "nacl", "plan9", "windows":
+	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -350,6 +355,8 @@ func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 }
 
 func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, data []byte, dst net.Addr, batch bool) {
+	t.Helper()
+
 	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 
