@@ -23,7 +23,8 @@ var (
 	errNotImplemented           = errors.New("not implemented on " + runtime.GOOS + "/" + runtime.GOARCH)
 
 	// See http://www.freebsd.org/doc/en/books/porters-handbook/freebsd-versions.html.
-	freebsdVersion uint32
+	freebsdVersion  uint32
+	compatFreeBSD32 bool // 386 emulation on amd64
 )
 
 func boolint(b bool) int {
