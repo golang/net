@@ -89,12 +89,6 @@ func (c *payloadHandler) ReadBatch(ms []Message, flags int) (int, error) {
 			n = 0
 			err = &net.OpError{Op: "read", Net: c.PacketConn.LocalAddr().Network(), Source: c.PacketConn.LocalAddr(), Err: err}
 		}
-		if compatFreeBSD32 {
-			l := len(ms[0].OOB)
-			if 0 < ms[0].NN && ms[0].NN < l {
-				ms[0].NN = l
-			}
-		}
 		return n, err
 	}
 }
@@ -157,12 +151,6 @@ func (c *packetHandler) ReadBatch(ms []Message, flags int) (int, error) {
 		if err != nil {
 			n = 0
 			err = &net.OpError{Op: "read", Net: c.IPConn.LocalAddr().Network(), Source: c.IPConn.LocalAddr(), Err: err}
-		}
-		if compatFreeBSD32 {
-			l := len(ms[0].OOB)
-			if 0 < ms[0].NN && ms[0].NN < l {
-				ms[0].NN = l
-			}
 		}
 		return n, err
 	}
