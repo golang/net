@@ -1288,6 +1288,8 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 // inBodyEndTagOther performs the "any other end tag" algorithm for inBodyIM.
 // "Any other end tag" handling from 12.2.6.5 The rules for parsing tokens in foreign content
 // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inforeign
+// We must use both the tag atom and name to cover the case where two unknown tags are nested,
+// as they will both have a value of 0 for the tagAtom, and would otherwise close one another.
 func (p *parser) inBodyEndTagOther(tagAtom a.Atom, tagName string) {
 	for i := len(p.oe) - 1; i >= 0; i-- {
 		if p.oe[i].DataAtom == tagAtom && p.oe[i].Data == tagName {
