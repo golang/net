@@ -1134,6 +1134,11 @@ func inBodyIM(p *parser) bool {
 		case a.Template:
 			return inHeadIM(p)
 		default:
+			for i := len(p.oe) - 1; i >= 0; i-- {
+				if p.oe[i].DataAtom == 0 && p.oe[i].Data != p.tok.Data {
+					p.popUntil(defaultScope, p.tok.DataAtom)
+				}
+			}
 			p.inBodyEndTagOther(p.tok.DataAtom)
 		}
 	case CommentToken:
