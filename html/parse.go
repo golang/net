@@ -901,7 +901,7 @@ func inBodyIM(p *parser) bool {
 		case a.A:
 			for i := len(p.afe) - 1; i >= 0 && p.afe[i].Type != scopeMarkerNode; i-- {
 				if n := p.afe[i]; n.Type == ElementNode && n.DataAtom == a.A {
-					p.inBodyEndTagFormatting(a.A, p.tok.Data)
+					p.inBodyEndTagFormatting(a.A, "a")
 					p.oe.remove(n)
 					p.afe.remove(n)
 					break
@@ -915,7 +915,7 @@ func inBodyIM(p *parser) bool {
 		case a.Nobr:
 			p.reconstructActiveFormattingElements()
 			if p.elementInScope(defaultScope, a.Nobr) {
-				p.inBodyEndTagFormatting(a.Nobr, p.tok.Data)
+				p.inBodyEndTagFormatting(a.Nobr, "nobr")
 				p.reconstructActiveFormattingElements()
 			}
 			p.addFormattingElement()
