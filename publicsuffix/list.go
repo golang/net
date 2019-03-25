@@ -175,3 +175,51 @@ func EffectiveTLDPlusOne(domain string) (string, error) {
 	}
 	return domain[1+strings.LastIndex(domain[:i], "."):], nil
 }
+
+// HasListedSuffix returns true iff the suffix exists on the public suffix list,
+// i.e., is a known public or private, managed TLD.
+func HasListedSuffix(domain string) bool {
+	lo, hi := uint32(0), uint32(numTLD)
+	s, suffix, wildcard := domain, len(domain), false
+loop:
+	for {
+		dot := strings.LastIndex(s, ".")
+		if wildcard {
+			suffix = 1 + dot
+		}
+		if lo == hi {
+			break
+		}
+		f := find(s[1+dot:], lo, hi)
+		if f == notFound {
+			break
+		}
+
+		u := nodes[f] >> (nodesBitsTextOffset + nodesBitsTextLength)
+		u >>= nodesBitsICANN
+		u = children[u&(1<<nodesBitsChildren-1)]
+		lo = u & (1<<childrenBitsLo - 1)
+		u >>= childrenBitsLo
+		hi = u & (1<<childrenBitsHi - 1)
+		u >>= childrenBitsHi
+		switch u & (1<<childrenBitsNodeType - 1) {
+		case nodeTypeNormal:
+			suffix = 1 + dot
+		case nodeTypeException:
+			suffix = 1 + len(s)
+			break loop
+		}
+		u >>= childrenBitsNodeType
+		wildcard = u&(1<<childrenBitsWildcard-1) != 0
+
+		if dot == -1 {
+			break
+		}
+		s = s[:dot]
+	}
+	if suffix == len(domain) {
+		// If no rules match, the prevailing rule is "*".
+		return false
+	}
+	return true
+}
