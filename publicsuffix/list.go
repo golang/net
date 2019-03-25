@@ -68,21 +68,7 @@ func (list) String() string {
 	return version
 }
 
-// PublicSuffix returns the public suffix of the domain using a copy of the
-// publicsuffix.org database compiled into the library.
-//
-// icann is whether the public suffix is managed by the Internet Corporation
-// for Assigned Names and Numbers. If not, the public suffix is either a
-// privately managed domain (and in practice, not a top level domain) or an
-// unmanaged top level domain (and not explicitly mentioned in the
-// publicsuffix.org list). For example, "foo.org" and "foo.co.uk" are ICANN
-// domains, "foo.dyndns.org" and "foo.blogspot.co.uk" are private domains and
-// "cromulent" is an unmanaged top level domain.
-//
-// Use cases for distinguishing ICANN domains like "foo.com" from private
-// domains like "foo.appspot.com" can be found at
-// https://wiki.mozilla.org/Public_Suffix_List/Use_Cases
-func PublicSuffix(domain string) (publicSuffix string, icann bool) {
+func search(domain string) (publicSuffix string, suffix int, icann bool) {
 	lo, hi := uint32(0), uint32(numTLD)
 	s, suffix, icannNode, wildcard := domain, len(domain), false, false
 loop:
@@ -126,6 +112,25 @@ loop:
 		}
 		s = s[:dot]
 	}
+	return domain, suffix, icann
+}
+
+// PublicSuffix returns the public suffix of the domain using a copy of the
+// publicsuffix.org database compiled into the library.
+//
+// icann is whether the public suffix is managed by the Internet Corporation
+// for Assigned Names and Numbers. If not, the public suffix is either a
+// privately managed domain (and in practice, not a top level domain) or an
+// unmanaged top level domain (and not explicitly mentioned in the
+// publicsuffix.org list). For example, "foo.org" and "foo.co.uk" are ICANN
+// domains, "foo.dyndns.org" and "foo.blogspot.co.uk" are private domains and
+// "cromulent" is an unmanaged top level domain.
+//
+// Use cases for distinguishing ICANN domains like "foo.com" from private
+// domains like "foo.appspot.com" can be found at
+// https://wiki.mozilla.org/Public_Suffix_List/Use_Cases
+func PublicSuffix(domain string) (publicSuffix string, icann bool) {
+	domain, suffix, icann := search(domain)
 	if suffix == len(domain) {
 		// If no rules match, the prevailing rule is "*".
 		return domain[1+strings.LastIndex(domain, "."):], icann
@@ -179,46 +184,8 @@ func EffectiveTLDPlusOne(domain string) (string, error) {
 // HasListedSuffix returns true iff the suffix exists on the public suffix list,
 // i.e., is a known public or private, managed TLD.
 func HasListedSuffix(domain string) bool {
-	lo, hi := uint32(0), uint32(numTLD)
-	s, suffix, wildcard := domain, len(domain), false
-loop:
-	for {
-		dot := strings.LastIndex(s, ".")
-		if wildcard {
-			suffix = 1 + dot
-		}
-		if lo == hi {
-			break
-		}
-		f := find(s[1+dot:], lo, hi)
-		if f == notFound {
-			break
-		}
-
-		u := nodes[f] >> (nodesBitsTextOffset + nodesBitsTextLength)
-		u >>= nodesBitsICANN
-		u = children[u&(1<<nodesBitsChildren-1)]
-		lo = u & (1<<childrenBitsLo - 1)
-		u >>= childrenBitsLo
-		hi = u & (1<<childrenBitsHi - 1)
-		u >>= childrenBitsHi
-		switch u & (1<<childrenBitsNodeType - 1) {
-		case nodeTypeNormal:
-			suffix = 1 + dot
-		case nodeTypeException:
-			suffix = 1 + len(s)
-			break loop
-		}
-		u >>= childrenBitsNodeType
-		wildcard = u&(1<<childrenBitsWildcard-1) != 0
-
-		if dot == -1 {
-			break
-		}
-		s = s[:dot]
-	}
+	domain, suffix, _ := search(domain)
 	if suffix == len(domain) {
-		// If no rules match, the prevailing rule is "*".
 		return false
 	}
 	return true
