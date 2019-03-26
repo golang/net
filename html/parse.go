@@ -1298,7 +1298,7 @@ func (p *parser) inBodyEndTagOther(tagAtom a.Atom, tagName string) {
 		//
 		// The if condition here is equivalent to (p.oe[i].Data == tagName).
 		if (p.oe[i].DataAtom == tagAtom) &&
-		    ((tagAtom != 0) || (p.oe[i].Data == tagName)) {
+			((tagAtom != 0) || (p.oe[i].Data == tagName)) {
 			p.oe = p.oe[:i]
 			break
 		}
