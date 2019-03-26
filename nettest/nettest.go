@@ -20,10 +20,11 @@ import (
 )
 
 var (
-	stackOnce   sync.Once
-	ipv4Enabled bool
-	ipv6Enabled bool
-	aixTechLvl  int
+	stackOnce     sync.Once
+	ipv4Enabled   bool
+	ipv6Enabled   bool
+	rawSocketSess bool
+	aixTechLvl    int
 
 	aLongTimeAgo = time.Unix(233431200, 0)
 	neverTimeout = time.Time{}
@@ -41,12 +42,12 @@ func probeStack() {
 		ln.Close()
 		ipv6Enabled = true
 	}
+	rawSocketSess = supportsRawSocket()
 	if runtime.GOOS == "aix" {
 		out, err := exec.Command("oslevel", "-s").Output()
-		if err != nil {
-			return
+		if err == nil {
+			aixTechLvl, _ = strconv.Atoi(string(out[5:7]))
 		}
-		aixTechLvl, _ = strconv.Atoi(string(out[5:7]))
 	}
 }
 
@@ -69,8 +70,17 @@ func SupportsIPv6() bool {
 	return ipv6Enabled
 }
 
+// SupportsRawSocket reports whether the current session is available
+// to use raw sockets.
+func SupportsRawSocket() bool {
+	stackOnce.Do(probeStack)
+	return rawSocketSess
+}
+
 // TestableNetwork reports whether network is testable on the current
 // platform configuration.
+//
+// See func Dial of the standard library for the supported networks.
 func TestableNetwork(network string) bool {
 	ss := strings.Split(network, ":")
 	switch ss[0] {
@@ -248,7 +258,6 @@ func MulticastSource(network string, ifi *net.Interface) (net.IP, error) {
 
 // LoopbackInterface returns an available logical network interface
 // for loopback test.
-// It returns nil if no suitable interface is found.
 func LoopbackInterface() (*net.Interface, error) {
 	ift, err := net.Interfaces()
 	if err != nil {
@@ -264,8 +273,6 @@ func LoopbackInterface() (*net.Interface, error) {
 
 // RoutedInterface returns a network interface that can route IP
 // traffic and satisfies flags.
-// It returns nil when an appropriate network interface is not
-// found.
 //
 // The provided network must be "ip", "ip4" or "ip6".
 func RoutedInterface(network string, flags net.Flags) (*net.Interface, error) {
