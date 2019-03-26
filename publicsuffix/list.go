@@ -181,8 +181,9 @@ func EffectiveTLDPlusOne(domain string) (string, error) {
 	return domain[1+strings.LastIndex(domain[:i], "."):], nil
 }
 
-// HasListedSuffix returns true iff the suffix exists on the public suffix list,
-// i.e., is a known public or private, managed TLD.
+// HasListedSuffix returns true if the parameter domain's suffix exists on the
+// public suffix list, i.e., is a known public or private, managed eTLD. If
+// true, the domain's eTLD + 1 could be registered.
 func HasListedSuffix(domain string) bool {
 	domain, suffix, _ := search(domain)
 	if suffix == len(domain) {
