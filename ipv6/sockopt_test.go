@@ -17,7 +17,7 @@ import (
 
 func TestConnInitiatorPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
@@ -55,7 +55,7 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 func TestConnResponderPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
@@ -93,7 +93,7 @@ func TestConnResponderPathMTU(t *testing.T) {
 
 func TestPacketConnChecksum(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
