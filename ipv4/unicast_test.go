@@ -20,7 +20,7 @@ import (
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
@@ -70,7 +70,7 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsRawSocket() {
@@ -155,7 +155,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsRawSocket() {

@@ -26,7 +26,7 @@ var packetConnMulticastSocketOptionTests = []struct {
 
 func TestPacketConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9":
+	case "fuchsia", "hurd", "js", "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -66,7 +66,7 @@ var rawConnMulticastSocketOptionTests = []struct {
 
 func TestRawConnMulticastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "aix", "fuchsia", "hurd", "js", "nacl", "plan9":
+	case "fuchsia", "hurd", "js", "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsRawSocket() {
