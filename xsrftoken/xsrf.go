@@ -25,7 +25,7 @@ func clean(s string) string {
 	return strings.Replace(s, ":", "_", -1)
 }
 
-// Generate returns a URL-safe secure XSRF token that expires in 24 hours.
+// Generate returns a URL-safe secure XSRF token that expires in 24 hours from now.
 //
 // key is a secret key for your application; it must be non-empty.
 // userID is an optional unique identifier for the user.
@@ -34,13 +34,13 @@ func Generate(key, userID, actionID string) string {
 	return generateTokenAtTime(key, userID, actionID, time.Now())
 }
 
-// generateTokenAtTime is like Generate, but returns a token that expires 24 hours from now.
-func generateTokenAtTime(key, userID, actionID string, now time.Time) string {
+// generateTokenAtTime is like Generate, but returns a token that expires 24 hours from given time.
+func generateTokenAtTime(key, userID, actionID string, time time.Time) string {
 	if len(key) == 0 {
 		panic("zero length xsrf secret key")
 	}
 	// Round time up and convert to milliseconds.
-	milliTime := (now.UnixNano() + 1e6 - 1) / 1e6
+	milliTime := (time.UnixNano() + 1e6 - 1) / 1e6
 
 	h := hmac.New(sha1.New, []byte(key))
 	fmt.Fprintf(h, "%s:%s:%d", clean(userID), clean(actionID), milliTime)
@@ -59,7 +59,7 @@ func Valid(token, key, userID, actionID string) bool {
 }
 
 // validTokenAtTime reports whether a token is valid at the given time.
-func validTokenAtTime(token, key, userID, actionID string, now time.Time) bool {
+func validTokenAtTime(token, key, userID, actionID string, time time.Time) bool {
 	if len(key) == 0 {
 		panic("zero length xsrf secret key")
 	}
@@ -75,14 +75,14 @@ func validTokenAtTime(token, key, userID, actionID string, now time.Time) bool {
 	issueTime := time.Unix(0, millis*1e6)
 
 	// Check that the token is not expired.
-	if now.Sub(issueTime) >= Timeout {
+	if time.Sub(issueTime) >= Timeout {
 		return false
 	}
 
 	// Check that the token is not from the future.
 	// Allow 1 minute grace period in case the token is being verified on a
 	// machine whose clock is behind the machine that issued the token.
-	if issueTime.After(now.Add(1 * time.Minute)) {
+	if issueTime.After(time.Add(1 * time.Minute)) {
 		return false
 	}
 
