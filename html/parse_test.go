@@ -228,7 +228,7 @@ func TestParser(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				err = testParseCase(text, want, context)
+				err = testParseCase(text, want, context, Parse)
 
 				if err != nil {
 					t.Errorf("%s test #%d %q, %s", tf, i, text, err)
@@ -238,11 +238,45 @@ func TestParser(t *testing.T) {
 	}
 }
 
+// Issue 16318
+func TestParserWithoutScripting(t *testing.T) {
+	text := `<noscript><img src='https://golang.org/doc/gopher/frontpage.png' /></noscript><p><img src='https://golang.org/doc/gopher/doc.png' /></p>`
+	want := `| <html>
+|   <head>
+|     <noscript>
+|   <body>
+|     "<img src='https://golang.org/doc/gopher/frontpage.png' />"
+|     <p>
+|       <img>
+|         src="https://golang.org/doc/gopher/doc.png"
+`
+	err := testParseCase(text, want, "", func(r io.Reader) (*Node, error) {
+		p := &parser{
+			tokenizer: NewTokenizer(r),
+			doc: &Node{
+				Type: DocumentNode,
+			},
+			scripting:  false,
+			framesetOK: true,
+			im:         initialIM,
+		}
+		err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return p.doc, nil
+	})
+
+	if err != nil {
+		t.Errorf("test with scripting is disabled, %q, %s", text, err)
+	}
+}
+
 // testParseCase tests one test case from the test files. If the test does not
 // pass, it returns an error that explains the failure.
 // text is the HTML to be parsed, want is a dump of the correct parse tree,
 // and context is the name of the context node, if any.
-func testParseCase(text, want, context string) (err error) {
+func testParseCase(text, want, context string, parseFunc func(r io.Reader) (*Node, error)) (err error) {
 	defer func() {
 		if x := recover(); x != nil {
 			switch e := x.(type) {
@@ -256,7 +290,7 @@ func testParseCase(text, want, context string) (err error) {
 
 	var doc *Node
 	if context == "" {
-		doc, err = Parse(strings.NewReader(text))
+		doc, err = parseFunc(strings.NewReader(text))
 		if err != nil {
 			return err
 		}
