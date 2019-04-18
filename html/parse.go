@@ -1692,9 +1692,8 @@ func inCellIM(p *parser) bool {
 				return true
 			}
 			// Close the cell and reprocess.
-			if p.popUntil(tableScope, a.Td, a.Th) {
-				p.clearActiveFormattingElements()
-			}
+			p.popUntil(tableScope, a.Td, a.Th)
+			p.clearActiveFormattingElements()
 			p.im = inRowIM
 			return false
 		}
