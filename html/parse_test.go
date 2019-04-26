@@ -228,7 +228,7 @@ func TestParser(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				err = testParseCase(text, want, context, Parse)
+				err = testParseCase(text, want, context)
 
 				if err != nil {
 					t.Errorf("%s test #%d %q, %s", tf, i, text, err)
@@ -250,22 +250,7 @@ func TestParserWithoutScripting(t *testing.T) {
 |       <img>
 |         src="https://golang.org/doc/gopher/doc.png"
 `
-	err := testParseCase(text, want, "", func(r io.Reader) (*Node, error) {
-		p := &parser{
-			tokenizer: NewTokenizer(r),
-			doc: &Node{
-				Type: DocumentNode,
-			},
-			scripting:  false,
-			framesetOK: true,
-			im:         initialIM,
-		}
-		err := p.parse()
-		if err != nil {
-			return nil, err
-		}
-		return p.doc, nil
-	})
+	err := testParseCase(text, want, "", ParseOptionEnableScripting(false))
 
 	if err != nil {
 		t.Errorf("test with scripting is disabled, %q, %s", text, err)
@@ -276,7 +261,7 @@ func TestParserWithoutScripting(t *testing.T) {
 // pass, it returns an error that explains the failure.
 // text is the HTML to be parsed, want is a dump of the correct parse tree,
 // and context is the name of the context node, if any.
-func testParseCase(text, want, context string, parseFunc func(r io.Reader) (*Node, error)) (err error) {
+func testParseCase(text, want, context string, opts ...ParseOption) (err error) {
 	defer func() {
 		if x := recover(); x != nil {
 			switch e := x.(type) {
@@ -290,7 +275,7 @@ func testParseCase(text, want, context string, parseFunc func(r io.Reader) (*Nod
 
 	var doc *Node
 	if context == "" {
-		doc, err = parseFunc(strings.NewReader(text))
+		doc, err = ParseWithOptions(strings.NewReader(text), opts...)
 		if err != nil {
 			return err
 		}
@@ -300,7 +285,7 @@ func testParseCase(text, want, context string, parseFunc func(r io.Reader) (*Nod
 			DataAtom: atom.Lookup([]byte(context)),
 			Data:     context,
 		}
-		nodes, err := ParseFragment(strings.NewReader(text), contextNode)
+		nodes, err := ParseFragmentWithOptions(strings.NewReader(text), contextNode, opts...)
 		if err != nil {
 			return err
 		}
