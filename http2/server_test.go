@@ -3658,37 +3658,73 @@ func (f funcReader) Read(p []byte) (n int, err error) { return f(p) }
 // golang.org/issue/16481 -- return flow control when streams close with unread data.
 // (The Server version of the bug. See also TestUnreadFlowControlReturned_Transport)
 func TestUnreadFlowControlReturned_Server(t *testing.T) {
-	unblock := make(chan bool, 1)
-	defer close(unblock)
+	for _, tt := range []struct {
+		name  string
+		reqFn func(r *http.Request)
+	}{
+		{
+			"body-open",
+			func(r *http.Request) {},
+		},
+		{
+			"body-closed",
+			func(r *http.Request) {
+				r.Body.Close()
+			},
+		},
+		{
+			"read-1-byte-and-close",
+			func(r *http.Request) {
+				b := make([]byte, 1)
+				r.Body.Read(b)
+				r.Body.Close()
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			unblock := make(chan bool, 1)
+			defer close(unblock)
 
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		// Don't read the 16KB request body. Wait until the client's
-		// done sending it and then return. This should cause the Server
-		// to then return those 16KB of flow control to the client.
-		<-unblock
-	}, optOnlyServer)
-	defer st.Close()
+			timeOut := time.NewTimer(5 * time.Second)
+			defer timeOut.Stop()
+			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+				// Don't read the 16KB request body. Wait until the client's
+				// done sending it and then return. This should cause the Server
+				// to then return those 16KB of flow control to the client.
+				tt.reqFn(r)
+				select {
+				case <-unblock:
+				case <-timeOut.C:
+					t.Fatal(tt.name, "timedout")
+				}
+			}, optOnlyServer)
+			defer st.Close()
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
+			tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+			defer tr.CloseIdleConnections()
 
-	// This previously hung on the 4th iteration.
-	for i := 0; i < 6; i++ {
-		body := io.MultiReader(
-			io.LimitReader(neverEnding('A'), 16<<10),
-			funcReader(func([]byte) (n int, err error) {
-				unblock <- true
-				return 0, io.EOF
-			}),
-		)
-		req, _ := http.NewRequest("POST", st.ts.URL, body)
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		res.Body.Close()
+			// This previously hung on the 4th iteration.
+			iters := 100
+			if testing.Short() {
+				iters = 20
+			}
+			for i := 0; i < iters; i++ {
+				body := io.MultiReader(
+					io.LimitReader(neverEnding('A'), 16<<10),
+					funcReader(func([]byte) (n int, err error) {
+						unblock <- true
+						return 0, io.EOF
+					}),
+				)
+				req, _ := http.NewRequest("POST", st.ts.URL, body)
+				res, err := tr.RoundTrip(req)
+				if err != nil {
+					t.Fatal(tt.name, err)
+				}
+				res.Body.Close()
+			}
+		})
 	}
-
 }
 
 func TestServerIdleTimeout(t *testing.T) {
