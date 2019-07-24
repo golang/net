@@ -37,6 +37,7 @@ var (
 	errNoExtension      = errors.New("no extension")
 	errInvalidExtension = errors.New("invalid extension")
 	errNotImplemented   = errors.New("not implemented on " + runtime.GOOS + "/" + runtime.GOARCH)
+	errInvalidNetwork   = errors.New("invalid network")
 )
 
 func checksum(b []byte) uint16 {

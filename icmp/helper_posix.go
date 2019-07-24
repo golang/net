@@ -68,8 +68,8 @@ func last(s string, b byte) int {
 	i := len(s)
 	for i--; i >= 0; i-- {
 		if s[i] == b {
-			break
+			return i
 		}
 	}
-	return i
+	return -1
 }
