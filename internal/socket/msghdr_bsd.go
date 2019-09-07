@@ -14,13 +14,26 @@ func (h *msghdr) pack(vs []iovec, bs [][]byte, oob []byte, sa []byte) {
 	}
 	h.setIov(vs)
 	if len(oob) > 0 {
-		h.Control = (*byte)(unsafe.Pointer(&oob[0]))
-		h.Controllen = uint32(len(oob))
+		h.setControl(oob)
 	}
 	if sa != nil {
 		h.Name = (*byte)(unsafe.Pointer(&sa[0]))
 		h.Namelen = uint32(len(sa))
 	}
+}
+
+func (h *msghdr) setIov(vs []iovec) {
+	l := len(vs)
+	if l == 0 {
+		return
+	}
+	h.Iov = &vs[0]
+	h.SetIovlen(l)
+}
+
+func (h *msghdr) setControl(oob []byte) {
+	h.Control = (*byte)(unsafe.Pointer(&oob[0]))
+	h.SetControllen(len(oob))
 }
 
 func (h *msghdr) name() []byte {

@@ -20,6 +20,20 @@ func (h *msghdr) pack(vs []iovec, bs [][]byte, oob []byte, sa []byte) {
 	}
 }
 
+func (h *msghdr) setIov(vs []iovec) {
+	l := len(vs)
+	if l == 0 {
+		return
+	}
+	h.Iov = &vs[0]
+	h.SetIovlen(l)
+}
+
+func (h *msghdr) setControl(b []byte) {
+	h.Control = (*byte)(unsafe.Pointer(&b[0]))
+	h.SetControllen(len(b))
+}
+
 func (h *msghdr) name() []byte {
 	if h.Name != nil && h.Namelen > 0 {
 		return (*[sizeofSockaddrInet6]byte)(unsafe.Pointer(h.Name))[:h.Namelen]
