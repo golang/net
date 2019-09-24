@@ -347,6 +347,7 @@ loop:
 			break loop
 		}
 		if c != '/' {
+			z.raw.end--
 			continue loop
 		}
 		if z.readRawEndTag() || z.err != nil {
