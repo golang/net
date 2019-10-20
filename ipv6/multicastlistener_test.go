@@ -23,6 +23,8 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
+	case "dragonfly":
+		t.Skipf("skipping on %s until CL 202317 is vendored into std; see golang.org/issue/34368", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
@@ -63,6 +65,8 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
+	case "dragonfly":
+		t.Skipf("skipping on %s until CL 202317 is vendored into std; see golang.org/issue/34368", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
@@ -118,6 +122,8 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
+	case "dragonfly":
+		t.Skipf("skipping on %s until CL 202317 is vendored into std; see golang.org/issue/34368", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
@@ -174,6 +180,8 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
+	case "dragonfly":
+		t.Skipf("skipping on %s until CL 202317 is vendored into std; see golang.org/issue/34368", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
