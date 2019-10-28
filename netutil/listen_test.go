@@ -18,6 +18,7 @@ import (
 )
 
 const defaultMaxOpenFiles = 256
+const timeout = 5 * time.Second
 
 func TestLimitListener(t *testing.T) {
 	const max = 5
@@ -95,7 +96,7 @@ func TestLimitListenerError(t *testing.T) {
 	}()
 	select {
 	case <-donec:
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("timeout. deadlock?")
 	}
 }
@@ -111,7 +112,7 @@ func TestLimitListenerClose(t *testing.T) {
 	errCh := make(chan error)
 	go func() {
 		defer close(errCh)
-		c, err := net.Dial("tcp", ln.Addr().String())
+		c, err := net.DialTimeout("tcp", ln.Addr().String(), timeout)
 		if err != nil {
 			errCh <- err
 			return
@@ -125,14 +126,9 @@ func TestLimitListenerClose(t *testing.T) {
 	}
 	defer c.Close()
 
-	select {
-	case <-time.After(5 * time.Second):
-		t.Fatalf("anonymous test goroutine timed out")
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf(
-				"error creating TCP connection in anonymous test goroutine: %s", err)
-		}
+	err = <-errCh
+	if err != nil {
+		t.Fatalf("DialTimeout: %v", err)
 	}
 
 	acceptDone := make(chan struct{})
@@ -151,7 +147,7 @@ func TestLimitListenerClose(t *testing.T) {
 
 	select {
 	case <-acceptDone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		t.Fatalf("Accept() still blocking")
 	}
 }
