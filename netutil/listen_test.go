@@ -108,15 +108,15 @@ func TestLimitListenerClose(t *testing.T) {
 	defer ln.Close()
 	ln = LimitListener(ln, 1)
 
-	doneCh := make(chan struct{})
-	defer close(doneCh)
+	errCh := make(chan error)
 	go func() {
+		defer close(errCh)
 		c, err := net.Dial("tcp", ln.Addr().String())
 		if err != nil {
-			t.Fatal(err)
+			errCh <- err
+			return
 		}
-		defer c.Close()
-		<-doneCh
+		c.Close()
 	}()
 
 	c, err := ln.Accept()
@@ -124,6 +124,16 @@ func TestLimitListenerClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("anonymous test goroutine timed out")
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf(
+				"error creating TCP connection in anonymous test goroutine: %s", err)
+		}
+	}
 
 	acceptDone := make(chan struct{})
 	go func() {
