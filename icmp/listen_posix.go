@@ -50,6 +50,9 @@ func ListenPacket(network, address string) (*PacketConn, error) {
 		family, proto = syscall.AF_INET6, iana.ProtocolIPv6ICMP
 	default:
 		i := last(network, ':')
+		if i == -1 {
+			return nil, errInvalidNetwork
+		}
 		switch network[:i] {
 		case "ip4":
 			proto = iana.ProtocolICMP
