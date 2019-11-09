@@ -307,10 +307,15 @@ func testParseCase(text, want, context string, opts ...ParseOption) (err error) 
 			return err
 		}
 	} else {
+		namespace := ""
+		if i := strings.IndexByte(context, ' '); i >= 0 {
+			namespace, context = context[:i], context[i+1:]
+		}
 		contextNode := &Node{
-			Type:     ElementNode,
-			DataAtom: atom.Lookup([]byte(context)),
-			Data:     context,
+			Data:      context,
+			DataAtom:  atom.Lookup([]byte(context)),
+			Namespace: namespace,
+			Type:      ElementNode,
 		}
 		nodes, err := ParseFragmentWithOptions(strings.NewReader(text), contextNode, opts...)
 		if err != nil {
