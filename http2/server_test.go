@@ -4062,3 +4062,30 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 		})
 	}
 }
+
+func TestProtocolError(t *testing.T) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts.Start()
+
+	println(ts.Listener.Addr().String())
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := conn.Write([]byte(ClientPreface))
+	if err != nil {
+		t.Fatalf("conn.Write err:%s", err)
+	}
+	if n != len(ClientPreface) {
+		t.Fatalf("conn.Write count expect:%d,got %d", len(ClientPreface), n)
+	}
+	fr := NewFramer(os.Stdout, conn)
+	_, err = fr.ReadFrame()
+	if err != nil && err.Error() == "connection error: PROTOCOL_ERROR" {
+		// expect
+		return
+	}
+
+	t.Fatalf("unexpected err:%s", err)
+
+}
