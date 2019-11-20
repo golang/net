@@ -20,6 +20,8 @@ import (
 
 const frameHeaderLen = 9
 
+var http1_1 = []byte("HTTP/1.1 ")
+
 var padZeros = make([]byte, 255) // zeros for padding
 
 // A FrameType is a registered frame type as defined in
@@ -237,6 +239,9 @@ func readFrameHeader(buf []byte, r io.Reader) (FrameHeader, error) {
 	_, err := io.ReadFull(r, buf[:frameHeaderLen])
 	if err != nil {
 		return FrameHeader{}, err
+	}
+	if bytes.Equal(buf[:frameHeaderLen], http1_1) {
+		return FrameHeader{}, ConnectionError(ErrCodeProtocol)
 	}
 	return FrameHeader{
 		Length:   (uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])),
