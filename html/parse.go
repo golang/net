@@ -625,7 +625,7 @@ func inHeadIM(p *parser) bool {
 		switch p.tok.DataAtom {
 		case a.Html:
 			return inBodyIM(p)
-		case a.Base, a.Basefont, a.Bgsound, a.Command, a.Link, a.Meta:
+		case a.Base, a.Basefont, a.Bgsound, a.Link, a.Meta:
 			p.addElement()
 			p.oe.pop()
 			p.acknowledgeSelfClosingTag()
@@ -855,7 +855,7 @@ func inBodyIM(p *parser) bool {
 				return true
 			}
 			copyAttributes(p.oe[0], p.tok)
-		case a.Base, a.Basefont, a.Bgsound, a.Command, a.Link, a.Meta, a.Noframes, a.Script, a.Style, a.Template, a.Title:
+		case a.Base, a.Basefont, a.Bgsound, a.Link, a.Meta, a.Noframes, a.Script, a.Style, a.Template, a.Title:
 			return inHeadIM(p)
 		case a.Body:
 			if p.oe.contains(a.Template) {
@@ -1014,53 +1014,6 @@ func inBodyIM(p *parser) bool {
 			p.tok.DataAtom = a.Img
 			p.tok.Data = a.Img.String()
 			return false
-		case a.Isindex:
-			if p.form != nil {
-				// Ignore the token.
-				return true
-			}
-			action := ""
-			prompt := "This is a searchable index. Enter search keywords: "
-			attr := []Attribute{{Key: "name", Val: "isindex"}}
-			for _, t := range p.tok.Attr {
-				switch t.Key {
-				case "action":
-					action = t.Val
-				case "name":
-					// Ignore the attribute.
-				case "prompt":
-					prompt = t.Val
-				default:
-					attr = append(attr, t)
-				}
-			}
-			p.acknowledgeSelfClosingTag()
-			p.popUntil(buttonScope, a.P)
-			p.parseImpliedToken(StartTagToken, a.Form, a.Form.String())
-			if p.form == nil {
-				// NOTE: The 'isindex' element has been removed,
-				// and the 'template' element has not been designed to be
-				// collaborative with the index element.
-				//
-				// Ignore the token.
-				return true
-			}
-			if action != "" {
-				p.form.Attr = []Attribute{{Key: "action", Val: action}}
-			}
-			p.parseImpliedToken(StartTagToken, a.Hr, a.Hr.String())
-			p.parseImpliedToken(StartTagToken, a.Label, a.Label.String())
-			p.addText(prompt)
-			p.addChild(&Node{
-				Type:     ElementNode,
-				DataAtom: a.Input,
-				Data:     a.Input.String(),
-				Attr:     attr,
-			})
-			p.oe.pop()
-			p.parseImpliedToken(EndTagToken, a.Label, a.Label.String())
-			p.parseImpliedToken(StartTagToken, a.Hr, a.Hr.String())
-			p.parseImpliedToken(EndTagToken, a.Form, a.Form.String())
 		case a.Textarea:
 			p.addElement()
 			p.setOriginalIM()
