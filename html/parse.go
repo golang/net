@@ -203,16 +203,17 @@ func (p *parser) generateImpliedEndTags(exceptions ...string) {
 loop:
 	for i = len(p.oe) - 1; i >= 0; i-- {
 		n := p.oe[i]
-		if n.Type == ElementNode {
-			switch n.DataAtom {
-			case a.Dd, a.Dt, a.Li, a.Optgroup, a.Option, a.P, a.Rb, a.Rp, a.Rt, a.Rtc:
-				for _, except := range exceptions {
-					if n.Data == except {
-						break loop
-					}
+		if n.Type != ElementNode {
+			break
+		}
+		switch n.DataAtom {
+		case a.Dd, a.Dt, a.Li, a.Optgroup, a.Option, a.P, a.Rb, a.Rp, a.Rt, a.Rtc:
+			for _, except := range exceptions {
+				if n.Data == except {
+					break loop
 				}
-				continue
 			}
+			continue
 		}
 		break
 	}
@@ -380,8 +381,7 @@ findIdenticalElements:
 // Section 12.2.4.3.
 func (p *parser) clearActiveFormattingElements() {
 	for {
-		n := p.afe.pop()
-		if len(p.afe) == 0 || n.Type == scopeMarkerNode {
+		if n := p.afe.pop(); len(p.afe) == 0 || n.Type == scopeMarkerNode {
 			return
 		}
 	}
@@ -1169,14 +1169,13 @@ func inBodyIM(p *parser) bool {
 		if len(p.templateStack) > 0 {
 			p.im = inTemplateIM
 			return false
-		} else {
-			for _, e := range p.oe {
-				switch e.DataAtom {
-				case a.Dd, a.Dt, a.Li, a.Optgroup, a.Option, a.P, a.Rb, a.Rp, a.Rt, a.Rtc, a.Tbody, a.Td, a.Tfoot, a.Th,
-					a.Thead, a.Tr, a.Body, a.Html:
-				default:
-					return true
-				}
+		}
+		for _, e := range p.oe {
+			switch e.DataAtom {
+			case a.Dd, a.Dt, a.Li, a.Optgroup, a.Option, a.P, a.Rb, a.Rp, a.Rt, a.Rtc, a.Tbody, a.Td, a.Tfoot, a.Th,
+				a.Thead, a.Tr, a.Body, a.Html:
+			default:
+				return true
 			}
 		}
 	}
@@ -1502,14 +1501,13 @@ func inCaptionIM(p *parser) bool {
 	case StartTagToken:
 		switch p.tok.DataAtom {
 		case a.Caption, a.Col, a.Colgroup, a.Tbody, a.Td, a.Tfoot, a.Thead, a.Tr:
-			if p.popUntil(tableScope, a.Caption) {
-				p.clearActiveFormattingElements()
-				p.im = inTableIM
-				return false
-			} else {
+			if !p.popUntil(tableScope, a.Caption) {
 				// Ignore the token.
 				return true
 			}
+			p.clearActiveFormattingElements()
+			p.im = inTableIM
+			return false
 		case a.Select:
 			p.reconstructActiveFormattingElements()
 			p.addElement()
@@ -1526,14 +1524,13 @@ func inCaptionIM(p *parser) bool {
 			}
 			return true
 		case a.Table:
-			if p.popUntil(tableScope, a.Caption) {
-				p.clearActiveFormattingElements()
-				p.im = inTableIM
-				return false
-			} else {
+			if !p.popUntil(tableScope, a.Caption) {
 				// Ignore the token.
 				return true
 			}
+			p.clearActiveFormattingElements()
+			p.im = inTableIM
+			return false
 		case a.Body, a.Col, a.Colgroup, a.Html, a.Tbody, a.Td, a.Tfoot, a.Th, a.Thead, a.Tr:
 			// Ignore the token.
 			return true
@@ -1777,12 +1774,11 @@ func inSelectIM(p *parser) bool {
 			}
 			p.addElement()
 		case a.Select:
-			if p.popUntil(selectScope, a.Select) {
-				p.resetInsertionMode()
-			} else {
+			if !p.popUntil(selectScope, a.Select) {
 				// Ignore the token.
 				return true
 			}
+			p.resetInsertionMode()
 		case a.Input, a.Keygen, a.Textarea:
 			if p.elementInScope(selectScope, a.Select) {
 				p.parseImpliedToken(EndTagToken, a.Select, a.Select.String())
@@ -1810,12 +1806,11 @@ func inSelectIM(p *parser) bool {
 				p.oe = p.oe[:i]
 			}
 		case a.Select:
-			if p.popUntil(selectScope, a.Select) {
-				p.resetInsertionMode()
-			} else {
+			if !p.popUntil(selectScope, a.Select) {
 				// Ignore the token.
 				return true
 			}
+			p.resetInsertionMode()
 		case a.Template:
 			return inHeadIM(p)
 		}
@@ -2352,8 +2347,7 @@ func ParseWithOptions(r io.Reader, opts ...ParseOption) (*Node, error) {
 		f(p)
 	}
 
-	err := p.parse()
-	if err != nil {
+	if err := p.parse(); err != nil {
 		return nil, err
 	}
 	return p.doc, nil
@@ -2411,8 +2405,7 @@ func ParseFragmentWithOptions(r io.Reader, context *Node, opts ...ParseOption) (
 		}
 	}
 
-	err := p.parse()
-	if err != nil {
+	if err := p.parse(); err != nil {
 		return nil, err
 	}
 
