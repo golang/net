@@ -1192,9 +1192,15 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 	// Once the code successfully parses the comprehensive test suite, we should
 	// refactor this code to be more idiomatic.
 
-	// Steps 1-4. The outer loop.
+	// Steps 1-2
+	if current := p.oe.top(); current.Data == tagName && p.afe.index(current) == -1 {
+		p.oe.pop()
+		return
+	}
+
+	// Steps 3-5. The outer loop.
 	for i := 0; i < 8; i++ {
-		// Step 5. Find the formatting element.
+		// Step 6. Find the formatting element.
 		var formattingElement *Node
 		for j := len(p.afe) - 1; j >= 0; j-- {
 			if p.afe[j].Type == scopeMarkerNode {
@@ -1209,17 +1215,22 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 			p.inBodyEndTagOther(tagAtom, tagName)
 			return
 		}
+
+		// Step 7. Ignore the tag if formatting element is not in the stack of open elements.
 		feIndex := p.oe.index(formattingElement)
 		if feIndex == -1 {
 			p.afe.remove(formattingElement)
 			return
 		}
+		// Step 8. Ignore the tag if formatting element is not in the scope.
 		if !p.elementInScope(defaultScope, tagAtom) {
 			// Ignore the tag.
 			return
 		}
 
-		// Steps 9-10. Find the furthest block.
+		// Step 9. This step is omitted because it's just a parse error but no need to return.
+
+		// Steps 10-11. Find the furthest block.
 		var furthestBlock *Node
 		for _, e := range p.oe[feIndex:] {
 			if isSpecialElement(e) {
@@ -1236,47 +1247,65 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 			return
 		}
 
-		// Steps 11-12. Find the common ancestor and bookmark node.
+		// Steps 12-13. Find the common ancestor and bookmark node.
 		commonAncestor := p.oe[feIndex-1]
 		bookmark := p.afe.index(formattingElement)
 
-		// Step 13. The inner loop. Find the lastNode to reparent.
+		// Step 14. The inner loop. Find the lastNode to reparent.
 		lastNode := furthestBlock
 		node := furthestBlock
 		x := p.oe.index(node)
-		// Steps 13.1-13.2
-		for j := 0; j < 3; j++ {
-			// Step 13.3.
+		// Step 14.1.
+		j := 0
+		for {
+			// Step 14.2.
+			j++
+			// Step. 14.3.
 			x--
 			node = p.oe[x]
-			// Step 13.4 - 13.5.
+			// Step 14.4. Go to the next step if node is formatting element.
+			if node == formattingElement {
+				break
+			}
+			// Step 14.5. Remove node from the list of active formatting elements if
+			// inner loop counter is greater than three and node is in the list of
+			// active formatting elements.
+			if ni := p.afe.index(node); j > 3 && ni > -1 {
+				p.afe.remove(node)
+				// If any element of the list of active formatting elements is removed,
+				// we need to take care whether bookmark should be decremented or not.
+				// This is because the value of bookmark may exceed the size of the
+				// list by removing elements from the list.
+				if ni <= bookmark {
+					bookmark--
+				}
+				continue
+			}
+			// Step 14.6. Continue the next inner loop if node is not in the list of
+			// active formatting elements.
 			if p.afe.index(node) == -1 {
 				p.oe.remove(node)
 				continue
 			}
-			// Step 13.6.
-			if node == formattingElement {
-				break
-			}
-			// Step 13.7.
+			// Step 14.7.
 			clone := node.clone()
 			p.afe[p.afe.index(node)] = clone
 			p.oe[p.oe.index(node)] = clone
 			node = clone
-			// Step 13.8.
+			// Step 14.8.
 			if lastNode == furthestBlock {
 				bookmark = p.afe.index(node) + 1
 			}
-			// Step 13.9.
+			// Step 14.9.
 			if lastNode.Parent != nil {
 				lastNode.Parent.RemoveChild(lastNode)
 			}
 			node.AppendChild(lastNode)
-			// Step 13.10.
+			// Step 14.10.
 			lastNode = node
 		}
 
-		// Step 14. Reparent lastNode to the common ancestor,
+		// Step 15. Reparent lastNode to the common ancestor,
 		// or for misnested table nodes, to the foster parent.
 		if lastNode.Parent != nil {
 			lastNode.Parent.RemoveChild(lastNode)
@@ -1288,13 +1317,13 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 			commonAncestor.AppendChild(lastNode)
 		}
 
-		// Steps 15-17. Reparent nodes from the furthest block's children
+		// Steps 16-18. Reparent nodes from the furthest block's children
 		// to a clone of the formatting element.
 		clone := formattingElement.clone()
 		reparentChildren(clone, furthestBlock)
 		furthestBlock.AppendChild(clone)
 
-		// Step 18. Fix up the list of active formatting elements.
+		// Step 19. Fix up the list of active formatting elements.
 		if oldLoc := p.afe.index(formattingElement); oldLoc != -1 && oldLoc < bookmark {
 			// Move the bookmark with the rest of the list.
 			bookmark--
@@ -1302,7 +1331,7 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 		p.afe.remove(formattingElement)
 		p.afe.insert(bookmark, clone)
 
-		// Step 19. Fix up the stack of open elements.
+		// Step 20. Fix up the stack of open elements.
 		p.oe.remove(formattingElement)
 		p.oe.insert(p.oe.index(furthestBlock)+1, clone)
 	}

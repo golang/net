@@ -200,26 +200,61 @@
 |       <b>
 
 #data
-<b><em><dcell><postfield><postfield><postfield><postfield><missing_glyph><missing_glyph><missing_glyph><missing_glyph><hkern><aside></b></em>
+<b><em><foo><foo><foo><aside></b></em>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <em>
+|         <foo>
+|           <foo>
+|             <foo>
+|     <aside>
+|       <b>
+
+#data
+<b><em><foo><foo><foo><foo><foo><foo><foo><foo><foo><foo><aside></b></em>
 #errors
 #document-fragment
 div
 #document
 | <b>
 |   <em>
-|     <dcell>
-|       <postfield>
-|         <postfield>
-|           <postfield>
-|             <postfield>
-|               <missing_glyph>
-|                 <missing_glyph>
-|                   <missing_glyph>
-|                     <missing_glyph>
-|                       <hkern>
+|     <foo>
+|       <foo>
+|         <foo>
+|           <foo>
+|             <foo>
+|               <foo>
+|                 <foo>
+|                   <foo>
+|                     <foo>
+|                       <foo>
 | <aside>
+|   <b>
+
+#data
+<b><em><foo><foob><foob><foob><foob><fooc><fooc><fooc><fooc><food><aside></b></em>
+#errors
+#document-fragment
+div
+#document
+| <b>
 |   <em>
-|     <b>
+|     <foo>
+|       <foob>
+|         <foob>
+|           <foob>
+|             <foob>
+|               <fooc>
+|                 <fooc>
+|                   <fooc>
+|                     <fooc>
+|                       <food>
+| <aside>
+|   <b>
 
 #data
 <option><XH<optgroup></optgroup>
