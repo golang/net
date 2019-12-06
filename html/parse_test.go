@@ -272,7 +272,8 @@ func TestParserWithoutScripting(t *testing.T) {
 |   <head>
 |     <noscript>
 |   <body>
-|     "<img src='https://golang.org/doc/gopher/frontpage.png' />"
+|     <img>
+|       src="https://golang.org/doc/gopher/frontpage.png"
 |     <p>
 |       <img>
 |         src="https://golang.org/doc/gopher/doc.png"

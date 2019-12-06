@@ -184,6 +184,17 @@ func (p *parser) clearStackToContext(s scope) {
 	}
 }
 
+// parseGenericRawTextElements implements the generic raw text element parsing
+// algorithm defined in 12.2.6.2.
+// https://html.spec.whatwg.org/multipage/parsing.html#parsing-elements-that-contain-only-text
+// TODO: Since both RAWTEXT and RCDATA states are treated as tokenizer's part
+// officially, need to make tokenizer consider both states.
+func (p *parser) parseGenericRawTextElement() {
+	p.addElement()
+	p.originalIM = p.im
+	p.im = textIM
+}
+
 // generateImpliedEndTags pops nodes off the stack of open elements as long as
 // the top node has a tag name of dd, dt, li, optgroup, option, p, rb, rp, rt or rtc.
 // If exceptions are specified, nodes with that name will not be popped off.
@@ -631,18 +642,22 @@ func inHeadIM(p *parser) bool {
 			p.acknowledgeSelfClosingTag()
 			return true
 		case a.Noscript:
-			p.addElement()
 			if p.scripting {
-				p.setOriginalIM()
-				p.im = textIM
-			} else {
-				p.im = inHeadNoscriptIM
+				p.parseGenericRawTextElement()
+				return true
 			}
+			p.addElement()
+			p.im = inHeadNoscriptIM
+			// Don't let the tokenizer go into raw text mode when scripting is disabled.
+			p.tokenizer.NextIsNotRawText()
 			return true
-		case a.Script, a.Title, a.Noframes, a.Style:
+		case a.Script, a.Title:
 			p.addElement()
 			p.setOriginalIM()
 			p.im = textIM
+			return true
+		case a.Noframes, a.Style:
+			p.parseGenericRawTextElement()
 			return true
 		case a.Head:
 			// Ignore the token.
@@ -1023,18 +1038,21 @@ func inBodyIM(p *parser) bool {
 			p.popUntil(buttonScope, a.P)
 			p.reconstructActiveFormattingElements()
 			p.framesetOK = false
-			p.addElement()
-			p.setOriginalIM()
-			p.im = textIM
+			p.parseGenericRawTextElement()
 		case a.Iframe:
 			p.framesetOK = false
+			p.parseGenericRawTextElement()
+		case a.Noembed:
+			p.parseGenericRawTextElement()
+		case a.Noscript:
+			if p.scripting {
+				p.parseGenericRawTextElement()
+				return true
+			}
+			p.reconstructActiveFormattingElements()
 			p.addElement()
-			p.setOriginalIM()
-			p.im = textIM
-		case a.Noembed, a.Noscript:
-			p.addElement()
-			p.setOriginalIM()
-			p.im = textIM
+			// Don't let the tokenizer go into raw text mode when scripting is disabled.
+			p.tokenizer.NextIsNotRawText()
 		case a.Select:
 			p.reconstructActiveFormattingElements()
 			p.addElement()
