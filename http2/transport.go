@@ -1692,6 +1692,11 @@ func (e GoAwayError) Error() string {
 		e.LastStreamID, e.ErrCode, e.DebugData)
 }
 
+func (e GoAwayError) Temporary() bool {
+	// GO AWAY error should be temporary and can happen when a single connection serves more than X requests or after some timeout
+	return true
+}
+
 func isEOFOrNetReadError(err error) bool {
 	if err == io.EOF {
 		return true
