@@ -2140,7 +2140,7 @@ func unpackResourceBody(msg []byte, off int, hdr ResourceHeader) (ResourceBody, 
 		return nil, off, &nestedError{name + " record", err}
 	}
 	if r == nil {
-		return nil, off, errors.New("invalid resource type: " + string(hdr.Type+'0'))
+		return nil, off, errors.New("invalid resource type: " + string(rune(hdr.Type)+'0'))
 	}
 	return r, off + int(hdr.Length), nil
 }
