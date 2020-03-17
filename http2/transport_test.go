@@ -3927,11 +3927,15 @@ func TestTransportNoBodyMeansNoDATA(t *testing.T) {
 	ct.run()
 }
 
-func benchSimpleRoundTrip(b *testing.B, nHeaders int) {
+func benchSimpleRoundTrip(b *testing.B, nReqHeaders, nResHeader int) {
 	defer disableGoroutineTracking()()
 	b.ReportAllocs()
 	st := newServerTester(b,
 		func(w http.ResponseWriter, r *http.Request) {
+			for i := 0; i < nResHeader; i++ {
+				name := fmt.Sprint("A-", i)
+				w.Header().Set(name, "*")
+			}
 		},
 		optOnlyServer,
 		optQuiet,
@@ -3946,7 +3950,7 @@ func benchSimpleRoundTrip(b *testing.B, nHeaders int) {
 		b.Fatal(err)
 	}
 
-	for i := 0; i < nHeaders; i++ {
+	for i := 0; i < nReqHeaders; i++ {
 		name := fmt.Sprint("A-", i)
 		req.Header.Set(name, "*")
 	}
@@ -4037,10 +4041,17 @@ func TestTransportHandlesInvalidStatuslessResponse(t *testing.T) {
 }
 
 func BenchmarkClientRequestHeaders(b *testing.B) {
-	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0) })
-	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 10) })
-	b.Run(" 100 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 100) })
-	b.Run("1000 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 1000) })
+	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 0) })
+	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 10, 0) })
+	b.Run(" 100 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 100, 0) })
+	b.Run("1000 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 1000, 0) })
+}
+
+func BenchmarkClientResponseHeaders(b *testing.B) {
+	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 0) })
+	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 10) })
+	b.Run(" 100 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 100) })
+	b.Run("1000 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 1000) })
 }
 
 func activeStreams(cc *ClientConn) int {
