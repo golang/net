@@ -323,7 +323,7 @@ func newPushHandler() http.Handler {
 }
 
 func newGopherTilesHandler() http.Handler {
-	const gopherURL = "https://blog.golang.org/go-programming-language-turns-two_gophers.jpg"
+	const gopherURL = "https://blog.golang.org/2years/2years-gophers.jpg"
 	res, err := http.Get(gopherURL)
 	if err != nil {
 		log.Fatal(err)
