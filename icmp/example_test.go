@@ -24,7 +24,7 @@ func ExamplePacketConn_nonPrivilegedPing() {
 		return
 	}
 
-	c, err := icmp.ListenPacket("udp6", "::")
+	c, err := icmp.ListenPacket("udp6", "::1")
 	if err != nil {
 		log.Fatal(err)
 	}
