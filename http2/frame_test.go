@@ -160,7 +160,7 @@ func TestWriteDataPadded(t *testing.T) {
 		}
 		got := f.Header()
 		tt.wantHeader.valid = true
-		if got != tt.wantHeader {
+		if !got.Equal(tt.wantHeader) {
 			t.Errorf("%d. read %+v; want %+v", i, got, tt.wantHeader)
 			continue
 		}
@@ -169,6 +169,14 @@ func TestWriteDataPadded(t *testing.T) {
 			t.Errorf("%d. got %q; want %q", i, df.Data(), tt.data)
 		}
 	}
+}
+
+func (fh FrameHeader) Equal(b FrameHeader) bool {
+	return fh.valid == b.valid &&
+		fh.Type == b.Type &&
+		fh.Flags == b.Flags &&
+		fh.Length == b.Length &&
+		fh.StreamID == b.StreamID
 }
 
 func TestWriteHeaders(t *testing.T) {
@@ -595,7 +603,7 @@ func TestReadFrameHeader(t *testing.T) {
 			continue
 		}
 		tt.want.valid = true
-		if got != tt.want {
+		if !got.Equal(tt.want) {
 			t.Errorf("%d. readFrameHeader(%q) = %+v; want %+v", i, tt.in, got, tt.want)
 		}
 	}
