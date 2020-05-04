@@ -4322,13 +4322,13 @@ func (r *errReader) Read(p []byte) (int, error) {
 }
 
 func testTransportBodyReadError(t *testing.T, body []byte) {
-	if runtime.GOOS == "windows" {
-		// So far we've only seen this be flaky on Windows,
+	if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+		// So far we've only seen this be flaky on Windows and Plan 9,
 		// perhaps due to TCP behavior on shutdowns while
 		// unread data is in flight. This test should be
 		// fixed, but a skip is better than annoying people
 		// for now.
-		t.Skip("skipping flaky test on Windows; https://golang.org/issue/31260")
+		t.Skipf("skipping flaky test on %s; https://golang.org/issue/31260", runtime.GOOS)
 	}
 	clientDone := make(chan struct{})
 	ct := newClientTester(t)
