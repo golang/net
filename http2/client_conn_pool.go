@@ -18,16 +18,16 @@ type ClientConnPool interface {
 	MarkDead(*ClientConn)
 }
 
-// clientConnPoolIdleCloser is the interface implemented by ClientConnPool
+// ClientConnPoolIdleCloser is the interface implemented by ClientConnPool
 // implementations which can close their idle connections.
-type clientConnPoolIdleCloser interface {
+type ClientConnPoolIdleCloser interface {
 	ClientConnPool
-	closeIdleConnections()
+	CloseIdleConnections()
 }
 
 var (
-	_ clientConnPoolIdleCloser = (*clientConnPool)(nil)
-	_ clientConnPoolIdleCloser = noDialClientConnPool{}
+	_ ClientConnPoolIdleCloser = (*clientConnPool)(nil)
+	_ ClientConnPoolIdleCloser = noDialClientConnPool{}
 )
 
 // TODO: use singleflight for dialing and addConnCalls?
@@ -237,7 +237,7 @@ func (p *clientConnPool) MarkDead(cc *ClientConn) {
 	delete(p.keys, cc)
 }
 
-func (p *clientConnPool) closeIdleConnections() {
+func (p *clientConnPool) CloseIdleConnections() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// TODO: don't close a cc if it was just added to the pool
