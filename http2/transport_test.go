@@ -4516,7 +4516,7 @@ func TestTransportBodyLargerThanSpecifiedContentLength_len2(t *testing.T) {
 
 func testTransportBodyLargerThanSpecifiedContentLength(t *testing.T, body *chunkReader, contentLen int64) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		// Nothing.
+		r.Body.Read(make([]byte, 6))
 	}, optOnlyServer)
 	defer st.Close()
 
