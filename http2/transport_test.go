@@ -4568,3 +4568,56 @@ func TestClientConnTooIdle(t *testing.T) {
 		}
 	}
 }
+
+func TestTransportMinConcurrentConns(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "test")
+		},
+		func(s *Server) {
+			s.MaxConcurrentStreams = 100
+			s.IdleTimeout = 30 * time.Second
+		},
+		optOnlyServer,
+	)
+	defer st.Close()
+
+	req, err := http.NewRequest("GET", st.ts.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	addr := authorityAddr(req.URL.Scheme, req.URL.Host)
+
+	MinConcurrentConns := 5
+
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		MinConcurrentConns: uint32(MinConcurrentConns),
+	}
+	defer tr.CloseIdleConnections()
+
+	// execute a dummy request
+	for i := 0; i < 10; i++ {
+		_, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+	}
+
+	// check client connection pool
+	cp, ok := tr.connPool().(*clientConnPool)
+	if !ok {
+		t.Fatalf("Conn pool is %T; want *clientConnPool", tr.connPool())
+	}
+
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+
+	conns, ok := cp.conns[addr]
+	if !ok {
+		t.Fatalf("cannot find connections for %s", addr)
+	}
+	if len(conns) != MinConcurrentConns {
+		t.Fatalf("the number of connections should be %d, but got %d", MinConcurrentConns, len(conns))
+	}
+}

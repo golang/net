@@ -108,6 +108,13 @@ type Transport struct {
 	// waiting for their turn.
 	StrictMaxConcurrentStreams bool
 
+	// MinConcurrentConns is the minimum number of TCP connections.
+	// ClientConnPool tries to maintain  MinConcurrentConns
+	// TCP connections at least. If 0, ClientConnPool creates a
+	// TCP connection only when needed. The default value is 0.
+	// Increase this value if you need high throughput.
+	MinConcurrentConns uint32
+
 	// t1, if non-nil, is the standard library Transport using
 	// this transport. Its settings are used (but not its
 	// RoundTrip method, etc).

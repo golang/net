@@ -10,6 +10,8 @@ import (
 	"crypto/tls"
 	"net/http"
 	"sync"
+	"math/rand"
+	"time"
 )
 
 // ClientConnPool manages a pool of HTTP/2 client connections.
@@ -84,25 +86,50 @@ func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMis
 		}
 		return cc, nil
 	}
+
 	p.mu.Lock()
-	for _, cc := range p.conns[addr] {
-		if st := cc.idleState(); st.canTakeNewRequest {
-			if p.shouldTraceGetConn(st) {
-				traceGetConn(req, addr)
+	defer p.mu.Unlock()
+
+	ccList := p.conns[addr]
+	minCon := int(p.t.MinConcurrentConns)
+
+	if len(ccList) >= minCon {
+		if minCon > 0 {
+			rndSrc := rand.NewSource(time.Now().UnixNano())
+			rnd := rand.New(rndSrc)
+			startOffset := rnd.Intn(minCon)
+			// find an available connection randomly among MinConcurrentConns connections for spreading streams
+			for i := 0; i < minCon; i++ {
+				idx := (i + startOffset) % minCon
+				if p.takeNewRequest(req, addr, ccList[idx]) {
+					return ccList[idx], nil
+				}
 			}
-			p.mu.Unlock()
-			return cc, nil
+		}
+		// find an available connection sequentially among the rests
+		for _, cc := range ccList[minCon:] {
+			if p.takeNewRequest(req, addr, cc) {
+				return cc, nil
+			}
 		}
 	}
 	if !dialOnMiss {
-		p.mu.Unlock()
 		return nil, ErrNoCachedConn
 	}
 	traceGetConn(req, addr)
 	call := p.getStartDialLocked(addr)
-	p.mu.Unlock()
 	<-call.done
 	return call.res, call.err
+}
+
+func (p *clientConnPool) takeNewRequest(req *http.Request, addr string, cc *ClientConn) bool {
+	if st := cc.idleState(); st.canTakeNewRequest {
+		if p.shouldTraceGetConn(st) {
+			traceGetConn(req, addr)
+		}
+		return true
+	}
+	return false
 }
 
 // dialCall is an in-flight Transport dial call to a host.
