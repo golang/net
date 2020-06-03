@@ -2255,6 +2255,69 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 	}
 }
 
+// Reject content-length headers containing a sign.
+// See https://golang.org/issue/39017
+func TestTransportRejectsContentLengthWithSign(t *testing.T) {
+	tests := []struct {
+		name   string
+		cl     []string
+		wantCL string
+	}{
+		{
+			name:   "proper content-length",
+			cl:     []string{"3"},
+			wantCL: "3",
+		},
+		{
+			name:   "ignore cl with plus sign",
+			cl:     []string{"+3"},
+			wantCL: "",
+		},
+		{
+			name:   "ignore cl with minus sign",
+			cl:     []string{"-3"},
+			wantCL: "",
+		},
+		{
+			name:   "max int64, for safe uint64->int64 conversion",
+			cl:     []string{"9223372036854775807"},
+			wantCL: "9223372036854775807",
+		},
+		{
+			name:   "overflows int64, so ignored",
+			cl:     []string{"9223372036854775808"},
+			wantCL: "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", tt.cl[0])
+			}, optOnlyServer)
+			defer st.Close()
+			tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+			defer tr.CloseIdleConnections()
+
+			req, _ := http.NewRequest("HEAD", st.ts.URL, nil)
+			res, err := tr.RoundTrip(req)
+
+			var got string
+			if err != nil {
+				got = fmt.Sprintf("ERROR: %v", err)
+			} else {
+				got = res.Header.Get("Content-Length")
+				res.Body.Close()
+			}
+
+			if got != tt.wantCL {
+				t.Fatalf("Got: %q\nWant: %q", got, tt.wantCL)
+			}
+		})
+	}
+}
+
 // golang.org/issue/14048
 func TestTransportFailsOnInvalidHeaders(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
