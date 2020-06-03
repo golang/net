@@ -248,7 +248,7 @@ func (p *clientConnPool) closeIdleConnections() {
 	// break some caller's RoundTrip.
 	for _, vv := range p.conns {
 		for _, cc := range vv {
-			cc.closeIfIdle()
+			cc.CloseIfIdle()
 		}
 	}
 }
