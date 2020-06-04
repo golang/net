@@ -152,18 +152,46 @@ func (t *Transport) pingTimeout() time.Duration {
 
 }
 
+// TransportOptions contains options to configure HTTP/2 transport.
+type TransportOptions struct {
+	// ReadIdleTimeout is the timeout after which a health check using ping
+	// frame will be carried out if no frame is received on the connection.
+	// Note that a ping response will is considered a received frame, so if
+	// there is no other traffic on the connection, the health check will
+	// be performed every ReadIdleTimeout interval.
+	// If zero, no health check is performed.
+	ReadIdleTimeout time.Duration
+
+	// PingTimeout is the timeout after which the connection will be closed
+	// if a response to Ping is not received.
+	// Defaults to 15s.
+	PingTimeout time.Duration
+}
+
 // ConfigureTransport configures a net/http HTTP/1 Transport to use HTTP/2.
+// The options can be used to configure the HTTP/2 Transport.
 // It returns an error if t1 has already been HTTP/2-enabled.
-func ConfigureTransport(t1 *http.Transport) error {
-	_, err := configureTransport(t1)
+func ConfigureTransportWithOptions(t1 *http.Transport, o *TransportOptions) error {
+	_, err := configureTransport(t1, o)
 	return err
 }
 
-func configureTransport(t1 *http.Transport) (*Transport, error) {
+// ConfigureTransport configures a net/http HTTP/1 Transport to use HTTP/2.
+// It returns an error if t1 has already been HTTP/2-enabled.
+func ConfigureTransport(t1 *http.Transport) error {
+	_, err := configureTransport(t1, nil)
+	return err
+}
+
+func configureTransport(t1 *http.Transport, o *TransportOptions) (*Transport, error) {
 	connPool := new(clientConnPool)
 	t2 := &Transport{
 		ConnPool: noDialClientConnPool{connPool},
 		t1:       t1,
+	}
+	if o != nil {
+		t2.ReadIdleTimeout = o.ReadIdleTimeout
+		t2.PingTimeout = o.PingTimeout
 	}
 	connPool.t = t2
 	if err := registerHTTPSProtocol(t1, noDialH2RoundTripper{t2}); err != nil {

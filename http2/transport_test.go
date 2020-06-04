@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/net/http2/hpack"
 )
@@ -591,6 +592,42 @@ func TestTransportDialTLS(t *testing.T) {
 	}
 	if !didDial {
 		t.Error("didn't use dial hook")
+	}
+}
+
+func TestConfigureTransportWithOptions(t *testing.T) {
+	t1 := &http.Transport{}
+	o := &TransportOptions{ReadIdleTimeout: 10 * time.Second, PingTimeout: 10 * time.Second}
+	err := ConfigureTransportWithOptions(t1, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf := reflect.ValueOf(t1).Elem().FieldByName("altProto")
+	rf = reflect.NewAt(rf.Type(), unsafe.Pointer(rf.UnsafeAddr())).Elem()
+	v := rf.Interface().(atomic.Value)
+	altProto := v.Load().(map[string]http.RoundTripper)
+	rt := (altProto["https"]).(noDialH2RoundTripper)
+	t2 := rt.Transport
+	if e, a := o.ReadIdleTimeout, t2.ReadIdleTimeout; e != a {
+		t.Errorf("expected ReadIdleTimeout to be %d, got %d", e, a)
+	}
+	if e, a := o.PingTimeout, t2.PingTimeout; e != a {
+		t.Errorf("expected PingTimeout to be %d, got %d", e, a)
+	}
+}
+
+func TestInternalConfigureTransport(t *testing.T) {
+	t1 := &http.Transport{}
+	o := &TransportOptions{ReadIdleTimeout: 10 * time.Second, PingTimeout: 10 * time.Second}
+	t2, err := configureTransport(t1, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, a := o.ReadIdleTimeout, t2.ReadIdleTimeout; e != a {
+		t.Errorf("expected ReadIdleTimeout to be %d, got %d", e, a)
+	}
+	if e, a := o.PingTimeout, t2.PingTimeout; e != a {
+		t.Errorf("expected PingTimeout to be %d, got %d", e, a)
 	}
 }
 
