@@ -51,6 +51,15 @@ const (
 	transportDefaultStreamMinRefresh = 4 << 10
 
 	defaultUserAgent = "Go-http-client/2.0"
+
+	// initialMaxConcurrentStreams is a connections maxConcurrentStreams until
+	// it's received servers initial SETTINGS frame, which corresponds with the
+	// spec's minimum recommended value.
+	initialMaxConcurrentStreams = 100
+
+	// defaultMaxConcurrentStreams is a connections default maxConcurrentStreams
+	// if the server doesn't include one in its initial SETTINGS frame.
+	defaultMaxConcurrentStreams = 1000
 )
 
 // Transport is an HTTP/2 Transport.
@@ -247,6 +256,7 @@ type ClientConn struct {
 	doNotReuse      bool       // whether conn is marked to not be reused for any future requests
 	closing         bool
 	closed          bool
+	seenSettings    bool                     // true if we've seen a settings frame, false otherwise
 	wantSettingsAck bool                     // we sent a SETTINGS frame and haven't heard back
 	goAway          *GoAwayFrame             // if non-nil, the GoAwayFrame we received
 	goAwayDebug     string                   // goAway frame's debug data, retained as a string
@@ -642,10 +652,10 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		tconn:                 c,
 		readerDone:            make(chan struct{}),
 		nextStreamID:          1,
-		maxFrameSize:          16 << 10,           // spec default
-		initialWindowSize:     65535,              // spec default
-		maxConcurrentStreams:  1000,               // "infinite", per spec. 1000 seems good enough.
-		peerMaxHeaderListSize: 0xffffffffffffffff, // "infinite", per spec. Use 2^64-1 instead.
+		maxFrameSize:          16 << 10,                    // spec default
+		initialWindowSize:     65535,                       // spec default
+		maxConcurrentStreams:  initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
+		peerMaxHeaderListSize: 0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
 		streams:               make(map[uint32]*clientStream),
 		singleUse:             singleUse,
 		wantSettingsAck:       true,
@@ -2353,12 +2363,14 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 		return ConnectionError(ErrCodeProtocol)
 	}
 
+	var seenMaxConcurrentStreams bool
 	err := f.ForeachSetting(func(s Setting) error {
 		switch s.ID {
 		case SettingMaxFrameSize:
 			cc.maxFrameSize = s.Val
 		case SettingMaxConcurrentStreams:
 			cc.maxConcurrentStreams = s.Val
+			seenMaxConcurrentStreams = true
 		case SettingMaxHeaderListSize:
 			cc.peerMaxHeaderListSize = uint64(s.Val)
 		case SettingInitialWindowSize:
@@ -2388,6 +2400,17 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	if !cc.seenSettings {
+		if !seenMaxConcurrentStreams {
+			// This was the servers initial SETTINGS frame and it
+			// didn't contain a MAX_CONCURRENT_STREAMS field so
+			// increase the number of concurrent streams this
+			// connection can establish to our default.
+			cc.maxConcurrentStreams = defaultMaxConcurrentStreams
+		}
+		cc.seenSettings = true
 	}
 
 	cc.wmu.Lock()
