@@ -43,14 +43,37 @@ func stderrv() io.Writer {
 	return ioutil.Discard
 }
 
+type safeBuffer struct {
+	b bytes.Buffer
+	m sync.Mutex
+}
+
+func (sb *safeBuffer) Write(d []byte) (int, error) {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Write(d)
+}
+
+func (sb *safeBuffer) Bytes() []byte {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Bytes()
+}
+
+func (sb *safeBuffer) Len() int {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Len()
+}
+
 type serverTester struct {
 	cc             net.Conn // client conn
 	t              testing.TB
 	ts             *httptest.Server
 	fr             *Framer
-	serverLogBuf   bytes.Buffer // logger for httptest.Server
-	logFilter      []string     // substrings to filter out
-	scMu           sync.Mutex   // guards sc
+	serverLogBuf   safeBuffer // logger for httptest.Server
+	logFilter      []string   // substrings to filter out
+	scMu           sync.Mutex // guards sc
 	sc             *serverConn
 	hpackDec       *hpack.Decoder
 	decodedHeaders [][2]string
@@ -4265,5 +4288,46 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 
 	if err := <-errc; err != nil {
 		t.Error(err)
+	}
+}
+
+func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {})
+	defer st.Close()
+
+	st.greet()
+
+	content := "some content"
+	st.writeHeaders(HeadersFrameParam{
+		StreamID: 1,
+		BlockFragment: st.encodeHeader(
+			":method", "POST",
+			"content-length", strconv.Itoa(len(content)),
+		),
+		EndStream:  false,
+		EndHeaders: true,
+	})
+	st.wantHeaders()
+
+	st.sc.startGracefulShutdown()
+	for {
+		f, err := st.readFrame()
+		if err == io.EOF {
+			st.t.Fatal("got a EOF; want *GoAwayFrame")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gf, ok := f.(*GoAwayFrame); ok && gf.StreamID == 0 {
+			break
+		}
+	}
+
+	st.writeData(1, true, []byte(content))
+	time.Sleep(200 * time.Millisecond)
+	st.Close()
+
+	if bytes.Contains(st.serverLogBuf.Bytes(), []byte("PROTOCOL_ERROR")) {
+		t.Error("got protocol error")
 	}
 }
