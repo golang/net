@@ -668,6 +668,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	cc.inflow.add(transportDefaultConnFlow + initialWindowSize)
 	cc.bw.Flush()
 	if cc.werr != nil {
+		cc.Close()
 		return nil, cc.werr
 	}
 
@@ -1032,6 +1033,15 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 	cs.requestedGzip = requestedGzip
 	bodyWriter := cc.t.getBodyWriterState(cs, body)
 	cs.on100 = bodyWriter.on100
+
+	defer func() {
+		cc.wmu.Lock()
+		werr := cc.werr
+		cc.wmu.Unlock()
+		if werr != nil {
+			cc.Close()
+		}
+	}()
 
 	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
