@@ -7,6 +7,8 @@ package dnsmessage
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -1447,5 +1449,30 @@ func largeTestMsg() Message {
 				},
 			},
 		},
+	}
+}
+
+// This package is imported by the standard library net package
+// and therefore must not use fmt. We'll catch a mistake when vendored
+// into the standard library, but this test catches the mistake earlier.
+func TestNoFmt(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		// Could use something complex like go/build or x/tools/go/packages,
+		// but there's no reason for "fmt" to appear (in quotes) in the source
+		// otherwise, so just use a simple substring search.
+		data, err := ioutil.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(`"fmt"`)) {
+			t.Errorf(`%s: cannot import "fmt"`, file)
+		}
 	}
 }
