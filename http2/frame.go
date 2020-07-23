@@ -896,7 +896,9 @@ func (f *Framer) WriteGoAway(maxStreamID uint32, code ErrCode, debugData []byte)
 }
 
 // An UnknownFrame is the frame type returned when the frame type is unknown
-// or no specific frame type parser exists.
+// or no specific frame type parser exists. UnknownFrame will not be used for
+// opening or closing a stream even if their flags indicate so. UnknownFrame
+// will not be counted against flow control.
 type UnknownFrame struct {
 	FrameHeader
 	p []byte
