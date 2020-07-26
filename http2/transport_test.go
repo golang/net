@@ -4732,3 +4732,90 @@ func TestClientConnTooIdle(t *testing.T) {
 		}
 	}
 }
+
+func startH2ServerWithUnknownFrame(t *testing.T, frameType FrameType, frameFlags Flags, unknownFrameBody []byte) net.Listener {
+	h2Server := &Server{}
+	h2Server.EnableUnknownFrames = true
+	l := newLocalListener(t)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		h2Server.ServeConn(&fakeTLSConn{conn}, &ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Foo", "Bar")
+			ufw, ok := w.(WriteUnknownFrame)
+			if !ok {
+				t.Errorf("can't cast w to WriteUnknownFrame")
+			}
+			ufw.WriteUnknownFrame(frameType, frameFlags, unknownFrameBody)
+			fmt.Fprintf(w, "Hello, %v, http: %v", r.URL.Path, r.TLS == nil)
+		})})
+	}()
+	return l
+}
+
+func TestTransportH2WithUnknownFrame(t *testing.T) {
+	const frameType = 0xff
+	const frameFlags = 1
+	unknownFrameBody := make([]byte, defaultMaxReadFrameSize)
+	uf := &UnknownFrameInfo{frameType, frameFlags, unknownFrameBody}
+
+	l := startH2ServerWithUnknownFrame(t, frameType, frameFlags, unknownFrameBody)
+	defer l.Close()
+	req, err := http.NewRequest("GET", "http://"+l.Addr().String()+"/foobar", nil)
+	req = AddUnknownFrame(req, uf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotConnCnt int32
+	trace := &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			if !connInfo.Reused {
+				atomic.AddInt32(&gotConnCnt, 1)
+			}
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	tr := &Transport{
+		AllowHTTP: true,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return net.Dial(network, addr)
+		},
+	}
+
+	res, err := tr.RoundTrip(req)
+	rwuf, ok := res.Body.(UnknownFrameReader)
+	if !ok {
+		t.Errorf("can't cast res to UnknownFrameReader")
+	}
+	f, err := rwuf.ReadUnknownFrame(context.Background())
+	if err != nil {
+		t.Errorf("ReadUnknownFrame failed: %v", err)
+	}
+	if got, want := f.FrameHeader.Type, FrameType(frameType); got != want {
+		t.Errorf("unknown frame type got %v, want %v", got, want)
+	}
+	if got, want := f.FrameHeader.Flags, Flags(frameFlags); got != want {
+		t.Errorf("unknown frame flags got %v, want %v", got, want)
+	}
+	got, want := f.p, unknownFrameBody
+	if len(got) != len(want) {
+		t.Errorf("unknown frame payload got %v, want %v", got, want)
+	}
+
+	if res.ProtoMajor != 2 {
+		t.Fatal("proto not h2c")
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(body), "Hello, /foobar, http: true"; got != want {
+		t.Fatalf("response got %v, want %v", got, want)
+	}
+	if got, want := gotConnCnt, int32(1); got != want {
+		t.Errorf("Too many got connections: %d", gotConnCnt)
+	}
+}
