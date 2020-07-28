@@ -11,16 +11,29 @@ import "net"
 type mmsghdrs []mmsghdr
 
 func (hs mmsghdrs) pack(ms []Message, parseFn func([]byte, string) (net.Addr, error), marshalFn func(net.Addr) []byte) error {
+	// Do one buffer allocation for the whole run
+	totalbuffers := 0
 	for i := range hs {
-		vs := make([]iovec, len(ms[i].Buffers))
+		totalbuffers += len(ms[i].Buffers)
+	}
+	vsa := make([]iovec, totalbuffers)
+	bufferOffset := 0
+	var saa []byte
+	if parseFn != nil {
+		saa = make([]byte, sizeofSockaddrInet6*len(hs))
+	}
+	for i := range hs {
+		numBufs := len(ms[i].Buffers)
+		vs := vsa[bufferOffset : bufferOffset+numBufs]
 		var sa []byte
 		if parseFn != nil {
-			sa = make([]byte, sizeofSockaddrInet6)
+			sa = saa[i*sizeofSockaddrInet6 : (i+1)*sizeofSockaddrInet6]
 		}
 		if marshalFn != nil {
 			sa = marshalFn(ms[i].Addr)
 		}
 		hs[i].Hdr.pack(vs, ms[i].Buffers, ms[i].OOB, sa)
+		bufferOffset += numBufs
 	}
 	return nil
 }
