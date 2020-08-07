@@ -269,8 +269,8 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 		return http.StatusNotFound, err
 	}
 	_, copyErr := io.Copy(f, r.Body)
-	fi, statErr := f.Stat()
 	closeErr := f.Close()
+	fi, statErr := f.Stat()
 	// TODO(rost): Returning 405 Method Not Allowed might not be appropriate.
 	if copyErr != nil {
 		return http.StatusMethodNotAllowed, copyErr
