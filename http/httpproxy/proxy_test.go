@@ -112,6 +112,18 @@ var proxyForURLTests = []proxyForURLTest{{
 	req:  "https://secure.tld/",
 	want: "https://secure.proxy.tld",
 }, {
+	cfg: httpproxy.Config{
+		HTTPProxy: "http.proxy.tld",
+	},
+	req:  "https://secure.tld/",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		HTTPProxy: "http.proxy.tld",
+	},
+	req:  "ftp://insecure.tld/",
+	want: "<nil>",
+}, {
 	// Issue 16405: don't use HTTP_PROXY in a CGI environment,
 	// where HTTP_PROXY can be attacker-controlled.
 	cfg: httpproxy.Config{
