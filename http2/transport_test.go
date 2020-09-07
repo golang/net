@@ -4861,3 +4861,48 @@ func TestTransportRoundtripCloseOnWriteError(t *testing.T) {
 		t.Fatal("expected closed")
 	}
 }
+
+// Issue 31192: A failed request may be retried if the body has not been read
+// already. If the request body has started to be sent, one must wait until it
+// is completed.
+func TestTransportBodyRewindRace(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Connection", "close")
+		w.WriteHeader(http.StatusOK)
+		return
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &http.Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		MaxConnsPerHost: 1,
+	}
+	err := ConfigureTransport(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	const clients = 50
+
+	var wg sync.WaitGroup
+	wg.Add(clients)
+	for i := 0; i < clients; i++ {
+		req, err := http.NewRequest("POST", st.ts.URL, bytes.NewBufferString("abcdef"))
+		if err != nil {
+			t.Fatalf("unexpect new request error: %v", err)
+		}
+
+		go func() {
+			defer wg.Done()
+			res, err := client.Do(req)
+			if err == nil {
+				res.Body.Close()
+			}
+		}()
+	}
+
+	wg.Wait()
+}
