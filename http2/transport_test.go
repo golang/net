@@ -3470,6 +3470,8 @@ func testTransportPingWhenReading(t *testing.T, readIdleTimeout, serverResponseI
 		ct.greet()
 		var buf bytes.Buffer
 		enc := hpack.NewEncoder(&buf)
+		var wg sync.WaitGroup
+		defer wg.Wait()
 		for {
 			f, err := ct.fr.ReadFrame()
 			if err != nil {
@@ -3497,7 +3499,9 @@ func testTransportPingWhenReading(t *testing.T, readIdleTimeout, serverResponseI
 					BlockFragment: buf.Bytes(),
 				})
 
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					for i := 0; i < 2; i++ {
 						wmu.Lock()
 						if err := ct.fr.WriteData(f.StreamID, false, []byte(fmt.Sprintf("hello, this is server data frame %d", i))); err != nil {
