@@ -596,7 +596,7 @@ func TestTransportDialTLS(t *testing.T) {
 
 func TestConfigureTransport(t *testing.T) {
 	t1 := &http.Transport{}
-	err := ConfigureTransport(t1)
+	err := ConfigureTransport(t1, WithReadIdleTimeout(3*time.Second), WithPingTimeout(1*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
