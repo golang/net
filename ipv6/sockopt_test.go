@@ -41,7 +41,7 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 	if pmtu, err := ipv6.NewConn(c).PathMTU(); err != nil {
 		switch runtime.GOOS {
-		case "darwin": // older darwin kernels don't support IPV6_PATHMTU option
+		case "darwin", "ios": // older darwin kernels don't support IPV6_PATHMTU option
 			t.Logf("not supported on %s", runtime.GOOS)
 		default:
 			t.Fatal(err)
@@ -79,7 +79,7 @@ func TestConnResponderPathMTU(t *testing.T) {
 
 	if pmtu, err := ipv6.NewConn(c).PathMTU(); err != nil {
 		switch runtime.GOOS {
-		case "darwin": // older darwin kernels don't support IPV6_PATHMTU option
+		case "darwin", "ios": // older darwin kernels don't support IPV6_PATHMTU option
 			t.Logf("not supported on %s", runtime.GOOS)
 		default:
 			t.Fatal(err)
