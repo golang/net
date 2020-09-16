@@ -130,6 +130,51 @@ type Transport struct {
 	connPoolOrDef ClientConnPool // non-nil version of ConnPool
 }
 
+// transportOptions configure the ConfigureTransport. transportOptions are set by the TransportOption
+// values passed to Transport.
+type transportOptions struct {
+	// readIdleTimeout corresponds to Transport.ReadIdleTimeout
+	readIdleTimeout time.Duration
+
+	// pingTimeout corresponds to Transport.PingTimeout
+	pingTimeout time.Duration
+}
+
+// TransportOption configures how we set up the extra parameters(such as http2 health check) of Transport besides http.Transport when call ConfigureTransport.
+type TransportOption interface {
+	apply(*transportOptions)
+}
+
+// funcTransportOption wraps a function that modifies transportOptions into an
+// implementation of the TransportOption interface.
+type funcTransportOption struct {
+	f func(*transportOptions)
+}
+
+func (fto *funcTransportOption) apply(to *transportOptions) {
+	fto.f(to)
+}
+
+func newFuncTransportOption(f func(*transportOptions)) *funcTransportOption {
+	return &funcTransportOption{
+		f: f,
+	}
+}
+
+// WithReadIdleTimeout returns a TransportOption which sets the Transport.ReadIdleTimeout
+func WithReadIdleTimeout(readIdleTimeout time.Duration) TransportOption {
+	return newFuncTransportOption(func(o *transportOptions) {
+		o.readIdleTimeout = readIdleTimeout
+	})
+}
+
+// WithPingTimeout returns a TransportOption which sets the Transport.PingTimeout
+func WithPingTimeout(pingTimeout time.Duration) TransportOption {
+	return newFuncTransportOption(func(o *transportOptions) {
+		o.pingTimeout = pingTimeout
+	})
+}
+
 func (t *Transport) maxHeaderListSize() uint32 {
 	if t.MaxHeaderListSize == 0 {
 		return 10 << 20
@@ -154,16 +199,24 @@ func (t *Transport) pingTimeout() time.Duration {
 
 // ConfigureTransport configures a net/http HTTP/1 Transport to use HTTP/2.
 // It returns an error if t1 has already been HTTP/2-enabled.
-func ConfigureTransport(t1 *http.Transport) error {
-	_, err := configureTransport(t1)
+func ConfigureTransport(t1 *http.Transport, opts ...TransportOption) error {
+	_, err := configureTransport(t1, opts...)
 	return err
 }
 
-func configureTransport(t1 *http.Transport) (*Transport, error) {
+func configureTransport(t1 *http.Transport, opts ...TransportOption) (*Transport, error) {
+	t2Opts := transportOptions{}
+	for _, o := range opts {
+		o.apply(&t2Opts)
+	}
 	connPool := new(clientConnPool)
 	t2 := &Transport{
 		ConnPool: noDialClientConnPool{connPool},
 		t1:       t1,
+	}
+	if t2Opts.readIdleTimeout != 0 {
+		t2.ReadIdleTimeout = t2Opts.readIdleTimeout
+		t2.PingTimeout = t2Opts.pingTimeout
 	}
 	connPool.t = t2
 	if err := registerHTTPSProtocol(t1, noDialH2RoundTripper{t2}); err != nil {
