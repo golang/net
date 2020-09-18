@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/net/http2/hpack"
 )
@@ -591,6 +592,26 @@ func TestTransportDialTLS(t *testing.T) {
 	}
 	if !didDial {
 		t.Error("didn't use dial hook")
+	}
+}
+
+func TestConfigureTransportWithOptions(t *testing.T) {
+	t1 := &http.Transport{}
+	err := ConfigureTransport(t1, WithReadIdleTimeout(10*time.Second), WithPingTimeout(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf := reflect.ValueOf(t1).Elem().FieldByName("altProto")
+	rf = reflect.NewAt(rf.Type(), unsafe.Pointer(rf.UnsafeAddr())).Elem()
+	v := rf.Interface().(atomic.Value)
+	altProto := v.Load().(map[string]http.RoundTripper)
+	rt := (altProto["https"]).(noDialH2RoundTripper)
+	t2 := rt.Transport
+	if t2.ReadIdleTimeout != 10*time.Second {
+		t.Errorf("expected ReadIdleTimeout to be 10s, got %v", t2.ReadIdleTimeout)
+	}
+	if t2.PingTimeout != 2*time.Second {
+		t.Errorf("expected PingTimeout to be 2s, got %v", t2.PingTimeout)
 	}
 }
 
