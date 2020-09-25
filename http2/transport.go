@@ -296,6 +296,8 @@ type clientStream struct {
 
 	trailer    http.Header  // accumulated trailers
 	resTrailer *http.Header // client's Response.Trailer
+
+	unknownFramesReceived *unknownFramesReceived
 }
 
 // awaitRequestCancel waits for the user to cancel a request or for the done
@@ -428,6 +430,42 @@ type RoundTripOpt struct {
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.RoundTripOpt(req, RoundTripOpt{})
+}
+
+// UnknownFrameInfo is a struct to store unknown frame fields.
+type UnknownFrameInfo struct {
+	Type  FrameType
+	Flags Flags
+	Body  []byte
+}
+
+type bodyWithUnknownFrame struct {
+	body io.ReadCloser
+	unknownFrames []*UnknownFrameInfo
+}
+
+func (b bodyWithUnknownFrame) Read(p []byte) (n int, err error) {
+	return b.body.Read(p)
+}
+
+func (b bodyWithUnknownFrame) Close() error {
+	return b.body.Close()
+}
+
+// AddUnknownFrame adds an unknown frame to http.Request. This function can be
+// called multiple times, in case multiple unknown frames need to be added.
+// This function must be called before RoundTrip().
+func AddUnknownFrame(req *http.Request, uf *UnknownFrameInfo) (*http.Request) {
+	if (req.Body == nil) {
+		req.Body = bodyWithUnknownFrame{body: http.NoBody, unknownFrames: make([]*UnknownFrameInfo, 0, 10)}
+	}
+	rbwu, ok := req.Body.(bodyWithUnknownFrame)
+	if !ok {
+		rbwu = bodyWithUnknownFrame{body: req.Body, unknownFrames: make([]*UnknownFrameInfo, 0, 10)}
+		req.Body = rbwu
+	}
+	rbwu.unknownFrames = append(rbwu.unknownFrames, uf)
+	return req
 }
 
 // authorityAddr returns a given authority (a host/IP, or host:port / ip:port)
@@ -1082,7 +1120,18 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 
 	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
-	werr := cc.writeHeaders(cs.ID, endStream, int(cc.maxFrameSize), hdrs)
+	rbwu, ok := req.Body.(bodyWithUnknownFrame)
+	sendEmptyData := endStream && ok
+	werr := cc.writeHeaders(cs.ID, endStream && !sendEmptyData, int(cc.maxFrameSize), hdrs)
+	if ok {
+		for _, f := range rbwu.unknownFrames {
+			werr = cc.fr.WriteRawFrame(f.Type, f.Flags, cs.ID, f.Body)
+			cc.bw.Flush()
+		}
+	}
+	if sendEmptyData {
+		werr = cc.fr.WriteData(cs.ID, true, nil)
+	}
 	cc.wmu.Unlock()
 	traceWroteHeaders(cs.trace)
 	cc.mu.Unlock()
@@ -1845,6 +1894,8 @@ func (rl *clientConnReadLoop) run() error {
 			err = rl.processWindowUpdate(f)
 		case *PingFrame:
 			err = rl.processPing(f)
+		case *UnknownFrame:
+			err = rl.processUnknownFrame(f)
 		default:
 			cc.logf("Transport: unhandled response frame type %T", f)
 		}
@@ -2071,6 +2122,10 @@ func (rl *clientConnReadLoop) processTrailers(cs *clientStream, f *MetaHeadersFr
 // On Close it sends RST_STREAM if EOF wasn't already seen.
 type transportResponseBody struct {
 	cs *clientStream
+}
+
+func (b transportResponseBody) ReadUnknownFrame(ctx context.Context) (*UnknownFrame, error) {
+	return b.cs.unknownFramesReceived.ReadUnknownFrame(ctx)
 }
 
 func (b transportResponseBody) Read(p []byte) (n int, err error) {
@@ -2476,6 +2531,17 @@ func (rl *clientConnReadLoop) processPushPromise(f *PushPromiseFrame) error {
 	// treat the receipt of a PUSH_PROMISE frame as a connection
 	// error (Section 5.4.1) of type PROTOCOL_ERROR."
 	return ConnectionError(ErrCodeProtocol)
+}
+
+func (rl *clientConnReadLoop) processUnknownFrame(f *UnknownFrame) error {
+	cs := rl.cc.streamByID(f.StreamID, false)
+	if cs == nil {
+		return nil
+	}
+	if cs.unknownFramesReceived == nil {
+		cs.unknownFramesReceived = &unknownFramesReceived{unknownFrames: make([]*UnknownFrame, 0, 10), noMore: false}
+	}
+	return cs.unknownFramesReceived.addUnknownFrame(f)
 }
 
 func (cc *ClientConn) writeStreamReset(streamID uint32, code ErrCode, err error) {

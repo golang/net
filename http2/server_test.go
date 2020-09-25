@@ -614,6 +614,18 @@ func (st *serverTester) wantPushPromise() *PushPromiseFrame {
 	return ppf
 }
 
+func (st *serverTester) wantUnknownFrame() *UnknownFrame {
+	f, err := st.readFrame()
+	if err != nil {
+		st.t.Fatalf("Error while expecting a metadata frame: %v", err)
+	}
+	hf, ok := f.(*UnknownFrame)
+	if !ok {
+		st.t.Fatalf("got a %T; want *UnknownFrame", f)
+	}
+	return hf
+}
+
 func TestServer(t *testing.T) {
 	gotReq := make(chan bool, 1)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4208,4 +4220,156 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerWithReceivedUnknownFrames(t *testing.T) {
+	const testBody = ""
+	const frameType = 0xff
+	const frameFlags = 1
+	const streamID = 1
+	unknownFrameBody := make([]byte, defaultMaxReadFrameSize)
+	writeReq := func(st *serverTester) {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: st.encodeHeader("a", "b"),
+			EndStream:     false,
+			EndHeaders:    true,
+		})
+		st.fr.WriteRawFrame(frameType, frameFlags, streamID, unknownFrameBody)
+		st.writeData(1, true, []byte(testBody))
+	}
+	checkReq := func(r *http.Request) {
+		slurp, err := ioutil.ReadAll(r.Body)
+		if string(slurp) != testBody {
+			t.Errorf("read body %q; want %q", slurp, testBody)
+		}
+		if err != nil {
+			t.Fatalf("Body slurp: %v", err)
+		}
+	}
+
+	gotReq := make(chan bool, 1)
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil {
+			t.Fatal("nil Body")
+		}
+		checkReq(r)
+
+		ufr := r.Context().Value(UnknownFrameReaderKey)
+		reader, ok := ufr.(UnknownFrameReader)
+		if !ok {
+			t.Errorf("can't get reader with error: %v", ok)
+		}
+		f, err := reader.ReadUnknownFrame(context.Background())
+		if err != nil {
+			t.Errorf("reader.ReadUnknownFrame() fails")
+		}
+		if f.Type != frameType {
+			t.Errorf("frame type %v; want %v", f.Type, frameType)
+		}
+		if f.Flags != frameFlags {
+			t.Errorf("frame flags %v; want %v", f.Flags, frameFlags)
+		}
+		if f.StreamID != streamID {
+			t.Errorf("frame streamm id %v; want %v", f.StreamID, streamID)
+		}
+		if string(f.p) != string(unknownFrameBody) {
+			t.Errorf("frame body %v; want %v", f.p, unknownFrameBody)
+		}
+
+		gotReq <- true
+	}, func(s *Server) {
+		s.EnableUnknownFrames = true
+	})
+	defer st.Close()
+
+	st.greet()
+	writeReq(st)
+
+	select {
+	case <-gotReq:
+	case <-time.After(5 * time.Second):
+		t.Error("timeout waiting for request")
+	}
+}
+
+// The same as testServerResponse but with unknown frames.
+func testServerResponseWithUnknownFrame(t testing.TB, handler func(w http.ResponseWriter, r *http.Request), client func(*serverTester)) {
+	st := newServerTester(t, handler, func(s *Server) {
+		s.EnableUnknownFrames = true
+	})
+	defer st.Close()
+
+	donec := make(chan bool)
+	go func() {
+		defer close(donec)
+		st.greet()
+		client(st)
+	}()
+
+	select {
+	case <-donec:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout in client")
+	}
+}
+
+func TestServerWritesUnknownFrameInResponse(t *testing.T) {
+	const msg = "<html>this is HTML."
+	const frameType = 0xff
+	const frameFlags = 1
+	const streamID = 1
+	unknownFrameBody := make([]byte, defaultMaxReadFrameSize)
+	testServerResponseWithUnknownFrame(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Foo", "Bar")
+		w.(http.Flusher).Flush()
+		ufw, ok := w.(WriteUnknownFrame)
+		if !ok {
+			t.Errorf("can't cast w to WriteUnknownFrame")
+		}
+		ufw.WriteUnknownFrame(frameType, frameFlags, unknownFrameBody)
+		w, ok = ufw.(http.ResponseWriter)
+		if !ok {
+			t.Errorf("can't cast ufw to http.ResponseWriter")
+		}
+		io.WriteString(w, msg)
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		if hf.StreamEnded() {
+			t.Fatal("response HEADERS had END_STREAM")
+		}
+		if !hf.HeadersEnded() {
+			t.Fatal("response HEADERS didn't have END_HEADERS")
+		}
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "200"},
+			{"foo", "Bar"},
+		}
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Header mismatch.\n got: %v\nwant: %v", goth, wanth)
+		}
+		uf := st.wantUnknownFrame()
+		if uf.Type != frameType {
+			t.Errorf("frame type %v; want %v", uf.Type, frameType)
+		}
+		if uf.Flags != frameFlags {
+			t.Errorf("frame flags %v; want %v", uf.Flags, frameFlags)
+		}
+		if uf.StreamID != streamID {
+			t.Errorf("frame streamm id %v; want %v", uf.StreamID, streamID)
+		}
+		if string(uf.p) != string(unknownFrameBody) {
+			t.Errorf("frame body %v; want %v", uf.p, unknownFrameBody)
+		}
+		df := st.wantData()
+		if got := string(df.Data()); got != msg {
+			t.Errorf("got DATA %q; want %q", got, msg)
+		}
+		if !df.StreamEnded() {
+			t.Fatalf("expected DATA to have END_STREAM flag")
+		}
+	})
 }
