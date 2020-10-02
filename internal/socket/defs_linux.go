@@ -31,9 +31,8 @@ type sockaddrInet C.struct_sockaddr_in
 type sockaddrInet6 C.struct_sockaddr_in6
 
 const (
-	sizeofIovec   = C.sizeof_struct_iovec
-	sizeofMsghdr  = C.sizeof_struct_msghdr
-	sizeofCmsghdr = C.sizeof_struct_cmsghdr
+	sizeofIovec  = C.sizeof_struct_iovec
+	sizeofMsghdr = C.sizeof_struct_msghdr
 
 	sizeofSockaddrInet  = C.sizeof_struct_sockaddr_in
 	sizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
