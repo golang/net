@@ -66,6 +66,19 @@ func readParseTest(r *bufio.Reader) (*testAttrs, error) {
 		}
 	}
 
+	// Skip the new-errors list.
+	if string(line) == "#new-errors\n" {
+		for {
+			line, err = r.ReadSlice('\n')
+			if err != nil {
+				return nil, err
+			}
+			if line[0] == '#' {
+				break
+			}
+		}
+	}
+
 	if ls := string(line); strings.HasPrefix(ls, "#script-") {
 		switch {
 		case strings.HasSuffix(ls, "-on\n"):
