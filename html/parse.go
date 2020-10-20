@@ -728,7 +728,13 @@ func inHeadNoscriptIM(p *parser) bool {
 			return inBodyIM(p)
 		case a.Basefont, a.Bgsound, a.Link, a.Meta, a.Noframes, a.Style:
 			return inHeadIM(p)
-		case a.Head, a.Noscript:
+		case a.Head:
+			// Ignore the token.
+			return true
+		case a.Noscript:
+			// Don't let the tokenizer go into raw text mode even when a <noscript>
+			// tag is in "in head noscript" insertion mode.
+			p.tokenizer.NextIsNotRawText()
 			// Ignore the token.
 			return true
 		}
