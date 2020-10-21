@@ -1189,10 +1189,9 @@ func TestServer_MaxQueuedControlFrames(t *testing.T) {
 }
 
 func TestServer_RejectsLargeFrames(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "plan9" || runtime.GOOS == "zos" {
 		t.Skip("see golang.org/issue/13434, golang.org/issue/37321")
 	}
-
 	st := newServerTester(t, nil)
 	defer st.Close()
 	st.greet()

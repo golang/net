@@ -30,7 +30,7 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -139,6 +139,11 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
+	// Unable to obtain loopback interface on z/OS, so instead we test on any multicast
+	// capable interface.
+	if runtime.GOOS == "zos" {
+		ifi, err = nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast)
+	}
 	if err != nil {
 		t.Skip(err)
 	}
