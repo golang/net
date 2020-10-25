@@ -289,6 +289,10 @@ func TestParserWithoutScripting(t *testing.T) {
 // text is the HTML to be parsed, want is a dump of the correct parse tree,
 // and context is the name of the context node, if any.
 func testParseCase(text, want, context string, opts ...ParseOption) (err error) {
+	if parserTestBlacklist[text] {
+		return nil
+	}
+
 	defer func() {
 		if x := recover(); x != nil {
 			switch e := x.(type) {
@@ -366,6 +370,18 @@ func testParseCase(text, want, context string, opts ...ParseOption) (err error) 
 	return nil
 }
 
+// Some tests of html5lib-tests are beyond the scope of the parsing algorithm
+// and are out of scope for the go's parser. The items listed here are limited
+// to testing for behavior outside the whatwg parsing algorithm.
+var parserTestBlacklist = map[string]bool{
+	// Even if there is a <plaintext> tag inside a <select> tag, the tokenizer
+	// should not go into the PLAINTEXT state, but it is not mentioned in the
+	// parsing algorithm.
+	// See: https://github.com/whatwg/html/issues/2252
+	`<!doctype html><select><plaintext></plaintext>X`:      true,
+	`<!doctype html><table><select><plaintext>a<caption>b`: true,
+}
+
 // Some test input result in parse trees are not 'well-formed' despite
 // following the HTML5 recovery algorithms. Rendering and re-parsing such a
 // tree will not result in an exact clone of that tree. We blacklist such
@@ -418,8 +434,10 @@ var renderTestBlacklist = map[string]bool{
 	`<script><!--<script </s`:                      true,
 	// Reconstructing the active formatting elements results in a <plaintext>
 	// element that contains an <a> element.
-	`<!doctype html><p><a><plaintext>b`:         true,
-	`<table><math><select><mi><select></table>`: true,
+	`<!doctype html><p><a><plaintext>b`:                       true,
+	`<table><math><select><mi><select></table>`:               true,
+	`<!doctype html><table><colgroup><plaintext></plaintext>`: true,
+	`<!doctype html><svg><plaintext>a</plaintext>b`:           true,
 }
 
 func TestNodeConsistency(t *testing.T) {
