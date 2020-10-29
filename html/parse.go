@@ -1790,6 +1790,13 @@ func inSelectIM(p *parser) bool {
 			return true
 		case a.Script, a.Template:
 			return inHeadIM(p)
+		case a.Iframe, a.Noembed, a.Noframes, a.Noscript, a.Plaintext, a.Style, a.Title, a.Xmp:
+			// Don't let the tokenizer go into raw text mode when there are raw tags
+			// to be ignored. These tags should be ignored from the tokenizer
+			// properly.
+			p.tokenizer.NextIsNotRawText()
+			// Ignore the token.
+			return true
 		}
 	case EndTagToken:
 		switch p.tok.DataAtom {
