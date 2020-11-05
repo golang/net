@@ -757,36 +757,32 @@ func (ct *clientTester) readNonSettingsFrame() (Frame, error) {
 
 func (ct *clientTester) cleanup() {
 	ct.tr.CloseIdleConnections()
+
+	// close both connections, ignore the error if its already closed
+	ct.sc.Close()
+	ct.cc.Close()
 }
 
 func (ct *clientTester) run() {
-	errc := make(chan error, 2)
-	ct.start("client", errc, ct.client)
-	ct.start("server", errc, ct.server)
-	defer ct.cleanup()
-	for i := 0; i < 2; i++ {
-		if err := <-errc; err != nil {
-			ct.t.Error(err)
-			return
+	var errOnce sync.Once
+	var wg sync.WaitGroup
+
+	run := func(which string, fn func() error) {
+		defer wg.Done()
+		if err := fn(); err != nil {
+			errOnce.Do(func() {
+				ct.t.Errorf("%s: %v", which, err)
+				ct.cleanup()
+			})
 		}
 	}
-}
 
-func (ct *clientTester) start(which string, errc chan<- error, fn func() error) {
-	go func() {
-		finished := false
-		var err error
-		defer func() {
-			if !finished {
-				err = fmt.Errorf("%s goroutine didn't finish.", which)
-			} else if err != nil {
-				err = fmt.Errorf("%s: %v", which, err)
-			}
-			errc <- err
-		}()
-		err = fn()
-		finished = true
-	}()
+	wg.Add(2)
+	go run("client", ct.client)
+	go run("server", ct.server)
+	wg.Wait()
+
+	errOnce.Do(ct.cleanup) // clean up if no error
 }
 
 func (ct *clientTester) readFrame() (Frame, error) {
