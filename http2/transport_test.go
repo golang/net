@@ -3582,8 +3582,6 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 	}
 
 	errs := make(chan error, 3)
-	done := make(chan struct{})
-	defer close(done)
 
 	// Client.
 	go func() {
@@ -3605,12 +3603,7 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 
 	// Server for the first request.
 	go func() {
-		var ct *clientTester
-		select {
-		case ct = <-ct1:
-		case <-done:
-			return
-		}
+		ct := <-ct1
 
 		connToClose <- ct.cc
 		ct.greet()
@@ -3629,12 +3622,7 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 
 	// Server for the second request.
 	go func() {
-		var ct *clientTester
-		select {
-		case ct = <-ct2:
-		case <-done:
-			return
-		}
+		ct := <-ct2
 
 		connToClose <- ct.cc
 		ct.greet()
@@ -3663,23 +3651,15 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 	}()
 
 	for k := 0; k < 3; k++ {
-		select {
-		case err := <-errs:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(1 * time.Second):
-			t.Errorf("timed out")
+		err := <-errs
+		if err != nil {
+			t.Error(err)
 		}
 	}
 
-	for {
-		select {
-		case c := <-connToClose:
-			c.Close()
-		default:
-			return
-		}
+	close(connToClose)
+	for c := range connToClose {
+		c.Close()
 	}
 }
 
