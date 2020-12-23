@@ -28,6 +28,11 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 }
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
+	if os.Getenv("GO_BUILDER_NAME") == "openbsd-amd64-68" ||
+		os.Getenv("GO_BUILDER_NAME") == "openbsd-386-68" {
+		t.Skip(`this test is currently failing on OpenBSD 6.8 builders with "raw-read udp6: i/o timeout" ` +
+			`and needs investigation, see golang.org/issue/42064`)
+	}
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
@@ -128,6 +133,11 @@ var packetConnReadWriteMulticastICMPTests = []struct {
 }
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
+	if os.Getenv("GO_BUILDER_NAME") == "openbsd-amd64-68" ||
+		os.Getenv("GO_BUILDER_NAME") == "openbsd-386-68" {
+		t.Skip(`this test is currently failing on OpenBSD 6.8 builders with "raw-read ip6: i/o timeout" ` +
+			`and needs investigation, see golang.org/issue/42064`)
+	}
 	switch runtime.GOOS {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
