@@ -96,45 +96,116 @@ func (h *Handler) lock(now time.Time, root string) (token string, status int, er
 	return token, 0, nil
 }
 
-func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func(), status int, err error) {
-	hdr := r.Header.Get("If")
-	if hdr == "" {
-		// An empty If header means that the client hasn't previously created locks.
-		// Even if this client doesn't care about locks, we still need to check that
-		// the resources aren't locked by another client, so we create temporary
-		// locks that would conflict with another client's locks. These temporary
-		// locks are unlocked at the end of the HTTP request.
-		now, srcToken, dstToken := time.Now(), "", ""
-		if src != "" {
-			srcToken, status, err = h.lock(now, src)
-			if err != nil {
-				return nil, status, err
-			}
-		}
-		if dst != "" {
-			dstToken, status, err = h.lock(now, dst)
-			if err != nil {
-				if srcToken != "" {
-					h.LockSystem.Unlock(now, srcToken)
-				}
-				return nil, status, err
-			}
-		}
+func (h *Handler) speculativeLock(now time.Time, root, ifHdr string) (token string, status int, err error) {
+	token, status, err = h.lock(now, root)
 
-		return func() {
-			if dstToken != "" {
-				h.LockSystem.Unlock(now, dstToken)
-			}
+	// If we succeed or fail for any reason other than ErrLocked, short-circuit out
+	if err != ErrLocked {
+		return
+	}
+
+	// If we have an If header, then while we may have failed to take an anonymous lock,
+	// we have an opportunity to confirm the lock using the presented credentials.
+	if ifHdr != "" {
+		err = nil
+		status = 0
+	}
+
+	return
+}
+
+func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func(), status int, err error) {
+	// The general strategy for lock confirmation is as follows:
+	// 1. Speculatively take locks for src/dst in case no locks are held on them.
+	// 2. If any locks *are* held on src/dst, check that the If header satisfies them.
+	// 3. As part of checking #2, validate any other constraints implied in the If header.
+
+	hdr := r.Header.Get("If")
+	ih := ifHeader{}
+	// Parse the If header first, since if it's bad we should just fail out, even if we
+	// don't need it.
+	if hdr != "" {
+		var ok bool
+		ih, ok = parseIfHeader(hdr)
+		if !ok {
+			return nil, http.StatusBadRequest, errInvalidIfHeader
+		}
+	}
+
+	// Even if the client hasn't previously created locks, another principle may have.
+	// So, we still need to check that the resources aren't locked by another client.
+	// To do so, we create temporary locks on the requested resources. If the resoure is
+	// locked, the operation will fail. In that case, we will check if the request
+	// presented a lock for that particular resource.
+
+	// Any temporary locks are removed at the end of the request.
+	now, srcToken, dstToken := time.Now(), "", ""
+	if src != "" {
+		srcToken, status, err = h.speculativeLock(now, src, hdr)
+		if err != nil {
+			return nil, status, err
+		}
+	}
+
+	if dst != "" {
+		dstToken, status, err = h.speculativeLock(now, dst, hdr)
+		if err != nil {
 			if srcToken != "" {
 				h.LockSystem.Unlock(now, srcToken)
 			}
-		}, 0, nil
+			return nil, status, err
+		}
 	}
 
-	ih, ok := parseIfHeader(hdr)
-	if !ok {
-		return nil, http.StatusBadRequest, errInvalidIfHeader
+	speculativeLockRelease := func() {
+		if dstToken != "" {
+			h.LockSystem.Unlock(now, dstToken)
+		}
+		if srcToken != "" {
+			h.LockSystem.Unlock(now, srcToken)
+		}
 	}
+
+	// Exclude src/dst from the lock search if we already have a lock for them.
+	if srcToken != "" {
+		src = ""
+	}
+
+	if dstToken != "" {
+		dst = ""
+	}
+
+	if src == "" && dst == "" {
+
+		if len(ih.lists) == 0 {
+			// No conditions to evaluate and no src/dst constraints to check.
+			// Everything with the request is good. Return success.
+			return speculativeLockRelease, 0, nil
+		}
+
+		// In this case, we have created temporary locks on any resource we care about.
+		// This means that none of the conditions can evaluate to true. Fall through with
+		// an empty list to ensure consistent error handling
+		ih.lists = []ifList{}
+	}
+
+	lockRelease, status, err := h.atLeastOneIfListPasses(src, dst, r.Host, ih)
+
+	if err != nil {
+		speculativeLockRelease()
+		return nil, status, err
+	}
+
+	return func() {
+		// Release both the locks we just confirmed, and any we speculatively created.
+		lockRelease()
+		speculativeLockRelease()
+	}, 0, nil
+}
+
+func (h *Handler) atLeastOneIfListPasses(src, dst string, host string, ih ifHeader) (release func(), status int, err error) {
+
+	// Run the list of provided lock tokens agains the resources we want to lock.
 	// ih is a disjunction (OR) of ifLists, so any ifList will do.
 	for _, l := range ih.lists {
 		lsrc := l.resourceTag
@@ -145,7 +216,7 @@ func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func()
 			if err != nil {
 				continue
 			}
-			if u.Host != r.Host {
+			if u.Host != host {
 				continue
 			}
 			lsrc, status, err = h.stripPrefix(u.Path)
@@ -153,15 +224,17 @@ func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func()
 				return nil, status, err
 			}
 		}
-		release, err = h.LockSystem.Confirm(time.Now(), lsrc, dst, l.conditions...)
+		release, err := h.LockSystem.Confirm(time.Now(), lsrc, dst, l.conditions...)
 		if err == ErrConfirmationFailed {
 			continue
 		}
 		if err != nil {
 			return nil, http.StatusInternalServerError, err
 		}
+
 		return release, 0, nil
 	}
+
 	// Section 10.4.1 says that "If this header is evaluated and all state lists
 	// fail, then the request must fail with a 412 (Precondition Failed) status."
 	// We follow the spec even though the cond_put_corrupt_token test case from
