@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -535,13 +536,14 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 
 	walkFn := func(reqPath string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return handlePropfindError(err, info)
 		}
+
 		var pstats []Propstat
 		if pf.Propname != nil {
 			pnames, err := propnames(ctx, h.FileSystem, h.LockSystem, reqPath)
 			if err != nil {
-				return err
+				return handlePropfindError(err, info)
 			}
 			pstat := Propstat{Status: http.StatusOK}
 			for _, xmlname := range pnames {
@@ -554,7 +556,7 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 			pstats, err = props(ctx, h.FileSystem, h.LockSystem, reqPath, pf.Prop)
 		}
 		if err != nil {
-			return err
+			return handlePropfindError(err, info)
 		}
 		href := path.Join(h.Prefix, reqPath)
 		if href != "/" && info.IsDir() {
@@ -631,6 +633,33 @@ func makePropstatResponse(href string, pstats []Propstat) *response {
 		})
 	}
 	return &resp
+}
+
+func handlePropfindError(err error, info os.FileInfo) error {
+	var skipResp error = nil
+	if info != nil && info.IsDir() {
+		skipResp = filepath.SkipDir
+	}
+
+	if errors.Is(err, os.ErrPermission) {
+		// If the server cannot recurse into a directory because it is not allowed,
+		// then there is nothing more to say about it. Just skip sending anything.
+		return skipResp
+	}
+
+	if _, ok := err.(*os.PathError); ok {
+		// If the file is just bad, it couldn't be a proper WebDAV resource. Skip it.
+		return skipResp
+	}
+
+	// We need to be careful with other errors: there is no way to abort the xml stream
+	// part way through while returning a valid PROPFIND response. Returning only half
+	// the data would be misleading, but so would be returning results tainted by errors.
+	// The curent behaviour by returning an error here leads to the stream being aborted,
+	// and the parent http server complaining about writing a spurious header. We should
+	// consider further enhancing this error handling to more gracefully fail, or perhaps
+	// buffer the entire response until we've walked the tree.
+	return err
 }
 
 const (
