@@ -21,12 +21,8 @@ import (
 	"testing"
 )
 
-// TODO: add tests to check XML responses with the expected prefix path
-func TestPrefix(t *testing.T) {
-	const dst, blah = "Destination", "blah blah blah"
-
-	// createLockBody comes from the example in Section 9.10.7.
-	const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
+// createLockBody comes from the example in Section 9.10.7.
+const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
 		<D:lockinfo xmlns:D='DAV:'>
 			<D:lockscope><D:exclusive/></D:lockscope>
 			<D:locktype><D:write/></D:locktype>
@@ -35,6 +31,10 @@ func TestPrefix(t *testing.T) {
 			</D:owner>
 		</D:lockinfo>
 	`
+
+// TODO: add tests to check XML responses with the expected prefix path
+func TestPrefix(t *testing.T) {
+	const dst, blah = "Destination", "blah blah blah"
 
 	do := func(method, urlStr string, body string, wantStatusCode int, headers ...string) (http.Header, error) {
 		var bodyReader io.Reader
