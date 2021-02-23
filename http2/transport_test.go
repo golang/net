@@ -3276,7 +3276,8 @@ func TestClientConnPing(t *testing.T) {
 	defer st.Close()
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
-	cc, err := tr.dialClientConn(st.ts.Listener.Addr().String(), false)
+	ctx := context.Background()
+	cc, err := tr.dialClientConn(ctx, st.ts.Listener.Addr().String(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4278,7 +4279,8 @@ func testClientConnClose(t *testing.T, closeMode closeMode) {
 	defer st.Close()
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
-	cc, err := tr.dialClientConn(st.ts.Listener.Addr().String(), false)
+	ctx := context.Background()
+	cc, err := tr.dialClientConn(ctx, st.ts.Listener.Addr().String(), false)
 	req, err := http.NewRequest("GET", st.ts.URL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -4788,7 +4790,8 @@ func TestTransportRoundtripCloseOnWriteError(t *testing.T) {
 
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
-	cc, err := tr.dialClientConn(st.ts.Listener.Addr().String(), false)
+	ctx := context.Background()
+	cc, err := tr.dialClientConn(ctx, st.ts.Listener.Addr().String(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
