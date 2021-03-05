@@ -89,6 +89,11 @@ type Transport struct {
 	// plain-text "http" scheme. Note that this does not enable h2c support.
 	AllowHTTP bool
 
+	// InitialSettings allows the user to specify its own settings for the stream.
+	// If the user fails to provide valid settings. An empty list will send an
+	// empty settings frame. Leave nil to handle internally.
+	InitialSettings []Setting
+
 	// MaxHeaderListSize is the http2 SETTINGS_MAX_HEADER_LIST_SIZE to
 	// send in the initial settings frame. It is how many bytes
 	// of response headers are allowed. Unlike the http2 spec, zero here
@@ -126,8 +131,8 @@ type Transport struct {
 	// RoundTrip method, etc).
 	t1 *http.Transport
 
-	connPoolOnce  sync.Once
-	connPoolOrDef ClientConnPool // non-nil version of ConnPool
+	connPoolOnce    sync.Once
+	connPoolOrDef   ClientConnPool // non-nil version of ConnPool
 }
 
 func (t *Transport) maxHeaderListSize() uint32 {
@@ -684,12 +689,16 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		cc.tlsState = &state
 	}
 
-	initialSettings := []Setting{
-		{ID: SettingEnablePush, Val: 0},
-		{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
-	}
-	if max := t.maxHeaderListSize(); max != 0 {
-		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
+	initialSettings := t.InitialSettings
+	if initialSettings == nil {
+		initialSettings = []Setting{
+			{ID: SettingEnablePush, Val: 0},
+			{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
+		}
+
+		if max := t.maxHeaderListSize(); max != 0 {
+			initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
+		}
 	}
 
 	cc.bw.Write(clientPreface)
