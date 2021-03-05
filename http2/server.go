@@ -2689,6 +2689,10 @@ func (rws *responseWriterState) writeHeader(code int) {
 			rws.dirty = true
 		}
 
+		if code == 103 {
+			rws.bw.Flush()
+		}
+
 		return
 	}
 
