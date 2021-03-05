@@ -131,8 +131,10 @@ type Transport struct {
 	// RoundTrip method, etc).
 	t1 *http.Transport
 
-	connPoolOnce    sync.Once
-	connPoolOrDef   ClientConnPool // non-nil version of ConnPool
+	connPoolOnce  sync.Once
+	connPoolOrDef ClientConnPool // non-nil version of ConnPool
+
+	streamFlow uint32
 }
 
 func (t *Transport) maxHeaderListSize() uint32 {
@@ -691,13 +693,30 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 
 	initialSettings := t.InitialSettings
 	if initialSettings == nil {
+		t.streamFlow = transportDefaultStreamFlow
+
 		initialSettings = []Setting{
 			{ID: SettingEnablePush, Val: 0},
-			{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
+			{ID: SettingInitialWindowSize, Val: t.streamFlow},
 		}
 
 		if max := t.maxHeaderListSize(); max != 0 {
 			initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
+		}
+	} else {
+		streamFlowSet := false
+		for _, setting := range initialSettings {
+			if setting.ID == SettingMaxHeaderListSize {
+				t.MaxHeaderListSize = setting.Val
+			} else if setting.ID == SettingInitialWindowSize {
+				t.streamFlow = setting.Val
+				streamFlowSet = true
+			}
+		}
+
+		if !streamFlowSet {
+			t.streamFlow = transportDefaultStreamFlow
+			initialSettings = append(initialSettings, Setting{ID: SettingInitialWindowSize, Val: t.streamFlow})
 		}
 	}
 
@@ -1706,7 +1725,7 @@ func (cc *ClientConn) newStream() *clientStream {
 	}
 	cs.flow.add(int32(cc.initialWindowSize))
 	cs.flow.setConnFlow(&cc.flow)
-	cs.inflow.add(transportDefaultStreamFlow)
+	cs.inflow.add(int32(cc.t.streamFlow))
 	cs.inflow.setConnFlow(&cc.inflow)
 	cc.nextStreamID += 2
 	cc.streams[cs.ID] = cs
@@ -2151,8 +2170,8 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 		// consumed by the client) when computing flow control for this
 		// stream.
 		v := int(cs.inflow.available()) + cs.bufPipe.Len()
-		if v < transportDefaultStreamFlow-transportDefaultStreamMinRefresh {
-			streamAdd = int32(transportDefaultStreamFlow - v)
+		if v < int(cc.t.streamFlow)-transportDefaultStreamMinRefresh {
+			streamAdd = int32(int(cc.t.streamFlow) - v)
 			cs.inflow.add(streamAdd)
 		}
 	}
