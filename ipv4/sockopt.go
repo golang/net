@@ -33,6 +33,7 @@ const (
 const (
 	ssoTypeIPMreq = iota + 1
 	ssoTypeIPMreqn
+	ssoTypeIPMreqSource
 	ssoTypeGroupReq
 	ssoTypeGroupSourceReq
 )

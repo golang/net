@@ -64,7 +64,12 @@ func (so *sockOpt) setGroup(c *socket.Conn, ifi *net.Interface, grp net.IP) erro
 }
 
 func (so *sockOpt) setSourceGroup(c *socket.Conn, ifi *net.Interface, grp, src net.IP) error {
-	return so.setGroupSourceReq(c, ifi, grp, src)
+	switch so.typ {
+	case ssoTypeIPMreqSource:
+		return so.setIPMreqSource(c, ifi, grp, src)
+	default:
+		return so.setGroupSourceReq(c, ifi, grp, src)
+	}
 }
 
 func (so *sockOpt) setBPF(c *socket.Conn, f []bpf.RawInstruction) error {

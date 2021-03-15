@@ -26,6 +26,18 @@ func (so *sockOpt) setIPMreq(c *socket.Conn, ifi *net.Interface, grp net.IP) err
 	return so.Set(c, b)
 }
 
+func (so *sockOpt) setIPMreqSource(c *socket.Conn, ifi *net.Interface, grp, src net.IP) error {
+	mreqSource := ipMreqSource{
+		Multiaddr:  [4]byte{grp[0], grp[1], grp[2], grp[3]},
+		Sourceaddr: [4]byte{src[0], src[1], src[2], src[3]},
+	}
+	if err := setIPMreqSourceInterface(&mreqSource, ifi); err != nil {
+		return err
+	}
+	b := (*[sizeofIPMreqSource]byte)(unsafe.Pointer(&mreqSource))[:sizeofIPMreqSource]
+	return so.Set(c, b)
+}
+
 func (so *sockOpt) getMulticastIf(c *socket.Conn) (*net.Interface, error) {
 	var b [4]byte
 	if _, err := so.Get(c, b[:]); err != nil {
@@ -66,6 +78,31 @@ func setIPMreqInterface(mreq *ipMreq, ifi *net.Interface) error {
 		case *net.IPNet:
 			if ip := ifa.IP.To4(); ip != nil {
 				copy(mreq.Interface[:], ip)
+				return nil
+			}
+		}
+	}
+	return errNoSuchInterface
+}
+
+func setIPMreqSourceInterface(mreqSource *ipMreqSource, ifi *net.Interface) error {
+	if ifi == nil {
+		return nil
+	}
+	ifat, err := ifi.Addrs()
+	if err != nil {
+		return err
+	}
+	for _, ifa := range ifat {
+		switch ifa := ifa.(type) {
+		case *net.IPAddr:
+			if ip := ifa.IP.To4(); ip != nil {
+				copy(mreqSource.Interface[:], ip)
+				return nil
+			}
+		case *net.IPNet:
+			if ip := ifa.IP.To4(); ip != nil {
+				copy(mreqSource.Interface[:], ip)
 				return nil
 			}
 		}

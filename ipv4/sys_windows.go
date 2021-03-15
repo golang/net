@@ -53,5 +53,7 @@ var (
 		ssoHeaderPrepend:      {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_HDRINCL, Len: 4}},
 		ssoJoinGroup:          {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_ADD_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
 		ssoLeaveGroup:         {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_DROP_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
+		ssoJoinSourceGroup:    {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_ADD_SOURCE_MEMBERSHIP, Len: sizeofIPMreqSource}, typ: ssoTypeIPMreqSource},
+		ssoLeaveSourceGroup:   {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_DROP_SOURCE_MEMBERSHIP, Len: sizeofIPMreqSource}, typ: ssoTypeIPMreqSource},
 	}
 )
