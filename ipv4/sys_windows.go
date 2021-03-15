@@ -25,15 +25,9 @@ const (
 	sysIP_DROP_SOURCE_MEMBERSHIP = 0x10
 	sysIP_PKTINFO                = 0x13
 
-	sizeofInetPktinfo  = 0x8
 	sizeofIPMreq       = 0x8
 	sizeofIPMreqSource = 0xc
 )
-
-type inetPktinfo struct {
-	Addr    [4]byte
-	Ifindex int32
-}
 
 type ipMreq struct {
 	Multiaddr [4]byte
@@ -61,7 +55,3 @@ var (
 		ssoLeaveGroup:         {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_DROP_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
 	}
 )
-
-func (pi *inetPktinfo) setIfindex(i int) {
-	pi.Ifindex = int32(i)
-}
