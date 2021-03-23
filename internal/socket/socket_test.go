@@ -304,6 +304,8 @@ func BenchmarkUDP(b *testing.B) {
 }
 
 func TestRace(t *testing.T) {
+	t.Skip("skipping known flaky test; see https://golang.org/issue/37338")
+
 	tests := []string{
 		`
 package main
