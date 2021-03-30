@@ -4,7 +4,6 @@
 package ipv4
 
 const (
-	sysIP_PKTINFO = 0x8
 	sysIP_RECVTTL = 0xc
 
 	sizeofKernelSockaddrStorage = 0x80

@@ -8,8 +8,6 @@ const (
 	sysIP_RECVIF      = 0x9
 	sysIP_RECVTTL     = 0xb
 
-	sysIP_PKTINFO = 0x1a
-
 	sizeofSockaddrStorage = 0x100
 	sizeofSockaddrInet    = 0x10
 	sizeofInetPktinfo     = 0xc

@@ -20,7 +20,6 @@ const (
 	sysIP_RECVDSTADDR = C.IP_RECVDSTADDR
 	sysIP_RECVIF      = C.IP_RECVIF
 	sysIP_RECVTTL     = C.IP_RECVTTL
-	sysIP_PKTINFO     = C.IP_PKTINFO
 
 	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
 	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
