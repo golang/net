@@ -32,6 +32,7 @@ const (
 	TypeTXT   Type = 16
 	TypeAAAA  Type = 28
 	TypeSRV   Type = 33
+	TypeDNAME Type = 39
 	TypeOPT   Type = 41
 
 	// Question.Type
@@ -52,6 +53,7 @@ var typeNames = map[Type]string{
 	TypeTXT:   "TypeTXT",
 	TypeAAAA:  "TypeAAAA",
 	TypeSRV:   "TypeSRV",
+	TypeDNAME: "TypeDNAME",
 	TypeOPT:   "TypeOPT",
 	TypeWKS:   "TypeWKS",
 	TypeHINFO: "TypeHINFO",
@@ -861,6 +863,24 @@ func (p *Parser) CNAMEResource() (CNAMEResource, error) {
 	return r, nil
 }
 
+// DNAMEResource parses a single DNAMEResource.
+//
+// One of the XXXHeader methods must have been called before calling this
+// method.
+func (p *Parser) DNAMEResource() (DNAMEResource, error) {
+	if !p.resHeaderValid || p.resHeader.Type != TypeDNAME {
+		return DNAMEResource{}, ErrNotStarted
+	}
+	r, err := unpackDNAMEResource(p.msg, p.off)
+	if err != nil {
+		return DNAMEResource{}, err
+	}
+	p.off += int(p.resHeader.Length)
+	p.resHeaderValid = false
+	p.index++
+	return r, nil
+}
+
 // MXResource parses a single MXResource.
 //
 // One of the XXXHeader methods must have been called before calling this
@@ -1330,6 +1350,30 @@ func (b *Builder) CNAMEResource(h ResourceHeader, r CNAMEResource) error {
 	preLen := len(msg)
 	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
 		return &nestedError{"CNAMEResource body", err}
+	}
+	if err := h.fixLen(msg, lenOff, preLen); err != nil {
+		return err
+	}
+	if err := b.incrementSectionCount(); err != nil {
+		return err
+	}
+	b.msg = msg
+	return nil
+}
+
+// DNAMEResource adds a single DNAMEResource.
+func (b *Builder) DNAMEResource(h ResourceHeader, r DNAMEResource) error {
+	if err := b.checkResourceSection(); err != nil {
+		return err
+	}
+	h.Type = r.realType()
+	msg, lenOff, err := h.pack(b.msg, b.compression, b.start)
+	if err != nil {
+		return &nestedError{"ResourceHeader", err}
+	}
+	preLen := len(msg)
+	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
+		return &nestedError{"DNAMEResource body", err}
 	}
 	if err := h.fixLen(msg, lenOff, preLen); err != nil {
 		return err
@@ -2130,6 +2174,11 @@ func unpackResourceBody(msg []byte, off int, hdr ResourceHeader) (ResourceBody, 
 		rb, err = unpackSRVResource(msg, off)
 		r = &rb
 		name = "SRV"
+	case TypeDNAME:
+		var rb DNAMEResource
+		rb, err = unpackDNAMEResource(msg, off)
+		r = &rb
+		name = "DNAME"
 	case TypeOPT:
 		var rb OPTResource
 		rb, err = unpackOPTResource(msg, off, hdr.Length)
@@ -2170,6 +2219,33 @@ func unpackCNAMEResource(msg []byte, off int) (CNAMEResource, error) {
 		return CNAMEResource{}, err
 	}
 	return CNAMEResource{cname}, nil
+}
+
+// A DNAMEResource is a DNAME Resource record.
+type DNAMEResource struct {
+	DNAME Name
+}
+
+func (r *DNAMEResource) realType() Type {
+	return TypeDNAME
+}
+
+// pack appends the wire format of the CNAMEResource to msg.
+func (r *DNAMEResource) pack(msg []byte, compression map[string]int, compressionOff int) ([]byte, error) {
+	return r.DNAME.pack(msg, compression, compressionOff)
+}
+
+// GoString implements fmt.GoStringer.GoString.
+func (r *DNAMEResource) GoString() string {
+	return "dnsmessage.DNAMEResource{DNAME: " + r.DNAME.GoString() + "}"
+}
+
+func unpackDNAMEResource(msg []byte, off int) (DNAMEResource, error) {
+	var dname Name
+	if _, err := dname.unpack(msg, off); err != nil {
+		return DNAMEResource{}, err
+	}
+	return DNAMEResource{dname}, nil
 }
 
 // An MXResource is an MX Resource record.
