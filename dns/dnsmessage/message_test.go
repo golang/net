@@ -665,6 +665,8 @@ func TestBuilderResourceError(t *testing.T) {
 		{"AResource", func(b *Builder) error { return b.AResource(ResourceHeader{}, AResource{}) }},
 		{"AAAAResource", func(b *Builder) error { return b.AAAAResource(ResourceHeader{}, AAAAResource{}) }},
 		{"OPTResource", func(b *Builder) error { return b.OPTResource(ResourceHeader{}, OPTResource{}) }},
+		{"SVCBResource", func(b *Builder) error { return b.SVCBResource(ResourceHeader{}, SVCBResource{}) }},
+		{"HTTPSResource", func(b *Builder) error { return b.HTTPSResource(ResourceHeader{}, HTTPSResource{}) }},
 	}
 
 	envs := []struct {
@@ -754,6 +756,14 @@ func TestBuilder(t *testing.T) {
 		case TypeSRV:
 			if err := b.SRVResource(a.Header, *a.Body.(*SRVResource)); err != nil {
 				t.Fatalf("Builder.SRVResource(%#v) = %v", a, err)
+			}
+		case TypeSVCB:
+			if err := b.SVCBResource(a.Header, *a.Body.(*SVCBResource)); err != nil {
+				t.Fatalf("Builder.SVCBResource(%#v) = %v", a, err)
+			}
+		case TypeHTTPS:
+			if err := b.HTTPSResource(a.Header, *a.Body.(*HTTPSResource)); err != nil {
+				t.Fatalf("Builder.HTTPSResource(%#v) = %v", a, err)
 			}
 		}
 	}
@@ -1399,6 +1409,30 @@ func largeTestMsg() Message {
 					9,
 					11,
 					MustNewName("srv.example.com."),
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeSVCB,
+					Class: ClassINET,
+				},
+				&SVCBResource{
+					0,
+					MustNewName("svcb.example.com."),
+					[]Param{Param{ParamIPv4Hint, []byte{1, 2, 3, 4}}},
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeSVCB,
+					Class: ClassINET,
+				},
+				&HTTPSResource{
+					0,
+					MustNewName("https.example.com."),
+					[]Param{Param{ParamIPv4Hint, []byte{1, 2, 3, 4}}},
 				},
 			},
 		},
