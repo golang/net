@@ -110,14 +110,14 @@ const (
 func FetchRIB(af int, typ RIBType, arg int) ([]byte, error) {
 	mib := [6]int32{sysCTL_NET, sysAF_ROUTE, 0, int32(af), int32(typ), int32(arg)}
 	n := uintptr(0)
-	if err := sysctl(mib[:], nil, &n, nil, 0); err != nil {
+	if err := sysctl(mib[:], nil, &n, nil, uintptr(0)); err != nil {
 		return nil, os.NewSyscallError("sysctl", err)
 	}
 	if n == 0 {
 		return nil, nil
 	}
 	b := make([]byte, n)
-	if err := sysctl(mib[:], &b[0], &n, nil, 0); err != nil {
+	if err := sysctl(mib[:], &b[0], &n, nil, uintptr(0)); err != nil {
 		return nil, os.NewSyscallError("sysctl", err)
 	}
 	return b[:n], nil
