@@ -21,8 +21,6 @@ package ipv4
 import "C"
 
 const (
-	sysIP_RECVTTL = C.IP_RECVTTL
-
 	sizeofKernelSockaddrStorage = C.sizeof_struct___kernel_sockaddr_storage
 	sizeofSockaddrInet          = C.sizeof_struct_sockaddr_in
 	sizeofInetPktinfo           = C.sizeof_struct_in_pktinfo

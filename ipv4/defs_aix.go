@@ -15,12 +15,6 @@ package ipv4
 import "C"
 
 const (
-	sysIP_RECVDSTADDR = C.IP_RECVDSTADDR
-	// IP_RECVIF is defined on AIX but doesn't work.
-	// IP_RECVINTERFACE must be used instead.
-	sysIP_RECVIF  = C.IP_RECVINTERFACE
-	sysIP_RECVTTL = C.IP_RECVTTL
-
 	sizeofIPMreq = C.sizeof_struct_ip_mreq
 )
 
