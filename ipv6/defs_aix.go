@@ -19,12 +19,6 @@ package ipv6
 import "C"
 
 const (
-	sysIPV6_PATHMTU  = C.IPV6_PATHMTU
-	sysIPV6_PKTINFO  = C.IPV6_PKTINFO
-	sysIPV6_HOPLIMIT = C.IPV6_HOPLIMIT
-	sysIPV6_NEXTHOP  = C.IPV6_NEXTHOP
-	sysIPV6_TCLASS   = C.IPV6_TCLASS
-
 	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
 	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
 	sizeofInet6Pktinfo    = C.sizeof_struct_in6_pktinfo
