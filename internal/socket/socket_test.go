@@ -325,8 +325,8 @@ func main() {
 	}
 	cc := ipv4.NewPacketConn(c)
 	sync := make(chan bool)
-	src := make([]byte, 1)
-	dst := make([]byte, 1)
+	src := make([]byte, 100)
+	dst := make([]byte, 100)
 	go func() {
 		if _, err := cc.WriteTo(src, nil, c.LocalAddr()); err != nil {
 			log.Fatalf("WriteTo: %v", err)
@@ -358,8 +358,8 @@ func main() {
 	}
 	cc := ipv4.NewPacketConn(c)
 	sync := make(chan bool)
-	src := make([]byte, 1)
-	dst := make([]byte, 1)
+	src := make([]byte, 100)
+	dst := make([]byte, 100)
 	go func() {
 		if _, err := cc.WriteTo(src, nil, c.LocalAddr()); err != nil {
 			log.Fatalf("WriteTo: %v", err)
