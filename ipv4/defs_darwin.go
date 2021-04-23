@@ -22,7 +22,6 @@ const (
 	sizeofInetPktinfo     = C.sizeof_struct_in_pktinfo
 
 	sizeofIPMreq         = C.sizeof_struct_ip_mreq
-	sizeofIPMreqn        = C.sizeof_struct_ip_mreqn
 	sizeofIPMreqSource   = C.sizeof_struct_ip_mreq_source
 	sizeofGroupReq       = C.sizeof_struct_group_req
 	sizeofGroupSourceReq = C.sizeof_struct_group_source_req
@@ -35,8 +34,6 @@ type sockaddrInet C.struct_sockaddr_in
 type inetPktinfo C.struct_in_pktinfo
 
 type ipMreq C.struct_ip_mreq
-
-type ipMreqn C.struct_ip_mreqn
 
 type ipMreqSource C.struct_ip_mreq_source
 
