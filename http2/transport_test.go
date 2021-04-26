@@ -2219,6 +2219,11 @@ func TestTransportRejectsConnHeaders(t *testing.T) {
 		},
 		{
 			key:   "Transfer-Encoding",
+			value: []string{"chunKed"}, // Kelvin sign
+			want:  "ERROR: http2: invalid Transfer-Encoding request header: [\"chunKed\"]",
+		},
+		{
+			key:   "Transfer-Encoding",
 			value: []string{"chunked", "other"},
 			want:  "ERROR: http2: invalid Transfer-Encoding request header: [\"chunked\" \"other\"]",
 		},
