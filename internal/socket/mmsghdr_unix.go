@@ -45,10 +45,14 @@ type mmsghdrsPacker struct {
 
 func (p *mmsghdrsPacker) prepare(ms []Message) {
 	n := len(ms)
-	if len(p.hs) < n {
+	if n <= cap(p.hs) {
+		p.hs = p.hs[:n]
+	} else {
 		p.hs = make(mmsghdrs, n)
 	}
-	if len(p.sockaddrs) < n*sizeofSockaddrInet6 {
+	if n*sizeofSockaddrInet6 <= cap(p.sockaddrs) {
+		p.sockaddrs = p.sockaddrs[:n*sizeofSockaddrInet6]
+	} else {
 		p.sockaddrs = make([]byte, n*sizeofSockaddrInet6)
 	}
 
@@ -56,13 +60,16 @@ func (p *mmsghdrsPacker) prepare(ms []Message) {
 	for _, m := range ms {
 		nb += len(m.Buffers)
 	}
-	if len(p.vs) < nb {
+	if nb <= cap(p.vs) {
+		p.vs = p.vs[:nb]
+	} else {
 		p.vs = make([]iovec, nb)
 	}
 }
 
 func (p *mmsghdrsPacker) pack(ms []Message, parseFn func([]byte, string) (net.Addr, error), marshalFn func(net.Addr, []byte) int) mmsghdrs {
-	hs := p.hs[:len(ms)]
+	p.prepare(ms)
+	hs := p.hs
 	vsRest := p.vs
 	saRest := p.sockaddrs
 	for i := range hs {
@@ -97,9 +104,7 @@ type mmsghdrsPool struct {
 }
 
 func (p *mmsghdrsPool) Get(ms []Message) *mmsghdrsPacker {
-	packer, _ := p.p.Get().(*mmsghdrsPacker)
-	packer.prepare(ms)
-	return packer
+	return p.p.Get().(*mmsghdrsPacker)
 }
 
 func (p *mmsghdrsPool) Put(packer *mmsghdrsPacker) {
