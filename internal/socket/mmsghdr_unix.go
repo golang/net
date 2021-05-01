@@ -103,7 +103,7 @@ type mmsghdrsPool struct {
 	p sync.Pool
 }
 
-func (p *mmsghdrsPool) Get(ms []Message) *mmsghdrsPacker {
+func (p *mmsghdrsPool) Get() *mmsghdrsPacker {
 	return p.p.Get().(*mmsghdrsPacker)
 }
 

@@ -17,7 +17,7 @@ func (c *Conn) recvMsgs(ms []Message, flags int) (int, error) {
 	for i := range ms {
 		ms[i].raceWrite()
 	}
-	packer := defaultMmsghdrsPool.Get(ms)
+	packer := defaultMmsghdrsPool.Get()
 	defer defaultMmsghdrsPool.Put(packer)
 	var parseFn func([]byte, string) (net.Addr, error)
 	if c.network != "tcp" {
@@ -49,7 +49,7 @@ func (c *Conn) sendMsgs(ms []Message, flags int) (int, error) {
 	for i := range ms {
 		ms[i].raceRead()
 	}
-	packer := defaultMmsghdrsPool.Get(ms)
+	packer := defaultMmsghdrsPool.Get()
 	defer defaultMmsghdrsPool.Put(packer)
 	var marshalFn func(net.Addr, []byte) int
 	if c.network != "tcp" {
