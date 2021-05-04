@@ -595,14 +595,10 @@ func (t *Transport) dialTLS(ctx context.Context) func(string, string, *tls.Confi
 		return t.DialTLS
 	}
 	return func(network, addr string, cfg *tls.Config) (net.Conn, error) {
-		dialer := &tls.Dialer{
-			Config: cfg,
-		}
-		cn, err := dialer.DialContext(ctx, network, addr)
+		tlsCn, err := t.dialTLSWithContext(ctx, network, addr, cfg)
 		if err != nil {
 			return nil, err
 		}
-		tlsCn := cn.(*tls.Conn) // DialContext comment promises this will always succeed
 		state := tlsCn.ConnectionState()
 		if p := state.NegotiatedProtocol; p != NextProtoTLS {
 			return nil, fmt.Errorf("http2: unexpected ALPN protocol %q; want %q", p, NextProtoTLS)
@@ -610,7 +606,7 @@ func (t *Transport) dialTLS(ctx context.Context) func(string, string, *tls.Confi
 		if !state.NegotiatedProtocolIsMutual {
 			return nil, errors.New("http2: could not negotiate protocol mutually")
 		}
-		return cn, nil
+		return tlsCn, nil
 	}
 }
 
