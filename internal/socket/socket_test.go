@@ -171,6 +171,16 @@ func TestUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// create a dialed connection talking (only) to c/cc
+	cDialed, err := net.Dial("udp", c.LocalAddr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ccDialed, err := socket.NewConn(cDialed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	t.Run("Message", func(t *testing.T) {
 		data := []byte("HELLO-R-U-THERE")
 		wm := socket.Message{
@@ -191,6 +201,27 @@ func TestUDP(t *testing.T) {
 			t.Fatalf("got %#v; want %#v", b[:rm.N], data)
 		}
 	})
+	t.Run("Message-dialed", func(t *testing.T) {
+		data := []byte("HELLO-R-U-THERE")
+		wm := socket.Message{
+			Buffers: bytes.SplitAfter(data, []byte("-")),
+			Addr:    nil,
+		}
+		if err := ccDialed.SendMsg(&wm, 0); err != nil {
+			t.Fatal(err)
+		}
+		b := make([]byte, 32)
+		rm := socket.Message{
+			Buffers: [][]byte{b[:1], b[1:3], b[3:7], b[7:11], b[11:]},
+		}
+		if err := cc.RecvMsg(&rm, 0); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(b[:rm.N], data) {
+			t.Fatalf("got %#v; want %#v", b[:rm.N], data)
+		}
+	})
+
 	switch runtime.GOOS {
 	case "android", "linux":
 		t.Run("Messages", func(t *testing.T) {
@@ -201,6 +232,55 @@ func TestUDP(t *testing.T) {
 				{Buffers: wmbs[1:], Addr: c.LocalAddr()},
 			}
 			n, err := cc.SendMsgs(wms, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != len(wms) {
+				t.Fatalf("got %d; want %d", n, len(wms))
+			}
+			b := make([]byte, 32)
+			rmbs := [][][]byte{{b[:len(wmbs[0])]}, {b[len(wmbs[0]):]}}
+			rms := []socket.Message{
+				{Buffers: rmbs[0]},
+				{Buffers: rmbs[1]},
+			}
+			n, err = cc.RecvMsgs(rms, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != len(rms) {
+				t.Fatalf("got %d; want %d", n, len(rms))
+			}
+			nn := 0
+			for i := 0; i < n; i++ {
+				nn += rms[i].N
+			}
+			if !bytes.Equal(b[:nn], data) {
+				t.Fatalf("got %#v; want %#v", b[:nn], data)
+			}
+		})
+		t.Run("Messages-undialed-no-dst", func(t *testing.T) {
+			// sending without destination address should fail.
+			// This checks that the internally recycled buffers are reset correctly.
+			data := []byte("HELLO-R-U-THERE")
+			wmbs := bytes.SplitAfter(data, []byte("-"))
+			wms := []socket.Message{
+				{Buffers: wmbs[:1], Addr: nil},
+				{Buffers: wmbs[1:], Addr: nil},
+			}
+			n, err := cc.SendMsgs(wms, 0)
+			if n != 0 && err == nil {
+				t.Fatal("expected error, destination address required")
+			}
+		})
+		t.Run("Messages-dialed", func(t *testing.T) {
+			data := []byte("HELLO-R-U-THERE")
+			wmbs := bytes.SplitAfter(data, []byte("-"))
+			wms := []socket.Message{
+				{Buffers: wmbs[:1], Addr: nil},
+				{Buffers: wmbs[1:], Addr: nil},
+			}
+			n, err := ccDialed.SendMsgs(wms, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
