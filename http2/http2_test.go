@@ -9,8 +9,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -286,5 +290,59 @@ func TestConfigureServerIdleTimeout_Go18(t *testing.T) {
 		if s2.IdleTimeout != timeout {
 			t.Errorf("s2.IdleTimeout = %v; want %v", s2.IdleTimeout, timeout)
 		}
+	}
+}
+
+var forbiddenStringsFunctions = map[string]bool{
+	// Functions that use Unicode-aware case folding.
+	"EqualFold":      true,
+	"Title":          true,
+	"ToLower":        true,
+	"ToLowerSpecial": true,
+	"ToTitle":        true,
+	"ToTitleSpecial": true,
+	"ToUpper":        true,
+	"ToUpperSpecial": true,
+
+	// Functions that use Unicode-aware spaces.
+	"Fields":    true,
+	"TrimSpace": true,
+}
+
+// TestNoUnicodeStrings checks that nothing in net/http uses the Unicode-aware
+// strings and bytes package functions. HTTP is mostly ASCII based, and doing
+// Unicode-aware case folding or space stripping can introduce vulnerabilities.
+func TestNoUnicodeStrings(t *testing.T) {
+	re := regexp.MustCompile(`(strings|bytes).([A-Za-z]+)`)
+	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if path == "h2i" || path == "h2c" {
+			return filepath.SkipDir
+		}
+		if !strings.HasSuffix(path, ".go") ||
+			strings.HasSuffix(path, "_test.go") ||
+			path == "ascii.go" || info.IsDir() {
+			return nil
+		}
+
+		contents, err := ioutil.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for lineNum, line := range strings.Split(string(contents), "\n") {
+			for _, match := range re.FindAllStringSubmatch(line, -1) {
+				if !forbiddenStringsFunctions[match[2]] {
+					continue
+				}
+				t.Errorf("disallowed call to %s at %s:%d", match[0], path, lineNum+1)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
