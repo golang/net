@@ -422,5 +422,11 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 			b = b[l:]
 		}
 	}
+	if len(b) > 4 {
+		// If there is more data left over after parsing all addresses
+		// than might be needed for alignment, then we have made a mistake
+		// somewhere.
+		return nil, errInvalidMessage
+	}
 	return as[:], nil
 }
