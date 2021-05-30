@@ -4899,3 +4899,48 @@ func TestTransportServerResetStreamAtHeaders(t *testing.T) {
 	}
 	res.Body.Close()
 }
+
+type closeChecker struct {
+	io.ReadCloser
+	closed chan struct{}
+}
+
+func (rc *closeChecker) Close() error {
+	close(rc.closed)
+	return rc.ReadCloser.Close()
+}
+
+func TestTransportCloseRequestBody(t *testing.T) {
+	var statusCode int
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+	ctx := context.Background()
+	cc, err := tr.dialClientConn(ctx, st.ts.Listener.Addr().String(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, status := range []int{200, 401} {
+		t.Run(fmt.Sprintf("status=%d", status), func(t *testing.T) {
+			statusCode = status
+			pr, pw := io.Pipe()
+			pipeClosed := make(chan struct{})
+			req, err := http.NewRequest("PUT", "https://dummy.tld/", &closeChecker{pr, pipeClosed})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := cc.RoundTrip(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			pw.Close()
+			<-pipeClosed
+		})
+	}
+}
