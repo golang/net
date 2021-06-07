@@ -3386,6 +3386,17 @@ func TestConfigureServer(t *testing.T) {
 			name: "empty server",
 		},
 		{
+			name:      "empty CipherSuites",
+			tlsConfig: &tls.Config{},
+		},
+		{
+			name: "bad CipherSuites but MinVersion TLS 1.3",
+			tlsConfig: &tls.Config{
+				MinVersion:   tls.VersionTLS13,
+				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384},
+			},
+		},
+		{
 			name: "just the required cipher suite",
 			tlsConfig: &tls.Config{
 				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
@@ -3409,7 +3420,6 @@ func TestConfigureServer(t *testing.T) {
 			tlsConfig: &tls.Config{
 				CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 			},
-			wantErr: "contains an HTTP/2-approved cipher suite (0xc02f), but it comes after",
 		},
 		{
 			name: "bad after required",

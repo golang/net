@@ -96,11 +96,6 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 
 	tclass := iana.DiffServCS0 | iana.NotECNTransport
 	if err := c.SetTrafficClass(tclass); err != nil {
-		switch runtime.GOOS {
-		case "darwin", "ios": // older darwin kernels don't support IPV6_TCLASS option
-			t.Logf("not supported on %s", runtime.GOOS)
-			goto next
-		}
 		t.Fatal(err)
 	}
 	if v, err := c.TrafficClass(); err != nil {
@@ -109,7 +104,6 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 		t.Fatalf("got %v; want %v", v, tclass)
 	}
 
-next:
 	hoplim := 255
 	if err := c.SetHopLimit(hoplim); err != nil {
 		t.Fatal(err)
