@@ -81,7 +81,37 @@ func (n *Node) InsertBefore(newChild, oldChild *Node) {
 	newChild.NextSibling = next
 }
 
-// AppendChild adds a node c as a child of n.
+// InsertAfter inserts newChild as a child of n, immediately after oldChild
+// in the sequence of n's children. oldChild may be nil, in which case newChild
+// is prepended to the beginning of n's children.
+//
+// It will panic if newChild already has a parent or siblings.
+func (n *Node) InsertAfter(newChild, oldChild *Node) {
+	if newChild.Parent != nil || newChild.PrevSibling != nil || newChild.NextSibling != nil {
+		panic("html: InsertAfter called for an attached child Node")
+	}
+	var prev, next *Node
+	if oldChild != nil {
+		prev, next = oldChild, oldChild.NextSibling
+	} else {
+		next = n.FirstChild
+	}
+	if next != nil {
+		next.PrevSibling = newChild
+	} else {
+		n.LastChild = newChild
+	}
+	if prev != nil {
+		prev.NextSibling = newChild
+	} else {
+		n.FirstChild = newChild
+	}
+	newChild.Parent = n
+	newChild.PrevSibling = prev
+	newChild.NextSibling = next
+}
+
+// AppendChild adds a node c as the last child of n.
 //
 // It will panic if c already has a parent or siblings.
 func (n *Node) AppendChild(c *Node) {
@@ -97,6 +127,24 @@ func (n *Node) AppendChild(c *Node) {
 	n.LastChild = c
 	c.Parent = n
 	c.PrevSibling = last
+}
+
+// PrependChild adds a node c as the first child of n.
+//
+// It will panic if c already has a parent or siblings.
+func (n *Node) PrependChild(c *Node) {
+	if c.Parent != nil || c.PrevSibling != nil || c.NextSibling != nil {
+		panic("html: PrependChild called for an attached child Node")
+	}
+	first := n.FirstChild
+	if first != nil {
+		first.PrevSibling = c
+	} else {
+		n.LastChild = c
+	}
+	n.FirstChild = c
+	c.Parent = n
+	c.NextSibling = first
 }
 
 // RemoveChild removes a node c that is a child of n. Afterwards, c will have
