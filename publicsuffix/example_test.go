@@ -47,7 +47,7 @@ func ExamplePublicSuffix_manager() {
 	}
 
 	for _, domain := range domains {
-		if domain == "" {
+		if len(domain) == 0 {
 			fmt.Println(">")
 			continue
 		}
