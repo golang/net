@@ -178,7 +178,29 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	req:  "http://example.com/",
 	want: "http://proxy",
-}}
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   ".示例.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.示例.com",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   "xn--fsq092h.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.示例.com",
+	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   "示例.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://www.xn--fsq092h.com",
+	want: "<nil>",
+},
+}
 
 func testProxyForURL(t *testing.T, tt proxyForURLTest) {
 	setHelper(t)
