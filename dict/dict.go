@@ -171,6 +171,38 @@ func (c *Client) Define(dict, word string) ([]*Defn, error) {
 	return def, err
 }
 
+func (c *Client) Match(dict, strategy, word string) ([]Dict, error) {
+	id, err := c.text.Cmd("MATCH %s %s %q", dict, strategy, word)
+	if err != nil {
+		return nil, err
+	}
+
+	c.text.StartResponse(id)
+	defer c.text.EndResponse(id)
+
+	_, _, err = c.text.ReadCodeLine(152)
+	if err != nil {
+		return nil, err
+	}
+	lines, err := c.text.ReadDotLines()
+	if err != nil {
+		return nil, err
+	}
+	_, _, err = c.text.ReadCodeLine(250)
+
+	dicts := make([]Dict, len(lines))
+	for i := range dicts {
+		d := &dicts[i]
+		a, _ := fields(lines[i])
+		if len(a) < 2 {
+			return nil, textproto.ProtocolError("invalid dictionary: " + lines[i])
+		}
+		d.Name = a[0]
+		d.Desc = a[1]
+	}
+	return dicts, err
+}
+
 // Fields returns the fields in s.
 // Fields are space separated unquoted words
 // or quoted with single or double quote.
