@@ -76,6 +76,39 @@ func (c *Client) Dicts() ([]Dict, error) {
 	return dicts, err
 }
 
+// Dicts returns a list of strategies available on the server.
+func (c *Client) Strategies() ([]Dict, error) {
+	id, err := c.text.Cmd("SHOW STRAT")
+	if err != nil {
+		return nil, err
+	}
+
+	c.text.StartResponse(id)
+	defer c.text.EndResponse(id)
+
+	_, _, err = c.text.ReadCodeLine(111)
+	if err != nil {
+		return nil, err
+	}
+	lines, err := c.text.ReadDotLines()
+	if err != nil {
+		return nil, err
+	}
+	_, _, err = c.text.ReadCodeLine(250)
+
+	dicts := make([]Dict, len(lines))
+	for i := range dicts {
+		d := &dicts[i]
+		a, _ := fields(lines[i])
+		if len(a) < 2 {
+			return nil, textproto.ProtocolError("invalid strategy: " + lines[i])
+		}
+		d.Name = a[0]
+		d.Desc = a[1]
+	}
+	return dicts, err
+}
+
 // A Defn represents a definition.
 type Defn struct {
 	Dict Dict   // Dict where definition was found
