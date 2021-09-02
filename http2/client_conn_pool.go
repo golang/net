@@ -84,6 +84,7 @@ func (p *clientConnPool) shouldTraceGetConn(cc *ClientConn) bool {
 }
 
 func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMiss bool) (*ClientConn, error) {
+	// TODO(dneil): Dial a new connection when t.DisableKeepAlives is set?
 	if isConnectionCloseRequest(req) && dialOnMiss {
 		// It gets its own connection.
 		traceGetConn(req, addr)
