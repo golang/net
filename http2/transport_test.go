@@ -923,6 +923,10 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 						return err
 					}
 				}
+			case *RSTStreamFrame:
+				if status == 200 {
+					return fmt.Errorf("Unexpected client frame %v", f)
+				}
 			default:
 				return fmt.Errorf("Unexpected client frame %v", f)
 			}
@@ -1745,14 +1749,17 @@ func TestTransportChecksResponseHeaderListSize(t *testing.T) {
 	ct.client = func() error {
 		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
 		res, err := ct.tr.RoundTrip(req)
+		if e, ok := err.(StreamError); ok {
+			err = e.Cause
+		}
 		if err != errResponseHeaderListSize {
+			size := int64(0)
 			if res != nil {
 				res.Body.Close()
-			}
-			size := int64(0)
-			for k, vv := range res.Header {
-				for _, v := range vv {
-					size += int64(len(k)) + int64(len(v)) + 32
+				for k, vv := range res.Header {
+					for _, v := range vv {
+						size += int64(len(k)) + int64(len(v)) + 32
+					}
 				}
 			}
 			return fmt.Errorf("RoundTrip Error = %v (and %d bytes of response headers); want errResponseHeaderListSize", err, size)
@@ -1877,8 +1884,9 @@ func TestTransportBodyReadErrorType(t *testing.T) {
 	doPanic <- true
 	buf := make([]byte, 100)
 	n, err := res.Body.Read(buf)
+	got, ok := err.(StreamError)
 	want := StreamError{StreamID: 0x1, Code: 0x2}
-	if !reflect.DeepEqual(want, err) {
+	if !ok || got.StreamID != want.StreamID || got.Code != want.Code {
 		t.Errorf("Read = %v, %#v; want error %#v", n, err, want)
 	}
 }
@@ -2849,27 +2857,36 @@ func testTransportReturnsUnusedFlowControl(t *testing.T, oneDataFrame bool) {
 		}
 
 		waitingFor := "RSTStreamFrame"
-		for {
+		sawRST := false
+		sawWUF := false
+		for !sawRST && !sawWUF {
 			f, err := ct.fr.ReadFrame()
 			if err != nil {
 				return fmt.Errorf("ReadFrame while waiting for %s: %v", waitingFor, err)
 			}
-			if _, ok := f.(*SettingsFrame); ok {
-				continue
-			}
-			switch waitingFor {
-			case "RSTStreamFrame":
-				if rf, ok := f.(*RSTStreamFrame); !ok || rf.ErrCode != ErrCodeCancel {
+			switch f := f.(type) {
+			case *SettingsFrame:
+			case *RSTStreamFrame:
+				if sawRST {
+					return fmt.Errorf("saw second RSTStreamFrame: %v", summarizeFrame(f))
+				}
+				if f.ErrCode != ErrCodeCancel {
 					return fmt.Errorf("Expected a RSTStreamFrame with code cancel; got %v", summarizeFrame(f))
 				}
-				waitingFor = "WindowUpdateFrame"
-			case "WindowUpdateFrame":
-				if wuf, ok := f.(*WindowUpdateFrame); !ok || wuf.Increment != 4999 {
-					return fmt.Errorf("Expected WindowUpdateFrame for 4999 bytes; got %v", summarizeFrame(f))
+				sawRST = true
+			case *WindowUpdateFrame:
+				if sawWUF {
+					return fmt.Errorf("saw second WindowUpdateFrame: %v", summarizeFrame(f))
 				}
-				return nil
+				if f.Increment != 4999 {
+					return fmt.Errorf("Expected WindowUpdateFrames for 5000 bytes; got %v", summarizeFrame(f))
+				}
+				sawWUF = true
+			default:
+				return fmt.Errorf("Unexpected frame: %v", summarizeFrame(f))
 			}
 		}
+		return nil
 	}
 	ct.run()
 }
@@ -3800,7 +3817,7 @@ func TestTransportResponseDataBeforeHeaders(t *testing.T) {
 				return err
 			}
 			switch f := f.(type) {
-			case *WindowUpdateFrame, *SettingsFrame:
+			case *WindowUpdateFrame, *SettingsFrame, *RSTStreamFrame:
 			case *HeadersFrame:
 				switch f.StreamID {
 				case 1:
@@ -4498,8 +4515,7 @@ func TestTransportUsesGetBodyWhenPresent(t *testing.T) {
 		},
 	}
 
-	afterBodyWrite := false // pretend we haven't read+written the body yet
-	req2, err := shouldRetryRequest(req, errClientConnUnusable, afterBodyWrite)
+	req2, err := shouldRetryRequest(req, errClientConnUnusable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5335,6 +5351,7 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 		if got := fmt.Sprint(err); got != want {
 			t.Errorf("didn't dial again: got %#q; want %#q", got, want)
 		}
+		ct.sc.Close()
 		if res != nil {
 			res.Body.Close()
 		}
@@ -5390,7 +5407,7 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 				return nil
 			}
 			if err != nil {
-				return err
+				return nil
 			}
 			switch f := f.(type) {
 			case *WindowUpdateFrame, *SettingsFrame:
@@ -5427,8 +5444,10 @@ func TestClientConnReservations(t *testing.T) {
 		reqHeaderMu:          make(chan struct{}, 1),
 		streams:              make(map[uint32]*clientStream),
 		maxConcurrentStreams: initialMaxConcurrentStreams,
+		nextStreamID:         1,
 		t:                    &Transport{},
 	}
+	cc.cond = sync.NewCond(&cc.mu)
 	n := 0
 	for n <= initialMaxConcurrentStreams && cc.ReserveNewRequest() {
 		n++
@@ -5459,4 +5478,40 @@ func TestClientConnReservations(t *testing.T) {
 	if n2 != n {
 		t.Errorf("after reset, reservations = %v; want %v", n2, n)
 	}
+}
+
+func TestTransportTimeoutServerHangs(t *testing.T) {
+	clientDone := make(chan struct{})
+	ct := newClientTester(t)
+	ct.client = func() error {
+		defer ct.cc.(*net.TCPConn).CloseWrite()
+		defer close(clientDone)
+
+		req, err := http.NewRequest("PUT", "https://dummy.tld/", nil)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		req = req.WithContext(ctx)
+		req.Header.Add("Big", strings.Repeat("a", 1<<20))
+		_, err = ct.tr.RoundTrip(req)
+		if err == nil {
+			return errors.New("error should not be nil")
+		}
+		if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+			return fmt.Errorf("error should be a net error timeout: %v", err)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		select {
+		case <-time.After(5 * time.Second):
+		case <-clientDone:
+		}
+		return nil
+	}
+	ct.run()
 }
