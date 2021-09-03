@@ -4944,3 +4944,104 @@ func TestTransportCloseRequestBody(t *testing.T) {
 		})
 	}
 }
+
+// collectClientsConnPool is a ClientConnPool that wraps lower and
+// collects what calls were made on it.
+type collectClientsConnPool struct {
+	lower ClientConnPool
+
+	mu      sync.Mutex
+	getErrs int
+	got     []*ClientConn
+}
+
+func (p *collectClientsConnPool) GetClientConn(req *http.Request, addr string) (*ClientConn, error) {
+	cc, err := p.lower.GetClientConn(req, addr)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err != nil {
+		p.getErrs++
+		return nil, err
+	}
+	p.got = append(p.got, cc)
+	return cc, nil
+}
+
+func (p *collectClientsConnPool) MarkDead(cc *ClientConn) {
+	p.lower.MarkDead(cc)
+}
+
+func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
+	ct := newClientTester(t)
+	pool := &collectClientsConnPool{
+		lower: &clientConnPool{t: ct.tr},
+	}
+	ct.tr.ConnPool = pool
+	done := make(chan struct{})
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		const want = "only one dial allowed in test mode"
+		if got := fmt.Sprint(err); got != want {
+			t.Errorf("didn't dial again: got %#q; want %#q", got, want)
+		}
+		close(done)
+		ct.sc.Close()
+		if res != nil {
+			res.Body.Close()
+		}
+
+		pool.mu.Lock()
+		defer pool.mu.Unlock()
+		if pool.getErrs != 1 {
+			t.Errorf("pool get errors = %v; want 1", pool.getErrs)
+		}
+		if len(pool.got) == 1 {
+			cc := pool.got[0]
+			cc.mu.Lock()
+			if !cc.doNotReuse {
+				t.Error("ClientConn not marked doNotReuse")
+			}
+			cc.mu.Unlock()
+		} else {
+			t.Errorf("pool get success = %v; want 1", len(pool.got))
+		}
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+		var sentErr bool
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				select {
+				case <-done:
+					return nil
+				default:
+					return err
+				}
+			}
+			switch f := f.(type) {
+			case *WindowUpdateFrame, *SettingsFrame:
+			case *HeadersFrame:
+				if !sentErr {
+					sentErr = true
+					ct.fr.WriteRSTStream(f.StreamID, ErrCodeProtocol)
+					continue
+				}
+				var buf bytes.Buffer
+				enc := hpack.NewEncoder(&buf)
+				// send headers without Trailer header
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+			}
+		}
+		return nil
+	}
+	ct.run()
+}
