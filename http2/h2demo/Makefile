@@ -26,7 +26,7 @@ push-prod: docker
 
 # TODO(bradfitz): add REPO subsitution in xb for the kubectl command.
 deploy-prod: push-prod
-	xb --prod kubectl set image deployment/h2demo-deployment h2demo=gcr.io/symbolic-datum-552/h2demo:$(VERSION)
+	xb --prod kubectl --namespace prod set image deployment/h2demo-deployment h2demo=gcr.io/symbolic-datum-552/h2demo:$(VERSION)
 deploy-staging: push-staging
 	xb --staging kubectl set image deployment/h2demo-deployment h2demo=gcr.io/go-dashboard-dev/h2demo:$(VERSION)
 
