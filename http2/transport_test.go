@@ -3824,6 +3824,51 @@ func TestTransportResponseDataBeforeHeaders(t *testing.T) {
 	ct.run()
 }
 
+func TestTransportRequestsLowServerLimit(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+	}, optOnlyServer, func(s *Server) {
+		s.MaxConcurrentStreams = 1
+	})
+	defer st.Close()
+
+	var (
+		connCountMu sync.Mutex
+		connCount   int
+	)
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			connCountMu.Lock()
+			defer connCountMu.Unlock()
+			connCount++
+			return tls.Dial(network, addr, cfg)
+		},
+	}
+	defer tr.CloseIdleConnections()
+
+	const reqCount = 3
+	for i := 0; i < reqCount; i++ {
+		req, err := http.NewRequest("GET", st.ts.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := res.StatusCode, 200; got != want {
+			t.Errorf("StatusCode = %v; want %v", got, want)
+		}
+		if res != nil && res.Body != nil {
+			res.Body.Close()
+		}
+	}
+
+	if connCount != 1 {
+		t.Errorf("created %v connections for %v requests, want 1", connCount, reqCount)
+	}
+}
+
 // tests Transport.StrictMaxConcurrentStreams
 func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 	const maxConcurrent = 2
