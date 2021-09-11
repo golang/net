@@ -3905,7 +3905,8 @@ func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 				if k >= maxConcurrent {
 					<-unblockClient
 				}
-				req, _ := http.NewRequest("GET", fmt.Sprintf("https://dummy.tld/%d", k), nil)
+				body := newStaticCloseChecker("")
+				req, _ := http.NewRequest("GET", fmt.Sprintf("https://dummy.tld/%d", k), body)
 				if k == maxConcurrent {
 					// This request will be canceled.
 					cancel := make(chan struct{})
@@ -3929,6 +3930,9 @@ func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 						errs <- fmt.Errorf("Status = %v; want 204", resp.StatusCode)
 						return
 					}
+				}
+				if err := body.isClosed(); err != nil {
+					errs <- fmt.Errorf("RoundTrip(%d): %v", k, err)
 				}
 			}(k)
 		}
@@ -3990,6 +3994,7 @@ func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 				if nreq == maxConcurrent+1 {
 					close(writeResp)
 				}
+			case *DataFrame:
 			default:
 				return fmt.Errorf("Unexpected client frame %v", f)
 			}
@@ -4905,9 +4910,39 @@ type closeChecker struct {
 	closed chan struct{}
 }
 
+func newCloseChecker(r io.ReadCloser) *closeChecker {
+	return &closeChecker{r, make(chan struct{})}
+}
+
+func newStaticCloseChecker(body string) *closeChecker {
+	return newCloseChecker(io.NopCloser(strings.NewReader("body")))
+}
+
+func (rc *closeChecker) Read(b []byte) (n int, err error) {
+	select {
+	default:
+	case <-rc.closed:
+		panic("read from closed body")
+	}
+	return rc.ReadCloser.Read(b)
+}
+
 func (rc *closeChecker) Close() error {
 	close(rc.closed)
 	return rc.ReadCloser.Close()
+}
+
+func (rc *closeChecker) isClosed() error {
+	// The RoundTrip contract says that it will close the request body,
+	// but that it may do so in a separate goroutine. Wait a reasonable
+	// amount of time before concluding that the body isn't being closed.
+	timeout := time.Duration(10 * time.Second)
+	select {
+	case <-rc.closed:
+	case <-time.After(timeout):
+		return fmt.Errorf("body not closed after %v", timeout)
+	}
+	return nil
 }
 
 func TestTransportCloseRequestBody(t *testing.T) {
@@ -4929,8 +4964,8 @@ func TestTransportCloseRequestBody(t *testing.T) {
 		t.Run(fmt.Sprintf("status=%d", status), func(t *testing.T) {
 			statusCode = status
 			pr, pw := io.Pipe()
-			pipeClosed := make(chan struct{})
-			req, err := http.NewRequest("PUT", "https://dummy.tld/", &closeChecker{pr, pipeClosed})
+			body := newCloseChecker(pr)
+			req, err := http.NewRequest("PUT", "https://dummy.tld/", body)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -4940,7 +4975,9 @@ func TestTransportCloseRequestBody(t *testing.T) {
 			}
 			res.Body.Close()
 			pw.Close()
-			<-pipeClosed
+			if err := body.isClosed(); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 }
