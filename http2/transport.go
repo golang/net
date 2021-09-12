@@ -270,22 +270,29 @@ type ClientConn struct {
 	nextStreamID    uint32
 	pendingRequests int                       // requests blocked and waiting to be sent because len(streams) == maxConcurrentStreams
 	pings           map[[8]byte]chan struct{} // in flight ping data to notification channel
-	bw              *bufio.Writer
 	br              *bufio.Reader
-	fr              *Framer
 	lastActive      time.Time
 	lastIdle        time.Time // time last idle
-	// Settings from peer: (also guarded by mu)
+	// Settings from peer: (also guarded by wmu)
 	maxFrameSize          uint32
 	maxConcurrentStreams  uint32
 	peerMaxHeaderListSize uint64
 	initialWindowSize     uint32
 
+	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
+	// Write to reqHeaderMu to lock it, read from it to unlock.
+	// Lock reqmu BEFORE mu or wmu.
+	reqHeaderMu chan struct{}
+
+	// wmu is held while writing.
+	// Acquire BEFORE mu when holding both, to avoid blocking mu on network writes.
+	// Only acquire both at the same time when changing peer settings.
+	wmu  sync.Mutex
+	bw   *bufio.Writer
+	fr   *Framer
+	werr error        // first write error that has occurred
 	hbuf bytes.Buffer // HPACK encoder writes into this
 	henc *hpack.Encoder
-
-	wmu  sync.Mutex // held while writing; acquire AFTER mu if holding both
-	werr error      // first write error that has occurred
 }
 
 // clientStream is the state for a single HTTP/2 stream. One of these
@@ -404,10 +411,11 @@ func (cs *clientStream) abortRequestBodyWrite(err error) {
 	cc.mu.Lock()
 	if cs.stopReqBody == nil {
 		cs.stopReqBody = err
-		if cs.req.Body != nil {
-			cs.req.Body.Close()
-		}
 		cc.cond.Broadcast()
+		// Close the body after releasing the mutex, in case it blocks.
+		if body := cs.req.Body; body != nil {
+			defer body.Close()
+		}
 	}
 	cc.mu.Unlock()
 }
@@ -672,6 +680,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		singleUse:             singleUse,
 		wantSettingsAck:       true,
 		pings:                 make(map[[8]byte]chan struct{}),
+		reqHeaderMu:           make(chan struct{}, 1),
 	}
 	if d := t.idleConnTimeout(); d != 0 {
 		cc.idleTimeout = d
@@ -900,15 +909,18 @@ func (cc *ClientConn) Shutdown(ctx context.Context) error {
 
 func (cc *ClientConn) sendGoAway() error {
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
-	cc.wmu.Lock()
-	defer cc.wmu.Unlock()
-	if cc.closing {
+	closing := cc.closing
+	cc.closing = true
+	maxStreamID := cc.nextStreamID
+	cc.mu.Unlock()
+	if closing {
 		// GOAWAY sent already
 		return nil
 	}
+
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
 	// Send a graceful shutdown frame to server
-	maxStreamID := cc.nextStreamID
 	if err := cc.fr.WriteGoAway(maxStreamID, ErrCodeNo, nil); err != nil {
 		return err
 	}
@@ -916,7 +928,6 @@ func (cc *ClientConn) sendGoAway() error {
 		return err
 	}
 	// Prevent new requests
-	cc.closing = true
 	return nil
 }
 
@@ -924,17 +935,22 @@ func (cc *ClientConn) sendGoAway() error {
 // err is sent to streams.
 func (cc *ClientConn) closeForError(err error) error {
 	cc.mu.Lock()
-	defer cc.cond.Broadcast()
-	defer cc.mu.Unlock()
-	for id, cs := range cc.streams {
+	streams := cc.streams
+	cc.streams = nil
+	cc.closed = true
+	cc.mu.Unlock()
+
+	for _, cs := range streams {
 		select {
 		case cs.resc <- resAndError{err: err}:
 		default:
 		}
 		cs.bufPipe.CloseWithError(err)
-		delete(cc.streams, id)
 	}
-	cc.closed = true
+
+	cc.mu.Lock()
+	defer cc.cond.Broadcast()
+	defer cc.mu.Unlock()
 	return cc.tconn.Close()
 }
 
@@ -1022,6 +1038,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAfterReqBodyWrite bool, err error) {
+	ctx := req.Context()
 	if err := checkConnHeaders(req); err != nil {
 		return nil, false, err
 	}
@@ -1034,6 +1051,26 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 		return nil, false, err
 	}
 	hasTrailers := trailers != ""
+
+	// Acquire the new-request lock by writing to reqHeaderMu.
+	// This lock guards the critical section covering allocating a new stream ID
+	// (requires mu) and creating the stream (requires wmu).
+	if cc.reqHeaderMu == nil {
+		panic("RoundTrip on initialized ClientConn") // for tests
+	}
+	select {
+	case cc.reqHeaderMu <- struct{}{}:
+	case <-req.Cancel:
+		return nil, false, errRequestCanceled
+	case <-ctx.Done():
+		return nil, false, ctx.Err()
+	}
+	reqHeaderMuNeedsUnlock := true
+	defer func() {
+		if reqHeaderMuNeedsUnlock {
+			<-cc.reqHeaderMu
+		}
+	}()
 
 	cc.mu.Lock()
 	if err := cc.awaitOpenSlotForRequest(req); err != nil {
@@ -1066,21 +1103,23 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 		requestedGzip = true
 	}
 
-	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,} (DATA is
-	// sent by writeRequestBody below, along with any Trailers,
-	// again in form HEADERS{1}, CONTINUATION{0,})
-	hdrs, err := cc.encodeHeaders(req, requestedGzip, trailers, contentLen)
-	if err != nil {
-		cc.mu.Unlock()
-		return nil, false, err
-	}
-
 	cs := cc.newStream()
 	cs.req = req
 	cs.trace = httptrace.ContextClientTrace(req.Context())
 	cs.requestedGzip = requestedGzip
 	bodyWriter := cc.t.getBodyWriterState(cs, body)
 	cs.on100 = bodyWriter.on100
+	cc.mu.Unlock()
+
+	// we send: HEADERS{1}, CONTINUATION{0,} + DATA{0,} (DATA is
+	// sent by writeRequestBody below, along with any Trailers,
+	// again in form HEADERS{1}, CONTINUATION{0,})
+	cc.wmu.Lock()
+	hdrs, err := cc.encodeHeaders(req, requestedGzip, trailers, contentLen)
+	if err != nil {
+		cc.wmu.Unlock()
+		return nil, false, err
+	}
 
 	defer func() {
 		cc.wmu.Lock()
@@ -1091,24 +1130,24 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 		}
 	}()
 
-	cc.wmu.Lock()
 	endStream := !hasBody && !hasTrailers
-	werr := cc.writeHeaders(cs.ID, endStream, int(cc.maxFrameSize), hdrs)
+	err = cc.writeHeaders(cs.ID, endStream, int(cc.maxFrameSize), hdrs)
 	cc.wmu.Unlock()
+	<-cc.reqHeaderMu // release the new-request lock
+	reqHeaderMuNeedsUnlock = false
 	traceWroteHeaders(cs.trace)
-	cc.mu.Unlock()
 
-	if werr != nil {
+	if err != nil {
 		if hasBody {
 			bodyWriter.cancel()
 		}
 		cc.forgetStreamID(cs.ID)
 		// Don't bother sending a RST_STREAM (our write already failed;
 		// no need to keep writing)
-		traceWroteRequest(cs.trace, werr)
+		traceWroteRequest(cs.trace, err)
 		// TODO(dneil): An error occurred while writing the headers.
 		// Should we return an error indicating that this request can be retried?
-		return nil, false, werr
+		return nil, false, err
 	}
 
 	var respHeaderTimer <-chan time.Time
@@ -1125,7 +1164,6 @@ func (cc *ClientConn) roundTrip(req *http.Request) (res *http.Response, gotErrAf
 
 	readLoopResCh := cs.resc
 	bodyWritten := false
-	ctx := req.Context()
 
 	handleReadLoopResponse := func(re resAndError) (*http.Response, bool, error) {
 		res := re.res
@@ -1427,19 +1465,17 @@ func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (
 		return nil
 	}
 
+	cc.wmu.Lock()
 	var trls []byte
 	if hasTrailers {
-		cc.mu.Lock()
 		trls, err = cc.encodeTrailers(req)
-		cc.mu.Unlock()
 		if err != nil {
+			cc.wmu.Unlock()
 			cc.writeStreamReset(cs.ID, ErrCodeInternal, err)
 			cc.forgetStreamID(cs.ID)
 			return err
 		}
 	}
-
-	cc.wmu.Lock()
 	defer cc.wmu.Unlock()
 
 	// Two ways to send END_STREAM: either with trailers, or
@@ -1489,7 +1525,7 @@ func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) 
 	}
 }
 
-// requires cc.mu be held.
+// requires cc.wmu be held.
 func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) ([]byte, error) {
 	cc.hbuf.Reset()
 
@@ -1677,7 +1713,7 @@ func shouldSendReqContentLength(method string, contentLength int64) bool {
 	}
 }
 
-// requires cc.mu be held.
+// requires cc.wmu be held.
 func (cc *ClientConn) encodeTrailers(req *http.Request) ([]byte, error) {
 	cc.hbuf.Reset()
 
@@ -1826,7 +1862,11 @@ func (rl *clientConnReadLoop) cleanup() {
 	} else if err == io.EOF {
 		err = io.ErrUnexpectedEOF
 	}
-	for _, cs := range cc.streams {
+	cc.closed = true
+	streams := cc.streams
+	cc.streams = nil
+	cc.mu.Unlock()
+	for _, cs := range streams {
 		cs.bufPipe.CloseWithError(err) // no-op if already closed
 		select {
 		case cs.resc <- resAndError{err: err}:
@@ -1834,7 +1874,7 @@ func (rl *clientConnReadLoop) cleanup() {
 		}
 		close(cs.done)
 	}
-	cc.closed = true
+	cc.mu.Lock()
 	cc.cond.Broadcast()
 	cc.mu.Unlock()
 }
@@ -2192,8 +2232,6 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 	}
 
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
-
 	var connAdd, streamAdd int32
 	// Check the conn-level first, before the stream-level.
 	if v := cc.inflow.available(); v < transportDefaultConnFlow/2 {
@@ -2210,6 +2248,8 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 			cs.inflow.add(streamAdd)
 		}
 	}
+	cc.mu.Unlock()
+
 	if connAdd != 0 || streamAdd != 0 {
 		cc.wmu.Lock()
 		defer cc.wmu.Unlock()
@@ -2235,19 +2275,25 @@ func (b transportResponseBody) Close() error {
 
 	if unread > 0 || !serverSentStreamEnd {
 		cc.mu.Lock()
-		cc.wmu.Lock()
 		if !serverSentStreamEnd {
-			cc.fr.WriteRSTStream(cs.ID, ErrCodeCancel)
 			cs.didReset = true
 		}
 		// Return connection-level flow control.
 		if unread > 0 {
 			cc.inflow.add(int32(unread))
+		}
+		cc.mu.Unlock()
+
+		cc.wmu.Lock()
+		if !serverSentStreamEnd {
+			cc.fr.WriteRSTStream(cs.ID, ErrCodeCancel)
+		}
+		// Return connection-level flow control.
+		if unread > 0 {
 			cc.fr.WriteWindowUpdate(0, uint32(unread))
 		}
 		cc.bw.Flush()
 		cc.wmu.Unlock()
-		cc.mu.Unlock()
 	}
 
 	cs.bufPipe.BreakWithError(errClosedResponseBody)
@@ -2325,6 +2371,10 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 		}
 		if refund > 0 {
 			cc.inflow.add(int32(refund))
+		}
+		cc.mu.Unlock()
+
+		if refund > 0 {
 			cc.wmu.Lock()
 			cc.fr.WriteWindowUpdate(0, uint32(refund))
 			if !didReset {
@@ -2334,7 +2384,6 @@ func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 			cc.bw.Flush()
 			cc.wmu.Unlock()
 		}
-		cc.mu.Unlock()
 
 		if len(data) > 0 && !didReset {
 			if _, err := cs.bufPipe.Write(data); err != nil {
@@ -2400,6 +2449,23 @@ func (rl *clientConnReadLoop) processGoAway(f *GoAwayFrame) error {
 
 func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 	cc := rl.cc
+	// Locking both mu and wmu here allows frame encoding to read settings with only wmu held.
+	// Acquiring wmu when f.IsAck() is unnecessary, but convenient and mostly harmless.
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
+
+	if err := rl.processSettingsNoWrite(f); err != nil {
+		return err
+	}
+	if !f.IsAck() {
+		cc.fr.WriteSettingsAck()
+		cc.bw.Flush()
+	}
+	return nil
+}
+
+func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
+	cc := rl.cc
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
@@ -2461,12 +2527,7 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 		cc.seenSettings = true
 	}
 
-	cc.wmu.Lock()
-	defer cc.wmu.Unlock()
-
-	cc.fr.WriteSettingsAck()
-	cc.bw.Flush()
-	return cc.werr
+	return nil
 }
 
 func (rl *clientConnReadLoop) processWindowUpdate(f *WindowUpdateFrame) error {
