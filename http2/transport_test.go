@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -3261,7 +3262,8 @@ func TestRoundTripDoesntConsumeRequestBodyEarly(t *testing.T) {
 	const body = "foo"
 	req, _ := http.NewRequest("POST", "http://foo.com/", ioutil.NopCloser(strings.NewReader(body)))
 	cc := &ClientConn{
-		closed: true,
+		closed:      true,
+		reqHeaderMu: make(chan struct{}, 1),
 	}
 	_, err := cc.RoundTrip(req)
 	if err != errClientConnUnusable {
@@ -4988,6 +4990,245 @@ func (rc *closeChecker) isClosed() error {
 		return fmt.Errorf("body not closed after %v", timeout)
 	}
 	return nil
+}
+
+// A blockingWriteConn is a net.Conn that blocks in Write after some number of bytes are written.
+type blockingWriteConn struct {
+	net.Conn
+	writeOnce    sync.Once
+	writec       chan struct{} // closed after the write limit is reached
+	unblockc     chan struct{} // closed to unblock writes
+	count, limit int
+}
+
+func newBlockingWriteConn(conn net.Conn, limit int) *blockingWriteConn {
+	return &blockingWriteConn{
+		Conn:     conn,
+		limit:    limit,
+		writec:   make(chan struct{}),
+		unblockc: make(chan struct{}),
+	}
+}
+
+// wait waits until the conn blocks writing the limit+1st byte.
+func (c *blockingWriteConn) wait() {
+	<-c.writec
+}
+
+// unblock unblocks writes to the conn.
+func (c *blockingWriteConn) unblock() {
+	close(c.unblockc)
+}
+
+func (c *blockingWriteConn) Write(b []byte) (n int, err error) {
+	if c.count+len(b) > c.limit {
+		c.writeOnce.Do(func() {
+			close(c.writec)
+		})
+		<-c.unblockc
+	}
+	n, err = c.Conn.Write(b)
+	c.count += n
+	return n, err
+}
+
+// Write several requests to a ClientConn at the same time, looking for race conditions.
+// See golang.org/issue/48340
+func TestTransportFrameBufferReuse(t *testing.T) {
+	filler := hex.EncodeToString([]byte(randString(2048)))
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Header.Get("Big"), filler; got != want {
+			t.Errorf(`r.Header.Get("Big") = %q, want %q`, got, want)
+		}
+		b, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("error reading request body: %v", err)
+		}
+		if got, want := string(b), filler; got != want {
+			t.Errorf("request body = %q, want %q", got, want)
+		}
+		if got, want := r.Trailer.Get("Big"), filler; got != want {
+			t.Errorf(`r.Trailer.Get("Big") = %q, want %q`, got, want)
+		}
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader(filler))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Big", filler)
+			req.Trailer = make(http.Header)
+			req.Trailer.Set("Big", filler)
+			res, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := res.StatusCode, 200; got != want {
+				t.Errorf("StatusCode = %v; want %v", got, want)
+			}
+			if res != nil && res.Body != nil {
+				res.Body.Close()
+			}
+		}()
+	}
+
+}
+
+// Ensure that a request blocking while being written to the underlying net.Conn doesn't
+// block access to the ClientConn pool. Test requests blocking while writing headers, the body,
+// and trailers.
+// See golang.org/issue/32388
+func TestTransportBlockingRequestWrite(t *testing.T) {
+	filler := hex.EncodeToString([]byte(randString(2048)))
+	for _, test := range []struct {
+		name string
+		req  func(url string) (*http.Request, error)
+	}{{
+		name: "headers",
+		req: func(url string) (*http.Request, error) {
+			req, err := http.NewRequest("POST", url, nil)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Big", filler)
+			return req, err
+		},
+	}, {
+		name: "body",
+		req: func(url string) (*http.Request, error) {
+			req, err := http.NewRequest("POST", url, strings.NewReader(filler))
+			if err != nil {
+				return nil, err
+			}
+			return req, err
+		},
+	}, {
+		name: "trailer",
+		req: func(url string) (*http.Request, error) {
+			req, err := http.NewRequest("POST", url, strings.NewReader("body"))
+			if err != nil {
+				return nil, err
+			}
+			req.Trailer = make(http.Header)
+			req.Trailer.Set("Big", filler)
+			return req, err
+		},
+	}} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+				if v := r.Header.Get("Big"); v != "" && v != filler {
+					t.Errorf("request header mismatch")
+				}
+				if v, _ := io.ReadAll(r.Body); len(v) != 0 && string(v) != "body" && string(v) != filler {
+					t.Errorf("request body mismatch\ngot:  %q\nwant: %q", string(v), filler)
+				}
+				if v := r.Trailer.Get("Big"); v != "" && v != filler {
+					t.Errorf("request trailer mismatch\ngot:  %q\nwant: %q", string(v), filler)
+				}
+			}, optOnlyServer, func(s *Server) {
+				s.MaxConcurrentStreams = 1
+			})
+			defer st.Close()
+
+			// This Transport creates connections that block on writes after 1024 bytes.
+			connc := make(chan *blockingWriteConn, 1)
+			connCount := 0
+			tr := &Transport{
+				TLSClientConfig: tlsConfigInsecure,
+				DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+					connCount++
+					c, err := tls.Dial(network, addr, cfg)
+					wc := newBlockingWriteConn(c, 1024)
+					select {
+					case connc <- wc:
+					default:
+					}
+					return wc, err
+				},
+			}
+			defer tr.CloseIdleConnections()
+
+			// Request 1: A small request to ensure we read the server MaxConcurrentStreams.
+			{
+				req, err := http.NewRequest("POST", st.ts.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				res, err := tr.RoundTrip(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got, want := res.StatusCode, 200; got != want {
+					t.Errorf("StatusCode = %v; want %v", got, want)
+				}
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}
+
+			// Request 2: A large request that blocks while being written.
+			reqc := make(chan struct{})
+			go func() {
+				defer close(reqc)
+				req, err := test.req(st.ts.URL)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				res, _ := tr.RoundTrip(req)
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}()
+			conn := <-connc
+			conn.wait() // wait for the request to block
+
+			// Request 3: A small request that is sent on a new connection, since request 2
+			// is hogging the only available stream on the previous connection.
+			{
+				req, err := http.NewRequest("POST", st.ts.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				res, err := tr.RoundTrip(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got, want := res.StatusCode, 200; got != want {
+					t.Errorf("StatusCode = %v; want %v", got, want)
+				}
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}
+
+			// Request 2 should still be blocking at this point.
+			select {
+			case <-reqc:
+				t.Errorf("request 2 unexpectedly completed")
+			default:
+			}
+
+			conn.unblock()
+			<-reqc
+
+			if connCount != 2 {
+				t.Errorf("created %v connections, want 1", connCount)
+			}
+		})
+	}
 }
 
 func TestTransportCloseRequestBody(t *testing.T) {
