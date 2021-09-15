@@ -17,8 +17,6 @@ spec:
         container.apparmor.security.beta.kubernetes.io/h2demo: runtime/default
     spec:
       serviceAccountName: h2demo
-      nodeSelector:
-        cloud.google.com/gke-nodepool: workload-identity-pool
       containers:
       - name: h2demo
         image: gcr.io/symbolic-datum-552/h2demo:latest
