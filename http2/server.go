@@ -2714,6 +2714,11 @@ func (w *responseWriter) handlerDone() {
 	dirty := rws.dirty
 	rws.handlerDone = true
 	w.Flush()
+
+	if rws.req != nil && rws.req.MultipartForm != nil {
+		rws.req.MultipartForm.RemoveAll()
+	}
+
 	w.rws = nil
 	if !dirty {
 		// Only recycle the pool if all prior Write calls to
