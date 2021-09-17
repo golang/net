@@ -130,6 +130,12 @@ type Transport struct {
 	// Defaults to 15s.
 	PingTimeout time.Duration
 
+	// CountError, if non-nil, is called on HTTP/2 transport errors.
+	// It's intended to increment a metric for monitoring, such
+	// as an expvar or Prometheus metric.
+	// The errType consists of only ASCII word characters.
+	CountError func(errType string)
+
 	// t1, if non-nil, is the standard library Transport using
 	// this transport. Its settings are used (but not its
 	// RoundTrip method, etc).
@@ -943,6 +949,9 @@ func (cc *ClientConn) Close() error {
 // closes the client connection immediately. In-flight requests are interrupted.
 func (cc *ClientConn) closeForLostPing() error {
 	err := errors.New("http2: client connection lost")
+	if f := cc.t.CountError; f != nil {
+		f("conn_close_lost_ping")
+	}
 	return cc.closeForError(err)
 }
 
@@ -1830,6 +1839,33 @@ func (rl *clientConnReadLoop) cleanup() {
 	cc.mu.Unlock()
 }
 
+// countReadFrameError calls Transport.CountError with a string
+// representing err.
+func (cc *ClientConn) countReadFrameError(err error) {
+	f := cc.t.CountError
+	if f == nil || err == nil {
+		return
+	}
+	if ce, ok := err.(ConnectionError); ok {
+		errCode := ErrCode(ce)
+		f(fmt.Sprintf("read_frame_conn_error_%s", errCode.stringToken()))
+		return
+	}
+	if errors.Is(err, io.EOF) {
+		f("read_frame_eof")
+		return
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		f("read_frame_unexpected_eof")
+		return
+	}
+	if errors.Is(err, ErrFrameTooLarge) {
+		f("read_frame_too_large")
+		return
+	}
+	f("read_frame_other")
+}
+
 func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
 	rl.closeWhenIdle = cc.t.disableKeepAlives() || cc.singleUse
@@ -1860,6 +1896,7 @@ func (rl *clientConnReadLoop) run() error {
 			}
 			continue
 		} else if err != nil {
+			cc.countReadFrameError(err)
 			return err
 		}
 		if VerboseLogs {
@@ -2352,6 +2389,10 @@ func (rl *clientConnReadLoop) processGoAway(f *GoAwayFrame) error {
 	if f.ErrCode != 0 {
 		// TODO: deal with GOAWAY more. particularly the error code
 		cc.vlogf("transport got GOAWAY with error code = %v", f.ErrCode)
+		if fn := cc.t.CountError; fn != nil {
+			fn("recv_goaway_" + f.ErrCode.stringToken())
+		}
+
 	}
 	cc.setGoAway(f)
 	return nil
@@ -2466,9 +2507,9 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 		if f.ErrCode == ErrCodeProtocol {
 			rl.cc.SetDoNotReuse()
 			serr.Cause = errFromPeer
-			// TODO(bradfitz): increment a varz here, once Transport
-			// takes an optional interface-typed field that expvar.Map.Add
-			// implements.
+		}
+		if fn := cs.cc.t.CountError; fn != nil {
+			fn("recv_rststream_" + f.ErrCode.stringToken())
 		}
 		cs.resetErr = serr
 		close(cs.peerReset)
