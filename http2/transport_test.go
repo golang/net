@@ -4969,7 +4969,10 @@ func (rc *closeChecker) Read(b []byte) (n int, err error) {
 	select {
 	default:
 	case <-rc.closed:
-		panic("read from closed body")
+		// TODO(dneil): Consider restructuring the request write to avoid reading
+		// from the request body after closing it, and check for read-after-close here.
+		// Currently, abortRequestBodyWrite races with writeRequestBody.
+		return 0, errors.New("read after Body.Close")
 	}
 	return rc.ReadCloser.Read(b)
 }
