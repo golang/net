@@ -5303,18 +5303,50 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 		lower: &clientConnPool{t: ct.tr},
 	}
 	ct.tr.ConnPool = pool
-	done := make(chan struct{})
+
+	gotProtoError := make(chan bool, 1)
+	ct.tr.CountError = func(errType string) {
+		if errType == "recv_rststream_PROTOCOL_ERROR" {
+			select {
+			case gotProtoError <- true:
+			default:
+			}
+		}
+	}
 	ct.client = func() error {
-		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		// Start two requests. The first is a long request
+		// that will finish after the second. The second one
+		// will result in the protocol error.  We check that
+		// after the first one closes, the connection then
+		// shuts down.
+
+		// The long, outer request.
+		req1, _ := http.NewRequest("GET", "https://dummy.tld/long", nil)
+		res1, err := ct.tr.RoundTrip(req1)
+		if err != nil {
+			return err
+		}
+		if got, want := res1.Header.Get("Is-Long"), "1"; got != want {
+			return fmt.Errorf("First response's Is-Long header = %q; want %q", got, want)
+		}
+
+		req, _ := http.NewRequest("POST", "https://dummy.tld/fails", nil)
 		res, err := ct.tr.RoundTrip(req)
 		const want = "only one dial allowed in test mode"
 		if got := fmt.Sprint(err); got != want {
 			t.Errorf("didn't dial again: got %#q; want %#q", got, want)
 		}
-		close(done)
-		ct.sc.Close()
 		if res != nil {
 			res.Body.Close()
+		}
+		select {
+		case <-gotProtoError:
+		default:
+			t.Errorf("didn't get stream protocol error")
+		}
+
+		if n, err := res1.Body.Read(make([]byte, 10)); err != io.EOF || n != 0 {
+			t.Errorf("unexpected body read %v, %v", n, err)
 		}
 
 		pool.mu.Lock()
@@ -5322,49 +5354,68 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 		if pool.getErrs != 1 {
 			t.Errorf("pool get errors = %v; want 1", pool.getErrs)
 		}
-		if len(pool.got) == 1 {
+		if len(pool.got) == 2 {
+			if pool.got[0] != pool.got[1] {
+				t.Errorf("requests went on different connections")
+			}
 			cc := pool.got[0]
 			cc.mu.Lock()
 			if !cc.doNotReuse {
 				t.Error("ClientConn not marked doNotReuse")
 			}
 			cc.mu.Unlock()
+
+			select {
+			case <-cc.readerDone:
+			case <-time.After(5 * time.Second):
+				t.Errorf("timeout waiting for reader to be done")
+			}
 		} else {
-			t.Errorf("pool get success = %v; want 1", len(pool.got))
+			t.Errorf("pool get success = %v; want 2", len(pool.got))
 		}
 		return nil
 	}
 	ct.server = func() error {
 		ct.greet()
 		var sentErr bool
+		var numHeaders int
+		var firstStreamID uint32
+
+		var hbuf bytes.Buffer
+		enc := hpack.NewEncoder(&hbuf)
+
 		for {
 			f, err := ct.fr.ReadFrame()
+			if err == io.EOF {
+				// Client hung up on us, as it should at the end.
+				return nil
+			}
 			if err != nil {
-				select {
-				case <-done:
-					return nil
-				default:
-					return err
-				}
+				return err
 			}
 			switch f := f.(type) {
 			case *WindowUpdateFrame, *SettingsFrame:
 			case *HeadersFrame:
+				numHeaders++
+				if numHeaders == 1 {
+					firstStreamID = f.StreamID
+					hbuf.Reset()
+					enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+					enc.WriteField(hpack.HeaderField{Name: "is-long", Value: "1"})
+					ct.fr.WriteHeaders(HeadersFrameParam{
+						StreamID:      f.StreamID,
+						EndHeaders:    true,
+						EndStream:     false,
+						BlockFragment: hbuf.Bytes(),
+					})
+					continue
+				}
 				if !sentErr {
 					sentErr = true
 					ct.fr.WriteRSTStream(f.StreamID, ErrCodeProtocol)
+					ct.fr.WriteData(firstStreamID, true, nil)
 					continue
 				}
-				var buf bytes.Buffer
-				enc := hpack.NewEncoder(&buf)
-				// send headers without Trailer header
-				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
-				ct.fr.WriteHeaders(HeadersFrameParam{
-					StreamID:      f.StreamID,
-					EndHeaders:    true,
-					EndStream:     true,
-					BlockFragment: buf.Bytes(),
-				})
 			}
 		}
 		return nil
