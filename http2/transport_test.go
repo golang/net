@@ -5422,3 +5422,42 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 	}
 	ct.run()
 }
+
+func TestClientConnReservations(t *testing.T) {
+	cc := &ClientConn{
+		reqHeaderMu:          make(chan struct{}, 1),
+		streams:              make(map[uint32]*clientStream),
+		maxConcurrentStreams: initialMaxConcurrentStreams,
+		t:                    &Transport{},
+	}
+	n := 0
+	for n <= initialMaxConcurrentStreams && cc.ReserveNewRequest() {
+		n++
+	}
+	if n != initialMaxConcurrentStreams {
+		t.Errorf("did %v reservations; want %v", n, initialMaxConcurrentStreams)
+	}
+	if _, err := cc.RoundTrip(new(http.Request)); !errors.Is(err, errNilRequestURL) {
+		t.Fatalf("RoundTrip error = %v; want errNilRequestURL", err)
+	}
+	n2 := 0
+	for n2 <= 5 && cc.ReserveNewRequest() {
+		n2++
+	}
+	if n2 != 1 {
+		t.Fatalf("after one RoundTrip, did %v reservations; want 1", n2)
+	}
+
+	// Use up all the reservations
+	for i := 0; i < n; i++ {
+		cc.RoundTrip(new(http.Request))
+	}
+
+	n2 = 0
+	for n2 <= initialMaxConcurrentStreams && cc.ReserveNewRequest() {
+		n2++
+	}
+	if n2 != n {
+		t.Errorf("after reset, reservations = %v; want %v", n2, n)
+	}
+}
