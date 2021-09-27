@@ -699,6 +699,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	cc.bw = bufio.NewWriter(stickyErrWriter{c, &cc.werr})
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
+	if t.CountError != nil {
+		cc.fr.countError = t.CountError
+	}
 	cc.fr.ReadMetaHeaders = hpack.NewDecoder(initialHeaderTableSize, nil)
 	cc.fr.MaxHeaderListSize = t.maxHeaderListSize()
 
