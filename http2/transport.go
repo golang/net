@@ -862,6 +862,12 @@ func (cc *ClientConn) closeIfIdle() {
 	cc.tconn.Close()
 }
 
+func (cc *ClientConn) isDoNotReuseAndIdle() bool {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	return cc.doNotReuse && len(cc.streams) == 0
+}
+
 var shutdownEnterWaitStateHook = func() {}
 
 // Shutdown gracefully close the client connection, waiting for running streams to complete.
@@ -2267,6 +2273,9 @@ func (b transportResponseBody) Close() error {
 func (rl *clientConnReadLoop) processData(f *DataFrame) error {
 	cc := rl.cc
 	cs := cc.streamByID(f.StreamID, f.StreamEnded())
+	if f.StreamEnded() && cc.isDoNotReuseAndIdle() {
+		rl.closeWhenIdle = true
+	}
 	data := f.Data()
 	if cs == nil {
 		cc.mu.Lock()
@@ -2513,10 +2522,14 @@ func (rl *clientConnReadLoop) processWindowUpdate(f *WindowUpdateFrame) error {
 }
 
 func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
-	cs := rl.cc.streamByID(f.StreamID, true)
+	cc := rl.cc
+	cs := cc.streamByID(f.StreamID, true)
 	if cs == nil {
 		// TODO: return error if server tries to RST_STEAM an idle stream
 		return nil
+	}
+	if cc.isDoNotReuseAndIdle() {
+		rl.closeWhenIdle = true
 	}
 	select {
 	case <-cs.peerReset:
@@ -2529,9 +2542,7 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 		if f.ErrCode == ErrCodeProtocol {
 			rl.cc.SetDoNotReuse()
 			serr.Cause = errFromPeer
-			// TODO(bradfitz): increment a varz here, once Transport
-			// takes an optional interface-typed field that expvar.Map.Add
-			// implements.
+			rl.closeWhenIdle = true
 		}
 		cs.resetErr = serr
 		close(cs.peerReset)
