@@ -3437,7 +3437,6 @@ func TestTransportPingWhenReading(t *testing.T) {
 func testTransportPingWhenReading(t *testing.T, readIdleTimeout, deadline time.Duration, expectedPingCount int) {
 	var pingCount int
 	ct := newClientTester(t)
-	ct.tr.PingTimeout = 10 * time.Millisecond
 	ct.tr.ReadIdleTimeout = readIdleTimeout
 
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
