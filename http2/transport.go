@@ -2612,7 +2612,7 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 	cc := rl.cc
 	cs := cc.streamByID(f.StreamID, true)
 	if cs == nil {
-		// TODO: return error if server tries to RST_STEAM an idle stream
+		// TODO: return error if server tries to RST_STREAM an idle stream
 		return nil
 	}
 	if cc.isDoNotReuseAndIdle() {
