@@ -864,14 +864,16 @@ func (cc *ClientConn) tooIdleLocked() bool {
 // onIdleTimeout is called from a time.AfterFunc goroutine. It will
 // only be called when we're idle, but because we're coming from a new
 // goroutine, there could be a new request coming in at the same time,
-// so this simply calls the synchronized closeIfIdle to shut down this
-// connection. The timer could just call closeIfIdle, but this is more
+// so this simply calls the synchronized CloseIfIdle to shut down this
+// connection. The timer could just call CloseIfIdle, but this is more
 // clear.
 func (cc *ClientConn) onIdleTimeout() {
-	cc.closeIfIdle()
+	cc.CloseIfIdle()
 }
 
-func (cc *ClientConn) closeIfIdle() {
+// CloseIfIdle closes the client connection if it's idle.
+// exported for user-specified ClientConnPool usage.
+func (cc *ClientConn) CloseIfIdle() {
 	cc.mu.Lock()
 	if len(cc.streams) > 0 {
 		cc.mu.Unlock()
@@ -2035,7 +2037,7 @@ func (rl *clientConnReadLoop) run() error {
 			return err
 		}
 		if rl.closeWhenIdle && gotReply && maybeIdle {
-			cc.closeIfIdle()
+			cc.CloseIfIdle()
 		}
 	}
 }
