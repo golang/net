@@ -195,13 +195,13 @@ type addConnCall struct {
 
 func (c *addConnCall) run(t *Transport, key string, tc *tls.Conn) {
 	cc, err := t.NewClientConn(tc)
-	cc.getConnCalled = true // already called by the net/http package
 
 	p := c.p
 	p.mu.Lock()
 	if err != nil {
 		c.err = err
 	} else {
+		cc.getConnCalled = true // already called by the net/http package
 		p.addConnLocked(key, cc)
 	}
 	delete(p.addConnCalls, key)
