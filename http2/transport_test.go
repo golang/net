@@ -243,6 +243,68 @@ func TestTransportReusesConn_ConnClose(t *testing.T) {
 	}
 }
 
+func TestTransportGetGotConnHooks_HTTP2Transport(t *testing.T) {
+	testTransportGetGotConnHooks(t, false)
+}
+func TestTransportGetGotConnHooks_Client(t *testing.T) { testTransportGetGotConnHooks(t, true) }
+
+func testTransportGetGotConnHooks(t *testing.T, useClient bool) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.RemoteAddr)
+	}, func(s *httptest.Server) {
+		s.EnableHTTP2 = true
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	client := st.ts.Client()
+	ConfigureTransports(client.Transport.(*http.Transport))
+
+	var (
+		getConns int32
+		gotConns int32
+	)
+	for i := 0; i < 2; i++ {
+		trace := &httptrace.ClientTrace{
+			GetConn: func(hostport string) {
+				atomic.AddInt32(&getConns, 1)
+			},
+			GotConn: func(connInfo httptrace.GotConnInfo) {
+				got := atomic.AddInt32(&gotConns, 1)
+				wantReused, wantWasIdle := false, false
+				if got > 1 {
+					wantReused, wantWasIdle = true, true
+				}
+				if connInfo.Reused != wantReused || connInfo.WasIdle != wantWasIdle {
+					t.Errorf("GotConn %v: Reused=%v (want %v), WasIdle=%v (want %v)", i, connInfo.Reused, wantReused, connInfo.WasIdle, wantWasIdle)
+				}
+			},
+		}
+		req, err := http.NewRequest("GET", st.ts.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+		var res *http.Response
+		if useClient {
+			res, err = client.Do(req)
+		} else {
+			res, err = tr.RoundTrip(req)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if get := atomic.LoadInt32(&getConns); get != int32(i+1) {
+			t.Errorf("after request %v, %v calls to GetConns: want %v", i, get, i+1)
+		}
+		if got := atomic.LoadInt32(&gotConns); got != int32(i+1) {
+			t.Errorf("after request %v, %v calls to GotConns: want %v", i, got, i+1)
+		}
+	}
+}
+
 // Tests that the Transport only keeps one pending dial open per destination address.
 // https://golang.org/issue/13397
 func TestTransportGroupsPendingDials(t *testing.T) {
