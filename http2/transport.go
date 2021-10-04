@@ -1070,7 +1070,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 }
 
-// writeRequest runs for the duration of the request lifetime.
+// doRequest runs for the duration of the request lifetime.
 //
 // It sends the request and performs post-request cleanup (closing Request.Body, etc.).
 func (cs *clientStream) doRequest() {
