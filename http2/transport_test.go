@@ -5736,3 +5736,73 @@ func TestTransport300ResponseBody(t *testing.T) {
 	res.Body.Close()
 	pw.Close()
 }
+
+func TestTransportWriteByteTimeout(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {},
+		optOnlyServer,
+	)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			_, c := net.Pipe()
+			return c, nil
+		},
+		WriteByteTimeout: 1 * time.Millisecond,
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	_, err := c.Get(st.ts.URL)
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("Get on unresponsive connection: got %q; want ErrDeadlineExceeded", err)
+	}
+}
+
+type slowWriteConn struct {
+	net.Conn
+	hasWriteDeadline bool
+}
+
+func (c *slowWriteConn) SetWriteDeadline(t time.Time) error {
+	c.hasWriteDeadline = !t.IsZero()
+	return nil
+}
+
+func (c *slowWriteConn) Write(b []byte) (n int, err error) {
+	if c.hasWriteDeadline && len(b) > 1 {
+		n, err = c.Conn.Write(b[:1])
+		if err != nil {
+			return n, err
+		}
+		return n, fmt.Errorf("slow write: %w", os.ErrDeadlineExceeded)
+	}
+	return c.Conn.Write(b)
+}
+
+func TestTransportSlowWrites(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {},
+		optOnlyServer,
+	)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			cfg.InsecureSkipVerify = true
+			c, err := tls.Dial(network, addr, cfg)
+			return &slowWriteConn{Conn: c}, err
+		},
+		WriteByteTimeout: 1 * time.Millisecond,
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	const bodySize = 1 << 20
+	resp, err := c.Post(st.ts.URL, "text/foo", io.LimitReader(neverEnding('A'), bodySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+}
