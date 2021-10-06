@@ -3494,6 +3494,36 @@ func TestTransportCloseAfterLostPing(t *testing.T) {
 	ct.run()
 }
 
+func TestTransportPingWriteBlocks(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {},
+		optOnlyServer,
+	)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			s, c := net.Pipe() // unbuffered, unlike a TCP conn
+			go func() {
+				// Read initial handshake frames.
+				// Without this, we block indefinitely in newClientConn,
+				// and never get to the point of sending a PING.
+				var buf [1024]byte
+				s.Read(buf[:])
+			}()
+			return c, nil
+		},
+		PingTimeout:     1 * time.Millisecond,
+		ReadIdleTimeout: 1 * time.Millisecond,
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+	_, err := c.Get(st.ts.URL)
+	if err == nil {
+		t.Fatalf("Get = nil, want error")
+	}
+}
+
 func TestTransportPingWhenReading(t *testing.T) {
 	testCases := []struct {
 		name              string
