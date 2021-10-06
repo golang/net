@@ -82,11 +82,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) lock(now time.Time, root string) (token string, status int, err error) {
+func (h *Handler) lock(now time.Time, root string, ephemeral bool) (token string, status int, err error) {
 	token, err = h.LockSystem.Create(now, LockDetails{
 		Root:      root,
 		Duration:  infiniteTimeout,
 		ZeroDepth: true,
+		Ephemeral: ephemeral,
 	})
 	if err != nil {
 		if err == ErrLocked {
@@ -98,7 +99,7 @@ func (h *Handler) lock(now time.Time, root string) (token string, status int, er
 }
 
 func (h *Handler) speculativeLock(now time.Time, root, ifHdr string) (token string, status int, err error) {
-	token, status, err = h.lock(now, root)
+	token, status, err = h.lock(now, root, true)
 
 	// If we succeed or fail for any reason other than ErrLocked, short-circuit out
 	if err != ErrLocked {

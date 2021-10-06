@@ -122,6 +122,13 @@ type LockDetails struct {
 	// ZeroDepth is whether the lock has zero depth. If it does not have zero
 	// depth, it has infinite depth.
 	ZeroDepth bool
+	// Ephemeral is whether the lock should not be persisted to whatever is backing
+	// the locking system. For example, file-system backed LockSystems should not create
+	// a file representing the lock. This is important for operations such as MkCol, which
+	// cannot handle a non-directory file being created as part of locking it. Since we take
+	// locks to check whether a lock token is present, we need to ensure that those locks
+	// don't have side effects.
+	Ephemeral bool
 }
 
 // NewMemLS returns a new in-memory LockSystem.
