@@ -5623,3 +5623,56 @@ func TestTransportTimeoutServerHangs(t *testing.T) {
 	}
 	ct.run()
 }
+
+func TestTransportContentLengthWithoutBody(t *testing.T) {
+	contentLength := ""
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", contentLength)
+	}, optOnlyServer)
+	defer st.Close()
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	for _, test := range []struct {
+		name              string
+		contentLength     string
+		wantBody          string
+		wantErr           error
+		wantContentLength int64
+	}{
+		{
+			name:              "non-zero content length",
+			contentLength:     "42",
+			wantErr:           io.ErrUnexpectedEOF,
+			wantContentLength: 42,
+		},
+		{
+			name:              "zero content length",
+			contentLength:     "0",
+			wantErr:           nil,
+			wantContentLength: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			contentLength = test.contentLength
+
+			req, _ := http.NewRequest("GET", st.ts.URL, nil)
+			res, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			body, err := io.ReadAll(res.Body)
+
+			if err != test.wantErr {
+				t.Errorf("Expected error %v, got: %v", test.wantErr, err)
+			}
+			if len(body) > 0 {
+				t.Errorf("Expected empty body, got: %v", body)
+			}
+			if res.ContentLength != test.wantContentLength {
+				t.Errorf("Expected content length %d, got: %d", test.wantContentLength, res.ContentLength)
+			}
+		})
+	}
+}
