@@ -2637,19 +2637,24 @@ func (cc *ClientConn) Ping(ctx context.Context) error {
 		}
 		cc.mu.Unlock()
 	}
-	cc.wmu.Lock()
-	if err := cc.fr.WritePing(false, p); err != nil {
-		cc.wmu.Unlock()
-		return err
-	}
-	if err := cc.bw.Flush(); err != nil {
-		cc.wmu.Unlock()
-		return err
-	}
-	cc.wmu.Unlock()
+	errc := make(chan error, 1)
+	go func() {
+		cc.wmu.Lock()
+		defer cc.wmu.Unlock()
+		if err := cc.fr.WritePing(false, p); err != nil {
+			errc <- err
+			return
+		}
+		if err := cc.bw.Flush(); err != nil {
+			errc <- err
+			return
+		}
+	}()
 	select {
 	case <-c:
 		return nil
+	case err := <-errc:
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-cc.readerDone:
