@@ -548,6 +548,15 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 			OwnerXML:  li.Owner.InnerXML,
 			ZeroDepth: depth == 0,
 		}
+
+		if _, err := h.FileSystem.Stat(ctx, reqPath); err != nil {
+			// File doesn't exist. Guess we need to create it. Note that the lock
+			// subsystem may do so, so preemptively assume we do. This is a little racey,
+			// but there's no way to actually tell whether the act of locking a file
+			// created it or not.
+			created = true
+		}
+
 		token, err = h.LockSystem.Create(now, ld)
 		if err != nil {
 			if err == ErrLocked {
@@ -561,7 +570,8 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 			}
 		}()
 
-		// Create the resource if it didn't previously exist.
+		// Create the resource if it didn't previously exist. If lock subsystem didn't create
+		// it, we'll do so here.
 		if _, err := h.FileSystem.Stat(ctx, reqPath); err != nil {
 			f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 			if err != nil {
