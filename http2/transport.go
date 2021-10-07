@@ -2217,25 +2217,30 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 		return nil, nil
 	}
 
-	streamEnded := f.StreamEnded()
-	isHead := cs.req.Method == "HEAD"
-	if !streamEnded || isHead {
-		res.ContentLength = -1
-		if clens := res.Header["Content-Length"]; len(clens) == 1 {
-			if cl, err := strconv.ParseUint(clens[0], 10, 63); err == nil {
-				res.ContentLength = int64(cl)
-			} else {
-				// TODO: care? unlike http/1, it won't mess up our framing, so it's
-				// more safe smuggling-wise to ignore.
-			}
-		} else if len(clens) > 1 {
+	res.ContentLength = -1
+	if clens := res.Header["Content-Length"]; len(clens) == 1 {
+		if cl, err := strconv.ParseUint(clens[0], 10, 63); err == nil {
+			res.ContentLength = int64(cl)
+		} else {
 			// TODO: care? unlike http/1, it won't mess up our framing, so it's
 			// more safe smuggling-wise to ignore.
 		}
+	} else if len(clens) > 1 {
+		// TODO: care? unlike http/1, it won't mess up our framing, so it's
+		// more safe smuggling-wise to ignore.
 	}
 
-	if streamEnded || isHead {
+	if cs.req.Method == "HEAD" {
 		res.Body = noBody
+		return res, nil
+	}
+
+	if f.StreamEnded() {
+		if res.ContentLength > 0 {
+			res.Body = missingBody{}
+		} else {
+			res.Body = noBody
+		}
 		return res, nil
 	}
 
@@ -2785,6 +2790,11 @@ func (t *Transport) logf(format string, args ...interface{}) {
 }
 
 var noBody io.ReadCloser = ioutil.NopCloser(bytes.NewReader(nil))
+
+type missingBody struct{}
+
+func (missingBody) Close() error             { return nil }
+func (missingBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
 func strSliceContains(ss []string, s string) bool {
 	for _, v := range ss {
