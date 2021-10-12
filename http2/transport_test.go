@@ -5676,3 +5676,28 @@ func TestTransportContentLengthWithoutBody(t *testing.T) {
 		})
 	}
 }
+
+func TestTransportCloseResponseBodyWhileRequestBodyHangs(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		io.Copy(io.Discard, r.Body)
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	pr, pw := net.Pipe()
+	req, err := http.NewRequest("GET", st.ts.URL, pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Closing the Response's Body interrupts the blocked body read.
+	res.Body.Close()
+	pw.Close()
+}
