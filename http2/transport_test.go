@@ -934,6 +934,7 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 	}
 	ct.server = func() error {
 		ct.greet()
+		defer close(recvLen)
 		var buf bytes.Buffer
 		enc := hpack.NewEncoder(&buf)
 		var dataRecv int64
@@ -984,7 +985,7 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 				dataRecv += int64(dataLen)
 
 				if !closed && ((status != 200 && dataRecv > 0) ||
-					(status == 200 && dataRecv == bodySize)) {
+					(status == 200 && f.StreamEnded())) {
 					closed = true
 					if err := ct.fr.WriteData(f.StreamID, true, nil); err != nil {
 						return err
