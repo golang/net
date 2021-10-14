@@ -1395,7 +1395,6 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 	if cs.ID != 0 {
 		cc.forgetStreamID(cs.ID)
 	}
-	close(cs.donec)
 
 	cc.wmu.Lock()
 	werr := cc.werr
@@ -1403,6 +1402,8 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 	if werr != nil {
 		cc.Close()
 	}
+
+	close(cs.donec)
 }
 
 // awaitOpenSlotForStream waits until len(streams) < maxConcurrentStreams.
