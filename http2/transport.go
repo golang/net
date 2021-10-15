@@ -1770,7 +1770,8 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		}
 		for _, v := range vv {
 			if !httpguts.ValidHeaderFieldValue(v) {
-				return nil, fmt.Errorf("invalid HTTP header value %q for header %q", v, k)
+				// Don't include the value in the error, because it may be sensitive.
+				return nil, fmt.Errorf("invalid HTTP header value for header %q", k)
 			}
 		}
 	}
