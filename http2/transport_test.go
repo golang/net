@@ -5460,7 +5460,6 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 		if got := fmt.Sprint(err); got != want {
 			t.Errorf("didn't dial again: got %#q; want %#q", got, want)
 		}
-		ct.sc.Close()
 		if res != nil {
 			res.Body.Close()
 		}
