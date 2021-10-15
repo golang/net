@@ -2000,7 +2000,13 @@ func (rl *clientConnReadLoop) cleanup() {
 	}
 	cc.closed = true
 	for _, cs := range cc.streams {
-		cs.abortStreamLocked(err)
+		select {
+		case <-cs.peerClosed:
+			// The server closed the stream before closing the conn,
+			// so no need to interrupt it.
+		default:
+			cs.abortStreamLocked(err)
+		}
 	}
 	cc.cond.Broadcast()
 	cc.mu.Unlock()
