@@ -5701,3 +5701,38 @@ func TestTransportCloseResponseBodyWhileRequestBodyHangs(t *testing.T) {
 	res.Body.Close()
 	pw.Close()
 }
+
+func TestTransport300ResponseBody(t *testing.T) {
+	reqc := make(chan struct{})
+	body := []byte("response body")
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(300)
+		w.(http.Flusher).Flush()
+		<-reqc
+		w.Write(body)
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	pr, pw := net.Pipe()
+	req, err := http.NewRequest("GET", st.ts.URL, pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(reqc)
+	got, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("error reading response body: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Errorf("got response body %q, want %q", string(got), string(body))
+	}
+	res.Body.Close()
+	pw.Close()
+}
