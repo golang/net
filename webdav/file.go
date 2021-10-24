@@ -611,7 +611,7 @@ func moveFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 	created := false
 	if _, err := fs.Stat(ctx, dst); err != nil {
 		if !os.IsNotExist(err) {
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 		}
 		created = true
 	} else if overwrite {
@@ -620,13 +620,13 @@ func moveFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 		// the server must perform a DELETE with "Depth: infinity" on the
 		// destination resource.
 		if err := fs.RemoveAll(ctx, dst); err != nil {
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 		}
 	} else {
 		return http.StatusPreconditionFailed, os.ErrExist
 	}
 	if err := fs.Rename(ctx, src, dst); err != nil {
-		return http.StatusForbidden, err
+		return handleFSError(err, http.StatusForbidden)
 	}
 	if created {
 		return http.StatusCreated, nil
@@ -672,7 +672,7 @@ func copyFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusInternalServerError, err
+		return handleFSError(err, http.StatusInternalServerError)
 	}
 	defer srcFile.Close()
 	srcStat, err := srcFile.Stat()
@@ -680,7 +680,7 @@ func copyFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusInternalServerError, err
+		return handleFSError(err, http.StatusInternalServerError)
 	}
 	srcPerm := srcStat.Mode() & os.ModePerm
 
@@ -689,25 +689,25 @@ func copyFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 		if os.IsNotExist(err) {
 			created = true
 		} else {
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 		}
 	} else {
 		if !overwrite {
 			return http.StatusPreconditionFailed, os.ErrExist
 		}
 		if err := fs.RemoveAll(ctx, dst); err != nil && !os.IsNotExist(err) {
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 		}
 	}
 
 	if srcStat.IsDir() {
 		if err := fs.Mkdir(ctx, dst, srcPerm); err != nil {
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 		}
 		if depth == infiniteDepth {
 			children, err := srcFile.Readdir(-1)
 			if err != nil {
-				return http.StatusForbidden, err
+				return handleFSError(err, http.StatusForbidden)
 			}
 			for _, c := range children {
 				name := c.Name()
@@ -727,7 +727,7 @@ func copyFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 			if os.IsNotExist(err) {
 				return http.StatusConflict, err
 			}
-			return http.StatusForbidden, err
+			return handleFSError(err, http.StatusForbidden)
 
 		}
 		_, copyErr := io.Copy(dstFile, srcFile)

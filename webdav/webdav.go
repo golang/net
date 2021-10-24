@@ -282,6 +282,16 @@ func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status 
 	return 0, nil
 }
 
+// maps errors returned from the filesystem to a set of statuses, or returns the given
+// default
+func handleFSError(err error, defaultStatus int) (int, error) {
+	if os.IsPermission(err) {
+		return http.StatusForbidden, err
+	}
+
+	return defaultStatus, err
+}
+
 func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (status int, err error) {
 	reqPath, status, err := h.stripPrefix(r.URL.Path)
 	if err != nil {
@@ -291,12 +301,12 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request) (sta
 	ctx := r.Context()
 	f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDONLY, 0)
 	if err != nil {
-		return http.StatusNotFound, err
+		return handleFSError(err, http.StatusNotFound)
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return http.StatusNotFound, err
+		return handleFSError(err, http.StatusNotFound)
 	}
 	if fi.IsDir() {
 		return http.StatusMethodNotAllowed, nil
@@ -333,10 +343,10 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return handleFSError(err, http.StatusMethodNotAllowed)
 	}
 	if err := h.FileSystem.RemoveAll(ctx, reqPath); err != nil {
-		return http.StatusMethodNotAllowed, err
+		return handleFSError(err, http.StatusMethodNotAllowed)
 	}
 
 	if status, err := h.deleteLocks(reqPath); err != nil {
@@ -361,20 +371,20 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 
 	f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
-		return http.StatusNotFound, err
+		return handleFSError(err, http.StatusNotFound)
 	}
 	_, copyErr := io.Copy(f, r.Body)
 	fi, statErr := f.Stat()
 	closeErr := f.Close()
 	// TODO(rost): Returning 405 Method Not Allowed might not be appropriate.
 	if copyErr != nil {
-		return http.StatusMethodNotAllowed, copyErr
+		return handleFSError(copyErr, http.StatusMethodNotAllowed)
 	}
 	if statErr != nil {
-		return http.StatusMethodNotAllowed, statErr
+		return handleFSError(statErr, http.StatusMethodNotAllowed)
 	}
 	if closeErr != nil {
-		return http.StatusMethodNotAllowed, closeErr
+		return handleFSError(closeErr, http.StatusMethodNotAllowed)
 	}
 	etag, err := findETag(ctx, h.FileSystem, h.LockSystem, reqPath, fi)
 	if err != nil {
@@ -404,7 +414,7 @@ func (h *Handler) handleMkcol(w http.ResponseWriter, r *http.Request) (status in
 		if os.IsNotExist(err) {
 			return http.StatusConflict, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return handleFSError(err, http.StatusMethodNotAllowed)
 	}
 	return http.StatusCreated, nil
 }
@@ -576,7 +586,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 			f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 			if err != nil {
 				// TODO: detect missing intermediate dirs and return http.StatusConflict?
-				return http.StatusInternalServerError, err
+				return handleFSError(err, http.StatusInternalServerError)
 			}
 			f.Close()
 			created = true
@@ -632,7 +642,7 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return handleFSError(err, http.StatusMethodNotAllowed)
 	}
 	depth := infiniteDepth
 	if hdr := r.Header.Get("Depth"); hdr != "" {
@@ -707,7 +717,7 @@ func (h *Handler) handleProppatch(w http.ResponseWriter, r *http.Request) (statu
 		if os.IsNotExist(err) {
 			return http.StatusNotFound, err
 		}
-		return http.StatusMethodNotAllowed, err
+		return handleFSError(err, http.StatusMethodNotAllowed)
 	}
 	patches, status, err := readProppatch(r.Body)
 	if err != nil {
