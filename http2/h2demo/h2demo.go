@@ -491,6 +491,7 @@ func serveProd() error {
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist("http1.golang.org", "http2.golang.org"),
 		Cache:      autocertcache.NewGoogleCloudStorageCache(storageClient, "golang-h2demo-autocert"),
+		Email:      "golang-dev@googlegroups.com", // for lack of a better choice.
 	}
 
 	errc := make(chan error, 2)

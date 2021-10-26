@@ -2290,7 +2290,7 @@ HTTP2-Settings    = token68
         <t>
           The purpose of this frame is to allow an endpoint to gracefully stop accepting new
           streams, while still finishing processing of previously established streams.  This enables
-          administrative actions, like server maintainance.
+          administrative actions, like server maintenance.
         </t>
         <t>
           There is an inherent race condition between an endpoint starting new streams and the

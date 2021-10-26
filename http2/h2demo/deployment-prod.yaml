@@ -1,8 +1,12 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
+  namespace: prod
   name: h2demo-deployment
 spec:
+  selector:
+    matchLabels:
+      app: h2demo
   replicas: 1
   template:
     metadata:
@@ -12,6 +16,7 @@ spec:
         container.seccomp.security.alpha.kubernetes.io/h2demo: docker/default
         container.apparmor.security.beta.kubernetes.io/h2demo: runtime/default
     spec:
+      serviceAccountName: h2demo
       containers:
       - name: h2demo
         image: gcr.io/symbolic-datum-552/h2demo:latest
