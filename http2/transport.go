@@ -2291,7 +2291,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 	} else if len(clens) > 1 {
 		// TODO: care? unlike http/1, it won't mess up our framing, so it's
 		// more safe smuggling-wise to ignore.
-	} else if f.StreamEnded() {
+	} else if f.StreamEnded() && !cs.isHead {
 		res.ContentLength = 0
 	}
 
