@@ -2576,6 +2576,12 @@ func (rl *clientConnReadLoop) endStream(cs *clientStream) {
 	// server.go's (*stream).endStream method.
 	if !cs.readClosed {
 		cs.readClosed = true
+		// Close cs.bufPipe and cs.peerClosed with cc.mu held to avoid a
+		// race condition: The caller can read io.EOF from Response.Body
+		// and close the body before we close cs.peerClosed, causing
+		// cleanupWriteRequest to send a RST_STREAM.
+		rl.cc.mu.Lock()
+		defer rl.cc.mu.Unlock()
 		cs.bufPipe.closeWithErrorAndCode(io.EOF, cs.copyTrailers)
 		close(cs.peerClosed)
 	}
