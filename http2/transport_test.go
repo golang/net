@@ -4418,9 +4418,17 @@ func BenchmarkClientResponseHeaders(b *testing.B) {
 }
 
 func activeStreams(cc *ClientConn) int {
+	count := 0
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	return len(cc.streams)
+	for _, cs := range cc.streams {
+		select {
+		case <-cs.abort:
+		default:
+			count++
+		}
+	}
+	return count
 }
 
 type closeMode int
