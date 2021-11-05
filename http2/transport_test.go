@@ -190,7 +190,7 @@ func TestTransport(t *testing.T) {
 	}
 }
 
-func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
+func testTransportReusesConns(t *testing.T, useClient, wantSame bool, modReq func(*http.Request)) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, r.RemoteAddr)
 	}, optOnlyServer, func(c net.Conn, st http.ConnState) {
@@ -198,6 +198,9 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 	})
 	defer st.Close()
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	if useClient {
+		tr.ConnPool = noDialClientConnPool{new(clientConnPool)}
+	}
 	defer tr.CloseIdleConnections()
 	get := func() string {
 		req, err := http.NewRequest("GET", st.ts.URL, nil)
@@ -205,7 +208,14 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 			t.Fatal(err)
 		}
 		modReq(req)
-		res, err := tr.RoundTrip(req)
+		var res *http.Response
+		if useClient {
+			c := st.ts.Client()
+			ConfigureTransports(c.Transport.(*http.Transport))
+			res, err = c.Do(req)
+		} else {
+			res, err = tr.RoundTrip(req)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,24 +232,39 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 	}
 	first := get()
 	second := get()
-	return first == second
+	if got := first == second; got != wantSame {
+		t.Errorf("first and second responses on same connection: %v; want %v", got, wantSame)
+	}
 }
 
 func TestTransportReusesConns(t *testing.T) {
-	if !onSameConn(t, func(*http.Request) {}) {
-		t.Errorf("first and second responses were on different connections")
-	}
-}
-
-func TestTransportReusesConn_RequestClose(t *testing.T) {
-	if onSameConn(t, func(r *http.Request) { r.Close = true }) {
-		t.Errorf("first and second responses were not on different connections")
-	}
-}
-
-func TestTransportReusesConn_ConnClose(t *testing.T) {
-	if onSameConn(t, func(r *http.Request) { r.Header.Set("Connection", "close") }) {
-		t.Errorf("first and second responses were not on different connections")
+	for _, test := range []struct {
+		name     string
+		modReq   func(*http.Request)
+		wantSame bool
+	}{{
+		name:     "ReuseConn",
+		modReq:   func(*http.Request) {},
+		wantSame: true,
+	}, {
+		name:     "RequestClose",
+		modReq:   func(r *http.Request) { r.Close = true },
+		wantSame: false,
+	}, {
+		name:     "ConnClose",
+		modReq:   func(r *http.Request) { r.Header.Set("Connection", "close") },
+		wantSame: false,
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Run("Transport", func(t *testing.T) {
+				const useClient = false
+				testTransportReusesConns(t, useClient, test.wantSame, test.modReq)
+			})
+			t.Run("Client", func(t *testing.T) {
+				const useClient = true
+				testTransportReusesConns(t, useClient, test.wantSame, test.modReq)
+			})
+		})
 	}
 }
 
