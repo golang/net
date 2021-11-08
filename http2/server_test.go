@@ -2591,6 +2591,10 @@ func TestServer_Rejects_TLS11(t *testing.T) { testRejectTLS(t, tls.VersionTLS11)
 
 func testRejectTLS(t *testing.T, max uint16) {
 	st := newServerTester(t, nil, func(c *tls.Config) {
+		// As of 1.18 the default minimum Go TLS version is
+		// 1.2. In order to test rejection of lower versions,
+		// manually set the minimum version to 1.0
+		c.MinVersion = tls.VersionTLS10
 		c.MaxVersion = max
 	})
 	defer st.Close()
