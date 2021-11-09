@@ -118,6 +118,15 @@ type Transport struct {
 	// to mean no limit.
 	MaxHeaderListSize uint32
 
+	// MaxReadFrameSize is the http2 SETTINGS_MAX_FRAME_SIZE to send in the
+	// initial settings frame. It is the size in bytes of the largest frame
+	// payload that the sender is willing to receive. If 0, no setting is
+	// sent, and the value is provided by the peer, which should be 16384
+	// according to the spec:
+	// https://datatracker.ietf.org/doc/html/rfc7540#section-6.5.2.
+	// Values are bounded in the range 16k to 16M.
+	MaxReadFrameSize uint32
+
 	// MaxDecoderHeaderTableSize optionally specifies the http2
 	// SETTINGS_HEADER_TABLE_SIZE to send in the initial settings frame. It
 	// informs the remote endpoint of the maximum size of the header compression
@@ -182,6 +191,19 @@ func (t *Transport) maxHeaderListSize() uint32 {
 		return 0
 	}
 	return t.MaxHeaderListSize
+}
+
+func (t *Transport) maxFrameReadSize() uint32 {
+	if t.MaxReadFrameSize == 0 {
+		return 0 // use the default provided by the peer
+	}
+	if t.MaxReadFrameSize < minMaxFrameSize {
+		return minMaxFrameSize
+	}
+	if t.MaxReadFrameSize > maxFrameSize {
+		return maxFrameSize
+	}
+	return t.MaxReadFrameSize
 }
 
 func (t *Transport) disableCompression() bool {
@@ -749,6 +771,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	})
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
+	if t.maxFrameReadSize() != 0 {
+		cc.fr.SetMaxReadFrameSize(t.maxFrameReadSize())
+	}
 	if t.CountError != nil {
 		cc.fr.countError = t.CountError
 	}
@@ -772,6 +797,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	initialSettings := []Setting{
 		{ID: SettingEnablePush, Val: 0},
 		{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
+	}
+	if max := t.maxFrameReadSize(); max != 0 {
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: max})
 	}
 	if max := t.maxHeaderListSize(); max != 0 {
 		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
