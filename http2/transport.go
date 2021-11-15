@@ -1244,6 +1244,7 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 			req.Header["Expect"],
 			"100-continue") {
 		continueTimeout = 0
+	} else if continueTimeout != 0 {
 		cs.on100 = make(chan struct{}, 1)
 	}
 

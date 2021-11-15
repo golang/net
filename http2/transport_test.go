@@ -5109,6 +5109,55 @@ func TestTransportServerResetStreamAtHeaders(t *testing.T) {
 	res.Body.Close()
 }
 
+func TestTransportExpectContinue(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		return
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &http.Transport{
+		TLSClientConfig:       tlsConfigInsecure,
+		MaxConnsPerHost:       1,
+		ExpectContinueTimeout: 10 * time.Second,
+	}
+
+	err := ConfigureTransport(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	reqCh := make(chan error)
+	startTime := time.Now()
+
+	go func() {
+		req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader("hello"))
+		if err != nil {
+			reqCh <- err
+			return
+		}
+		req.Header.Set("Expect", "100-continue")
+		res, err := client.Do(req)
+		if err != nil {
+			reqCh <- err
+			return
+		}
+		reqCh <- res.Body.Close()
+	}()
+
+	err = <-reqCh
+	if err != nil {
+		t.Fatal(err)
+	}
+	delta := time.Since(startTime)
+	if delta >= tr.ExpectContinueTimeout {
+		t.Error("Request didn't resume after receiving 100 continue")
+	}
+}
+
 type closeChecker struct {
 	io.ReadCloser
 	closed chan struct{}
