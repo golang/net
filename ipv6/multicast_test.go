@@ -10,7 +10,6 @@ import (
 	"os"
 	"runtime"
 	"testing"
-	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
@@ -98,9 +97,6 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
-				t.Fatal(err)
-			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 				t.Fatal(err)
 			}
 			cm.HopLimit = i + 1
@@ -238,9 +234,6 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
-				t.Fatal(err)
-			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 				t.Fatal(err)
 			}
 			cm.HopLimit = i + 1
