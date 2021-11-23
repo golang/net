@@ -190,7 +190,7 @@ func TestTransport(t *testing.T) {
 	}
 }
 
-func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
+func testTransportReusesConns(t *testing.T, useClient, wantSame bool, modReq func(*http.Request)) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, r.RemoteAddr)
 	}, optOnlyServer, func(c net.Conn, st http.ConnState) {
@@ -198,6 +198,9 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 	})
 	defer st.Close()
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	if useClient {
+		tr.ConnPool = noDialClientConnPool{new(clientConnPool)}
+	}
 	defer tr.CloseIdleConnections()
 	get := func() string {
 		req, err := http.NewRequest("GET", st.ts.URL, nil)
@@ -205,7 +208,14 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 			t.Fatal(err)
 		}
 		modReq(req)
-		res, err := tr.RoundTrip(req)
+		var res *http.Response
+		if useClient {
+			c := st.ts.Client()
+			ConfigureTransports(c.Transport.(*http.Transport))
+			res, err = c.Do(req)
+		} else {
+			res, err = tr.RoundTrip(req)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,24 +232,39 @@ func onSameConn(t *testing.T, modReq func(*http.Request)) bool {
 	}
 	first := get()
 	second := get()
-	return first == second
+	if got := first == second; got != wantSame {
+		t.Errorf("first and second responses on same connection: %v; want %v", got, wantSame)
+	}
 }
 
 func TestTransportReusesConns(t *testing.T) {
-	if !onSameConn(t, func(*http.Request) {}) {
-		t.Errorf("first and second responses were on different connections")
-	}
-}
-
-func TestTransportReusesConn_RequestClose(t *testing.T) {
-	if onSameConn(t, func(r *http.Request) { r.Close = true }) {
-		t.Errorf("first and second responses were not on different connections")
-	}
-}
-
-func TestTransportReusesConn_ConnClose(t *testing.T) {
-	if onSameConn(t, func(r *http.Request) { r.Header.Set("Connection", "close") }) {
-		t.Errorf("first and second responses were not on different connections")
+	for _, test := range []struct {
+		name     string
+		modReq   func(*http.Request)
+		wantSame bool
+	}{{
+		name:     "ReuseConn",
+		modReq:   func(*http.Request) {},
+		wantSame: true,
+	}, {
+		name:     "RequestClose",
+		modReq:   func(r *http.Request) { r.Close = true },
+		wantSame: false,
+	}, {
+		name:     "ConnClose",
+		modReq:   func(r *http.Request) { r.Header.Set("Connection", "close") },
+		wantSame: false,
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Run("Transport", func(t *testing.T) {
+				const useClient = false
+				testTransportReusesConns(t, useClient, test.wantSame, test.modReq)
+			})
+			t.Run("Client", func(t *testing.T) {
+				const useClient = true
+				testTransportReusesConns(t, useClient, test.wantSame, test.modReq)
+			})
+		})
 	}
 }
 
@@ -4418,9 +4443,17 @@ func BenchmarkClientResponseHeaders(b *testing.B) {
 }
 
 func activeStreams(cc *ClientConn) int {
+	count := 0
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	return len(cc.streams)
+	for _, cs := range cc.streams {
+		select {
+		case <-cs.abort:
+		default:
+			count++
+		}
+	}
+	return count
 }
 
 type closeMode int
@@ -5735,4 +5768,74 @@ func TestTransport300ResponseBody(t *testing.T) {
 	}
 	res.Body.Close()
 	pw.Close()
+}
+
+func TestTransportWriteByteTimeout(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {},
+		optOnlyServer,
+	)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			_, c := net.Pipe()
+			return c, nil
+		},
+		WriteByteTimeout: 1 * time.Millisecond,
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	_, err := c.Get(st.ts.URL)
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("Get on unresponsive connection: got %q; want ErrDeadlineExceeded", err)
+	}
+}
+
+type slowWriteConn struct {
+	net.Conn
+	hasWriteDeadline bool
+}
+
+func (c *slowWriteConn) SetWriteDeadline(t time.Time) error {
+	c.hasWriteDeadline = !t.IsZero()
+	return nil
+}
+
+func (c *slowWriteConn) Write(b []byte) (n int, err error) {
+	if c.hasWriteDeadline && len(b) > 1 {
+		n, err = c.Conn.Write(b[:1])
+		if err != nil {
+			return n, err
+		}
+		return n, fmt.Errorf("slow write: %w", os.ErrDeadlineExceeded)
+	}
+	return c.Conn.Write(b)
+}
+
+func TestTransportSlowWrites(t *testing.T) {
+	st := newServerTester(t,
+		func(w http.ResponseWriter, r *http.Request) {},
+		optOnlyServer,
+	)
+	defer st.Close()
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			cfg.InsecureSkipVerify = true
+			c, err := tls.Dial(network, addr, cfg)
+			return &slowWriteConn{Conn: c}, err
+		},
+		WriteByteTimeout: 1 * time.Millisecond,
+	}
+	defer tr.CloseIdleConnections()
+	c := &http.Client{Transport: tr}
+
+	const bodySize = 1 << 20
+	resp, err := c.Post(st.ts.URL, "text/foo", io.LimitReader(neverEnding('A'), bodySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
 }
