@@ -20,6 +20,10 @@ func supportsIPv6MulticastDeliveryOnLoopback() (string, bool) {
 		// kernels don't deliver link-local scoped multicast
 		// packets correctly.
 		return fmt.Sprintf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH), false
+	case "openbsd":
+		// Multicast packets don't seem to be delivered locally.
+		// Issue 42064.
+		return fmt.Sprintf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH), false
 	default:
 		return "", true
 	}
