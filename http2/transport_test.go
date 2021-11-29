@@ -5109,6 +5109,96 @@ func TestTransportServerResetStreamAtHeaders(t *testing.T) {
 	res.Body.Close()
 }
 
+type trackingReader struct {
+	rdr     io.Reader
+	wasRead uint32
+}
+
+func (tr *trackingReader) Read(p []byte) (int, error) {
+	atomic.StoreUint32(&tr.wasRead, 1)
+	return tr.rdr.Read(p)
+}
+
+func (tr *trackingReader) WasRead() bool {
+	return atomic.LoadUint32(&tr.wasRead) != 0
+}
+
+func TestTransportExpectContinue(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reject":
+			w.WriteHeader(403)
+		default:
+			io.Copy(io.Discard, r.Body)
+		}
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &http.Transport{
+		TLSClientConfig:       tlsConfigInsecure,
+		MaxConnsPerHost:       1,
+		ExpectContinueTimeout: 10 * time.Second,
+	}
+
+	err := ConfigureTransport(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	testCases := []struct {
+		Name         string
+		Path         string
+		Body         *trackingReader
+		ExpectedCode int
+		ShouldRead   bool
+	}{
+		{
+			Name:         "read-all",
+			Path:         "/",
+			Body:         &trackingReader{rdr: strings.NewReader("hello")},
+			ExpectedCode: 200,
+			ShouldRead:   true,
+		},
+		{
+			Name:         "reject",
+			Path:         "/reject",
+			Body:         &trackingReader{rdr: strings.NewReader("hello")},
+			ExpectedCode: 403,
+			ShouldRead:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			startTime := time.Now()
+
+			req, err := http.NewRequest("POST", st.ts.URL+tc.Path, tc.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Expect", "100-continue")
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+
+			if delta := time.Since(startTime); delta >= tr.ExpectContinueTimeout {
+				t.Error("Request didn't finish before expect continue timeout")
+			}
+			if res.StatusCode != tc.ExpectedCode {
+				t.Errorf("Unexpected status code, got %d, expected %d", res.StatusCode, tc.ExpectedCode)
+			}
+			if tc.Body.WasRead() != tc.ShouldRead {
+				t.Errorf("Unexpected read status, got %v, expected %v", tc.Body.WasRead(), tc.ShouldRead)
+			}
+		})
+	}
+}
+
 type closeChecker struct {
 	io.ReadCloser
 	closed chan struct{}
