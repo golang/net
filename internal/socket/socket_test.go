@@ -181,84 +181,99 @@ func TestUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("Message", func(t *testing.T) {
-		data := []byte("HELLO-R-U-THERE")
-		wm := socket.Message{
-			Buffers: bytes.SplitAfter(data, []byte("-")),
-			Addr:    c.LocalAddr(),
-		}
-		if err := cc.SendMsg(&wm, 0); err != nil {
-			t.Fatal(err)
-		}
-		b := make([]byte, 32)
-		rm := socket.Message{
-			Buffers: [][]byte{b[:1], b[1:3], b[3:7], b[7:11], b[11:]},
-		}
-		if err := cc.RecvMsg(&rm, 0); err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(b[:rm.N], data) {
-			t.Fatalf("got %#v; want %#v", b[:rm.N], data)
-		}
-	})
-	t.Run("Message-dialed", func(t *testing.T) {
-		data := []byte("HELLO-R-U-THERE")
-		wm := socket.Message{
-			Buffers: bytes.SplitAfter(data, []byte("-")),
-			Addr:    nil,
-		}
-		if err := ccDialed.SendMsg(&wm, 0); err != nil {
-			t.Fatal(err)
-		}
-		b := make([]byte, 32)
-		rm := socket.Message{
-			Buffers: [][]byte{b[:1], b[1:3], b[3:7], b[7:11], b[11:]},
-		}
-		if err := cc.RecvMsg(&rm, 0); err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(b[:rm.N], data) {
-			t.Fatalf("got %#v; want %#v", b[:rm.N], data)
-		}
-	})
+	const data = "HELLO-R-U-THERE"
+	messageTests := []struct {
+		name string
+		conn *socket.Conn
+		dest net.Addr
+	}{
+		{
+			name: "Message",
+			conn: cc,
+			dest: c.LocalAddr(),
+		},
+		{
+			name: "Message-dialed",
+			conn: ccDialed,
+			dest: nil,
+		},
+	}
+	for _, tt := range messageTests {
+		t.Run(tt.name, func(t *testing.T) {
+			wm := socket.Message{
+				Buffers: bytes.SplitAfter([]byte(data), []byte("-")),
+				Addr:    tt.dest,
+			}
+			if err := tt.conn.SendMsg(&wm, 0); err != nil {
+				t.Fatal(err)
+			}
+			b := make([]byte, 32)
+			rm := socket.Message{
+				Buffers: [][]byte{b[:1], b[1:3], b[3:7], b[7:11], b[11:]},
+			}
+			if err := cc.RecvMsg(&rm, 0); err != nil {
+				t.Fatal(err)
+			}
+			received := string(b[:rm.N])
+			if received != data {
+				t.Fatalf("Roundtrip SendMsg/RecvMsg got %q; want %q", received, data)
+			}
+		})
+	}
 
 	switch runtime.GOOS {
 	case "android", "linux":
-		t.Run("Messages", func(t *testing.T) {
-			data := []byte("HELLO-R-U-THERE")
-			wmbs := bytes.SplitAfter(data, []byte("-"))
-			wms := []socket.Message{
-				{Buffers: wmbs[:1], Addr: c.LocalAddr()},
-				{Buffers: wmbs[1:], Addr: c.LocalAddr()},
-			}
-			n, err := cc.SendMsgs(wms, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n != len(wms) {
-				t.Fatalf("got %d; want %d", n, len(wms))
-			}
-			b := make([]byte, 32)
-			rmbs := [][][]byte{{b[:len(wmbs[0])]}, {b[len(wmbs[0]):]}}
-			rms := []socket.Message{
-				{Buffers: rmbs[0]},
-				{Buffers: rmbs[1]},
-			}
-			n, err = cc.RecvMsgs(rms, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n != len(rms) {
-				t.Fatalf("got %d; want %d", n, len(rms))
-			}
-			nn := 0
-			for i := 0; i < n; i++ {
-				nn += rms[i].N
-			}
-			if !bytes.Equal(b[:nn], data) {
-				t.Fatalf("got %#v; want %#v", b[:nn], data)
-			}
-		})
+		messagesTests := []struct {
+			name string
+			conn *socket.Conn
+			dest net.Addr
+		}{
+			{
+				name: "Messages",
+				conn: cc,
+				dest: c.LocalAddr(),
+			},
+			{
+				name: "Messages-dialed",
+				conn: ccDialed,
+				dest: nil,
+			},
+		}
+		for _, tt := range messagesTests {
+			t.Run(tt.name, func(t *testing.T) {
+				wmbs := bytes.SplitAfter([]byte(data), []byte("-"))
+				wms := []socket.Message{
+					{Buffers: wmbs[:1], Addr: tt.dest},
+					{Buffers: wmbs[1:], Addr: tt.dest},
+				}
+				n, err := tt.conn.SendMsgs(wms, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if n != len(wms) {
+					t.Fatalf("SendMsgs(%#v) != %d; want %d", wms, n, len(wms))
+				}
+				rmbs := [][]byte{make([]byte, 32), make([]byte, 32)}
+				rms := []socket.Message{
+					{Buffers: [][]byte{rmbs[0]}},
+					{Buffers: [][]byte{rmbs[1][:1], rmbs[1][1:3], rmbs[1][3:7], rmbs[1][7:11], rmbs[1][11:]}},
+				}
+				nrecv := 0
+				for nrecv < len(rms) {
+					n, err := cc.RecvMsgs(rms[nrecv:], 0)
+					if err != nil {
+						t.Fatal(err)
+					}
+					nrecv += n
+				}
+				received0, received1 := string(rmbs[0][:rms[0].N]), string(rmbs[1][:rms[1].N])
+				assembled := received0 + received1
+				assembledReordered := received1 + received0
+				if assembled != data && assembledReordered != data {
+					t.Fatalf("Roundtrip SendMsgs/RecvMsgs got %q / %q; want %q", assembled, assembledReordered, data)
+				}
+			})
+		}
 		t.Run("Messages-undialed-no-dst", func(t *testing.T) {
 			// sending without destination address should fail.
 			// This checks that the internally recycled buffers are reset correctly.
@@ -271,41 +286,6 @@ func TestUDP(t *testing.T) {
 			n, err := cc.SendMsgs(wms, 0)
 			if n != 0 && err == nil {
 				t.Fatal("expected error, destination address required")
-			}
-		})
-		t.Run("Messages-dialed", func(t *testing.T) {
-			data := []byte("HELLO-R-U-THERE")
-			wmbs := bytes.SplitAfter(data, []byte("-"))
-			wms := []socket.Message{
-				{Buffers: wmbs[:1], Addr: nil},
-				{Buffers: wmbs[1:], Addr: nil},
-			}
-			n, err := ccDialed.SendMsgs(wms, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n != len(wms) {
-				t.Fatalf("got %d; want %d", n, len(wms))
-			}
-			b := make([]byte, 32)
-			rmbs := [][][]byte{{b[:len(wmbs[0])]}, {b[len(wmbs[0]):]}}
-			rms := []socket.Message{
-				{Buffers: rmbs[0]},
-				{Buffers: rmbs[1]},
-			}
-			n, err = cc.RecvMsgs(rms, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n != len(rms) {
-				t.Fatalf("got %d; want %d", n, len(rms))
-			}
-			nn := 0
-			for i := 0; i < n; i++ {
-				nn += rms[i].N
-			}
-			if !bytes.Equal(b[:nn], data) {
-				t.Fatalf("got %#v; want %#v", b[:nn], data)
 			}
 		})
 	}
