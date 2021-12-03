@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,10 @@ const defaultMaxOpenFiles = 256
 const timeout = 5 * time.Second
 
 func TestLimitListener(t *testing.T) {
+	if runtime.GOOS == "plan9" {
+		t.Skipf("skipping test known to be flaky on plan9 (https://golang.org/issue/22926)")
+	}
+
 	const max = 5
 	attempts := (maxOpenFiles() - max) / 2
 	if attempts > 256 { // maximum length of accept queue is 128 by default
