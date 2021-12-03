@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
@@ -100,11 +101,24 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 				t.Fatal(err)
 			}
 			cm.HopLimit = i + 1
-			if n, err := p.WriteTo(wb, &cm, &grp); err != nil {
-				t.Fatal(err)
-			} else if n != len(wb) {
-				t.Fatal(err)
+
+			backoff := time.Millisecond
+			for {
+				n, err := p.WriteTo(wb, &cm, &grp)
+				if err != nil {
+					if n == 0 && isENOBUFS(err) {
+						time.Sleep(backoff)
+						backoff *= 2
+						continue
+					}
+					t.Fatal(err)
+				}
+				if n != len(wb) {
+					t.Fatalf("wrote %v bytes; want %v", n, len(wb))
+				}
+				break
 			}
+
 			rb := make([]byte, 128)
 			if n, _, _, err := p.ReadFrom(rb); err != nil {
 				t.Fatal(err)
