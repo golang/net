@@ -330,29 +330,50 @@ func testTransportGetGotConnHooks(t *testing.T, useClient bool) {
 	}
 }
 
+type testNetConn struct {
+	net.Conn
+	closed  bool
+	onClose func()
+}
+
+func (c *testNetConn) Close() error {
+	if !c.closed {
+		// We can call Close multiple times on the same net.Conn.
+		c.onClose()
+	}
+	c.closed = true
+	return c.Conn.Close()
+}
+
 // Tests that the Transport only keeps one pending dial open per destination address.
 // https://golang.org/issue/13397
 func TestTransportGroupsPendingDials(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, r.RemoteAddr)
 	}, optOnlyServer)
 	defer st.Close()
+	var (
+		mu         sync.Mutex
+		dialCount  int
+		closeCount int
+	)
 	tr := &Transport{
 		TLSClientConfig: tlsConfigInsecure,
-	}
-	defer tr.CloseIdleConnections()
-	var (
-		mu    sync.Mutex
-		dials = map[string]int{}
-	)
-	var gotConnCnt int32
-	trace := &httptrace.ClientTrace{
-		GotConn: func(connInfo httptrace.GotConnInfo) {
-			if !connInfo.Reused {
-				atomic.AddInt32(&gotConnCnt, 1)
-			}
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			mu.Lock()
+			dialCount++
+			mu.Unlock()
+			c, err := tls.Dial(network, addr, cfg)
+			return &testNetConn{
+				Conn: c,
+				onClose: func() {
+					mu.Lock()
+					closeCount++
+					mu.Unlock()
+				},
+			}, err
 		},
 	}
+	defer tr.CloseIdleConnections()
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -363,53 +384,21 @@ func TestTransportGroupsPendingDials(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 			res, err := tr.RoundTrip(req)
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			defer res.Body.Close()
-			slurp, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				t.Errorf("Body read: %v", err)
-			}
-			addr := strings.TrimSpace(string(slurp))
-			if addr == "" {
-				t.Errorf("didn't get an addr in response")
-			}
-			mu.Lock()
-			dials[addr]++
-			mu.Unlock()
+			res.Body.Close()
 		}()
 	}
 	wg.Wait()
-	if len(dials) != 1 {
-		t.Errorf("saw %d dials; want 1: %v", len(dials), dials)
-	}
 	tr.CloseIdleConnections()
-	if err := retry(50, 10*time.Millisecond, func() error {
-		cp, ok := tr.connPool().(*clientConnPool)
-		if !ok {
-			return fmt.Errorf("Conn pool is %T; want *clientConnPool", tr.connPool())
-		}
-		cp.mu.Lock()
-		defer cp.mu.Unlock()
-		if len(cp.dialing) != 0 {
-			return fmt.Errorf("dialing map = %v; want empty", cp.dialing)
-		}
-		if len(cp.conns) != 0 {
-			return fmt.Errorf("conns = %v; want empty", cp.conns)
-		}
-		if len(cp.keys) != 0 {
-			return fmt.Errorf("keys = %v; want empty", cp.keys)
-		}
-		return nil
-	}); err != nil {
-		t.Errorf("State of pool after CloseIdleConnections: %v", err)
+	if dialCount != 1 {
+		t.Errorf("saw %d dials; want 1", dialCount)
 	}
-	if got, want := gotConnCnt, int32(1); got != want {
-		t.Errorf("Too many got connections: %d", gotConnCnt)
+	if closeCount != 1 {
+		t.Errorf("saw %d closes; want 1", closeCount)
 	}
 }
 
