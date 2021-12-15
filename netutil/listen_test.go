@@ -5,73 +5,104 @@
 package netutil
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
-	"net/http"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-const defaultMaxOpenFiles = 256
-const timeout = 5 * time.Second
-
 func TestLimitListener(t *testing.T) {
-	if runtime.GOOS == "plan9" {
-		t.Skipf("skipping test known to be flaky on plan9 (https://golang.org/issue/22926)")
-	}
-
-	const max = 5
-	attempts := (maxOpenFiles() - max) / 2
-	if attempts > 256 { // maximum length of accept queue is 128 by default
-		attempts = 256
-	}
+	const (
+		max      = 5
+		attempts = max * 2
+		msg      = "bye\n"
+	)
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
 	l = LimitListener(l, max)
 
-	var open int32
-	go http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if n := atomic.AddInt32(&open, 1); n > max {
-			t.Errorf("%d open connections, want <= %d", n, max)
-		}
-		defer atomic.AddInt32(&open, -1)
-		time.Sleep(10 * time.Millisecond)
-		fmt.Fprint(w, "some body")
-	}))
-
 	var wg sync.WaitGroup
-	var failed int32
-	for i := 0; i < attempts; i++ {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		accepted := 0
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				break
+			}
+			accepted++
+			io.WriteString(c, msg)
+
+			defer c.Close() // Leave c open until the listener is closed.
+		}
+		if accepted > max {
+			t.Errorf("accepted %d simultaneous connections; want at most %d", accepted, max)
+		}
+	}()
+
+	// connc keeps the client end of the dialed connections alive until the
+	// test completes.
+	connc := make(chan []net.Conn, 1)
+	connc <- nil
+
+	dialCtx, cancelDial := context.WithCancel(context.Background())
+	defer cancelDial()
+	dialer := &net.Dialer{}
+
+	var served int32
+	for n := attempts; n > 0; n-- {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c := http.Client{Timeout: 3 * time.Second}
-			r, err := c.Get("http://" + l.Addr().String())
+
+			c, err := dialer.DialContext(dialCtx, l.Addr().Network(), l.Addr().String())
 			if err != nil {
 				t.Log(err)
-				atomic.AddInt32(&failed, 1)
 				return
 			}
-			defer r.Body.Close()
-			io.Copy(ioutil.Discard, r.Body)
+			defer c.Close()
+
+			// Keep this end of the connection alive until after the Listener
+			// finishes.
+			conns := append(<-connc, c)
+			if len(conns) == max {
+				go func() {
+					// Give the server a bit of time to make sure it doesn't exceed its
+					// limit after serving this connection, then cancel the remaining
+					// Dials (if any).
+					time.Sleep(10 * time.Millisecond)
+					cancelDial()
+					l.Close()
+				}()
+			}
+			connc <- conns
+
+			b := make([]byte, len(msg))
+			if n, err := c.Read(b); n < len(b) {
+				t.Log(err)
+				return
+			}
+			atomic.AddInt32(&served, 1)
 		}()
 	}
 	wg.Wait()
 
-	// We expect some Gets to fail as the kernel's accept queue is filled,
-	// but most should succeed.
-	if int(failed) >= attempts/2 {
-		t.Errorf("%d requests failed within %d attempts", failed, attempts)
+	conns := <-connc
+	for _, c := range conns {
+		c.Close()
+	}
+	t.Logf("with limit %d, served %d connections (of %d dialed, %d attempted)", max, served, len(conns), attempts)
+	if served != max {
+		t.Errorf("expected exactly %d served", max)
 	}
 }
 
@@ -87,27 +118,13 @@ var errFake = errors.New("fake error from errorListener")
 
 // This used to hang.
 func TestLimitListenerError(t *testing.T) {
-	errCh := make(chan error, 1)
-	go func() {
-		defer close(errCh)
-		const n = 2
-		ll := LimitListener(errorListener{}, n)
-		for i := 0; i < n+1; i++ {
-			_, err := ll.Accept()
-			if err != errFake {
-				errCh <- fmt.Errorf("Accept error = %v; want errFake", err)
-				return
-			}
+	const n = 2
+	ll := LimitListener(errorListener{}, n)
+	for i := 0; i < n+1; i++ {
+		_, err := ll.Accept()
+		if err != errFake {
+			t.Fatalf("Accept error = %v; want errFake", err)
 		}
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("server: %v", err)
-		}
-	case <-time.After(timeout):
-		t.Fatal("timeout. deadlock?")
 	}
 }
 
@@ -122,7 +139,7 @@ func TestLimitListenerClose(t *testing.T) {
 	errCh := make(chan error)
 	go func() {
 		defer close(errCh)
-		c, err := net.DialTimeout("tcp", ln.Addr().String(), timeout)
+		c, err := net.Dial(ln.Addr().Network(), ln.Addr().String())
 		if err != nil {
 			errCh <- err
 			return
@@ -138,26 +155,21 @@ func TestLimitListenerClose(t *testing.T) {
 
 	err = <-errCh
 	if err != nil {
-		t.Fatalf("DialTimeout: %v", err)
+		t.Fatalf("Dial: %v", err)
 	}
 
-	acceptDone := make(chan struct{})
-	go func() {
-		c, err := ln.Accept()
-		if err == nil {
-			c.Close()
-			t.Errorf("Unexpected successful Accept()")
-		}
-		close(acceptDone)
-	}()
+	// Allow the subsequent Accept to block before closing the listener.
+	// (Accept should unblock and return.)
+	timer := time.AfterFunc(10*time.Millisecond, func() {
+		ln.Close()
+	})
 
-	// Wait a tiny bit to ensure the Accept() is blocking.
-	time.Sleep(10 * time.Millisecond)
-	ln.Close()
-
-	select {
-	case <-acceptDone:
-	case <-time.After(timeout):
-		t.Fatalf("Accept() still blocking")
+	c, err = ln.Accept()
+	if err == nil {
+		c.Close()
+		t.Errorf("Unexpected successful Accept()")
+	}
+	if timer.Stop() {
+		t.Errorf("Accept returned before listener closed: %v", err)
 	}
 }
