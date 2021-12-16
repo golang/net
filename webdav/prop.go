@@ -311,7 +311,7 @@ loop:
 		// If the error is a permission error or the file is a directory, return permission
 		// denied. We check the directory case because some file systems do not support
 		// writing to directories.
-		if errors.Is(err, os.ErrPermission) || (statErr == nil && stat.IsDir()) {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) || (statErr == nil && stat.IsDir()) {
 			return patchesForbidden(patches), nil
 		}
 		return nil, err
