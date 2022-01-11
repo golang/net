@@ -863,7 +863,7 @@ func (ct *clientTester) run() {
 }
 
 func (ct *clientTester) readFrame() (Frame, error) {
-	return readFrameTimeout(ct.fr, 2*time.Second)
+	return ct.fr.ReadFrame()
 }
 
 func (ct *clientTester) firstHeaders() (*HeadersFrame, error) {

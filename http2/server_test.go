@@ -478,31 +478,8 @@ func (st *serverTester) writeDataPadded(streamID uint32, endStream bool, data, p
 	}
 }
 
-func readFrameTimeout(fr *Framer, wait time.Duration) (Frame, error) {
-	ch := make(chan interface{}, 1)
-	go func() {
-		fr, err := fr.ReadFrame()
-		if err != nil {
-			ch <- err
-		} else {
-			ch <- fr
-		}
-	}()
-	t := time.NewTimer(wait)
-	select {
-	case v := <-ch:
-		t.Stop()
-		if fr, ok := v.(Frame); ok {
-			return fr, nil
-		}
-		return nil, v.(error)
-	case <-t.C:
-		return nil, errors.New("timeout waiting for frame")
-	}
-}
-
 func (st *serverTester) readFrame() (Frame, error) {
-	return readFrameTimeout(st.fr, 2*time.Second)
+	return st.fr.ReadFrame()
 }
 
 func (st *serverTester) wantHeaders() *HeadersFrame {
