@@ -4212,9 +4212,6 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 		},
 	}
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
 	for _, tt := range resps {
 		t.Run(tt.name, func(t *testing.T) {
 			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4225,22 +4222,32 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 			}, optOnlyServer)
 			defer st.Close()
 
+			tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+			defer tr.CloseIdleConnections()
+
 			req, _ := http.NewRequest("GET", st.ts.URL, nil)
 			res, err := tr.RoundTrip(req)
 			if err != nil {
-				t.Fatalf("Failed to fetch URL: %v", err)
+				t.Fatalf("GET %s: %v", st.ts.URL, err)
 			}
 			defer res.Body.Close()
-			if g, w := res.Header.Get("Content-Encoding"), tt.contentEncoding; g != w {
+
+			g := res.Header.Get("Content-Encoding")
+			t.Logf("%s: Content-Encoding: %s", st.ts.URL, g)
+
+			if w := tt.contentEncoding; g != w {
 				if w != nil { // The case where contentEncoding was set explicitly.
 					t.Errorf("Content-Encoding mismatch\n\tgot:  %q\n\twant: %q", g, w)
 				} else if g != "" { // "" should be the equivalent when the contentEncoding is unset.
 					t.Errorf("Unexpected Content-Encoding %q", g)
 				}
 			}
-			if g, w := res.Header.Get("Content-Type"), tt.wantContentType; g != w {
+
+			g = res.Header.Get("Content-Type")
+			if w := tt.wantContentType; g != w {
 				t.Errorf("Content-Type mismatch\n\tgot:  %q\n\twant: %q", g, w)
 			}
+			t.Logf("%s: Content-Type: %s", st.ts.URL, g)
 		})
 	}
 }
