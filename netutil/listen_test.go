@@ -203,11 +203,17 @@ func TestLimitListenerSaturation(t *testing.T) {
 		wg.Wait()
 
 		t.Logf("served %d connections (of %d dialed, %d attempted)", served, dialed, attemptsPerWave)
-		// We expect that the kernel can queue at least attemptsPerWave
-		// connections at a time (since it's only a small number), so every
-		// connection should eventually be served.
-		if served != attemptsPerWave {
-			t.Errorf("expected %d served", attemptsPerWave)
+
+		// Depending on the kernel's queueing behavior, we could get unlucky
+		// and drop one or more connections. However, we should certainly
+		// be able to serve at least max attempts out of each wave.
+		// (In the typical case, the kernel will queue all of the connections
+		// and they will all be served successfully.)
+		if dialed < max {
+			t.Errorf("expected at least %d dialed", max)
+		}
+		if served < dialed {
+			t.Errorf("expected all dialed connections to be served")
 		}
 	}
 }
