@@ -380,10 +380,10 @@ func (p *Profile) process(s string, toASCII bool) (string, error) {
 				// This should be called on NonTransitional, according to the
 				// spec, but that currently does not have any effect. Use the
 				// original profile to preserve options.
-				err = p.validateLabel(u)
+				err = p.validateLabel(u, true)
 			}
 		} else if err == nil {
-			err = p.validateLabel(label)
+			err = p.validateLabel(label, false)
 		}
 	}
 	if isBidi && p.bidirule != nil && err == nil {
@@ -707,7 +707,7 @@ var joinStates = [][numJoinTypes]joinState{
 
 // validateLabel validates the criteria from Section 4.1. Item 1, 4, and 6 are
 // already implicitly satisfied by the overall implementation.
-func (p *Profile) validateLabel(s string) (err error) {
+func (p *Profile) validateLabel(s string, hasAcePrefix bool) (err error) {
 	if s == "" {
 		if p.verifyDNSLength {
 			return &labelError{s, "A4"}
@@ -715,6 +715,9 @@ func (p *Profile) validateLabel(s string) (err error) {
 		return nil
 	}
 	if p.checkHyphens {
+		if hasAcePrefix && len(s) > 4 && s[2] == '-' && s[3] == '-' {
+			return &labelError{s, "V2"}
+		}
 		if s[0] == '-' || s[len(s)-1] == '-' {
 			return &labelError{s, "V3"}
 		}
