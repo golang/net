@@ -715,9 +715,6 @@ func (p *Profile) validateLabel(s string) (err error) {
 		return nil
 	}
 	if p.checkHyphens {
-		if len(s) > 4 && s[2] == '-' && s[3] == '-' {
-			return &labelError{s, "V2"}
-		}
 		if s[0] == '-' || s[len(s)-1] == '-' {
 			return &labelError{s, "V3"}
 		}
