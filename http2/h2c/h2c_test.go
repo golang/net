@@ -104,3 +104,79 @@ func TestContext(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func Test_convertH1ReqToH2_with_POST(t *testing.T) {
+	postBody := "Some POST Body"
+
+	r, err := http.NewRequest("POST", "http://localhost:80", bytes.NewBufferString(postBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r.Header.Set("Upgrade", "h2c")
+	r.Header.Set("Connection", "Upgrade, HTTP2-Settings")
+	r.Header.Set("HTTP2-Settings", "AAEAAEAAAAIAAAABAAMAAABkAAQBAAAAAAUAAEAA") // Some Default Settings
+	h2Bytes, _, err := convertH1ReqToH2(r)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read off the preface
+	preface := []byte(http2.ClientPreface)
+	if h2Bytes.Len() < len(preface) {
+		t.Fatal("Could not read HTTP/2 ClientPreface")
+	}
+	readPreface := h2Bytes.Next(len(preface))
+	if string(readPreface) != http2.ClientPreface {
+		t.Fatalf("Expected Preface %s but got: %s", http2.ClientPreface, string(readPreface))
+	}
+
+	framer := http2.NewFramer(nil, h2Bytes)
+
+	// Should get a SETTINGS, HEADERS, and then DATA
+	expectedFrameTypes := []http2.FrameType{http2.FrameSettings, http2.FrameHeaders, http2.FrameData}
+	for frameNumber := 0; h2Bytes.Len() > 0; {
+		frame, err := framer.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if frameNumber >= len(expectedFrameTypes) {
+			t.Errorf("Got more than %d frames, wanted only %d", len(expectedFrameTypes), len(expectedFrameTypes))
+		}
+
+		if frame.Header().Type != expectedFrameTypes[frameNumber] {
+			t.Errorf("Got FrameType %v, wanted %v", frame.Header().Type, expectedFrameTypes[frameNumber])
+		}
+
+		frameNumber += 1
+
+		switch f := frame.(type) {
+		case *http2.SettingsFrame:
+			if frameNumber != 1 {
+				t.Errorf("Got SETTINGS frame as frame #%d, wanted it as frame #1", frameNumber)
+			}
+		case *http2.HeadersFrame:
+			if frameNumber != 2 {
+				t.Errorf("Got HEADERS frame as frame #%d, wanted it as frame #2", frameNumber)
+			}
+			if f.FrameHeader.StreamID != 1 {
+				t.Fatalf("Expected StreamId 1, got %v", f.FrameHeader.StreamID)
+			}
+		case *http2.DataFrame:
+			if frameNumber != 3 {
+				t.Errorf("Got DATA frame as frame #%d, wanted it as frame #3", frameNumber)
+			}
+			if f.FrameHeader.StreamID != 1 {
+				t.Errorf("Got StreamID %v, wanted 1", f.FrameHeader.StreamID)
+			}
+
+			body := string(f.Data())
+
+			if body != postBody {
+				t.Errorf("Got DATA body %s, wanted %s", body, postBody)
+			}
+		}
+	}
+}

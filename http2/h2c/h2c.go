@@ -249,6 +249,38 @@ func convertH1ReqToH2(r *http.Request) (*bytes.Buffer, []http2.Setting, error) {
 		}
 	}
 
+	// Any request body create as DATA frames
+	if r.Body != nil && r.Body != http.NoBody {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Could not read request body: %v", err)
+		}
+
+		needOneDataFrame := len(body) < maxFrameSize
+		err = framer.WriteData(1,
+			needOneDataFrame, // end stream?
+			body)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for i := maxFrameSize; i < len(body); i += maxFrameSize {
+			if len(body)-i > maxFrameSize {
+				if err := framer.WriteData(1,
+					false, // end stream?
+					body[i:maxFrameSize]); err != nil {
+					return nil, nil, err
+				}
+			} else {
+				if err := framer.WriteData(1,
+					true, // end stream?
+					body[i:]); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+	}
+
 	return h2Bytes, settings, nil
 }
 
