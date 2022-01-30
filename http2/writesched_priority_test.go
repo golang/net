@@ -387,6 +387,29 @@ func TestPriorityPopFrom533Tree(t *testing.T) {
 	}
 }
 
+// #49741 RST_STREAM and Control frames should have more priority than data
+// frames to avoid blocking streams caused by clients not able to drain the
+// queue.
+func TestPriorityRSTFrames(t *testing.T) {
+	ws := defaultPriorityWriteScheduler()
+	ws.OpenStream(1, OpenStreamOptions{})
+
+	sc := &serverConn{maxFrameSize: 16}
+	st1 := &stream{id: 1, sc: sc}
+
+	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 16), false}, st1, nil})
+	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 16), false}, st1, nil})
+	ws.Push(makeWriteRSTStream(1))
+	// No flow-control bytes available.
+	wr, ok := ws.Pop()
+	if !ok {
+		t.Fatalf("Pop should work for control frames and not be limited by flow control")
+	}
+	if _, ok := wr.write.(StreamError); !ok {
+		t.Fatal("expected RST stream frames first", wr)
+	}
+}
+
 func TestPriorityPopFromLinearTree(t *testing.T) {
 	ws := defaultPriorityWriteScheduler()
 	ws.OpenStream(1, OpenStreamOptions{})
