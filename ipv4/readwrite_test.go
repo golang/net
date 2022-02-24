@@ -369,23 +369,37 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 		t.Fatal(err)
 	}
 
+	var firstError sync.Once
+	fatalf := func(format string, args ...interface{}) {
+		// On the first error, close the PacketConn to unblock the remaining
+		// goroutines. Suppress any further errors, which may occur simply due to
+		// closing the PacketConn.
+		first := false
+		firstError.Do(func() {
+			first = true
+			p.Close()
+		})
+		if first {
+			t.Helper()
+			t.Errorf(format, args...)
+		}
+		runtime.Goexit()
+	}
+
 	var wg sync.WaitGroup
 	reader := func() {
 		defer wg.Done()
 		b := make([]byte, 128)
 		n, cm, _, err := p.ReadFrom(b)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if !bytes.Equal(b[:n], data) {
-			t.Errorf("got %#v; want %#v", b[:n], data)
-			return
+			fatalf("got %#v; want %#v", b[:n], data)
 		}
 		s := cm.String()
 		if strings.Contains(s, ",") {
-			t.Errorf("should be space-separated values: %s", s)
-			return
+			fatalf("should be space-separated values: %s", s)
 		}
 	}
 	batchReader := func() {
@@ -398,37 +412,31 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 		}
 		n, err := p.ReadBatch(ms, 0)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if n != len(ms) {
-			t.Errorf("got %d; want %d", n, len(ms))
-			return
+			fatalf("got %d; want %d", n, len(ms))
 		}
 		var cm ipv4.ControlMessage
 		if err := cm.Parse(ms[0].OOB[:ms[0].NN]); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		var b []byte
 		if _, ok := dst.(*net.IPAddr); ok {
 			var h ipv4.Header
 			if err := h.Parse(ms[0].Buffers[0][:ms[0].N]); err != nil {
-				t.Error(err)
-				return
+				fatalf("%v", err)
 			}
 			b = ms[0].Buffers[0][h.Len:ms[0].N]
 		} else {
 			b = ms[0].Buffers[0][:ms[0].N]
 		}
 		if !bytes.Equal(b, data) {
-			t.Errorf("got %#v; want %#v", b, data)
-			return
+			fatalf("got %#v; want %#v", b, data)
 		}
 		s := cm.String()
 		if strings.Contains(s, ",") {
-			t.Errorf("should be space-separated values: %s", s)
-			return
+			fatalf("should be space-separated values: %s", s)
 		}
 	}
 	writer := func(toggle bool) {
@@ -440,17 +448,14 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		n, err := p.WriteTo(data, &cm, dst)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if n != len(data) {
-			t.Errorf("got %d; want %d", n, len(data))
-			return
+			fatalf("got %d; want %d", n, len(data))
 		}
 	}
 	batchWriter := func(toggle bool) {
@@ -462,8 +467,7 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		ms := []ipv4.Message{
 			{
@@ -474,16 +478,13 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 		}
 		n, err := p.WriteBatch(ms, 0)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if n != len(ms) {
-			t.Errorf("got %d; want %d", n, len(ms))
-			return
+			fatalf("got %d; want %d", n, len(ms))
 		}
 		if ms[0].N != len(data) {
-			t.Errorf("got %d; want %d", ms[0].N, len(data))
-			return
+			fatalf("got %d; want %d", ms[0].N, len(data))
 		}
 	}
 
