@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/ipv4"
@@ -450,12 +451,22 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 		if err := p.SetControlMessage(cf, toggle); err != nil {
 			fatalf("%v", err)
 		}
-		n, err := p.WriteTo(data, &cm, dst)
-		if err != nil {
-			fatalf("%v", err)
-		}
-		if n != len(data) {
-			fatalf("got %d; want %d", n, len(data))
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(data, &cm, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(data) {
+				fatalf("got %d; want %d", n, len(data))
+			}
+			break
 		}
 	}
 	batchWriter := func(toggle bool) {
@@ -476,15 +487,25 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv4.PacketConn, 
 				Addr:    dst,
 			},
 		}
-		n, err := p.WriteBatch(ms, 0)
-		if err != nil {
-			fatalf("%v", err)
-		}
-		if n != len(ms) {
-			fatalf("got %d; want %d", n, len(ms))
-		}
-		if ms[0].N != len(data) {
-			fatalf("got %d; want %d", ms[0].N, len(data))
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteBatch(ms, 0)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(ms) {
+				fatalf("got %d; want %d", n, len(ms))
+			}
+			if ms[0].N != len(data) {
+				fatalf("got %d; want %d", ms[0].N, len(data))
+			}
+			break
 		}
 	}
 
