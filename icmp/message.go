@@ -144,9 +144,9 @@ func ParseMessage(proto int, b []byte) (*Message, error) {
 	m := &Message{Code: int(b[1]), Checksum: int(binary.BigEndian.Uint16(b[2:4]))}
 	switch proto {
 	case iana.ProtocolICMP:
-		m.Type = ipv4.ICMPType(b[0])
+		m.Type = ipv4.ICMPType(b[20])
 	case iana.ProtocolIPv6ICMP:
-		m.Type = ipv6.ICMPType(b[0])
+		m.Type = ipv6.ICMPType(b[20])
 	default:
 		return nil, errInvalidProtocol
 	}
