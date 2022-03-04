@@ -2721,8 +2721,9 @@ func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *h
 }
 
 // TestServerWithCurl currently fails, hence the LenientCipherSuites test. See:
-//   https://github.com/tatsuhiro-t/nghttp2/issues/140 &
-//   http://sourceforge.net/p/curl/bugs/1472/
+//
+//	https://github.com/tatsuhiro-t/nghttp2/issues/140 &
+//	http://sourceforge.net/p/curl/bugs/1472/
 func TestServerWithCurl(t *testing.T)                     { testServerWithCurl(t, false) }
 func TestServerWithCurl_LenientCipherSuites(t *testing.T) { testServerWithCurl(t, true) }
 
@@ -4365,5 +4366,48 @@ func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
 
 	if bytes.Contains(st.serverLogBuf.Bytes(), []byte("PROTOCOL_ERROR")) {
 		t.Error("got protocol error")
+	}
+}
+
+func TestProtocolErrorAfterGoAway(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+	})
+	defer st.Close()
+
+	st.greet()
+	content := "some content"
+	st.writeHeaders(HeadersFrameParam{
+		StreamID: 1,
+		BlockFragment: st.encodeHeader(
+			":method", "POST",
+			"content-length", strconv.Itoa(len(content)),
+		),
+		EndStream:  false,
+		EndHeaders: true,
+	})
+	st.writeData(1, false, []byte(content[:5]))
+
+	_, err := st.readFrame()
+	if err != nil {
+		st.t.Fatal(err)
+	}
+
+	// Send a GOAWAY with ErrCodeNo, followed by a bogus window update.
+	// The server should close the connection.
+	if err := st.fr.WriteGoAway(1, ErrCodeNo, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.fr.WriteWindowUpdate(0, 1<<31-1); err != nil {
+		t.Fatal(err)
+	}
+
+	for {
+		if _, err := st.readFrame(); err != nil {
+			if err != io.EOF {
+				t.Errorf("unexpected readFrame error: %v", err)
+			}
+			break
+		}
 	}
 }
