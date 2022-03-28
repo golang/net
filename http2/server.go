@@ -2652,7 +2652,7 @@ func checkWriteHeaderCode(code int) {
 	// no equivalent bogus thing we can realistically send in HTTP/2,
 	// so we'll consistently panic instead and help people find their bugs
 	// early. (We can't return an error from WriteHeader even if we wanted to.)
-	if code <= 100 || code > 999 {
+	if code < 100 || code > 999 {
 		panic(fmt.Sprintf("invalid WriteHeader code %v", code))
 	}
 }
@@ -2673,7 +2673,14 @@ func (rws *responseWriterState) writeHeader(code int) {
 	checkWriteHeaderCode(code)
 
 	// Handle informational headers, except 100 (Continue) which is handled automatically
-	if code > 100 && code < 200 {
+	if code >= 100 && code < 200 {
+		if code == 100 && rws.body.needsContinue {
+			rws.body.needsContinue = false
+			rws.conn.write100ContinueHeaders(rws.body.stream)
+
+			return
+		}
+
 		// Per RFC 8297 we must not clear the current header map
 		h := rws.handlerHeader
 
