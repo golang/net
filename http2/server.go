@@ -2674,13 +2674,6 @@ func (rws *responseWriterState) writeHeader(code int) {
 
 	// Handle informational headers, except 100 (Continue) which is handled automatically
 	if code >= 100 && code < 200 {
-		if code == 100 && rws.body.needsContinue {
-			rws.body.needsContinue = false
-			rws.conn.write100ContinueHeaders(rws.body.stream)
-
-			return
-		}
-
 		// Per RFC 8297 we must not clear the current header map
 		h := rws.handlerHeader
 
