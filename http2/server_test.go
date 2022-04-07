@@ -346,6 +346,10 @@ func (st *serverTester) writePreface() {
 
 func (st *serverTester) writeInitialSettings() {
 	if err := st.fr.WriteSettings(); err != nil {
+		if runtime.GOOS == "openbsd" && strings.HasSuffix(err.Error(), "write: broken pipe") {
+			st.t.Logf("Error writing initial SETTINGS frame from client to server: %v", err)
+			st.t.Skipf("Skipping test with known OpenBSD failure mode. (See https://go.dev/issue/52208.)")
+		}
 		st.t.Fatalf("Error writing initial SETTINGS frame from client to server: %v", err)
 	}
 }
