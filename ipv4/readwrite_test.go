@@ -244,16 +244,31 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var firstError sync.Once
+	fatalf := func(format string, args ...interface{}) {
+		// On the first error, close the PacketConn to unblock the remaining
+		// goroutines. Suppress any further errors, which may occur simply due to
+		// closing the PacketConn.
+		first := false
+		firstError.Do(func() {
+			first = true
+			p.Close()
+		})
+		if first {
+			t.Helper()
+			t.Errorf(format, args...)
+		}
+		runtime.Goexit()
+	}
+
 	var wg sync.WaitGroup
 	reader := func() {
 		defer wg.Done()
 		rb := make([]byte, 128)
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		} else if !bytes.Equal(rb[:n], wb) {
-			t.Errorf("got %v; want %v", rb[:n], wb)
-			return
+			fatalf("got %v; want %v", rb[:n], wb)
 		} else {
 			s := cm.String()
 			if strings.Contains(s, ",") {
@@ -270,15 +285,24 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
-		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Error(err)
-			return
-		} else if n != len(wb) {
-			t.Errorf("got %d; want %d", n, len(wb))
-			return
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, &cm, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(wb) {
+				fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
 	}
 
