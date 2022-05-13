@@ -4356,3 +4356,92 @@ func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
 		t.Error("got protocol error")
 	}
 }
+
+func TestServerSendsProcessing(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusProcessing)
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "102"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "5"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
+}
+
+func TestServerSendsEarlyHints(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		h := w.Header()
+		h.Add("Link", "</style.css>; rel=preload; as=style")
+		h.Add("Link", "</script.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		h.Add("Link", "</foo.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "5"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
+}
