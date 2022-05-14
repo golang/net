@@ -5307,14 +5307,16 @@ func TestTransportFrameBufferReuse(t *testing.T) {
 			defer wg.Done()
 			req, err := http.NewRequest("POST", st.ts.URL, strings.NewReader(filler))
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				return
 			}
 			req.Header.Set("Big", filler)
 			req.Trailer = make(http.Header)
 			req.Trailer.Set("Big", filler)
 			res, err := tr.RoundTrip(req)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				return
 			}
 			if got, want := res.StatusCode, 200; got != want {
 				t.Errorf("StatusCode = %v; want %v", got, want)
@@ -5657,7 +5659,6 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 				}
 			}
 		}
-		return nil
 	}
 	ct.run()
 }
