@@ -2681,6 +2681,7 @@ func (rws *responseWriterState) writeHeader(code int) {
 			streamID:    rws.stream.id,
 			httpResCode: code,
 			h:           h,
+			noBody:      true,
 			endStream:   rws.handlerDone && !rws.hasTrailers(),
 		}) != nil {
 			rws.dirty = true
