@@ -4392,6 +4392,7 @@ func TestServerSendsProcessing(t *testing.T) {
 func TestServerSendsEarlyHints(t *testing.T) {
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		h := w.Header()
+		h.Add("Content-Length", "123")
 		h.Add("Link", "</style.css>; rel=preload; as=style")
 		h.Add("Link", "</script.js>; rel=preload; as=script")
 		w.WriteHeader(http.StatusEarlyHints)
@@ -4437,7 +4438,7 @@ func TestServerSendsEarlyHints(t *testing.T) {
 			{"link", "</script.js>; rel=preload; as=script"},
 			{"link", "</foo.js>; rel=preload; as=script"},
 			{"content-type", "text/plain; charset=utf-8"},
-			{"content-length", "5"},
+			{"content-length", "123"},
 		}
 
 		if !reflect.DeepEqual(goth, wanth) {
