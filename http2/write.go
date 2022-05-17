@@ -181,7 +181,6 @@ type writeResHeaders struct {
 	httpResCode int         // 0 means no ":status" line
 	h           http.Header // may be nil
 	trailers    []string    // if non-nil, which keys of h to write. nil means all.
-	noBody      bool        // if true, Content-Length and Transfer-Encoding will not be set
 	endStream   bool
 
 	date          string
@@ -215,12 +214,7 @@ func (w *writeResHeaders) writeFrame(ctx writeContext) error {
 		encKV(enc, ":status", httpCodeString(w.httpResCode))
 	}
 
-	var excludedKeys map[string]bool
-	if w.noBody {
-		excludedKeys = map[string]bool{"Content-Length": true, "Transfer-Encoding": true}
-	}
-
-	encodeHeaders(enc, w.h, w.trailers, excludedKeys)
+	encodeHeaders(enc, w.h, w.trailers)
 
 	if w.contentType != "" {
 		encKV(enc, "content-type", w.contentType)
@@ -279,7 +273,7 @@ func (w *writePushPromise) writeFrame(ctx writeContext) error {
 	encKV(enc, ":scheme", w.url.Scheme)
 	encKV(enc, ":authority", w.url.Host)
 	encKV(enc, ":path", w.url.RequestURI())
-	encodeHeaders(enc, w.h, nil, nil)
+	encodeHeaders(enc, w.h, nil)
 
 	headerBlock := buf.Bytes()
 	if len(headerBlock) == 0 {
@@ -335,9 +329,8 @@ func (wu writeWindowUpdate) writeFrame(ctx writeContext) error {
 }
 
 // encodeHeaders encodes an http.Header. If keys is not nil, then (k, h[k])
-// is encoded only if k is in keys. If excludeKeys is not nil, then
-// (k, k[h]) is encoded only if k is not true in excludeKeys.
-func encodeHeaders(enc *hpack.Encoder, h http.Header, keys []string, excludeKeys map[string]bool) {
+// is encoded only if k is in keys.
+func encodeHeaders(enc *hpack.Encoder, h http.Header, keys []string) {
 	if keys == nil {
 		sorter := sorterPool.Get().(*sorter)
 		// Using defer here, since the returned keys from the
@@ -347,10 +340,6 @@ func encodeHeaders(enc *hpack.Encoder, h http.Header, keys []string, excludeKeys
 		keys = sorter.Keys(h)
 	}
 	for _, k := range keys {
-		if excludeKeys[k] {
-			continue
-		}
-
 		vv := h[k]
 		k, ascii := lowerHeader(k)
 		if !ascii {

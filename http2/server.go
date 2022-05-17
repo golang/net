@@ -2677,11 +2677,18 @@ func (rws *responseWriterState) writeHeader(code int) {
 		// Per RFC 8297 we must not clear the current header map
 		h := rws.handlerHeader
 
+		_, cl := h["Content-Length"]
+		_, te := h["Transfer-Encoding"]
+		if cl || te {
+			h = h.Clone()
+			h.Del("Content-Length")
+			h.Del("Transfer-Encoding")
+		}
+
 		if rws.conn.writeHeaders(rws.stream, &writeResHeaders{
 			streamID:    rws.stream.id,
 			httpResCode: code,
 			h:           h,
-			noBody:      true,
 			endStream:   rws.handlerDone && !rws.hasTrailers(),
 		}) != nil {
 			rws.dirty = true
