@@ -5,8 +5,6 @@
 package h2c
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -19,34 +17,6 @@ import (
 
 	"golang.org/x/net/http2"
 )
-
-func TestSettingsAckSwallowWriter(t *testing.T) {
-	var buf bytes.Buffer
-	swallower := newSettingsAckSwallowWriter(bufio.NewWriter(&buf))
-	fw := http2.NewFramer(swallower, nil)
-	fw.WriteSettings(http2.Setting{ID: http2.SettingMaxFrameSize, Val: 2})
-	fw.WriteSettingsAck()
-	fw.WriteData(1, true, []byte{})
-	swallower.Flush()
-
-	fr := http2.NewFramer(nil, bufio.NewReader(&buf))
-
-	f, err := fr.ReadFrame()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if f.Header().Type != http2.FrameSettings {
-		t.Fatalf("Expected first frame to be SETTINGS. Got: %v", f.Header().Type)
-	}
-
-	f, err = fr.ReadFrame()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if f.Header().Type != http2.FrameData {
-		t.Fatalf("Expected first frame to be DATA. Got: %v", f.Header().Type)
-	}
-}
 
 func ExampleNewHandler() {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
