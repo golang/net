@@ -527,6 +527,7 @@ func BenchmarkAppendHuffmanString(b *testing.B) {
 		}
 	}
 }
+
 func TestHuffmanMaxStrLen(t *testing.T) {
 	const msg = "Some string"
 	huff := AppendHuffmanString(nil, msg)
