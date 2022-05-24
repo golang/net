@@ -19,6 +19,7 @@ import (
 type Dialer interface {
 	// Dial connects to the given address via the proxy.
 	Dial(network, addr string) (c net.Conn, err error)
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 // Auth contains authentication parameters that specific Dialers may require.
