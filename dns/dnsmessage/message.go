@@ -317,6 +317,7 @@ type Header struct {
 	Truncated          bool
 	RecursionDesired   bool
 	RecursionAvailable bool
+	AuthenticData      bool
 	RCode              RCode
 }
 
@@ -337,6 +338,9 @@ func (m *Header) pack() (id uint16, bits uint16) {
 	}
 	if m.Response {
 		bits |= headerBitQR
+	}
+	if m.AuthenticData {
+		bits |= headerBitAD
 	}
 	return
 }
@@ -379,6 +383,7 @@ const (
 	headerBitTC = 1 << 9  // truncated
 	headerBitRD = 1 << 8  // recursion desired
 	headerBitRA = 1 << 7  // recursion available
+	headerBitAD = 1 << 5  // authentic data
 )
 
 var sectionNames = map[section]string{
@@ -456,6 +461,7 @@ func (h *header) header() Header {
 		Truncated:          (h.bits & headerBitTC) != 0,
 		RecursionDesired:   (h.bits & headerBitRD) != 0,
 		RecursionAvailable: (h.bits & headerBitRA) != 0,
+		AuthenticData:      (h.bits & headerBitAD) != 0,
 		RCode:              RCode(h.bits & 0xF),
 	}
 }
