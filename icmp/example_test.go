@@ -24,7 +24,7 @@ func ExamplePacketConn_nonPrivilegedPing() {
 		return
 	}
 
-	c, err := icmp.ListenPacket("udp6", "fe80::1%en0")
+	c, err := icmp.ListenPacket("udp6", "::1")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func ExamplePacketConn_nonPrivilegedPing() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := c.WriteTo(wb, &net.UDPAddr{IP: net.ParseIP("ff02::1"), Zone: "en0"}); err != nil {
+	if _, err := c.WriteTo(wb, &net.UDPAddr{IP: net.ParseIP("::1"), Zone: "en0"}); err != nil {
 		log.Fatal(err)
 	}
 
