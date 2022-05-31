@@ -5,6 +5,7 @@
 package html
 
 import (
+	"errors"
 	"golang.org/x/net/html/atom"
 )
 
@@ -122,6 +123,18 @@ func (n *Node) RemoveChild(c *Node) {
 	c.Parent = nil
 	c.PrevSibling = nil
 	c.NextSibling = nil
+}
+
+// GetAttr iterate and get the first value of matching (case-sensitive)
+// key as a string
+func (n *Node) GetAttr(key string) (string, error) {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return attr.Val
+		}
+	}
+	
+	return "", errors.New("key not found")
 }
 
 // reparentChildren reparents all of src's child nodes to dst.
