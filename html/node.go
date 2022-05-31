@@ -130,7 +130,7 @@ func (n *Node) RemoveChild(c *Node) {
 func (n *Node) GetAttr(key string) (string, error) {
 	for _, attr := range n.Attr {
 		if attr.Key == key {
-			return attr.Val
+			return attr.Val, nil
 		}
 	}
 	
