@@ -2646,8 +2646,7 @@ func (st *serverTester) decodeHeader(headerBlock []byte) (pairs [][2]string) {
 }
 
 // testServerResponse sets up an idle HTTP/2 connection. The client function should
-// write a single request that must be handled by the handler. This waits up to 5s
-// for client to return, then up to an additional 2s for the handler to return.
+// write a single request that must be handled by the handler.
 func testServerResponse(t testing.TB,
 	handler func(http.ResponseWriter, *http.Request) error,
 	client func(*serverTester),
@@ -2657,30 +2656,20 @@ func testServerResponse(t testing.TB,
 		if r.Body == nil {
 			t.Fatal("nil Body")
 		}
-		errc <- handler(w, r)
+		err := handler(w, r)
+		select {
+		case errc <- err:
+		default:
+			t.Errorf("unexpected duplicate request")
+		}
 	})
 	defer st.Close()
 
-	donec := make(chan bool)
-	go func() {
-		defer close(donec)
-		st.greet()
-		client(st)
-	}()
+	st.greet()
+	client(st)
 
-	select {
-	case <-donec:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout in client")
-	}
-
-	select {
-	case err := <-errc:
-		if err != nil {
-			t.Fatalf("Error in handler: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout in handler")
+	if err := <-errc; err != nil {
+		t.Fatalf("Error in handler: %v", err)
 	}
 }
 
