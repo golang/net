@@ -179,7 +179,7 @@ func TestMarshalHeader(t *testing.T) {
 		}
 		var wh []byte
 		switch runtime.GOOS {
-		case "darwin", "dragonfly", "netbsd":
+		case "darwin", "ios", "dragonfly", "netbsd":
 			wh = tt.wireHeaderToTradBSDKernel
 		case "freebsd":
 			switch {
@@ -227,7 +227,7 @@ func TestParseHeader(t *testing.T) {
 	for _, tt := range headerLittleEndianTests {
 		var wh []byte
 		switch runtime.GOOS {
-		case "darwin", "dragonfly", "netbsd":
+		case "darwin", "ios", "dragonfly", "netbsd":
 			wh = tt.wireHeaderFromTradBSDKernel
 		case "freebsd":
 			switch {

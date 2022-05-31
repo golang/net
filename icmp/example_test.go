@@ -16,7 +16,7 @@ import (
 
 func ExamplePacketConn_nonPrivilegedPing() {
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "ios":
 	case "linux":
 		log.Println("you may need to adjust the net.ipv4.ping_group_range kernel state")
 	default:

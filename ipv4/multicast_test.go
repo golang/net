@@ -6,6 +6,7 @@ package ipv4_test
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -20,78 +21,92 @@ import (
 
 var packetConnReadWriteMulticastUDPTests = []struct {
 	addr     string
-	grp, src *net.UDPAddr
+	grp, src *net.IPAddr
 }{
-	{"224.0.0.0:0", &net.UDPAddr{IP: net.IPv4(224, 0, 0, 254)}, nil}, // see RFC 4727
+	{"224.0.0.0:0", &net.IPAddr{IP: net.IPv4(224, 0, 0, 254)}, nil}, // see RFC 4727
 
-	{"232.0.1.0:0", &net.UDPAddr{IP: net.IPv4(232, 0, 1, 254)}, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}}, // see RFC 5771
+	{"232.0.1.0:0", &net.IPAddr{IP: net.IPv4(232, 0, 1, 254)}, &net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}}, // see RFC 5771
 }
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if err != nil {
-		t.Skipf("not available on %s", runtime.GOOS)
+		t.Skip(err)
 	}
 
 	for _, tt := range packetConnReadWriteMulticastUDPTests {
-		c, err := net.ListenPacket("udp4", tt.addr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer c.Close()
-
-		grp := *tt.grp
-		grp.Port = c.LocalAddr().(*net.UDPAddr).Port
-		p := ipv4.NewPacketConn(c)
-		defer p.Close()
-		if tt.src == nil {
-			if err := p.JoinGroup(ifi, &grp); err != nil {
+		t.Run(fmt.Sprintf("addr=%s/grp=%s/src=%s", tt.addr, tt.grp, tt.src), func(t *testing.T) {
+			c, err := net.ListenPacket("udp4", tt.addr)
+			if err != nil {
 				t.Fatal(err)
 			}
-			defer p.LeaveGroup(ifi, &grp)
-		} else {
-			if err := p.JoinSourceSpecificGroup(ifi, &grp, tt.src); err != nil {
-				switch runtime.GOOS {
-				case "freebsd", "linux":
-				default: // platforms that don't support IGMPv2/3 fail here
-					t.Logf("not supported on %s", runtime.GOOS)
-					continue
+			p := ipv4.NewPacketConn(c)
+			defer func() {
+				if err := p.Close(); err != nil {
+					t.Error(err)
 				}
-				t.Fatal(err)
-			}
-			defer p.LeaveSourceSpecificGroup(ifi, &grp, tt.src)
-		}
-		if err := p.SetMulticastInterface(ifi); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.MulticastInterface(); err != nil {
-			t.Fatal(err)
-		}
-		if err := p.SetMulticastLoopback(true); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.MulticastLoopback(); err != nil {
-			t.Fatal(err)
-		}
-		cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
-		wb := []byte("HELLO-R-U-THERE")
+			}()
 
-		for i, toggle := range []bool{true, false, true} {
-			if err := p.SetControlMessage(cf, toggle); err != nil {
-				if protocolNotSupported(err) {
-					t.Logf("not supported on %s", runtime.GOOS)
-					continue
+			grp := *p.LocalAddr().(*net.UDPAddr)
+			grp.IP = tt.grp.IP
+			if tt.src == nil {
+				if err := p.JoinGroup(ifi, &grp); err != nil {
+					t.Fatal(err)
 				}
+				defer func() {
+					if err := p.LeaveGroup(ifi, &grp); err != nil {
+						t.Error(err)
+					}
+				}()
+			} else {
+				if err := p.JoinSourceSpecificGroup(ifi, &grp, tt.src); err != nil {
+					switch runtime.GOOS {
+					case "freebsd", "linux":
+					default: // platforms that don't support IGMPv2/3 fail here
+						t.Skipf("not supported on %s", runtime.GOOS)
+					}
+					t.Fatal(err)
+				}
+				defer func() {
+					if err := p.LeaveSourceSpecificGroup(ifi, &grp, tt.src); err != nil {
+						t.Error(err)
+					}
+				}()
+			}
+			if err := p.SetMulticastInterface(ifi); err != nil {
 				t.Fatal(err)
 			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+			if _, err := p.MulticastInterface(); err != nil {
 				t.Fatal(err)
 			}
-			p.SetMulticastTTL(i + 1)
+			if err := p.SetMulticastLoopback(true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.MulticastLoopback(); err != nil {
+				t.Fatal(err)
+			}
+			cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
+			wb := []byte("HELLO-R-U-THERE")
+
+			for i, toggle := range []bool{true, false, true} {
+				if err := p.SetControlMessage(cf, toggle); err != nil {
+					if protocolNotSupported(err) {
+						t.Logf("not supported on %s", runtime.GOOS)
+						continue
+					}
+					t.Fatal(err)
+				}
+				if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+					t.Fatal(err)
+				}
+				if err := p.SetMulticastTTL(i + 1); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if n, err := p.WriteTo(wb, nil, &grp); err != nil {
 				t.Fatal(err)
 			} else if n != len(wb) {
@@ -103,7 +118,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 			} else if !bytes.Equal(rb[:n], wb) {
 				t.Fatalf("got %v; want %v", rb[:n], wb)
 			}
-		}
+		})
 	}
 }
 
@@ -124,97 +139,116 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
+	// Unable to obtain loopback interface on z/OS, so instead we test on any multicast
+	// capable interface.
+	if runtime.GOOS == "zos" {
+		ifi, err = nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast)
+	}
 	if err != nil {
-		t.Skipf("not available on %s", runtime.GOOS)
+		t.Skip(err)
 	}
 
 	for _, tt := range packetConnReadWriteMulticastICMPTests {
-		c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer c.Close()
-
-		p := ipv4.NewPacketConn(c)
-		defer p.Close()
-		if tt.src == nil {
-			if err := p.JoinGroup(ifi, tt.grp); err != nil {
-				t.Fatal(err)
-			}
-			defer p.LeaveGroup(ifi, tt.grp)
-		} else {
-			if err := p.JoinSourceSpecificGroup(ifi, tt.grp, tt.src); err != nil {
-				switch runtime.GOOS {
-				case "freebsd", "linux":
-				default: // platforms that don't support IGMPv2/3 fail here
-					t.Logf("not supported on %s", runtime.GOOS)
-					continue
-				}
-				t.Fatal(err)
-			}
-			defer p.LeaveSourceSpecificGroup(ifi, tt.grp, tt.src)
-		}
-		if err := p.SetMulticastInterface(ifi); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.MulticastInterface(); err != nil {
-			t.Fatal(err)
-		}
-		if err := p.SetMulticastLoopback(true); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.MulticastLoopback(); err != nil {
-			t.Fatal(err)
-		}
-		cf := ipv4.FlagDst | ipv4.FlagInterface
-		if runtime.GOOS != "illumos" && runtime.GOOS != "solaris" {
-			// Illumos and Solaris never allow modification of ICMP properties.
-			cf |= ipv4.FlagTTL
-		}
-
-		for i, toggle := range []bool{true, false, true} {
-			wb, err := (&icmp.Message{
-				Type: ipv4.ICMPTypeEcho, Code: 0,
-				Body: &icmp.Echo{
-					ID: os.Getpid() & 0xffff, Seq: i + 1,
-					Data: []byte("HELLO-R-U-THERE"),
-				},
-			}).Marshal(nil)
+		t.Run(fmt.Sprintf("grp=%s/src=%s", tt.grp, tt.src), func(t *testing.T) {
+			c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := p.SetControlMessage(cf, toggle); err != nil {
-				if protocolNotSupported(err) {
-					t.Logf("not supported on %s", runtime.GOOS)
-					continue
+			p := ipv4.NewPacketConn(c)
+			defer func() {
+				if err := p.Close(); err != nil {
+					t.Error(err)
 				}
-				t.Fatal(err)
-			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-				t.Fatal(err)
-			}
-			p.SetMulticastTTL(i + 1)
-			if n, err := p.WriteTo(wb, nil, tt.grp); err != nil {
-				t.Fatal(err)
-			} else if n != len(wb) {
-				t.Fatalf("got %v; want %v", n, len(wb))
-			}
-			rb := make([]byte, 128)
-			if n, _, _, err := p.ReadFrom(rb); err != nil {
-				t.Fatal(err)
+			}()
+
+			if tt.src == nil {
+				if err := p.JoinGroup(ifi, tt.grp); err != nil {
+					t.Fatal(err)
+				}
+				defer func() {
+					if err := p.LeaveGroup(ifi, tt.grp); err != nil {
+						t.Error(err)
+					}
+				}()
 			} else {
-				m, err := icmp.ParseMessage(iana.ProtocolICMP, rb[:n])
+				if err := p.JoinSourceSpecificGroup(ifi, tt.grp, tt.src); err != nil {
+					switch runtime.GOOS {
+					case "freebsd", "linux":
+					default: // platforms that don't support IGMPv2/3 fail here
+						t.Skipf("not supported on %s", runtime.GOOS)
+					}
+					t.Fatal(err)
+				}
+				defer func() {
+					if err := p.LeaveSourceSpecificGroup(ifi, tt.grp, tt.src); err != nil {
+						t.Error(err)
+					}
+				}()
+			}
+			if err := p.SetMulticastInterface(ifi); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.MulticastInterface(); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.SetMulticastLoopback(true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.MulticastLoopback(); err != nil {
+				t.Fatal(err)
+			}
+			cf := ipv4.FlagDst | ipv4.FlagInterface
+			if runtime.GOOS != "illumos" && runtime.GOOS != "solaris" {
+				// Illumos and Solaris never allow modification of ICMP properties.
+				cf |= ipv4.FlagTTL
+			}
+
+			for i, toggle := range []bool{true, false, true} {
+				wb, err := (&icmp.Message{
+					Type: ipv4.ICMPTypeEcho, Code: 0,
+					Body: &icmp.Echo{
+						ID: os.Getpid() & 0xffff, Seq: i + 1,
+						Data: []byte("HELLO-R-U-THERE"),
+					},
+				}).Marshal(nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				switch {
-				case m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
-				case m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
-				default:
-					t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+				if err := p.SetControlMessage(cf, toggle); err != nil {
+					if protocolNotSupported(err) {
+						t.Logf("not supported on %s", runtime.GOOS)
+						continue
+					}
+					t.Fatal(err)
+				}
+				if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+					t.Fatal(err)
+				}
+				if err := p.SetMulticastTTL(i + 1); err != nil {
+					t.Fatal(err)
+				}
+				if n, err := p.WriteTo(wb, nil, tt.grp); err != nil {
+					t.Fatal(err)
+				} else if n != len(wb) {
+					t.Fatalf("got %v; want %v", n, len(wb))
+				}
+				rb := make([]byte, 128)
+				if n, _, _, err := p.ReadFrom(rb); err != nil {
+					t.Fatal(err)
+				} else {
+					m, err := icmp.ParseMessage(iana.ProtocolICMP, rb[:n])
+					if err != nil {
+						t.Fatal(err)
+					}
+					switch {
+					case m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
+					case m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
+					default:
+						t.Fatalf("got type=%v, code=%v; want type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)
+					}
 				}
 			}
-		}
+		})
 	}
 }
 

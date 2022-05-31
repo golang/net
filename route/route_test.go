@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 // +build darwin dragonfly freebsd netbsd openbsd
 
 package route
@@ -10,7 +11,6 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"time"
 )
 
 func (m *RouteMessage) String() string {
@@ -310,15 +310,7 @@ func (as addrs) match(attrs addrAttrs) error {
 }
 
 func fetchAndParseRIB(af int, typ RIBType) ([]Message, error) {
-	var err error
-	var b []byte
-	for i := 0; i < 3; i++ {
-		if b, err = FetchRIB(af, typ, 0); err != nil {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		break
-	}
+	b, err := FetchRIB(af, typ, 0)
 	if err != nil {
 		return nil, fmt.Errorf("%v %d %v", addrFamily(af), typ, err)
 	}

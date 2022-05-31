@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows
 // +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
 
 /*
 The h2i command is an interactive HTTP/2 console.
 
 Usage:
-  $ h2i [flags] <hostname>
+
+	$ h2i [flags] <hostname>
 
 Interactive commands in the console: (all parts case-insensitive)
 
-  ping [data]
-  settings ack
-  settings FOO=n BAR=z
-  headers      (open a new stream by typing HTTP/1.1)
+	ping [data]
+	settings ack
+	settings FOO=n BAR=z
+	headers      (open a new stream by typing HTTP/1.1)
 */
 package main
 
@@ -35,9 +37,9 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
+	"golang.org/x/term"
 )
 
 // Flags
@@ -102,7 +104,7 @@ type h2i struct {
 	host   string
 	tc     *tls.Conn
 	framer *http2.Framer
-	term   *terminal.Terminal
+	term   *term.Terminal
 
 	// owned by the command loop:
 	streamID uint32
@@ -180,18 +182,18 @@ func (app *h2i) Main() error {
 
 	app.framer = http2.NewFramer(tc, tc)
 
-	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		return err
 	}
-	defer terminal.Restore(0, oldState)
+	defer term.Restore(0, oldState)
 
 	var screen = struct {
 		io.Reader
 		io.Writer
 	}{os.Stdin, os.Stdout}
 
-	app.term = terminal.NewTerminal(screen, "h2i> ")
+	app.term = term.NewTerminal(screen, "h2i> ")
 	lastWord := regexp.MustCompile(`.+\W(\w+)$`)
 	app.term.AutoCompleteCallback = func(line string, pos int, key rune) (newLine string, newPos int, ok bool) {
 		if key != '\t' {
@@ -272,7 +274,7 @@ func (app *h2i) readConsole() error {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("terminal.ReadLine: %v", err)
+			return fmt.Errorf("term.ReadLine: %v", err)
 		}
 		f := strings.Fields(line)
 		if len(f) == 0 {

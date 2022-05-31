@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || zos
+// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris zos
 
 package ipv6_test
 
@@ -18,6 +19,10 @@ func supportsIPv6MulticastDeliveryOnLoopback() (string, bool) {
 		// Even after the fix, it looks like the latest
 		// kernels don't deliver link-local scoped multicast
 		// packets correctly.
+		return fmt.Sprintf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH), false
+	case "openbsd":
+		// Multicast packets don't seem to be delivered locally.
+		// Issue 42064.
 		return fmt.Sprintf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH), false
 	default:
 		return "", true

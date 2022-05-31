@@ -23,7 +23,9 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
+	// Skip this check on z/OS since net.Interfaces() does not return loopback, however
+	// this does not affect the test and it will still pass.
+	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil && runtime.GOOS != "zos" {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -76,7 +78,9 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
+	// Skip this check on z/OS since net.Interfaces() does not return loopback, however
+	// this does not affect the test and it will still pass.
+	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil && runtime.GOOS != "zos" {
 		t.Skipf("not available on %s", runtime.GOOS)
 	}
 
@@ -132,7 +136,7 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		}
 		if n, _, _, err := p.ReadFrom(rb); err != nil {
 			switch runtime.GOOS {
-			case "darwin": // older darwin kernels have some limitation on receiving icmp packet through raw socket
+			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
 				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}
@@ -222,7 +226,7 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 		}
 		if _, b, _, err := r.ReadFrom(rb); err != nil {
 			switch runtime.GOOS {
-			case "darwin": // older darwin kernels have some limitation on receiving icmp packet through raw socket
+			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
 				t.Logf("not supported on %s", runtime.GOOS)
 				continue
 			}

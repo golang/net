@@ -7,9 +7,17 @@ package dnsmessage
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+)
+
+const (
+	// This type was selected randomly from the IANA-assigned private use
+	// range of RR TYPEs.
+	privateUseType Type = 65362
 )
 
 func TestPrintPaddedUint8(t *testing.T) {
@@ -323,6 +331,7 @@ func TestResourceNotStarted(t *testing.T) {
 		{"SRVResource", func(p *Parser) error { _, err := p.SRVResource(); return err }},
 		{"AResource", func(p *Parser) error { _, err := p.AResource(); return err }},
 		{"AAAAResource", func(p *Parser) error { _, err := p.AAAAResource(); return err }},
+		{"UnknownResource", func(p *Parser) error { _, err := p.UnknownResource(); return err }},
 	}
 
 	for _, test := range tests {
@@ -663,6 +672,7 @@ func TestBuilderResourceError(t *testing.T) {
 		{"AResource", func(b *Builder) error { return b.AResource(ResourceHeader{}, AResource{}) }},
 		{"AAAAResource", func(b *Builder) error { return b.AAAAResource(ResourceHeader{}, AAAAResource{}) }},
 		{"OPTResource", func(b *Builder) error { return b.OPTResource(ResourceHeader{}, OPTResource{}) }},
+		{"UnknownResource", func(b *Builder) error { return b.UnknownResource(ResourceHeader{}, UnknownResource{}) }},
 	}
 
 	envs := []struct {
@@ -752,6 +762,10 @@ func TestBuilder(t *testing.T) {
 		case TypeSRV:
 			if err := b.SRVResource(a.Header, *a.Body.(*SRVResource)); err != nil {
 				t.Fatalf("Builder.SRVResource(%#v) = %v", a, err)
+			}
+		case privateUseType:
+			if err := b.UnknownResource(a.Header, *a.Body.(*UnknownResource)); err != nil {
+				t.Fatalf("Builder.UnknownResource(%#v) = %v", a, err)
 			}
 		}
 	}
@@ -1015,6 +1029,103 @@ func TestOptionPackUnpack(t *testing.T) {
 	}
 }
 
+func smallTestMsgWithUnknownResource() Message {
+	return Message{
+		Questions: []Question{},
+		Answers: []Resource{
+			{
+				Header: ResourceHeader{
+					Name:  MustNewName("."),
+					Type:  privateUseType,
+					Class: ClassINET,
+					TTL:   uint32(123),
+				},
+				Body: &UnknownResource{
+					// The realType() method is called, when
+					// packing, so Type must match the type
+					// claimed by the Header above.
+					Type: privateUseType,
+					Data: []byte{42, 42, 42, 42},
+				},
+			},
+		},
+	}
+}
+
+func TestUnknownPackUnpack(t *testing.T) {
+	msg := smallTestMsgWithUnknownResource()
+	packed, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("Failed to pack UnknownResource: %v", err)
+	}
+
+	var receivedMsg Message
+	err = receivedMsg.Unpack(packed)
+	if err != nil {
+		t.Fatalf("Failed to unpack UnknownResource: %v", err)
+	}
+
+	if len(receivedMsg.Answers) != 1 {
+		t.Fatalf("Got %d answers, wanted 1", len(receivedMsg.Answers))
+	}
+
+	unknownResource, ok := receivedMsg.Answers[0].Body.(*UnknownResource)
+	if !ok {
+		t.Fatalf("Parsed a %T, wanted an UnknownResource", receivedMsg.Answers[0].Body)
+	}
+
+	wantBody := msg.Answers[0].Body
+	if !reflect.DeepEqual(wantBody, unknownResource) {
+		t.Fatalf("Unpacked resource does not match: %v vs %v", wantBody, unknownResource)
+	}
+}
+
+func TestParseUnknownResource(t *testing.T) {
+	msg := smallTestMsgWithUnknownResource()
+	packed, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("Failed to pack UnknownResource: %v", err)
+	}
+
+	var p Parser
+	if _, err = p.Start(packed); err != nil {
+		t.Fatalf("Parser failed to start: %s", err)
+	}
+	if _, err = p.AllQuestions(); err != nil {
+		t.Fatalf("Failed to parse questions: %s", err)
+	}
+
+	parsedHeader, err := p.AnswerHeader()
+	if err != nil {
+		t.Fatalf("Error reading answer header: %s", err)
+	}
+	wantHeader := msg.Answers[0].Header
+	if !reflect.DeepEqual(wantHeader, parsedHeader) {
+		t.Fatalf("Parsed header does not match: %v vs %v", wantHeader, wantHeader)
+	}
+
+	parsedUnknownResource, err := p.UnknownResource()
+	if err != nil {
+		t.Fatalf("Failed to parse UnknownResource: %s", err)
+	}
+	wantBody := msg.Answers[0].Body
+	if !reflect.DeepEqual(wantBody, &parsedUnknownResource) {
+		t.Fatalf("Parsed resource does not match: %v vs %v", wantBody, &parsedUnknownResource)
+	}
+
+	// Finish parsing the rest of the message to ensure that
+	// (*Parser).UnknownResource() leaves the parser in a consistent state.
+	if _, err = p.AnswerHeader(); err != ErrSectionDone {
+		t.Fatalf("Answer section should be fully parsed")
+	}
+	if _, err = p.AllAuthorities(); err != nil {
+		t.Fatalf("Failed to parse authorities: %s", err)
+	}
+	if _, err = p.AllAdditionals(); err != nil {
+		t.Fatalf("Failed to parse additionals: %s", err)
+	}
+}
+
 // TestGoString tests that Message.GoString produces Go code that compiles to
 // reproduce the Message.
 //
@@ -1024,12 +1135,15 @@ func TestOptionPackUnpack(t *testing.T) {
 // 3. Paste the result in the test to store it in msg.
 // 4. Also put the original output in the test to store in want.
 func TestGoString(t *testing.T) {
-	msg := Message{Header: Header{ID: 0, Response: true, OpCode: 0, Authoritative: true, Truncated: false, RecursionDesired: false, RecursionAvailable: false, RCode: RCodeSuccess}, Questions: []Question{{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET}}, Answers: []Resource{{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AResource{A: [4]byte{127, 0, 0, 1}}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AResource{A: [4]byte{127, 0, 0, 2}}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeAAAA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AAAAResource{AAAA: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeCNAME, Class: ClassINET, TTL: 0, Length: 0}, Body: &CNAMEResource{CNAME: MustNewName("alias.example.com.")}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeSOA, Class: ClassINET, TTL: 0, Length: 0}, Body: &SOAResource{NS: MustNewName("ns1.example.com."), MBox: MustNewName("mb.example.com."), Serial: 1, Refresh: 2, Retry: 3, Expire: 4, MinTTL: 5}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypePTR, Class: ClassINET, TTL: 0, Length: 0}, Body: &PTRResource{PTR: MustNewName("ptr.example.com.")}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeMX, Class: ClassINET, TTL: 0, Length: 0}, Body: &MXResource{Pref: 7, MX: MustNewName("mx.example.com.")}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeSRV, Class: ClassINET, TTL: 0, Length: 0}, Body: &SRVResource{Priority: 8, Weight: 9, Port: 11, Target: MustNewName("srv.example.com.")}}}, Authorities: []Resource{{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeNS, Class: ClassINET, TTL: 0, Length: 0}, Body: &NSResource{NS: MustNewName("ns1.example.com.")}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeNS, Class: ClassINET, TTL: 0, Length: 0}, Body: &NSResource{NS: MustNewName("ns2.example.com.")}}}, Additionals: []Resource{{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeTXT, Class: ClassINET, TTL: 0, Length: 0}, Body: &TXTResource{TXT: []string{"So Long\x2c and Thanks for All the Fish"}}}, {Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeTXT, Class: ClassINET, TTL: 0, Length: 0}, Body: &TXTResource{TXT: []string{"Hamster Huey and the Gooey Kablooie"}}}, {Header: ResourceHeader{Name: MustNewName("."), Type: TypeOPT, Class: 4096, TTL: 4261412864, Length: 0}, Body: &OPTResource{Options: []Option{{Code: 10, Data: []byte{1, 35, 69, 103, 137, 171, 205, 239}}}}}}}
+	msg := Message{Header: Header{ID: 0, Response: true, OpCode: 0, Authoritative: true, Truncated: false, RecursionDesired: false, RecursionAvailable: false, RCode: RCodeSuccess}, Questions: []Question{Question{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET}}, Answers: []Resource{Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AResource{A: [4]byte{127, 0, 0, 1}}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AResource{A: [4]byte{127, 0, 0, 2}}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeAAAA, Class: ClassINET, TTL: 0, Length: 0}, Body: &AAAAResource{AAAA: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeCNAME, Class: ClassINET, TTL: 0, Length: 0}, Body: &CNAMEResource{CNAME: MustNewName("alias.example.com.")}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeSOA, Class: ClassINET, TTL: 0, Length: 0}, Body: &SOAResource{NS: MustNewName("ns1.example.com."), MBox: MustNewName("mb.example.com."), Serial: 1, Refresh: 2, Retry: 3, Expire: 4, MinTTL: 5}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypePTR, Class: ClassINET, TTL: 0, Length: 0}, Body: &PTRResource{PTR: MustNewName("ptr.example.com.")}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeMX, Class: ClassINET, TTL: 0, Length: 0}, Body: &MXResource{Pref: 7, MX: MustNewName("mx.example.com.")}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeSRV, Class: ClassINET, TTL: 0, Length: 0}, Body: &SRVResource{Priority: 8, Weight: 9, Port: 11, Target: MustNewName("srv.example.com.")}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: 65362, Class: ClassINET, TTL: 0, Length: 0}, Body: &UnknownResource{Type: 65362, Data: []byte{42, 0, 43, 44}}}}, Authorities: []Resource{Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeNS, Class: ClassINET, TTL: 0, Length: 0}, Body: &NSResource{NS: MustNewName("ns1.example.com.")}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeNS, Class: ClassINET, TTL: 0, Length: 0}, Body: &NSResource{NS: MustNewName("ns2.example.com.")}}}, Additionals: []Resource{Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeTXT, Class: ClassINET, TTL: 0, Length: 0}, Body: &TXTResource{TXT: []string{"So Long\x2c and Thanks for All the Fish"}}}, Resource{Header: ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeTXT, Class: ClassINET, TTL: 0, Length: 0}, Body: &TXTResource{TXT: []string{"Hamster Huey and the Gooey Kablooie"}}}, Resource{Header: ResourceHeader{Name: MustNewName("."), Type: TypeOPT, Class: 4096, TTL: 4261412864, Length: 0}, Body: &OPTResource{Options: []Option{Option{Code: 10, Data: []byte{1, 35, 69, 103, 137, 171, 205, 239}}}}}}}
+
 	if !reflect.DeepEqual(msg, largeTestMsg()) {
 		t.Error("Message.GoString lost information or largeTestMsg changed: msg != largeTestMsg()")
 	}
 	got := msg.GoString()
-	want := `dnsmessage.Message{Header: dnsmessage.Header{ID: 0, Response: true, OpCode: 0, Authoritative: true, Truncated: false, RecursionDesired: false, RecursionAvailable: false, RCode: dnsmessage.RCodeSuccess}, Questions: []dnsmessage.Question{dnsmessage.Question{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}}, Answers: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AResource{A: [4]byte{127, 0, 0, 1}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AResource{A: [4]byte{127, 0, 0, 2}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeAAAA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AAAAResource{AAAA: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeCNAME, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName("alias.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeSOA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.SOAResource{NS: dnsmessage.MustNewName("ns1.example.com."), MBox: dnsmessage.MustNewName("mb.example.com."), Serial: 1, Refresh: 2, Retry: 3, Expire: 4, MinTTL: 5}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.PTRResource{PTR: dnsmessage.MustNewName("ptr.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeMX, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.MXResource{Pref: 7, MX: dnsmessage.MustNewName("mx.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeSRV, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.SRVResource{Priority: 8, Weight: 9, Port: 11, Target: dnsmessage.MustNewName("srv.example.com.")}}}, Authorities: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeNS, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.NSResource{NS: dnsmessage.MustNewName("ns1.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeNS, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.NSResource{NS: dnsmessage.MustNewName("ns2.example.com.")}}}, Additionals: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeTXT, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.TXTResource{TXT: []string{"So Long\x2c and Thanks for All the Fish"}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeTXT, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.TXTResource{TXT: []string{"Hamster Huey and the Gooey Kablooie"}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("."), Type: dnsmessage.TypeOPT, Class: 4096, TTL: 4261412864, Length: 0}, Body: &dnsmessage.OPTResource{Options: []dnsmessage.Option{dnsmessage.Option{Code: 10, Data: []byte{1, 35, 69, 103, 137, 171, 205, 239}}}}}}}`
+
+	want := `dnsmessage.Message{Header: dnsmessage.Header{ID: 0, Response: true, OpCode: 0, Authoritative: true, Truncated: false, RecursionDesired: false, RecursionAvailable: false, RCode: dnsmessage.RCodeSuccess}, Questions: []dnsmessage.Question{dnsmessage.Question{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}}, Answers: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AResource{A: [4]byte{127, 0, 0, 1}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AResource{A: [4]byte{127, 0, 0, 2}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeAAAA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.AAAAResource{AAAA: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeCNAME, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName("alias.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeSOA, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.SOAResource{NS: dnsmessage.MustNewName("ns1.example.com."), MBox: dnsmessage.MustNewName("mb.example.com."), Serial: 1, Refresh: 2, Retry: 3, Expire: 4, MinTTL: 5}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.PTRResource{PTR: dnsmessage.MustNewName("ptr.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeMX, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.MXResource{Pref: 7, MX: dnsmessage.MustNewName("mx.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeSRV, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.SRVResource{Priority: 8, Weight: 9, Port: 11, Target: dnsmessage.MustNewName("srv.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: 65362, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.UnknownResource{Type: 65362, Data: []byte{42, 0, 43, 44}}}}, Authorities: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeNS, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.NSResource{NS: dnsmessage.MustNewName("ns1.example.com.")}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeNS, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.NSResource{NS: dnsmessage.MustNewName("ns2.example.com.")}}}, Additionals: []dnsmessage.Resource{dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeTXT, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.TXTResource{TXT: []string{"So Long\x2c and Thanks for All the Fish"}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("foo.bar.example.com."), Type: dnsmessage.TypeTXT, Class: dnsmessage.ClassINET, TTL: 0, Length: 0}, Body: &dnsmessage.TXTResource{TXT: []string{"Hamster Huey and the Gooey Kablooie"}}}, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("."), Type: dnsmessage.TypeOPT, Class: 4096, TTL: 4261412864, Length: 0}, Body: &dnsmessage.OPTResource{Options: []dnsmessage.Option{dnsmessage.Option{Code: 10, Data: []byte{1, 35, 69, 103, 137, 171, 205, 239}}}}}}}`
+
 	if got != want {
 		t.Errorf("got msg1.GoString() = %s\nwant = %s", got, want)
 	}
@@ -1399,6 +1513,17 @@ func largeTestMsg() Message {
 					MustNewName("srv.example.com."),
 				},
 			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  privateUseType,
+					Class: ClassINET,
+				},
+				&UnknownResource{
+					Type: privateUseType,
+					Data: []byte{42, 0, 43, 44},
+				},
+			},
 		},
 		Authorities: []Resource{
 			{
@@ -1447,5 +1572,30 @@ func largeTestMsg() Message {
 				},
 			},
 		},
+	}
+}
+
+// This package is imported by the standard library net package
+// and therefore must not use fmt. We'll catch a mistake when vendored
+// into the standard library, but this test catches the mistake earlier.
+func TestNoFmt(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		// Could use something complex like go/build or x/tools/go/packages,
+		// but there's no reason for "fmt" to appear (in quotes) in the source
+		// otherwise, so just use a simple substring search.
+		data, err := ioutil.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(`"fmt"`)) {
+			t.Errorf(`%s: cannot import "fmt"`, file)
+		}
 	}
 }

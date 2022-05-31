@@ -27,8 +27,7 @@ import (
 type Config struct {
 	// HTTPProxy represents the value of the HTTP_PROXY or
 	// http_proxy environment variable. It will be used as the proxy
-	// URL for HTTP requests and HTTPS requests unless overridden by
-	// HTTPSProxy or NoProxy.
+	// URL for HTTP requests unless overridden by NoProxy.
 	HTTPProxy string
 
 	// HTTPSProxy represents the HTTPS_PROXY or https_proxy
@@ -114,8 +113,8 @@ func getEnvAny(names ...string) string {
 // environment, or a proxy should not be used for the given request, as
 // defined by NO_PROXY.
 //
-// As a special case, if req.URL.Host is "localhost" (with or without a
-// port number), then a nil URL and nil error will be returned.
+// As a special case, if req.URL.Host is "localhost" or a loopback address
+// (with or without a port number), then a nil URL and nil error will be returned.
 func (cfg *Config) ProxyFunc() func(reqURL *url.URL) (*url.URL, error) {
 	// Preprocess the Config settings for more efficient evaluation.
 	cfg1 := &config{
@@ -129,8 +128,7 @@ func (cfg *config) proxyForURL(reqURL *url.URL) (*url.URL, error) {
 	var proxy *url.URL
 	if reqURL.Scheme == "https" {
 		proxy = cfg.httpsProxy
-	}
-	if proxy == nil {
+	} else if reqURL.Scheme == "http" {
 		proxy = cfg.httpProxy
 		if proxy != nil && cfg.CGI {
 			return nil, errors.New("refusing to use HTTP_PROXY value in CGI environment; see golang.org/s/cgihttpproxy")
@@ -268,6 +266,9 @@ func (c *config) init() {
 		if phost[0] != '.' {
 			matchHost = true
 			phost = "." + phost
+		}
+		if v, err := idnaASCII(phost); err == nil {
+			phost = v
 		}
 		c.domainMatchers = append(c.domainMatchers, domainMatch{host: phost, port: pport, matchHost: matchHost})
 	}

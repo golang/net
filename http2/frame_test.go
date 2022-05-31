@@ -160,7 +160,7 @@ func TestWriteDataPadded(t *testing.T) {
 		}
 		got := f.Header()
 		tt.wantHeader.valid = true
-		if got != tt.wantHeader {
+		if !got.Equal(tt.wantHeader) {
 			t.Errorf("%d. read %+v; want %+v", i, got, tt.wantHeader)
 			continue
 		}
@@ -169,6 +169,14 @@ func TestWriteDataPadded(t *testing.T) {
 			t.Errorf("%d. got %q; want %q", i, df.Data(), tt.data)
 		}
 	}
+}
+
+func (fh FrameHeader) Equal(b FrameHeader) bool {
+	return fh.valid == b.valid &&
+		fh.Type == b.Type &&
+		fh.Flags == b.Flags &&
+		fh.Length == b.Length &&
+		fh.StreamID == b.StreamID
 }
 
 func TestWriteHeaders(t *testing.T) {
@@ -302,6 +310,23 @@ func TestWriteHeaders(t *testing.T) {
 					Weight:    127,
 				},
 				headerFragBuf: []byte("abc"),
+			},
+		},
+		{
+			"zero length",
+			HeadersFrameParam{
+				StreamID: 42,
+				Priority: PriorityParam{},
+			},
+			"\x00\x00\x00\x01\x00\x00\x00\x00*",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Length:   0,
+				},
+				Priority: PriorityParam{},
 			},
 		},
 	}
@@ -595,7 +620,7 @@ func TestReadFrameHeader(t *testing.T) {
 			continue
 		}
 		tt.want.valid = true
-		if got != tt.want {
+		if !got.Equal(tt.want) {
 			t.Errorf("%d. readFrameHeader(%q) = %+v; want %+v", i, tt.in, got, tt.want)
 		}
 	}
@@ -1043,7 +1068,7 @@ func TestMetaFrameHeader(t *testing.T) {
 			name:          "invalid_field_value",
 			w:             func(f *Framer) { write(f, encodeHeaderRaw(t, "key", "bad_null\x00")) },
 			want:          streamError(1, ErrCodeProtocol),
-			wantErrReason: "invalid header field value \"bad_null\\x00\"",
+			wantErrReason: `invalid header field value for "key"`,
 		},
 	}
 	for i, tt := range tests {

@@ -23,13 +23,22 @@ var (
 
 func TestValidToken(t *testing.T) {
 	tok := generateTokenAtTime(key, userID, actionID, now)
-	if !validTokenAtTime(tok, key, userID, actionID, oneMinuteFromNow) {
+	if !validTokenAtTime(tok, key, userID, actionID, oneMinuteFromNow, Timeout) {
 		t.Error("One second later: Expected token to be valid")
 	}
-	if !validTokenAtTime(tok, key, userID, actionID, now.Add(Timeout-1*time.Nanosecond)) {
+	if !validTokenAtTime(tok, key, userID, actionID, now.Add(Timeout-1*time.Nanosecond), Timeout) {
 		t.Error("Just before timeout: Expected token to be valid")
 	}
-	if !validTokenAtTime(tok, key, userID, actionID, now.Add(-1*time.Minute+1*time.Millisecond)) {
+	if !validTokenAtTime(tok, key, userID, actionID, now.Add(-1*time.Minute+1*time.Millisecond), Timeout) {
+		t.Error("One minute in the past: Expected token to be valid")
+	}
+	if !validTokenAtTime(tok, key, userID, actionID, oneMinuteFromNow, time.Hour) {
+		t.Error("One second later: Expected token to be valid")
+	}
+	if !validTokenAtTime(tok, key, userID, actionID, now.Add(time.Minute-1*time.Nanosecond), time.Minute) {
+		t.Error("Just before timeout: Expected token to be valid")
+	}
+	if !validTokenAtTime(tok, key, userID, actionID, now.Add(-1*time.Minute+1*time.Millisecond), time.Hour) {
 		t.Error("One minute in the past: Expected token to be valid")
 	}
 }
@@ -69,17 +78,19 @@ func TestInvalidToken(t *testing.T) {
 	invalidTokenTests := []struct {
 		name, key, userID, actionID string
 		t                           time.Time
+		timeout                     time.Duration
 	}{
-		{"Bad key", "foobar", userID, actionID, oneMinuteFromNow},
-		{"Bad userID", key, "foobar", actionID, oneMinuteFromNow},
-		{"Bad actionID", key, userID, "foobar", oneMinuteFromNow},
-		{"Expired", key, userID, actionID, now.Add(Timeout + 1*time.Millisecond)},
-		{"More than 1 minute from the future", key, userID, actionID, now.Add(-1*time.Nanosecond - 1*time.Minute)},
+		{"Bad key", "foobar", userID, actionID, oneMinuteFromNow, Timeout},
+		{"Bad userID", key, "foobar", actionID, oneMinuteFromNow, Timeout},
+		{"Bad actionID", key, userID, "foobar", oneMinuteFromNow, Timeout},
+		{"Expired", key, userID, actionID, now.Add(Timeout + 1*time.Millisecond), Timeout},
+		{"More than 1 minute from the future", key, userID, actionID, now.Add(-1*time.Nanosecond - 1*time.Minute), Timeout},
+		{"Expired with 1 minute timeout", key, userID, actionID, now.Add(time.Minute + 1*time.Millisecond), time.Minute},
 	}
 
 	tok := generateTokenAtTime(key, userID, actionID, now)
 	for _, itt := range invalidTokenTests {
-		if validTokenAtTime(tok, itt.key, itt.userID, itt.actionID, itt.t) {
+		if validTokenAtTime(tok, itt.key, itt.userID, itt.actionID, itt.t, itt.timeout) {
 			t.Errorf("%v: Expected token to be invalid", itt.name)
 		}
 	}
@@ -98,7 +109,7 @@ func TestValidateBadData(t *testing.T) {
 	}
 
 	for _, bdt := range badDataTests {
-		if validTokenAtTime(bdt.tok, key, userID, actionID, oneMinuteFromNow) {
+		if validTokenAtTime(bdt.tok, key, userID, actionID, oneMinuteFromNow, Timeout) {
 			t.Errorf("%v: Expected token to be invalid", bdt.name)
 		}
 	}

@@ -43,14 +43,37 @@ func stderrv() io.Writer {
 	return ioutil.Discard
 }
 
+type safeBuffer struct {
+	b bytes.Buffer
+	m sync.Mutex
+}
+
+func (sb *safeBuffer) Write(d []byte) (int, error) {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Write(d)
+}
+
+func (sb *safeBuffer) Bytes() []byte {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Bytes()
+}
+
+func (sb *safeBuffer) Len() int {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Len()
+}
+
 type serverTester struct {
 	cc             net.Conn // client conn
 	t              testing.TB
 	ts             *httptest.Server
 	fr             *Framer
-	serverLogBuf   bytes.Buffer // logger for httptest.Server
-	logFilter      []string     // substrings to filter out
-	scMu           sync.Mutex   // guards sc
+	serverLogBuf   safeBuffer // logger for httptest.Server
+	logFilter      []string   // substrings to filter out
+	scMu           sync.Mutex // guards sc
 	sc             *serverConn
 	hpackDec       *hpack.Decoder
 	decodedHeaders [][2]string
@@ -323,6 +346,10 @@ func (st *serverTester) writePreface() {
 
 func (st *serverTester) writeInitialSettings() {
 	if err := st.fr.WriteSettings(); err != nil {
+		if runtime.GOOS == "openbsd" && strings.HasSuffix(err.Error(), "write: broken pipe") {
+			st.t.Logf("Error writing initial SETTINGS frame from client to server: %v", err)
+			st.t.Skipf("Skipping test with known OpenBSD failure mode. (See https://go.dev/issue/52208.)")
+		}
 		st.t.Fatalf("Error writing initial SETTINGS frame from client to server: %v", err)
 	}
 }
@@ -455,31 +482,8 @@ func (st *serverTester) writeDataPadded(streamID uint32, endStream bool, data, p
 	}
 }
 
-func readFrameTimeout(fr *Framer, wait time.Duration) (Frame, error) {
-	ch := make(chan interface{}, 1)
-	go func() {
-		fr, err := fr.ReadFrame()
-		if err != nil {
-			ch <- err
-		} else {
-			ch <- fr
-		}
-	}()
-	t := time.NewTimer(wait)
-	select {
-	case v := <-ch:
-		t.Stop()
-		if fr, ok := v.(Frame); ok {
-			return fr, nil
-		}
-		return nil, v.(error)
-	case <-t.C:
-		return nil, errors.New("timeout waiting for frame")
-	}
-}
-
 func (st *serverTester) readFrame() (Frame, error) {
-	return readFrameTimeout(st.fr, 2*time.Second)
+	return st.fr.ReadFrame()
 }
 
 func (st *serverTester) wantHeaders() *HeadersFrame {
@@ -1162,12 +1166,34 @@ func TestServer_Ping(t *testing.T) {
 	}
 }
 
+type filterListener struct {
+	net.Listener
+	accept func(conn net.Conn) (net.Conn, error)
+}
+
+func (l *filterListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return l.accept(c)
+}
+
 func TestServer_MaxQueuedControlFrames(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
 	}
 
-	st := newServerTester(t, nil)
+	st := newServerTester(t, nil, func(ts *httptest.Server) {
+		// TCP buffer sizes on test systems aren't under our control and can be large.
+		// Create a conn that blocks after 10000 bytes written.
+		ts.Listener = &filterListener{
+			Listener: ts.Listener,
+			accept: func(conn net.Conn) (net.Conn, error) {
+				return newBlockingWriteConn(conn, 10000), nil
+			},
+		}
+	})
 	defer st.Close()
 	st.greet()
 
@@ -1189,10 +1215,9 @@ func TestServer_MaxQueuedControlFrames(t *testing.T) {
 }
 
 func TestServer_RejectsLargeFrames(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("see golang.org/issue/13434")
+	if runtime.GOOS == "windows" || runtime.GOOS == "plan9" || runtime.GOOS == "zos" {
+		t.Skip("see golang.org/issue/13434, golang.org/issue/37321")
 	}
-
 	st := newServerTester(t, nil)
 	defer st.Close()
 	st.greet()
@@ -1753,6 +1778,117 @@ func TestServer_Response_NoData_Header_FooBar(t *testing.T) {
 			t.Errorf("Got headers %v; want %v", goth, wanth)
 		}
 	})
+}
+
+// Reject content-length headers containing a sign.
+// See https://golang.org/issue/39017
+func TestServerIgnoresContentLengthSignWhenWritingChunks(t *testing.T) {
+	tests := []struct {
+		name   string
+		cl     string
+		wantCL string
+	}{
+		{
+			name:   "proper content-length",
+			cl:     "3",
+			wantCL: "3",
+		},
+		{
+			name:   "ignore cl with plus sign",
+			cl:     "+3",
+			wantCL: "0",
+		},
+		{
+			name:   "ignore cl with minus sign",
+			cl:     "-3",
+			wantCL: "0",
+		},
+		{
+			name:   "max int64, for safe uint64->int64 conversion",
+			cl:     "9223372036854775807",
+			wantCL: "9223372036854775807",
+		},
+		{
+			name:   "overflows int64, so ignored",
+			cl:     "9223372036854775808",
+			wantCL: "0",
+		},
+	}
+
+	for _, tt := range tests {
+		testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("content-length", tt.cl)
+			return nil
+		}, func(st *serverTester) {
+			getSlash(st)
+			hf := st.wantHeaders()
+			goth := st.decodeHeader(hf.HeaderBlockFragment())
+			wanth := [][2]string{
+				{":status", "200"},
+				{"content-length", tt.wantCL},
+			}
+			if !reflect.DeepEqual(goth, wanth) {
+				t.Errorf("For case %q, value %q, got = %q; want %q", tt.name, tt.cl, goth, wanth)
+			}
+		})
+	}
+}
+
+// Reject content-length headers containing a sign.
+// See https://golang.org/issue/39017
+func TestServerRejectsContentLengthWithSignNewRequests(t *testing.T) {
+	tests := []struct {
+		name   string
+		cl     string
+		wantCL int64
+	}{
+		{
+			name:   "proper content-length",
+			cl:     "3",
+			wantCL: 3,
+		},
+		{
+			name:   "ignore cl with plus sign",
+			cl:     "+3",
+			wantCL: 0,
+		},
+		{
+			name:   "ignore cl with minus sign",
+			cl:     "-3",
+			wantCL: 0,
+		},
+		{
+			name:   "max int64, for safe uint64->int64 conversion",
+			cl:     "9223372036854775807",
+			wantCL: 9223372036854775807,
+		},
+		{
+			name:   "overflows int64, so ignored",
+			cl:     "9223372036854775808",
+			wantCL: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			writeReq := func(st *serverTester) {
+				st.writeHeaders(HeadersFrameParam{
+					StreamID:      1, // clients send odd numbers
+					BlockFragment: st.encodeHeader("content-length", tt.cl),
+					EndStream:     false,
+					EndHeaders:    true,
+				})
+				st.writeData(1, false, []byte(""))
+			}
+			checkReq := func(r *http.Request) {
+				if r.ContentLength != tt.wantCL {
+					t.Fatalf("Got: %q\nWant: %q", r.ContentLength, tt.wantCL)
+				}
+			}
+			testServerRequest(t, writeReq, checkReq)
+		})
+	}
 }
 
 func TestServer_Response_Data_Sniff_DoesntOverride(t *testing.T) {
@@ -2436,6 +2572,10 @@ func TestServer_Rejects_TLS11(t *testing.T) { testRejectTLS(t, tls.VersionTLS11)
 
 func testRejectTLS(t *testing.T, max uint16) {
 	st := newServerTester(t, nil, func(c *tls.Config) {
+		// As of 1.18 the default minimum Go TLS version is
+		// 1.2. In order to test rejection of lower versions,
+		// manually set the minimum version to 1.0
+		c.MinVersion = tls.VersionTLS10
 		c.MaxVersion = max
 	})
 	defer st.Close()
@@ -2562,8 +2702,9 @@ func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *h
 }
 
 // TestServerWithCurl currently fails, hence the LenientCipherSuites test. See:
-//   https://github.com/tatsuhiro-t/nghttp2/issues/140 &
-//   http://sourceforge.net/p/curl/bugs/1472/
+//
+//	https://github.com/tatsuhiro-t/nghttp2/issues/140 &
+//	http://sourceforge.net/p/curl/bugs/1472/
 func TestServerWithCurl(t *testing.T)                     { testServerWithCurl(t, false) }
 func TestServerWithCurl_LenientCipherSuites(t *testing.T) { testServerWithCurl(t, true) }
 
@@ -3253,6 +3394,17 @@ func TestConfigureServer(t *testing.T) {
 			name: "empty server",
 		},
 		{
+			name:      "empty CipherSuites",
+			tlsConfig: &tls.Config{},
+		},
+		{
+			name: "bad CipherSuites but MinVersion TLS 1.3",
+			tlsConfig: &tls.Config{
+				MinVersion:   tls.VersionTLS13,
+				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384},
+			},
+		},
+		{
 			name: "just the required cipher suite",
 			tlsConfig: &tls.Config{
 				CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
@@ -3276,7 +3428,6 @@ func TestConfigureServer(t *testing.T) {
 			tlsConfig: &tls.Config{
 				CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 			},
-			wantErr: "contains an HTTP/2-approved cipher suite (0xc02f), but it comes after",
 		},
 		{
 			name: "bad after required",
@@ -4066,9 +4217,6 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 		},
 	}
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
 	for _, tt := range resps {
 		t.Run(tt.name, func(t *testing.T) {
 			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4079,22 +4227,222 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 			}, optOnlyServer)
 			defer st.Close()
 
+			tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+			defer tr.CloseIdleConnections()
+
 			req, _ := http.NewRequest("GET", st.ts.URL, nil)
 			res, err := tr.RoundTrip(req)
 			if err != nil {
-				t.Fatalf("Failed to fetch URL: %v", err)
+				t.Fatalf("GET %s: %v", st.ts.URL, err)
 			}
 			defer res.Body.Close()
-			if g, w := res.Header.Get("Content-Encoding"), tt.contentEncoding; g != w {
+
+			g := res.Header.Get("Content-Encoding")
+			t.Logf("%s: Content-Encoding: %s", st.ts.URL, g)
+
+			if w := tt.contentEncoding; g != w {
 				if w != nil { // The case where contentEncoding was set explicitly.
 					t.Errorf("Content-Encoding mismatch\n\tgot:  %q\n\twant: %q", g, w)
 				} else if g != "" { // "" should be the equivalent when the contentEncoding is unset.
 					t.Errorf("Unexpected Content-Encoding %q", g)
 				}
 			}
-			if g, w := res.Header.Get("Content-Type"), tt.wantContentType; g != w {
+
+			g = res.Header.Get("Content-Type")
+			if w := tt.wantContentType; g != w {
 				t.Errorf("Content-Type mismatch\n\tgot:  %q\n\twant: %q", g, w)
 			}
+			t.Logf("%s: Content-Type: %s", st.ts.URL, g)
 		})
 	}
+}
+
+func TestServerWindowUpdateOnBodyClose(t *testing.T) {
+	const content = "12345678"
+	blockCh := make(chan bool)
+	errc := make(chan error, 1)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4)
+		n, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			errc <- err
+			return
+		}
+		if n != len(buf) {
+			errc <- fmt.Errorf("too few bytes read: %d", n)
+			return
+		}
+		blockCh <- true
+		<-blockCh
+		errc <- nil
+	})
+	defer st.Close()
+
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID: 1, // clients send odd numbers
+		BlockFragment: st.encodeHeader(
+			":method", "POST",
+			"content-length", strconv.Itoa(len(content)),
+		),
+		EndStream:  false, // to say DATA frames are coming
+		EndHeaders: true,
+	})
+	st.writeData(1, false, []byte(content[:5]))
+	<-blockCh
+	st.stream(1).body.CloseWithError(io.EOF)
+	st.writeData(1, false, []byte(content[5:]))
+	blockCh <- true
+
+	increments := len(content)
+	for {
+		f, err := st.readFrame()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wu, ok := f.(*WindowUpdateFrame); ok && wu.StreamID == 0 {
+			increments -= int(wu.Increment)
+			if increments == 0 {
+				break
+			}
+		}
+	}
+
+	if err := <-errc; err != nil {
+		t.Error(err)
+	}
+}
+
+func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {})
+	defer st.Close()
+
+	st.greet()
+
+	content := "some content"
+	st.writeHeaders(HeadersFrameParam{
+		StreamID: 1,
+		BlockFragment: st.encodeHeader(
+			":method", "POST",
+			"content-length", strconv.Itoa(len(content)),
+		),
+		EndStream:  false,
+		EndHeaders: true,
+	})
+	st.wantHeaders()
+
+	st.sc.startGracefulShutdown()
+	for {
+		f, err := st.readFrame()
+		if err == io.EOF {
+			st.t.Fatal("got a EOF; want *GoAwayFrame")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gf, ok := f.(*GoAwayFrame); ok && gf.StreamID == 0 {
+			break
+		}
+	}
+
+	st.writeData(1, true, []byte(content))
+	time.Sleep(200 * time.Millisecond)
+	st.Close()
+
+	if bytes.Contains(st.serverLogBuf.Bytes(), []byte("PROTOCOL_ERROR")) {
+		t.Error("got protocol error")
+	}
+}
+
+func TestServerSendsProcessing(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusProcessing)
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "102"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "5"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
+}
+
+func TestServerSendsEarlyHints(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		h := w.Header()
+		h.Add("Content-Length", "123")
+		h.Add("Link", "</style.css>; rel=preload; as=style")
+		h.Add("Link", "</script.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		h.Add("Link", "</foo.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "123"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
 }

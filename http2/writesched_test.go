@@ -25,6 +25,10 @@ func makeHandlerPanicRST(streamID uint32) FrameWriteRequest {
 	return FrameWriteRequest{&handlerPanicRST{StreamID: streamID}, st, nil}
 }
 
+func makeWriteRSTStream(streamID uint32) FrameWriteRequest {
+	return FrameWriteRequest{write: streamError(streamID, ErrCodeInternal)}
+}
+
 func checkConsume(wr FrameWriteRequest, nbytes int32, want []FrameWriteRequest) error {
 	consumed, rest, n := wr.Consume(nbytes)
 	var wantConsumed, wantRest FrameWriteRequest
@@ -49,6 +53,56 @@ func TestFrameWriteRequestNonData(t *testing.T) {
 	}
 
 	// Non-DATA frames are always consumed whole.
+	if err := checkConsume(wr, 0, []FrameWriteRequest{wr}); err != nil {
+		t.Errorf("Consume:\n%v", err)
+	}
+
+	wr = makeWriteRSTStream(123)
+	if got, want := wr.DataSize(), 0; got != want {
+		t.Errorf("DataSize: got %v, want %v", got, want)
+	}
+
+	// RST_STREAM frames are always consumed whole.
+	if err := checkConsume(wr, 0, []FrameWriteRequest{wr}); err != nil {
+		t.Errorf("Consume:\n%v", err)
+	}
+}
+
+// #49741 RST_STREAM and Control frames should have more priority than data
+// frames to avoid blocking streams caused by clients not able to drain the
+// queue.
+func TestFrameWriteRequestWithData(t *testing.T) {
+	st := &stream{
+		id: 1,
+		sc: &serverConn{maxFrameSize: 16},
+	}
+	const size = 32
+	wr := FrameWriteRequest{&writeData{st.id, make([]byte, size), true}, st, make(chan error)}
+	if got, want := wr.DataSize(), size; got != want {
+		t.Errorf("DataSize: got %v, want %v", got, want)
+	}
+
+	// No flow-control bytes available: cannot consume anything.
+	if err := checkConsume(wr, math.MaxInt32, []FrameWriteRequest{}); err != nil {
+		t.Errorf("Consume(limited by flow control):\n%v", err)
+	}
+
+	wr = makeWriteNonStreamRequest()
+	if got, want := wr.DataSize(), 0; got != want {
+		t.Errorf("DataSize: got %v, want %v", got, want)
+	}
+
+	// Non-DATA frames are always consumed whole.
+	if err := checkConsume(wr, 0, []FrameWriteRequest{wr}); err != nil {
+		t.Errorf("Consume:\n%v", err)
+	}
+
+	wr = makeWriteRSTStream(1)
+	if got, want := wr.DataSize(), 0; got != want {
+		t.Errorf("DataSize: got %v, want %v", got, want)
+	}
+
+	// RST_STREAM frames are always consumed whole.
 	if err := checkConsume(wr, 0, []FrameWriteRequest{wr}); err != nil {
 		t.Errorf("Consume:\n%v", err)
 	}

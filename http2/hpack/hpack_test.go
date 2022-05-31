@@ -509,6 +509,25 @@ func TestAppendHuffmanString(t *testing.T) {
 	}
 }
 
+func BenchmarkAppendHuffmanString(b *testing.B) {
+	b.StopTimer()
+	expected, err := hex.DecodeString(strings.Replace("94e7 821d d7f2 e6c7 b335 dfdf cd5b 3960 d5af 2708 7f36 72c1 ab27 0fb5 291f 9587 3160 65c0 03ed 4ee5 b106 3d50 07",
+		" ", "", -1))
+	if err != nil {
+		b.Fatal(err)
+	}
+	buf := make([]byte, 0, len(expected))
+	b.ReportAllocs()
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		enc := AppendHuffmanString(buf, "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1")
+		if string(enc) != string(expected) {
+			b.Fatalf("bogus output %q", enc)
+		}
+	}
+}
+
 func TestHuffmanMaxStrLen(t *testing.T) {
 	const msg = "Some string"
 	huff := AppendHuffmanString(nil, msg)

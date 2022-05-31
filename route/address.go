@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 // +build darwin dragonfly freebsd netbsd openbsd
 
 package route
@@ -221,7 +222,7 @@ func parseKernelInetAddr(af int, b []byte) (int, Addr, error) {
 	//   to make the <length, prefix> tuple to be conformed with
 	//   the routing message boundary
 	l := int(b[0])
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
 		// On Darwin, an address in the kernel form is also
 		// used as a message filler.
 		if l == 0 || len(b) > roundup(l) {
@@ -421,5 +422,9 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 			b = b[l:]
 		}
 	}
+	// The only remaining bytes in b should be alignment.
+	// However, under some circumstances DragonFly BSD appears to put
+	// more addresses in the message than are indicated in the address
+	// bitmask, so don't check for this.
 	return as[:], nil
 }
