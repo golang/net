@@ -348,6 +348,12 @@ func (c *testNetConn) Close() error {
 // Tests that the Transport only keeps one pending dial open per destination address.
 // https://golang.org/issue/13397
 func TestTransportGroupsPendingDials(t *testing.T) {
+	// Enable verbose logs for debugging https://go.dev/issue/52996.
+	defer func(old bool) {
+		VerboseLogs = old
+	}(VerboseLogs)
+	VerboseLogs = true
+
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 	}, optOnlyServer)
 	defer st.Close()
