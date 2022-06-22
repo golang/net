@@ -41,24 +41,6 @@ const (
 )
 
 const (
-	sysIFF_UP          = 0x1
-	sysIFF_BROADCAST   = 0x2
-	sysIFF_DEBUG       = 0x4
-	sysIFF_LOOPBACK    = 0x8
-	sysIFF_POINTOPOINT = 0x10
-	sysIFF_NOTRAILERS  = 0x20
-	sysIFF_RUNNING     = 0x40
-	sysIFF_NOARP       = 0x80
-	sysIFF_PROMISC     = 0x100
-	sysIFF_ALLMULTI    = 0x200
-	sysIFF_INTELLIGENT = 0x400
-	sysIFF_MULTICAST   = 0x800
-	sysIFF_MULTI_BCAST = 0x1000
-	sysIFF_UNNUMBERED  = 0x2000
-	sysIFF_PRIVATE     = 0x8000
-)
-
-const (
 	sizeofLifnum       = 0xc
 	sizeofLifreq       = 0x178
 	sizeofLifconf      = 0x18

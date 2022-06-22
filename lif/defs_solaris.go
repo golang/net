@@ -52,24 +52,6 @@ const (
 )
 
 const (
-	sysIFF_UP          = C.IFF_UP
-	sysIFF_BROADCAST   = C.IFF_BROADCAST
-	sysIFF_DEBUG       = C.IFF_DEBUG
-	sysIFF_LOOPBACK    = C.IFF_LOOPBACK
-	sysIFF_POINTOPOINT = C.IFF_POINTOPOINT
-	sysIFF_NOTRAILERS  = C.IFF_NOTRAILERS
-	sysIFF_RUNNING     = C.IFF_RUNNING
-	sysIFF_NOARP       = C.IFF_NOARP
-	sysIFF_PROMISC     = C.IFF_PROMISC
-	sysIFF_ALLMULTI    = C.IFF_ALLMULTI
-	sysIFF_INTELLIGENT = C.IFF_INTELLIGENT
-	sysIFF_MULTICAST   = C.IFF_MULTICAST
-	sysIFF_MULTI_BCAST = C.IFF_MULTI_BCAST
-	sysIFF_UNNUMBERED  = C.IFF_UNNUMBERED
-	sysIFF_PRIVATE     = C.IFF_PRIVATE
-)
-
-const (
 	sizeofLifnum       = C.sizeof_struct_lifnum
 	sizeofLifreq       = C.sizeof_struct_lifreq
 	sizeofLifconf      = C.sizeof_struct_lifconf
