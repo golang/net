@@ -7,7 +7,11 @@
 
 package lif
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"golang.org/x/sys/unix"
+)
 
 // A Link represents logical data link information.
 //
@@ -43,7 +47,7 @@ func (ll *Link) fetch(s uintptr) {
 		ll.MTU = int(nativeEndian.Uint32(lifr.Lifru[:4]))
 	}
 	switch ll.Type {
-	case sysIFT_IPV4, sysIFT_IPV6, sysIFT_6TO4:
+	case unix.IFT_IPV4, unix.IFT_IPV6, unix.IFT_6TO4:
 	default:
 		ioc = int64(sysSIOCGLIFHWADDR)
 		if err := ioctl(s, uintptr(ioc), unsafe.Pointer(&lifr)); err == nil {

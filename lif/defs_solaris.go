@@ -65,9 +65,3 @@ type lifreq C.struct_lifreq
 type lifconf C.struct_lifconf
 
 type lifIfinfoReq C.struct_lif_ifinfo_req
-
-const (
-	sysIFT_IPV4 = C.IFT_IPV4
-	sysIFT_IPV6 = C.IFT_IPV6
-	sysIFT_6TO4 = C.IFT_6TO4
-)

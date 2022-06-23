@@ -77,9 +77,3 @@ type lifIfinfoReq struct {
 	Reachretrans uint32
 	Maxmtu       uint32
 }
-
-const (
-	sysIFT_IPV4 = 0xc8
-	sysIFT_IPV6 = 0xc9
-	sysIFT_6TO4 = 0xca
-)
