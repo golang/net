@@ -10,17 +10,19 @@ package lif
 import (
 	"fmt"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 type addrFamily int
 
 func (af addrFamily) String() string {
 	switch af {
-	case sysAF_UNSPEC:
+	case unix.AF_UNSPEC:
 		return "unspec"
-	case sysAF_INET:
+	case unix.AF_INET:
 		return "inet4"
-	case sysAF_INET6:
+	case unix.AF_INET6:
 		return "inet6"
 	default:
 		return fmt.Sprintf("%d", af)
@@ -81,7 +83,7 @@ type addrPack struct {
 func addrPacks() ([]addrPack, error) {
 	var lastErr error
 	var aps []addrPack
-	for _, af := range [...]int{sysAF_UNSPEC, sysAF_INET, sysAF_INET6} {
+	for _, af := range [...]int{unix.AF_UNSPEC, unix.AF_INET, unix.AF_INET6} {
 		as, err := Addrs(af, "")
 		if err != nil {
 			lastErr = err

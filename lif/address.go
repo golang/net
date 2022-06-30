@@ -10,6 +10,8 @@ package lif
 import (
 	"errors"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // An Addr represents an address associated with packet routing.
@@ -25,7 +27,7 @@ type Inet4Addr struct {
 }
 
 // Family implements the Family method of Addr interface.
-func (a *Inet4Addr) Family() int { return sysAF_INET }
+func (a *Inet4Addr) Family() int { return unix.AF_INET }
 
 // An Inet6Addr represents an internet address for IPv6.
 type Inet6Addr struct {
@@ -35,7 +37,7 @@ type Inet6Addr struct {
 }
 
 // Family implements the Family method of Addr interface.
-func (a *Inet6Addr) Family() int { return sysAF_INET6 }
+func (a *Inet6Addr) Family() int { return unix.AF_INET6 }
 
 // Addrs returns a list of interface addresses.
 //
@@ -62,7 +64,7 @@ func Addrs(af int, name string) ([]Addr, error) {
 			lifr.Name[i] = int8(ll.Name[i])
 		}
 		for _, ep := range eps {
-			ioc := int64(sysSIOCGLIFADDR)
+			ioc := int64(unix.SIOCGLIFADDR)
 			err := ioctl(ep.s, uintptr(ioc), unsafe.Pointer(&lifr))
 			if err != nil {
 				continue
@@ -73,11 +75,11 @@ func Addrs(af int, name string) ([]Addr, error) {
 				continue
 			}
 			switch sa.Family {
-			case sysAF_INET:
+			case unix.AF_INET:
 				a := &Inet4Addr{PrefixLen: l}
 				copy(a.IP[:], lifr.Lifru[4:8])
 				as = append(as, a)
-			case sysAF_INET6:
+			case unix.AF_INET6:
 				a := &Inet6Addr{PrefixLen: l, ZoneID: int(nativeEndian.Uint32(lifr.Lifru[24:28]))}
 				copy(a.IP[:], lifr.Lifru[8:24])
 				as = append(as, a)

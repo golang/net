@@ -34,22 +34,22 @@ func (ll *Link) fetch(s uintptr) {
 	for i := 0; i < len(ll.Name); i++ {
 		lifr.Name[i] = int8(ll.Name[i])
 	}
-	ioc := int64(sysSIOCGLIFINDEX)
+	ioc := int64(unix.SIOCGLIFINDEX)
 	if err := ioctl(s, uintptr(ioc), unsafe.Pointer(&lifr)); err == nil {
 		ll.Index = int(nativeEndian.Uint32(lifr.Lifru[:4]))
 	}
-	ioc = int64(sysSIOCGLIFFLAGS)
+	ioc = int64(unix.SIOCGLIFFLAGS)
 	if err := ioctl(s, uintptr(ioc), unsafe.Pointer(&lifr)); err == nil {
 		ll.Flags = int(nativeEndian.Uint64(lifr.Lifru[:8]))
 	}
-	ioc = int64(sysSIOCGLIFMTU)
+	ioc = int64(unix.SIOCGLIFMTU)
 	if err := ioctl(s, uintptr(ioc), unsafe.Pointer(&lifr)); err == nil {
 		ll.MTU = int(nativeEndian.Uint32(lifr.Lifru[:4]))
 	}
 	switch ll.Type {
 	case unix.IFT_IPV4, unix.IFT_IPV6, unix.IFT_6TO4:
 	default:
-		ioc = int64(sysSIOCGLIFHWADDR)
+		ioc = int64(unix.SIOCGLIFHWADDR)
 		if err := ioctl(s, uintptr(ioc), unsafe.Pointer(&lifr)); err == nil {
 			ll.Addr, _ = parseLinkAddr(lifr.Lifru[4:])
 		}
@@ -79,7 +79,7 @@ func links(eps []endpoint, name string) ([]Link, error) {
 	lifc := lifconf{Flags: sysLIFC_NOXMIT | sysLIFC_TEMPORARY | sysLIFC_ALLZONES | sysLIFC_UNDER_IPMP}
 	for _, ep := range eps {
 		lifn.Family = uint16(ep.af)
-		ioc := int64(sysSIOCGLIFNUM)
+		ioc := int64(unix.SIOCGLIFNUM)
 		if err := ioctl(ep.s, uintptr(ioc), unsafe.Pointer(&lifn)); err != nil {
 			continue
 		}
@@ -94,7 +94,7 @@ func links(eps []endpoint, name string) ([]Link, error) {
 		} else {
 			nativeEndian.PutUint32(lifc.Lifcu[:], uint32(uintptr(unsafe.Pointer(&b[0]))))
 		}
-		ioc = int64(sysSIOCGLIFCONF)
+		ioc = int64(unix.SIOCGLIFCONF)
 		if err := ioctl(ep.s, uintptr(ioc), unsafe.Pointer(&lifc)); err != nil {
 			continue
 		}
