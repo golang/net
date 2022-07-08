@@ -53,11 +53,24 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
-		if n, err := p.WriteTo(wb, nil, dst); err != nil {
-			t.Fatal(err)
-		} else if n != len(wb) {
-			t.Fatalf("got %v; want %v", n, len(wb))
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, nil, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				t.Fatal(err)
+			}
+			if n != len(wb) {
+				t.Fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
+
 		rb := make([]byte, 128)
 		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatal(err)
@@ -124,11 +137,24 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
-		if n, err := p.WriteTo(wb, nil, dst); err != nil {
-			t.Fatal(err)
-		} else if n != len(wb) {
-			t.Fatalf("got %v; want %v", n, len(wb))
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, nil, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				t.Fatal(err)
+			}
+			if n != len(wb) {
+				t.Fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
+
 		rb := make([]byte, 128)
 	loop:
 		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
