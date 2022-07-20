@@ -3388,21 +3388,6 @@ func TestConfigureServer(t *testing.T) {
 	}
 }
 
-func TestServerRejectHeadWithBody(t *testing.T) {
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		// No response body.
-	})
-	defer st.Close()
-	st.greet()
-	st.writeHeaders(HeadersFrameParam{
-		StreamID:      1, // clients send odd numbers
-		BlockFragment: st.encodeHeader(":method", "HEAD"),
-		EndStream:     false, // what we're testing, a bogus HEAD request with body
-		EndHeaders:    true,
-	})
-	st.wantRSTStream(1, ErrCodeProtocol)
-}
-
 func TestServerNoAutoContentLengthOnHead(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		// No response body. (or smaller than one frame)
