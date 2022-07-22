@@ -444,6 +444,9 @@ func main() {
 	if !platforms[runtime.GOOS+"/"+runtime.GOARCH] {
 		t.Skip("skipping test on non-race-enabled host.")
 	}
+	if runtime.Compiler == "gccgo" {
+		t.Skip("skipping race test when built with gccgo")
+	}
 	dir, err := ioutil.TempDir("", "testrace")
 	if err != nil {
 		t.Fatalf("failed to create temp directory: %v", err)
