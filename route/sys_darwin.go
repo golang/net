@@ -4,9 +4,11 @@
 
 package route
 
+import "golang.org/x/sys/unix"
+
 func (typ RIBType) parseable() bool {
 	switch typ {
-	case sysNET_RT_STAT, sysNET_RT_TRASH:
+	case unix.NET_RT_STAT, unix.NET_RT_TRASH:
 		return false
 	default:
 		return true
@@ -66,22 +68,22 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	ifmam2.parse = ifmam2.parseInterfaceMulticastAddrMessage
 	// Darwin kernels require 32-bit aligned access to routing facilities.
 	return 4, map[int]*wireFormat{
-		sysRTM_ADD:       rtm,
-		sysRTM_DELETE:    rtm,
-		sysRTM_CHANGE:    rtm,
-		sysRTM_GET:       rtm,
-		sysRTM_LOSING:    rtm,
-		sysRTM_REDIRECT:  rtm,
-		sysRTM_MISS:      rtm,
-		sysRTM_LOCK:      rtm,
-		sysRTM_RESOLVE:   rtm,
-		sysRTM_NEWADDR:   ifam,
-		sysRTM_DELADDR:   ifam,
-		sysRTM_IFINFO:    ifm,
-		sysRTM_NEWMADDR:  ifmam,
-		sysRTM_DELMADDR:  ifmam,
-		sysRTM_IFINFO2:   ifm2,
-		sysRTM_NEWMADDR2: ifmam2,
-		sysRTM_GET2:      rtm2,
+		unix.RTM_ADD:       rtm,
+		unix.RTM_DELETE:    rtm,
+		unix.RTM_CHANGE:    rtm,
+		unix.RTM_GET:       rtm,
+		unix.RTM_LOSING:    rtm,
+		unix.RTM_REDIRECT:  rtm,
+		unix.RTM_MISS:      rtm,
+		unix.RTM_LOCK:      rtm,
+		unix.RTM_RESOLVE:   rtm,
+		unix.RTM_NEWADDR:   ifam,
+		unix.RTM_DELADDR:   ifam,
+		unix.RTM_IFINFO:    ifm,
+		unix.RTM_NEWMADDR:  ifmam,
+		unix.RTM_DELMADDR:  ifmam,
+		unix.RTM_IFINFO2:   ifm2,
+		unix.RTM_NEWMADDR2: ifmam2,
+		unix.RTM_GET2:      rtm2,
 	}
 }

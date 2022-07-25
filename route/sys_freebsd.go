@@ -7,6 +7,8 @@ package route
 import (
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 func (typ RIBType) parseable() bool { return true }
@@ -141,20 +143,20 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	ifmam.parse = ifmam.parseInterfaceMulticastAddrMessage
 	ifanm.parse = ifanm.parseInterfaceAnnounceMessage
 	return align, map[int]*wireFormat{
-		sysRTM_ADD:        rtm,
-		sysRTM_DELETE:     rtm,
-		sysRTM_CHANGE:     rtm,
-		sysRTM_GET:        rtm,
-		sysRTM_LOSING:     rtm,
-		sysRTM_REDIRECT:   rtm,
-		sysRTM_MISS:       rtm,
-		sysRTM_LOCK:       rtm,
-		sysRTM_RESOLVE:    rtm,
-		sysRTM_NEWADDR:    ifam,
-		sysRTM_DELADDR:    ifam,
-		sysRTM_IFINFO:     ifm,
-		sysRTM_NEWMADDR:   ifmam,
-		sysRTM_DELMADDR:   ifmam,
-		sysRTM_IFANNOUNCE: ifanm,
+		unix.RTM_ADD:        rtm,
+		unix.RTM_DELETE:     rtm,
+		unix.RTM_CHANGE:     rtm,
+		unix.RTM_GET:        rtm,
+		unix.RTM_LOSING:     rtm,
+		unix.RTM_REDIRECT:   rtm,
+		unix.RTM_MISS:       rtm,
+		unix.RTM_LOCK:       rtm,
+		unix.RTM_RESOLVE:    rtm,
+		unix.RTM_NEWADDR:    ifam,
+		unix.RTM_DELADDR:    ifam,
+		unix.RTM_IFINFO:     ifm,
+		unix.RTM_NEWMADDR:   ifmam,
+		unix.RTM_DELMADDR:   ifmam,
+		unix.RTM_IFANNOUNCE: ifanm,
 	}
 }

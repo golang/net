@@ -7,6 +7,8 @@ package route
 import (
 	"reflect"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 type parseAddrsOnDarwinTest struct {
@@ -18,7 +20,7 @@ type parseAddrsOnDarwinTest struct {
 
 var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	{
-		sysRTA_DST | sysRTA_GATEWAY | sysRTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x10, 0x2, 0x0, 0x0, 0xc0, 0xa8, 0x56, 0x0,

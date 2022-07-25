@@ -4,11 +4,15 @@
 
 package route
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"golang.org/x/sys/unix"
+)
 
 func (typ RIBType) parseable() bool {
 	switch typ {
-	case sysNET_RT_STATS, sysNET_RT_TABLE:
+	case unix.NET_RT_STATS, unix.NET_RT_TABLE:
 		return false
 	default:
 		return true
@@ -62,19 +66,19 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	ifanm := &wireFormat{extOff: -1, bodyOff: -1}
 	ifanm.parse = ifanm.parseInterfaceAnnounceMessage
 	return int(unsafe.Sizeof(p)), map[int]*wireFormat{
-		sysRTM_ADD:        rtm,
-		sysRTM_DELETE:     rtm,
-		sysRTM_CHANGE:     rtm,
-		sysRTM_GET:        rtm,
-		sysRTM_LOSING:     rtm,
-		sysRTM_REDIRECT:   rtm,
-		sysRTM_MISS:       rtm,
-		sysRTM_LOCK:       rtm,
-		sysRTM_RESOLVE:    rtm,
-		sysRTM_NEWADDR:    ifam,
-		sysRTM_DELADDR:    ifam,
-		sysRTM_IFINFO:     ifm,
-		sysRTM_IFANNOUNCE: ifanm,
-		sysRTM_DESYNC:     rtm,
+		unix.RTM_ADD:        rtm,
+		unix.RTM_DELETE:     rtm,
+		unix.RTM_CHANGE:     rtm,
+		unix.RTM_GET:        rtm,
+		unix.RTM_LOSING:     rtm,
+		unix.RTM_REDIRECT:   rtm,
+		unix.RTM_MISS:       rtm,
+		unix.RTM_LOCK:       rtm,
+		unix.RTM_RESOLVE:    rtm,
+		unix.RTM_NEWADDR:    ifam,
+		unix.RTM_DELADDR:    ifam,
+		unix.RTM_IFINFO:     ifm,
+		unix.RTM_IFANNOUNCE: ifanm,
+		unix.RTM_DESYNC:     rtm,
 	}
 }

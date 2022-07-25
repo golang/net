@@ -4,14 +4,18 @@
 
 package route
 
-import "syscall"
+import (
+	"syscall"
+
+	"golang.org/x/sys/unix"
+)
 
 func (m *RouteMessage) marshal() ([]byte, error) {
 	l := sizeofRtMsghdr + addrsSpace(m.Addrs)
 	b := make([]byte, l)
 	nativeEndian.PutUint16(b[:2], uint16(l))
 	if m.Version == 0 {
-		b[2] = sysRTM_VERSION
+		b[2] = unix.RTM_VERSION
 	} else {
 		b[2] = byte(m.Version)
 	}

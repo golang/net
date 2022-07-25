@@ -7,7 +7,11 @@
 
 package route
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"golang.org/x/sys/unix"
+)
 
 var (
 	nativeEndian binaryByteOrder
@@ -25,7 +29,7 @@ func init() {
 		nativeEndian = bigEndian
 	}
 	// might get overridden in probeRoutingStack
-	rtmVersion = sysRTM_VERSION
+	rtmVersion = unix.RTM_VERSION
 	kernelAlign, wireFormats = probeRoutingStack()
 }
 

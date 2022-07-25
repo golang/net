@@ -4,6 +4,8 @@
 
 package route
 
+import "golang.org/x/sys/unix"
+
 func (typ RIBType) parseable() bool { return true }
 
 // RouteMetrics represents route metrics.
@@ -54,18 +56,18 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	// NetBSD 6 and above kernels require 64-bit aligned access to
 	// routing facilities.
 	return 8, map[int]*wireFormat{
-		sysRTM_ADD:        rtm,
-		sysRTM_DELETE:     rtm,
-		sysRTM_CHANGE:     rtm,
-		sysRTM_GET:        rtm,
-		sysRTM_LOSING:     rtm,
-		sysRTM_REDIRECT:   rtm,
-		sysRTM_MISS:       rtm,
-		sysRTM_LOCK:       rtm,
-		sysRTM_RESOLVE:    rtm,
-		sysRTM_NEWADDR:    ifam,
-		sysRTM_DELADDR:    ifam,
-		sysRTM_IFANNOUNCE: ifanm,
-		sysRTM_IFINFO:     ifm,
+		unix.RTM_ADD:        rtm,
+		unix.RTM_DELETE:     rtm,
+		unix.RTM_CHANGE:     rtm,
+		unix.RTM_GET:        rtm,
+		unix.RTM_LOSING:     rtm,
+		unix.RTM_REDIRECT:   rtm,
+		unix.RTM_MISS:       rtm,
+		unix.RTM_LOCK:       rtm,
+		unix.RTM_RESOLVE:    rtm,
+		unix.RTM_NEWADDR:    ifam,
+		unix.RTM_DELADDR:    ifam,
+		unix.RTM_IFANNOUNCE: ifanm,
+		unix.RTM_IFINFO:     ifm,
 	}
 }
