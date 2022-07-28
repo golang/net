@@ -73,7 +73,6 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 		unix.RTM_LOSING:     rtm,
 		unix.RTM_REDIRECT:   rtm,
 		unix.RTM_MISS:       rtm,
-		unix.RTM_LOCK:       rtm,
 		unix.RTM_RESOLVE:    rtm,
 		unix.RTM_NEWADDR:    ifam,
 		unix.RTM_DELADDR:    ifam,
