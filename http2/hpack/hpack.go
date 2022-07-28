@@ -306,28 +306,28 @@ func (d *Decoder) parseHeaderFieldRepr() error {
 	switch {
 	case b&128 != 0:
 		// Indexed representation.
-		// High bit set?
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.6.1
+		// 0b1xxxxxxx: top one bit is 1
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.6.1
 		return d.parseFieldIndexed()
 	case b&192 == 64:
 		// 6.2.1 Literal Header Field with Incremental Indexing
-		// 0b10xxxxxx: top two bits are 10
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.6.2.1
+		// 0b01xxxxxx: top two bits are 01
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.6.2.1
 		return d.parseFieldLiteral(6, indexedTrue)
 	case b&240 == 0:
 		// 6.2.2 Literal Header Field without Indexing
 		// 0b0000xxxx: top four bits are 0000
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.6.2.2
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.6.2.2
 		return d.parseFieldLiteral(4, indexedFalse)
 	case b&240 == 16:
 		// 6.2.3 Literal Header Field never Indexed
 		// 0b0001xxxx: top four bits are 0001
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.6.2.3
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.6.2.3
 		return d.parseFieldLiteral(4, indexedNever)
 	case b&224 == 32:
 		// 6.3 Dynamic Table Size Update
 		// Top three bits are '001'.
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.6.3
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.6.3
 		return d.parseDynamicTableSizeUpdate()
 	}
 
