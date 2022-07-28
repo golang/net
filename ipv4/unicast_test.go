@@ -161,11 +161,6 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatal(err)
 		}
 		if n, _, _, err := p.ReadFrom(rb); err != nil {
-			switch runtime.GOOS {
-			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
-				t.Logf("not supported on %s", runtime.GOOS)
-				continue
-			}
 			t.Fatal(err)
 		} else {
 			m, err := icmp.ParseMessage(iana.ProtocolICMP, rb[:n])
@@ -251,11 +246,6 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, b, _, err := r.ReadFrom(rb); err != nil {
-			switch runtime.GOOS {
-			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
-				t.Logf("not supported on %s", runtime.GOOS)
-				continue
-			}
 			t.Fatal(err)
 		} else {
 			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)
