@@ -809,6 +809,9 @@ func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
 				EndHeaders: true,
 			})
 			st.writeData(1, true, []byte("12345"))
+			// Return flow control bytes back, since the data handler closed
+			// the stream.
+			st.wantWindowUpdate(0, 5)
 		})
 }
 
@@ -3918,7 +3921,7 @@ func TestServer_Rejects_TooSmall(t *testing.T) {
 			EndHeaders: true,
 		})
 		st.writeData(1, true, []byte("12345"))
-
+		st.wantWindowUpdate(0, 5)
 		st.wantRSTStream(1, ErrCodeProtocol)
 	})
 }
