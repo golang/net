@@ -77,26 +77,26 @@ func TestDecoderDecode(t *testing.T) {
 		wantDynTab []HeaderField // newest entry first
 	}{
 		// C.2.1 Literal Header Field with Indexing
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.1
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.1
 		{"C.2.1", dehex("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572"),
 			[]HeaderField{pair("custom-key", "custom-header")},
 			[]HeaderField{pair("custom-key", "custom-header")},
 		},
 
 		// C.2.2 Literal Header Field without Indexing
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.2
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.2
 		{"C.2.2", dehex("040c 2f73 616d 706c 652f 7061 7468"),
 			[]HeaderField{pair(":path", "/sample/path")},
 			[]HeaderField{}},
 
 		// C.2.3 Literal Header Field never Indexed
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.3
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.3
 		{"C.2.3", dehex("1008 7061 7373 776f 7264 0673 6563 7265 74"),
 			[]HeaderField{{"password", "secret", true}},
 			[]HeaderField{}},
 
 		// C.2.4 Indexed Header Field
-		// http://http2.github.io/http2-spec/compression.html#rfc.section.C.2.4
+		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.4
 		{"C.2.4", []byte("\x82"),
 			[]HeaderField{pair(":method", "GET")},
 			[]HeaderField{}},
@@ -134,7 +134,7 @@ type encAndWant struct {
 }
 
 // C.3 Request Examples without Huffman Coding
-// http://http2.github.io/http2-spec/compression.html#rfc.section.C.3
+// https://httpwg.org/specs/rfc7541.html#rfc.section.C.3
 func TestDecodeC3_NoHuffman(t *testing.T) {
 	testDecodeSeries(t, 4096, []encAndWant{
 		{dehex("8286 8441 0f77 7777 2e65 7861 6d70 6c65 2e63 6f6d"),
@@ -182,7 +182,7 @@ func TestDecodeC3_NoHuffman(t *testing.T) {
 }
 
 // C.4 Request Examples with Huffman Coding
-// http://http2.github.io/http2-spec/compression.html#rfc.section.C.4
+// https://httpwg.org/specs/rfc7541.html#rfc.section.C.4
 func TestDecodeC4_Huffman(t *testing.T) {
 	testDecodeSeries(t, 4096, []encAndWant{
 		{dehex("8286 8441 8cf1 e3c2 e5f2 3a6b a0ab 90f4 ff"),
@@ -229,7 +229,7 @@ func TestDecodeC4_Huffman(t *testing.T) {
 	})
 }
 
-// http://http2.github.io/http2-spec/compression.html#rfc.section.C.5
+// https://httpwg.org/specs/rfc7541.html#rfc.section.C.5
 // "This section shows several consecutive header lists, corresponding
 // to HTTP responses, on the same connection. The HTTP/2 setting
 // parameter SETTINGS_HEADER_TABLE_SIZE is set to the value of 256
@@ -299,7 +299,7 @@ func TestDecodeC5_ResponsesNoHuff(t *testing.T) {
 	})
 }
 
-// http://http2.github.io/http2-spec/compression.html#rfc.section.C.6
+// https://httpwg.org/specs/rfc7541.html#rfc.section.C.6
 // "This section shows the same examples as the previous section, but
 // using Huffman encoding for the literal values. The HTTP/2 setting
 // parameter SETTINGS_HEADER_TABLE_SIZE is set to the value of 256
