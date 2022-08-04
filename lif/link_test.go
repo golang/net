@@ -9,9 +9,8 @@ package lif
 
 import (
 	"fmt"
+	"syscall"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 func (ll *Link) String() string {
@@ -26,7 +25,7 @@ type linkPack struct {
 func linkPacks() ([]linkPack, error) {
 	var lastErr error
 	var lps []linkPack
-	for _, af := range [...]int{unix.AF_UNSPEC, unix.AF_INET, unix.AF_INET6} {
+	for _, af := range [...]int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 		lls, err := Links(af, "")
 		if err != nil {
 			lastErr = err
