@@ -5,16 +5,15 @@
 package route
 
 import (
+	"syscall"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 func TestFetchAndParseRIBOnDarwin(t *testing.T) {
-	for _, typ := range []RIBType{unix.NET_RT_FLAGS, unix.NET_RT_DUMP2, unix.NET_RT_IFLIST2} {
+	for _, typ := range []RIBType{syscall.NET_RT_FLAGS, syscall.NET_RT_DUMP2, syscall.NET_RT_IFLIST2} {
 		var lastErr error
 		var ms []Message
-		for _, af := range []int{unix.AF_UNSPEC, unix.AF_INET, unix.AF_INET6} {
+		for _, af := range []int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 			rs, err := fetchAndParseRIB(af, typ)
 			if err != nil {
 				lastErr = err

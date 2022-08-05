@@ -4,11 +4,11 @@
 
 package route
 
-import "golang.org/x/sys/unix"
+import "syscall"
 
 func (typ RIBType) parseable() bool {
 	switch typ {
-	case unix.NET_RT_STAT, unix.NET_RT_TRASH:
+	case syscall.NET_RT_STAT, syscall.NET_RT_TRASH:
 		return false
 	default:
 		return true
@@ -68,22 +68,22 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	ifmam2.parse = ifmam2.parseInterfaceMulticastAddrMessage
 	// Darwin kernels require 32-bit aligned access to routing facilities.
 	return 4, map[int]*wireFormat{
-		unix.RTM_ADD:       rtm,
-		unix.RTM_DELETE:    rtm,
-		unix.RTM_CHANGE:    rtm,
-		unix.RTM_GET:       rtm,
-		unix.RTM_LOSING:    rtm,
-		unix.RTM_REDIRECT:  rtm,
-		unix.RTM_MISS:      rtm,
-		unix.RTM_LOCK:      rtm,
-		unix.RTM_RESOLVE:   rtm,
-		unix.RTM_NEWADDR:   ifam,
-		unix.RTM_DELADDR:   ifam,
-		unix.RTM_IFINFO:    ifm,
-		unix.RTM_NEWMADDR:  ifmam,
-		unix.RTM_DELMADDR:  ifmam,
-		unix.RTM_IFINFO2:   ifm2,
-		unix.RTM_NEWMADDR2: ifmam2,
-		unix.RTM_GET2:      rtm2,
+		syscall.RTM_ADD:       rtm,
+		syscall.RTM_DELETE:    rtm,
+		syscall.RTM_CHANGE:    rtm,
+		syscall.RTM_GET:       rtm,
+		syscall.RTM_LOSING:    rtm,
+		syscall.RTM_REDIRECT:  rtm,
+		syscall.RTM_MISS:      rtm,
+		syscall.RTM_LOCK:      rtm,
+		syscall.RTM_RESOLVE:   rtm,
+		syscall.RTM_NEWADDR:   ifam,
+		syscall.RTM_DELADDR:   ifam,
+		syscall.RTM_IFINFO:    ifm,
+		syscall.RTM_NEWMADDR:  ifmam,
+		syscall.RTM_DELMADDR:  ifmam,
+		syscall.RTM_IFINFO2:   ifm2,
+		syscall.RTM_NEWMADDR2: ifmam2,
+		syscall.RTM_GET2:      rtm2,
 	}
 }

@@ -9,9 +9,8 @@ package route
 
 import (
 	"reflect"
+	"syscall"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 type parseAddrsTest struct {
@@ -23,7 +22,7 @@ type parseAddrsTest struct {
 
 var parseAddrsLittleEndianTests = []parseAddrsTest{
 	{
-		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK | unix.RTA_BRD,
+		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK | syscall.RTA_BRD,
 		parseKernelInetAddr,
 		[]byte{
 			0x38, 0x12, 0x0, 0x0, 0xff, 0xff, 0xff, 0x0,
@@ -60,7 +59,7 @@ var parseAddrsLittleEndianTests = []parseAddrsTest{
 		},
 	},
 	{
-		unix.RTA_NETMASK | unix.RTA_IFP | unix.RTA_IFA,
+		syscall.RTA_NETMASK | syscall.RTA_IFP | syscall.RTA_IFA,
 		parseKernelInetAddr,
 		[]byte{
 			0x7, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0x0,

@@ -5,16 +5,15 @@
 package route
 
 import (
+	"syscall"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 func TestFetchAndParseRIBOnFreeBSD(t *testing.T) {
-	for _, typ := range []RIBType{unix.NET_RT_IFMALIST} {
+	for _, typ := range []RIBType{syscall.NET_RT_IFMALIST} {
 		var lastErr error
 		var ms []Message
-		for _, af := range []int{unix.AF_UNSPEC, unix.AF_INET, unix.AF_INET6} {
+		for _, af := range []int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 			rs, err := fetchAndParseRIB(af, typ)
 			if err != nil {
 				lastErr = err
@@ -38,7 +37,7 @@ func TestFetchAndParseRIBOnFreeBSD(t *testing.T) {
 }
 
 func TestFetchAndParseRIBOnFreeBSD10AndAbove(t *testing.T) {
-	if _, err := FetchRIB(unix.AF_UNSPEC, unix.NET_RT_IFLISTL, 0); err != nil {
+	if _, err := FetchRIB(syscall.AF_UNSPEC, syscall.NET_RT_IFLISTL, 0); err != nil {
 		t.Skip("NET_RT_IFLISTL not supported")
 	}
 	if compatFreeBSD32 {
@@ -51,12 +50,12 @@ func TestFetchAndParseRIBOnFreeBSD10AndAbove(t *testing.T) {
 		msgs []Message
 		ss   []string
 	}{
-		{typ: unix.NET_RT_IFLIST},
-		{typ: unix.NET_RT_IFLISTL},
+		{typ: syscall.NET_RT_IFLIST},
+		{typ: syscall.NET_RT_IFLISTL},
 	}
 	for i := range tests {
 		var lastErr error
-		for _, af := range []int{unix.AF_UNSPEC, unix.AF_INET, unix.AF_INET6} {
+		for _, af := range []int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 			rs, err := fetchAndParseRIB(af, tests[i].typ)
 			if err != nil {
 				lastErr = err

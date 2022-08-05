@@ -8,9 +8,8 @@
 package route
 
 import (
+	"syscall"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 var (
@@ -29,7 +28,7 @@ func init() {
 		nativeEndian = bigEndian
 	}
 	// might get overridden in probeRoutingStack
-	rtmVersion = unix.RTM_VERSION
+	rtmVersion = syscall.RTM_VERSION
 	kernelAlign, wireFormats = probeRoutingStack()
 }
 
