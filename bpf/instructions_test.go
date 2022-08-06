@@ -6,7 +6,7 @@ package bpf
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -98,7 +98,7 @@ func TestInterop(t *testing.T) {
 	}
 	t.Logf("Assembled program is %d instructions long", len(out))
 
-	bs, err := ioutil.ReadFile(allInstructionsExpected)
+	bs, err := os.ReadFile(allInstructionsExpected)
 	if err != nil {
 		t.Fatalf("reading %s: %s", allInstructionsExpected, err)
 	}

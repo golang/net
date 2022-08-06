@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -66,7 +66,7 @@ func TestContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ioutil.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}

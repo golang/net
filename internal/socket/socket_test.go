@@ -10,7 +10,6 @@ package socket_test
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -447,7 +446,7 @@ func main() {
 	if runtime.Compiler == "gccgo" {
 		t.Skip("skipping race test when built with gccgo")
 	}
-	dir, err := ioutil.TempDir("", "testrace")
+	dir, err := os.MkdirTemp("", "testrace")
 	if err != nil {
 		t.Fatalf("failed to create temp directory: %v", err)
 	}
@@ -464,7 +463,7 @@ func main() {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("test %d", i), func(t *testing.T) {
 			src := filepath.Join(dir, fmt.Sprintf("test%d.go", i))
-			if err := ioutil.WriteFile(src, []byte(test), 0644); err != nil {
+			if err := os.WriteFile(src, []byte(test), 0644); err != nil {
 				t.Fatalf("failed to write file: %v", err)
 			}
 			t.Logf("%s run -race %s", goBinary, src)

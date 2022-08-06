@@ -8,7 +8,6 @@ package nettest
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -218,7 +217,7 @@ func NewLocalPacketListener(network string) (net.PacketConn, error) {
 // LocalPath returns a local path that can be used for Unix-domain
 // protocol testing.
 func LocalPath() (string, error) {
-	f, err := ioutil.TempFile("", "go-nettest")
+	f, err := os.CreateTemp("", "go-nettest")
 	if err != nil {
 		return "", err
 	}
