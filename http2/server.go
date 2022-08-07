@@ -1772,10 +1772,18 @@ func (sc *serverConn) processData(f *DataFrame) error {
 			st.bodyBytes += int64(len(data))
 		}
 
+		// Connection level flow control window update must be
+		// sent immediately after receiving data frame.
+		// This separates connection's flow control from body reads
+		// as connection's flow control must not depend on whether
+		// body has been read by application handler or not.
+		// This prevents fast streams from starving due to other
+		// slow streams.
+		sc.sendWindowUpdate32(nil, int32(f.Length))
+
 		// Return any padded flow control now, since we won't
 		// refund it later on body reads.
 		if pad := int32(f.Length) - int32(len(data)); pad > 0 {
-			sc.sendWindowUpdate32(nil, pad)
 			sc.sendWindowUpdate32(st, pad)
 		}
 	}
@@ -2317,7 +2325,6 @@ func (sc *serverConn) noteBodyReadFromHandler(st *stream, n int, err error) {
 
 func (sc *serverConn) noteBodyRead(st *stream, n int) {
 	sc.serveG.check()
-	sc.sendWindowUpdate(nil, n) // conn-level
 	if st.state != stateHalfClosedRemote && st.state != stateClosed {
 		// Don't send this WINDOW_UPDATE if the stream is closed
 		// remotely.
