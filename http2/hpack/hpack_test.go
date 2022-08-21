@@ -7,6 +7,7 @@ package hpack
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -72,45 +73,130 @@ func TestDynamicTableSizeEvict(t *testing.T) {
 func TestDecoderDecode(t *testing.T) {
 	tests := []struct {
 		name       string
-		in         []byte
-		want       []HeaderField
+		in         [][]byte
+		want       [][]HeaderField
 		wantDynTab []HeaderField // newest entry first
+		err        []error
 	}{
-		// C.2.1 Literal Header Field with Indexing
-		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.1
-		{"C.2.1", dehex("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572"),
-			[]HeaderField{pair("custom-key", "custom-header")},
-			[]HeaderField{pair("custom-key", "custom-header")},
+		{"happy flow", [][]byte{{0x83, 0x86, 0x45, 0x95, 0x62, 0x72, 0xd1, 0x41, 0xfc, 0x1e, 0xca, 0x24, 0x5f, 0x15, 0x85, 0x2a, 0x4b, 0x63, 0x1b, 0x87, 0xeb, 0x19, 0x68, 0xa0, 0xff, 0x41, 0x8b, 0xa0, 0xe4, 0x1d, 0x13, 0x9d, 0x9, 0xb8, 0xd3, 0x6f, 0xb6, 0xcf, 0x5f, 0x8b, 0x1d, 0x75, 0xd0, 0x62, 0xd, 0x26, 0x3d, 0x4c, 0x4d, 0x65, 0x64, 0x7a, 0x8a, 0x9a, 0xca, 0xc8, 0xb4, 0xc7, 0x60, 0x2b, 0xb4, 0xea, 0xe0, 0x40, 0x2, 0x74, 0x65, 0x86, 0x4d, 0x83, 0x35, 0x5, 0xb1, 0x1f, 0x40, 0x89, 0x9a, 0xca, 0xc8, 0xb2, 0x4d, 0x49, 0x4f, 0x6a, 0x7f, 0x86, 0x7d, 0xf7, 0xdf, 0x8, 0x9e, 0xb7},
+			{0x83, 0x86, 0x45, 0x9b, 0x62, 0xbb, 0xe, 0x93, 0xc7, 0x6c, 0xab, 0xee, 0x4d, 0x85, 0x1d, 0x3b, 0x8b, 0x67, 0x73, 0x10, 0xac, 0x61, 0x2a, 0x49, 0x3e, 0xd2, 0xa2, 0xb3, 0xd4, 0x82, 0xff, 0xc3, 0xc2, 0xc1, 0xc0, 0x7f, 0x0, 0x86, 0x7d, 0xf7, 0xde, 0x71, 0x97, 0xad}},
+			[][]HeaderField{
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/helloworld.Greeter/SayHello"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9999128u"),
+				},
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/protobuf.StreamService/FetchResponse"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9998638u"),
+				}},
+			[]HeaderField{
+				pair("grpc-timeout", "9998638u"),
+				pair(":path", "/protobuf.StreamService/FetchResponse"),
+				pair("grpc-timeout", "9999128u"),
+				pair("te", "trailers"),
+				pair("user-agent", "grpc-go/1.47.0"),
+				pair("content-type", "application/grpc"),
+				pair(":authority", "localhost:45953"),
+				pair(":path", "/helloworld.Greeter/SayHello")},
+			[]error{nil, nil},
 		},
 
-		// C.2.2 Literal Header Field without Indexing
-		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.2
-		{"C.2.2", dehex("040c 2f73 616d 706c 652f 7061 7468"),
-			[]HeaderField{pair(":path", "/sample/path")},
-			[]HeaderField{}},
+		{"broken second request last byte- - grpc timeout", [][]byte{
+			{0x83, 0x86, 0x45, 0x95, 0x62, 0x72, 0xd1, 0x41, 0xfc, 0x1e, 0xca, 0x24, 0x5f, 0x15, 0x85, 0x2a, 0x4b, 0x63, 0x1b, 0x87, 0xeb, 0x19, 0x68, 0xa0, 0xff, 0x41, 0x8b, 0xa0, 0xe4, 0x1d, 0x13, 0x9d, 0x9, 0xb8, 0xd3, 0x6f, 0xb6, 0xcf, 0x5f, 0x8b, 0x1d, 0x75, 0xd0, 0x62, 0xd, 0x26, 0x3d, 0x4c, 0x4d, 0x65, 0x64, 0x7a, 0x8a, 0x9a, 0xca, 0xc8, 0xb4, 0xc7, 0x60, 0x2b, 0xb4, 0xea, 0xe0, 0x40, 0x2, 0x74, 0x65, 0x86, 0x4d, 0x83, 0x35, 0x5, 0xb1, 0x1f, 0x40, 0x89, 0x9a, 0xca, 0xc8, 0xb2, 0x4d, 0x49, 0x4f, 0x6a, 0x7f, 0x86, 0x7d, 0xf7, 0xdf, 0x8, 0x9e, 0xb7},
+			{0x83, 0x86, 0x45, 0x9b, 0x62, 0xbb, 0xe, 0x93, 0xc7, 0x6c, 0xab, 0xee, 0x4d, 0x85, 0x1d, 0x3b, 0x8b, 0x67, 0x73, 0x10, 0xac, 0x61, 0x2a, 0x49, 0x3e, 0xd2, 0xa2, 0xb3, 0xd4, 0x82, 0xff, 0xc3, 0xc2, 0xc1, 0xc0, 0x7f, 0x0, 0x86, 0x7d, 0xf7, 0xde, 0x71},
+		},
+			[][]HeaderField{
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/helloworld.Greeter/SayHello"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9999128u"),
+				},
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/protobuf.StreamService/FetchResponse"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9998638u"),
+				}},
+			[]HeaderField{
+				pair(":path", "/protobuf.StreamService/FetchResponse"),
+				pair("grpc-timeout", "9999128u"),
+				pair("te", "trailers"),
+				pair("user-agent", "grpc-go/1.47.0"),
+				pair("content-type", "application/grpc"),
+				pair(":authority", "localhost:45953"),
+				pair(":path", "/helloworld.Greeter/SayHello")},
+			[]error{nil, DecodingError{errors.New("truncated headers")}},
+		},
 
-		// C.2.3 Literal Header Field never Indexed
-		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.3
-		{"C.2.3", dehex("1008 7061 7373 776f 7264 0673 6563 7265 74"),
-			[]HeaderField{{"password", "secret", true}},
-			[]HeaderField{}},
-
-		// C.2.4 Indexed Header Field
-		// https://httpwg.org/specs/rfc7541.html#rfc.section.C.2.4
-		{"C.2.4", []byte("\x82"),
-			[]HeaderField{pair(":method", "GET")},
-			[]HeaderField{}},
+		{"minimum dynamic key", [][]byte{
+			{0x83, 0x86, 0x45, 0x95, 0x62, 0x72, 0xd1, 0x41, 0xfc, 0x1e, 0xca, 0x24, 0x5f, 0x15, 0x85, 0x2a, 0x4b, 0x63, 0x1b, 0x87, 0xeb, 0x19, 0x68, 0xa0, 0xff, 0x41, 0x8b, 0xa0, 0xe4, 0x1d, 0x13, 0x9d, 0x9, 0xb8, 0xd3, 0x6f, 0xb6, 0xcf, 0x5f, 0x8b, 0x1d, 0x75},
+			{0x83, 0x86, 0x45, 0x9b, 0x62, 0xbb, 0xe, 0x93, 0xc7, 0x6c, 0xab, 0xee, 0x4d, 0x85, 0x1d, 0x3b, 0x8b, 0x67, 0x73, 0x10, 0xac, 0x61, 0x2a, 0x49, 0x3e, 0xd2, 0xa2, 0xb3, 0xd4, 0x82, 0xff, 0xc3, 0xc2, 0xc1, 0xc0, 0x7f, 0x0, 0x86, 0x7d, 0xf7, 0xde, 0x71},
+		},
+			[][]HeaderField{
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/helloworld.Greeter/SayHello"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9999128u"),
+				},
+				{
+					pair(":method", "POST"),
+					pair(":scheme", "http"),
+					pair(":path", "/protobuf.StreamService/FetchResponse"),
+					pair(":authority", "localhost:45953"),
+					pair("content-type", "application/grpc"),
+					pair("user-agent", "grpc-go/1.47.0"),
+					pair("te", "trailers"),
+					pair("grpc-timeout", "9998638u"),
+				}},
+			[]HeaderField{
+				pair(":path", "/protobuf.StreamService/FetchResponse"),
+				pair(":authority", "localhost:45953"),
+				pair(":path", "/helloworld.Greeter/SayHello")},
+			[]error{DecodingError{errors.New("truncated headers")}, DecodingError{errors.New("invalid indexed representation")}},
+		},
 	}
 	for _, tt := range tests {
 		d := NewDecoder(4096, nil)
-		hf, err := d.DecodeFull(tt.in)
-		if err != nil {
-			t.Errorf("%s: %v", tt.name, err)
-			continue
+		for index, current := range tt.in {
+			hf, err := d.DecodeFull(current)
+			if err != nil {
+				if strings.Contains(err.Error(), tt.err[index].Error()) {
+					continue
+				}
+				t.Errorf("%s: %v", tt.name, err)
+				continue
+			}
+			if !reflect.DeepEqual(hf, tt.want[index]) {
+				t.Errorf("%s: Got %v; want %v", tt.name, hf, tt.want)
+			}
 		}
-		if !reflect.DeepEqual(hf, tt.want) {
-			t.Errorf("%s: Got %v; want %v", tt.name, hf, tt.want)
-		}
+
 		gotDynTab := d.dynTab.reverseCopy()
 		if !reflect.DeepEqual(gotDynTab, tt.wantDynTab) {
 			t.Errorf("%s: dynamic table after = %v; want %v", tt.name, gotDynTab, tt.wantDynTab)
