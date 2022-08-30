@@ -3055,6 +3055,30 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 	})
 }
 
+func TestServerWritesUndeclaredTrailers(t *testing.T) {
+	const trailer = "Trailer-Header"
+	const value = "hi1"
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(http.TrailerPrefix+trailer, value)
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	cl := &http.Client{Transport: tr}
+	resp, err := cl.Get(st.ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if got, want := resp.Trailer.Get(trailer), value; got != want {
+		t.Errorf("trailer %v = %q, want %q", trailer, got, want)
+	}
+}
+
 // validate transmitted header field names & values
 // golang.org/issue/14048
 func TestServerDoesntWriteInvalidHeaders(t *testing.T) {
