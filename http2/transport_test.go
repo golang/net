@@ -5922,3 +5922,67 @@ func TestTransportSlowWrites(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestTransportClosesConnAfterGoAwayNoStreams(t *testing.T) {
+	testTransportClosesConnAfterGoAway(t, 0)
+}
+func TestTransportClosesConnAfterGoAwayLastStream(t *testing.T) {
+	testTransportClosesConnAfterGoAway(t, 1)
+}
+
+// testTransportClosesConnAfterGoAway verifies that the transport
+// closes a connection after reading a GOAWAY from it.
+//
+// lastStream is the last stream ID in the GOAWAY frame.
+// When 0, the transport (unsuccessfully) retries the request (stream 1);
+// when 1, the transport reads the response after receiving the GOAWAY.
+func testTransportClosesConnAfterGoAway(t *testing.T, lastStream uint32) {
+	ct := newClientTester(t)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	ct.client = func() error {
+		defer wg.Done()
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		res, err := ct.tr.RoundTrip(req)
+		if err == nil {
+			res.Body.Close()
+		}
+		if gotErr, wantErr := err != nil, lastStream == 0; gotErr != wantErr {
+			t.Errorf("RoundTrip got error %v (want error: %v)", err, wantErr)
+		}
+		if err = ct.cc.Close(); err == nil {
+			err = fmt.Errorf("expected error on Close")
+		} else if strings.Contains(err.Error(), "use of closed network") {
+			err = nil
+		}
+		return err
+	}
+
+	ct.server = func() error {
+		defer wg.Wait()
+		ct.greet()
+		hf, err := ct.firstHeaders()
+		if err != nil {
+			return fmt.Errorf("server failed reading HEADERS: %v", err)
+		}
+		if err := ct.fr.WriteGoAway(lastStream, ErrCodeNo, nil); err != nil {
+			return fmt.Errorf("server failed writing GOAWAY: %v", err)
+		}
+		if lastStream > 0 {
+			// Send a valid response to first request.
+			var buf bytes.Buffer
+			enc := hpack.NewEncoder(&buf)
+			enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+			ct.fr.WriteHeaders(HeadersFrameParam{
+				StreamID:      hf.StreamID,
+				EndHeaders:    true,
+				EndStream:     true,
+				BlockFragment: buf.Bytes(),
+			})
+		}
+		return nil
+	}
+
+	ct.run()
+}
