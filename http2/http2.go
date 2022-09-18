@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -293,7 +294,7 @@ func (w *bufferedWriter) Flush() error {
 }
 
 func mustUint31(v int32) uint32 {
-	if v < 0 || v > 2147483647 {
+	if v < 0 || v > math.MaxInt32 {
 		panic("out of range")
 	}
 	return uint32(v)

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"strings"
 	"sync"
 
@@ -972,7 +973,7 @@ func parseWindowUpdateFrame(_ *frameCache, fh FrameHeader, countError func(strin
 // connection as a whole.
 func (f *Framer) WriteWindowUpdate(streamID, incr uint32) error {
 	// "The legal range for the increment to the flow control window is 1 to 2^31-1 (2,147,483,647) octets."
-	if (incr < 1 || incr > 2147483647) && !f.AllowIllegalWrites {
+	if (incr < 1 || incr > math.MaxInt32) && !f.AllowIllegalWrites {
 		return errors.New("illegal window increment value")
 	}
 	f.startWrite(FrameWindowUpdate, 0, streamID)
