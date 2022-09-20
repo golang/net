@@ -809,9 +809,6 @@ func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
 				EndHeaders: true,
 			})
 			st.writeData(1, true, []byte("12345"))
-			// Return flow control bytes back, since the data handler closed
-			// the stream.
-			st.wantWindowUpdate(0, 5)
 		})
 }
 
@@ -1253,20 +1250,51 @@ func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
 		EndStream:     false, // data coming
 		EndHeaders:    true,
 	})
+	updateSize := 1 << 20 / 2 // the conn & stream size before a WindowUpdate
+	st.writeData(1, false, bytes.Repeat([]byte("a"), updateSize-10))
+	st.writeData(1, false, bytes.Repeat([]byte("b"), 10))
+	puppet.do(readBodyHandler(t, strings.Repeat("a", updateSize-10)))
+	puppet.do(readBodyHandler(t, strings.Repeat("b", 10)))
+
+	st.wantWindowUpdate(0, uint32(updateSize))
+	st.wantWindowUpdate(1, uint32(updateSize))
+
+	st.writeData(1, false, bytes.Repeat([]byte("a"), updateSize-10))
+	st.writeData(1, true, bytes.Repeat([]byte("c"), 15)) // END_STREAM here
+	puppet.do(readBodyHandler(t, strings.Repeat("a", updateSize-10)))
+	puppet.do(readBodyHandler(t, strings.Repeat("c", 15)))
+
+	st.wantWindowUpdate(0, uint32(updateSize+5))
+}
+
+func TestServer_Handler_Sends_WindowUpdate_SmallStream(t *testing.T) {
+	puppet := newHandlerPuppet()
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		puppet.act(w, r)
+	}, func(s *Server) {
+		s.MaxUploadBufferPerStream = 6
+	})
+	defer st.Close()
+	defer puppet.done()
+
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1, // clients send odd numbers
+		BlockFragment: st.encodeHeader(":method", "POST"),
+		EndStream:     false, // data coming
+		EndHeaders:    true,
+	})
 	st.writeData(1, false, []byte("abcdef"))
 	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
+	puppet.do(readBodyHandler(t, "d"))
+	puppet.do(readBodyHandler(t, "ef"))
 
-	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
+	st.wantWindowUpdate(1, 6)
 
 	st.writeData(1, true, []byte("ghijkl")) // END_STREAM here
 	puppet.do(readBodyHandler(t, "ghi"))
 	puppet.do(readBodyHandler(t, "jkl"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(0, 3) // no more stream-level, since END_STREAM
 }
 
 // the version of the TestServer_Handler_Sends_WindowUpdate with padding.
@@ -1295,12 +1323,7 @@ func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
 	st.wantWindowUpdate(1, 5)
 
 	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
-
 	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
 }
 
 func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
@@ -2296,8 +2319,6 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		// gigantic and/or sensitive "foo" payload now.
 		st.writeData(1, true, []byte(msg))
 
-		st.wantWindowUpdate(0, uint32(len(msg)))
-
 		hf = st.wantHeaders()
 		if hf.StreamEnded() {
 			t.Fatal("expected data to follow")
@@ -2484,9 +2505,6 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		// it doesn't crash with an internal invariant panic, like
 		// it did before.
 		st.writeData(1, true, []byte("foo"))
-
-		// Get our flow control bytes back, since the handler didn't get them.
-		st.wantWindowUpdate(0, uint32(len("foo")))
 
 		// Sent after a peer sends data anyway (admittedly the
 		// previous RST_STREAM might've still been in-flight),
@@ -3930,7 +3948,6 @@ func TestServer_Rejects_TooSmall(t *testing.T) {
 			EndHeaders: true,
 		})
 		st.writeData(1, true, []byte("12345"))
-		st.wantWindowUpdate(0, 5)
 		st.wantRSTStream(1, ErrCodeProtocol)
 	})
 }
@@ -4223,7 +4240,6 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 	st.writeData(1, false, []byte(content[5:]))
 	blockCh <- true
 
-	increments := len(content)
 	for {
 		f, err := st.readFrame()
 		if err == io.EOF {
@@ -4232,10 +4248,12 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if rs, ok := f.(*RSTStreamFrame); ok && rs.StreamID == 1 {
+			break
+		}
 		if wu, ok := f.(*WindowUpdateFrame); ok && wu.StreamID == 0 {
-			increments -= int(wu.Increment)
-			if increments == 0 {
-				break
+			if e, a := uint32(3), wu.Increment; e != a {
+				t.Errorf("Increment=%d, want %d", a, e)
 			}
 		}
 	}
@@ -4378,22 +4396,22 @@ func TestServerSendsEarlyHints(t *testing.T) {
 
 func TestProtocolErrorAfterGoAway(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
 		io.Copy(io.Discard, r.Body)
 	})
 	defer st.Close()
 
 	st.greet()
-	content := "some content"
 	st.writeHeaders(HeadersFrameParam{
 		StreamID: 1,
 		BlockFragment: st.encodeHeader(
 			":method", "POST",
-			"content-length", strconv.Itoa(len(content)),
+			"content-length", "1",
 		),
 		EndStream:  false,
 		EndHeaders: true,
 	})
-	st.writeData(1, false, []byte(content[:5]))
 
 	_, err := st.readFrame()
 	if err != nil {
