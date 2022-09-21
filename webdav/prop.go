@@ -425,7 +425,7 @@ func findContentType(ctx context.Context, fs FileSystem, ls LockSystem, name str
 	}
 	ctype = http.DetectContentType(buf[:n])
 	// Rewind file.
-	_, err = f.Seek(0, os.SEEK_SET)
+	_, err = f.Seek(0, io.SeekStart)
 	return ctype, err
 }
 

@@ -711,11 +711,11 @@ func TestMemFile(t *testing.T) {
 			default:
 				t.Fatalf("test case #%d %q: invalid seek whence", i, tc)
 			case "set":
-				whence = os.SEEK_SET
+				whence = io.SeekStart
 			case "cur":
-				whence = os.SEEK_CUR
+				whence = io.SeekCurrent
 			case "end":
-				whence = os.SEEK_END
+				whence = io.SeekEnd
 			}
 			offset, err := strconv.Atoi(parts[1])
 			if err != nil {
