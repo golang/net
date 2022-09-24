@@ -1369,7 +1369,7 @@ func (sc *serverConn) startGracefulShutdownInternal() {
 func (sc *serverConn) goAway(code ErrCode) {
 	sc.serveG.check()
 	if sc.inGoAway {
-		if sc.goAwayCode == ErrCodeNo {
+		if sc.goAwayCode == ErrCodeNo && code != ErrCodeProtocol {
 			sc.goAwayCode = code
 		}
 		return
