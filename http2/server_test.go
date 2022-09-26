@@ -3994,7 +3994,6 @@ func TestServer_Rejects_TooSmall(t *testing.T) {
 // and the connection still completing.
 func TestServerHandlerConnectionClose(t *testing.T) {
 	unblockHandler := make(chan bool, 1)
-	defer close(unblockHandler) // backup; in case of errors
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Connection", "close")
 		w.Header().Set("Foo", "bar")
@@ -4002,6 +4001,7 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 		<-unblockHandler
 		return nil
 	}, func(st *serverTester) {
+		defer close(unblockHandler) // backup; in case of errors
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1,
 			BlockFragment: st.encodeHeader(),
@@ -4010,6 +4010,7 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 		})
 		var sawGoAway bool
 		var sawRes bool
+		var sawWindowUpdate bool
 		for {
 			f, err := st.readFrame()
 			if err == io.EOF {
@@ -4021,10 +4022,29 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 			switch f := f.(type) {
 			case *GoAwayFrame:
 				sawGoAway = true
-				unblockHandler <- true
 				if f.LastStreamID != 1 || f.ErrCode != ErrCodeNo {
 					t.Errorf("unexpected GOAWAY frame: %v", summarizeFrame(f))
 				}
+				// Create a stream and reset it.
+				// The server should ignore the stream.
+				st.writeHeaders(HeadersFrameParam{
+					StreamID:      3,
+					BlockFragment: st.encodeHeader(),
+					EndStream:     false,
+					EndHeaders:    true,
+				})
+				st.fr.WriteRSTStream(3, ErrCodeCancel)
+				// Create a stream and send data to it.
+				// The server should return flow control, even though it
+				// does not process the stream.
+				st.writeHeaders(HeadersFrameParam{
+					StreamID:      5,
+					BlockFragment: st.encodeHeader(),
+					EndStream:     false,
+					EndHeaders:    true,
+				})
+				// Write enough data to trigger a window update.
+				st.writeData(5, true, make([]byte, 1<<19))
 			case *HeadersFrame:
 				goth := st.decodeHeader(f.HeaderBlockFragment())
 				wanth := [][2]string{
@@ -4039,6 +4059,17 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 				if f.StreamID != 1 || !f.StreamEnded() || len(f.Data()) != 0 {
 					t.Errorf("unexpected DATA frame: %v", summarizeFrame(f))
 				}
+			case *WindowUpdateFrame:
+				if !sawGoAway {
+					t.Errorf("unexpected WINDOW_UPDATE frame: %v", summarizeFrame(f))
+					return
+				}
+				if f.StreamID != 0 {
+					st.t.Fatalf("WindowUpdate StreamID = %d; want 5", f.FrameHeader.StreamID)
+					return
+				}
+				sawWindowUpdate = true
+				unblockHandler <- true
 			default:
 				t.Logf("unexpected frame: %v", summarizeFrame(f))
 			}
@@ -4048,6 +4079,9 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 		}
 		if !sawRes {
 			t.Errorf("didn't see response")
+		}
+		if !sawWindowUpdate {
+			t.Errorf("didn't see WINDOW_UPDATE")
 		}
 	})
 }
