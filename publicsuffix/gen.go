@@ -37,10 +37,14 @@ import (
 )
 
 const (
-	// These sum of these four values must be no greater than 32.
+	// This must be a multiple of 8 and no greater than 64.
+	// Update nodeValue in list.go if this changes.
+	nodesBits = 40
+
+	// These sum of these four values must be no greater than nodesBits.
 	nodesBitsChildren   = 10
 	nodesBitsICANN      = 1
-	nodesBitsTextOffset = 15
+	nodesBitsTextOffset = 16
 	nodesBitsTextLength = 6
 
 	// These sum of these four values must be no greater than 32.
@@ -97,7 +101,7 @@ const (
 )
 
 var (
-	labelEncoding = map[string]uint32{}
+	labelEncoding = map[string]uint64{}
 	labelsList    = []string{}
 	labelsMap     = map[string]bool{}
 	rules         = []string{}
@@ -127,7 +131,13 @@ func main() {
 
 func main1() error {
 	flag.Parse()
-	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsICANN+nodesBitsChildren > 32 {
+	if nodesBits > 64 {
+		return fmt.Errorf("nodesBits is too large")
+	}
+	if nodesBits%8 != 0 {
+		return fmt.Errorf("nodesBits must be a multiple of 8")
+	}
+	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsICANN+nodesBitsChildren > nodesBits {
 		return fmt.Errorf("not enough bits to encode the nodes table")
 	}
 	if childrenBitsLo+childrenBitsHi+childrenBitsNodeType+childrenBitsWildcard > 32 {
@@ -312,6 +322,7 @@ package publicsuffix
 const version = %q
 
 const (
+	nodesBits           = %d
 	nodesBitsChildren   = %d
 	nodesBitsICANN      = %d
 	nodesBitsTextOffset = %d
@@ -334,6 +345,7 @@ const numTLD = %d
 
 `
 	fmt.Fprintf(w, header, *version,
+		nodesBits,
 		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength,
 		childrenBitsWildcard, childrenBitsNodeType, childrenBitsHi, childrenBitsLo,
 		nodeTypeNormal, nodeTypeException, nodeTypeParentOnly, len(n.children))
@@ -354,7 +366,7 @@ const numTLD = %d
 		if length >= 1<<nodesBitsTextLength {
 			return fmt.Errorf("text length %d is too large, or nodeBitsTextLength is too small", length)
 		}
-		labelEncoding[label] = uint32(offset)<<nodesBitsTextLength | uint32(length)
+		labelEncoding[label] = uint64(offset)<<nodesBitsTextLength | uint64(length)
 	}
 	fmt.Fprintf(w, "// Text is the combined text of all labels.\nconst text = ")
 	for len(text) > 0 {
@@ -372,9 +384,9 @@ const numTLD = %d
 
 	fmt.Fprintf(w, `
 
-// nodes is the list of nodes. Each node is represented as a uint32, which
-// encodes the node's children, wildcard bit and node type (as an index into
-// the children array), ICANN bit and text.
+// nodes is the list of nodes. Each node is represented as a %v-bit integer,
+// which encodes the node's children, wildcard bit and node type (as an index
+// into the children array), ICANN bit and text.
 //
 // If the table was generated with the -comments flag, there is a //-comment
 // after each node's data. In it is the nodes-array indexes of the children,
@@ -383,15 +395,16 @@ const numTLD = %d
 // nodes that have children but don't match a domain label in their own right.
 // An I denotes an ICANN domain.
 //
-// The layout within the uint32, from MSB to LSB, is:
+// The layout within the node, from MSB to LSB, is:
 //	[%2d bits] unused
 //	[%2d bits] children index
 //	[%2d bits] ICANN bit
 //	[%2d bits] text index
 //	[%2d bits] text length
-var nodes = [...]uint32{
+var nodes = [...]uint8{
 `,
-		32-nodesBitsChildren-nodesBitsICANN-nodesBitsTextOffset-nodesBitsTextLength,
+		nodesBits,
+		nodesBits-nodesBitsChildren-nodesBitsICANN-nodesBitsTextOffset-nodesBitsTextLength,
 		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength)
 	if err := n.walk(w, printNode); err != nil {
 		return err
@@ -558,14 +571,17 @@ func printNode(w io.Writer, n *node) error {
 		if c.icann {
 			encoding |= 1 << (nodesBitsTextLength + nodesBitsTextOffset)
 		}
-		encoding |= uint32(c.childrenIndex) << (nodesBitsTextLength + nodesBitsTextOffset + nodesBitsICANN)
+		encoding |= uint64(c.childrenIndex) << (nodesBitsTextLength + nodesBitsTextOffset + nodesBitsICANN)
+		for i := nodesBits - 8; i >= 0; i -= 8 {
+			fmt.Fprintf(w, "0x%02x, ", (encoding>>i)&0xff)
+		}
 		if *comments {
-			fmt.Fprintf(w, "0x%08x, // n0x%04x c0x%04x (%s)%s %s %s %s\n",
-				encoding, c.nodesIndex, c.childrenIndex, s, wildcardStr(c.wildcard),
+			fmt.Fprintf(w, "// n0x%04x c0x%04x (%s)%s %s %s %s\n",
+				c.nodesIndex, c.childrenIndex, s, wildcardStr(c.wildcard),
 				nodeTypeStr(c.nodeType), icannStr(c.icann), c.label,
 			)
 		} else {
-			fmt.Fprintf(w, "0x%x,\n", encoding)
+			fmt.Fprintf(w, "\n")
 		}
 	}
 	return nil
