@@ -4436,3 +4436,57 @@ func TestProtocolErrorAfterGoAway(t *testing.T) {
 		}
 	}
 }
+
+func TestServerInitialFlowControlWindow(t *testing.T) {
+	for _, want := range []int32{
+		65535,
+		1 << 19,
+		1 << 21,
+		// For MaxUploadBufferPerConnection values in the range
+		// (65535, 65535*2), we don't send an initial WINDOW_UPDATE
+		// because we only send flow control when the window drops
+		// below half of the maximum. Perhaps it would be nice to
+		// test this case, but we currently do not.
+		65535 * 2,
+	} {
+		t.Run(fmt.Sprint(want), func(t *testing.T) {
+
+			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+			}, func(s *Server) {
+				s.MaxUploadBufferPerConnection = want
+			})
+			defer st.Close()
+			st.writePreface()
+			st.writeInitialSettings()
+			st.writeSettingsAck()
+			st.writeHeaders(HeadersFrameParam{
+				StreamID:      1,
+				BlockFragment: st.encodeHeader(),
+				EndStream:     true,
+				EndHeaders:    true,
+			})
+			window := 65535
+		Frames:
+			for {
+				f, err := st.readFrame()
+				if err != nil {
+					st.t.Fatal(err)
+				}
+				switch f := f.(type) {
+				case *WindowUpdateFrame:
+					if f.FrameHeader.StreamID != 0 {
+						t.Errorf("WindowUpdate StreamID = %d; want 0", f.FrameHeader.StreamID)
+						return
+					}
+					window += int(f.Increment)
+				case *HeadersFrame:
+					break Frames
+				default:
+				}
+			}
+			if window != int(want) {
+				t.Errorf("got initial flow control window = %v, want %v", window, want)
+			}
+		})
+	}
+}
