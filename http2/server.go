@@ -950,6 +950,8 @@ func (sc *serverConn) serve() {
 				}
 			case *startPushRequest:
 				sc.startPush(v)
+			case func(*serverConn):
+				v(sc)
 			default:
 				panic(fmt.Sprintf("unexpected type %T", v))
 			}
@@ -2686,23 +2688,85 @@ func (rws *responseWriterState) promoteUndeclaredTrailers() {
 	}
 }
 
+func (w *responseWriter) SetReadDeadline(deadline time.Time) error {
+	st := w.rws.stream
+	if !deadline.IsZero() && deadline.Before(time.Now()) {
+		// If we're setting a deadline in the past, reset the stream immediately
+		// so writes after SetWriteDeadline returns will fail.
+		st.onReadTimeout()
+		return nil
+	}
+	w.rws.conn.sendServeMsg(func(sc *serverConn) {
+		if st.readDeadline != nil {
+			if !st.readDeadline.Stop() {
+				// Deadline already exceeded, or stream has been closed.
+				return
+			}
+		}
+		if deadline.IsZero() {
+			st.readDeadline = nil
+		} else if st.readDeadline == nil {
+			st.readDeadline = time.AfterFunc(deadline.Sub(time.Now()), st.onReadTimeout)
+		} else {
+			st.readDeadline.Reset(deadline.Sub(time.Now()))
+		}
+	})
+	return nil
+}
+
+func (w *responseWriter) SetWriteDeadline(deadline time.Time) error {
+	st := w.rws.stream
+	if !deadline.IsZero() && deadline.Before(time.Now()) {
+		// If we're setting a deadline in the past, reset the stream immediately
+		// so writes after SetWriteDeadline returns will fail.
+		st.onWriteTimeout()
+		return nil
+	}
+	w.rws.conn.sendServeMsg(func(sc *serverConn) {
+		if st.writeDeadline != nil {
+			if !st.writeDeadline.Stop() {
+				// Deadline already exceeded, or stream has been closed.
+				return
+			}
+		}
+		if deadline.IsZero() {
+			st.writeDeadline = nil
+		} else if st.writeDeadline == nil {
+			st.writeDeadline = time.AfterFunc(deadline.Sub(time.Now()), st.onWriteTimeout)
+		} else {
+			st.writeDeadline.Reset(deadline.Sub(time.Now()))
+		}
+	})
+	return nil
+}
+
 func (w *responseWriter) Flush() {
+	w.FlushError()
+}
+
+func (w *responseWriter) FlushError() error {
 	rws := w.rws
 	if rws == nil {
 		panic("Header called after Handler finished")
 	}
+	var err error
 	if rws.bw.Buffered() > 0 {
-		if err := rws.bw.Flush(); err != nil {
-			// Ignore the error. The frame writer already knows.
-			return
-		}
+		err = rws.bw.Flush()
 	} else {
 		// The bufio.Writer won't call chunkWriter.Write
 		// (writeChunk with zero bytes, so we have to do it
 		// ourselves to force the HTTP response header and/or
 		// final DATA frame (with END_STREAM) to be sent.
-		rws.writeChunk(nil)
+		_, err = chunkWriter{rws}.Write(nil)
+		if err == nil {
+			select {
+			case <-rws.stream.cw:
+				err = rws.stream.closeErr
+			default:
+			}
+		}
 	}
+	return err
 }
 
 func (w *responseWriter) CloseNotify() <-chan bool {
