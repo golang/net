@@ -2736,6 +2736,43 @@ func TestServerWithH2Load(t *testing.T) {
 	}
 }
 
+func TestServer_MaxDecoderHeaderTableSize(t *testing.T) {
+	wantHeaderTableSize := uint32(initialHeaderTableSize * 2)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {}, func(s *Server) {
+		s.MaxDecoderHeaderTableSize = wantHeaderTableSize
+	})
+	defer st.Close()
+
+	var advHeaderTableSize *uint32
+	st.greetAndCheckSettings(func(s Setting) error {
+		switch s.ID {
+		case SettingHeaderTableSize:
+			advHeaderTableSize = &s.Val
+		}
+		return nil
+	})
+
+	if advHeaderTableSize == nil {
+		t.Errorf("server didn't advertise a header table size")
+	} else if got, want := *advHeaderTableSize, wantHeaderTableSize; got != want {
+		t.Errorf("server advertised a header table size of %d, want %d", got, want)
+	}
+}
+
+func TestServer_MaxEncoderHeaderTableSize(t *testing.T) {
+	wantHeaderTableSize := uint32(initialHeaderTableSize / 2)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {}, func(s *Server) {
+		s.MaxEncoderHeaderTableSize = wantHeaderTableSize
+	})
+	defer st.Close()
+
+	st.greet()
+
+	if got, want := st.sc.hpackEncoder.MaxDynamicTableSize(), wantHeaderTableSize; got != want {
+		t.Errorf("server encoder is using a header table size of %d, want %d", got, want)
+	}
+}
+
 // Issue 12843
 func TestServerDoS_MaxHeaderListSize(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {})

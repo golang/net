@@ -4223,6 +4223,150 @@ func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 	ct.run()
 }
 
+func TestTransportMaxDecoderHeaderTableSize(t *testing.T) {
+	ct := newClientTester(t)
+	var reqSize, resSize uint32 = 8192, 16384
+	ct.tr.MaxDecoderHeaderTableSize = reqSize
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		cc, err := ct.tr.NewClientConn(ct.cc)
+		if err != nil {
+			return err
+		}
+		_, err = cc.RoundTrip(req)
+		if err != nil {
+			return err
+		}
+		if got, want := cc.peerMaxHeaderTableSize, resSize; got != want {
+			return fmt.Errorf("peerHeaderTableSize = %d, want %d", got, want)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		buf := make([]byte, len(ClientPreface))
+		_, err := io.ReadFull(ct.sc, buf)
+		if err != nil {
+			return fmt.Errorf("reading client preface: %v", err)
+		}
+		f, err := ct.fr.ReadFrame()
+		if err != nil {
+			return err
+		}
+		sf, ok := f.(*SettingsFrame)
+		if !ok {
+			ct.t.Fatalf("wanted client settings frame; got %v", f)
+			_ = sf // stash it away?
+		}
+		var found bool
+		err = sf.ForeachSetting(func(s Setting) error {
+			if s.ID == SettingHeaderTableSize {
+				found = true
+				if got, want := s.Val, reqSize; got != want {
+					return fmt.Errorf("received SETTINGS_HEADER_TABLE_SIZE = %d, want %d", got, want)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("missing SETTINGS_HEADER_TABLE_SIZE setting")
+		}
+		if err := ct.fr.WriteSettings(Setting{SettingHeaderTableSize, resSize}); err != nil {
+			ct.t.Fatal(err)
+		}
+		if err := ct.fr.WriteSettingsAck(); err != nil {
+			ct.t.Fatal(err)
+		}
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				var buf bytes.Buffer
+				enc := hpack.NewEncoder(&buf)
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+				return nil
+			}
+		}
+	}
+	ct.run()
+}
+
+func TestTransportMaxEncoderHeaderTableSize(t *testing.T) {
+	ct := newClientTester(t)
+	var peerAdvertisedMaxHeaderTableSize uint32 = 16384
+	ct.tr.MaxEncoderHeaderTableSize = 8192
+	ct.client = func() error {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		cc, err := ct.tr.NewClientConn(ct.cc)
+		if err != nil {
+			return err
+		}
+		_, err = cc.RoundTrip(req)
+		if err != nil {
+			return err
+		}
+		if got, want := cc.henc.MaxDynamicTableSize(), ct.tr.MaxEncoderHeaderTableSize; got != want {
+			return fmt.Errorf("henc.MaxDynamicTableSize() = %d, want %d", got, want)
+		}
+		return nil
+	}
+	ct.server = func() error {
+		buf := make([]byte, len(ClientPreface))
+		_, err := io.ReadFull(ct.sc, buf)
+		if err != nil {
+			return fmt.Errorf("reading client preface: %v", err)
+		}
+		f, err := ct.fr.ReadFrame()
+		if err != nil {
+			return err
+		}
+		sf, ok := f.(*SettingsFrame)
+		if !ok {
+			ct.t.Fatalf("wanted client settings frame; got %v", f)
+			_ = sf // stash it away?
+		}
+		if err := ct.fr.WriteSettings(Setting{SettingHeaderTableSize, peerAdvertisedMaxHeaderTableSize}); err != nil {
+			ct.t.Fatal(err)
+		}
+		if err := ct.fr.WriteSettingsAck(); err != nil {
+			ct.t.Fatal(err)
+		}
+
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				return err
+			}
+			switch f := f.(type) {
+			case *HeadersFrame:
+				var buf bytes.Buffer
+				enc := hpack.NewEncoder(&buf)
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+				return nil
+			}
+		}
+	}
+	ct.run()
+}
+
 func TestAuthorityAddr(t *testing.T) {
 	tests := []struct {
 		scheme, authority string
