@@ -1075,7 +1075,7 @@ var errRequestCanceled = errors.New("net/http: request canceled")
 func commaSeparatedTrailers(req *http.Request) (string, error) {
 	keys := make([]string, 0, len(req.Trailer))
 	for k := range req.Trailer {
-		k = http.CanonicalHeaderKey(k)
+		k = canonicalHeader(k)
 		switch k {
 		case "Transfer-Encoding", "Trailer", "Content-Length":
 			return "", fmt.Errorf("invalid Trailer key %q", k)
@@ -1915,7 +1915,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 
 	// Header list size is ok. Write the headers.
 	enumerateHeaders(func(name, value string) {
-		name, ascii := asciiToLower(name)
+		name, ascii := lowerHeader(name)
 		if !ascii {
 			// Skip writing invalid headers. Per RFC 7540, Section 8.1.2, header
 			// field names have to be ASCII characters (just as in HTTP/1.x).
@@ -1968,7 +1968,7 @@ func (cc *ClientConn) encodeTrailers(trailer http.Header) ([]byte, error) {
 	}
 
 	for k, vv := range trailer {
-		lowKey, ascii := asciiToLower(k)
+		lowKey, ascii := lowerHeader(k)
 		if !ascii {
 			// Skip writing invalid headers. Per RFC 7540, Section 8.1.2, header
 			// field names have to be ASCII characters (just as in HTTP/1.x).
@@ -2301,7 +2301,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 		Status:     status + " " + http.StatusText(statusCode),
 	}
 	for _, hf := range regularFields {
-		key := http.CanonicalHeaderKey(hf.Name)
+		key := canonicalHeader(hf.Name)
 		if key == "Trailer" {
 			t := res.Trailer
 			if t == nil {
@@ -2309,7 +2309,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 				res.Trailer = t
 			}
 			foreachHeaderElement(hf.Value, func(v string) {
-				t[http.CanonicalHeaderKey(v)] = nil
+				t[canonicalHeader(v)] = nil
 			})
 		} else {
 			vv := header[key]
@@ -2414,7 +2414,7 @@ func (rl *clientConnReadLoop) processTrailers(cs *clientStream, f *MetaHeadersFr
 
 	trailer := make(http.Header)
 	for _, hf := range f.RegularFields() {
-		key := http.CanonicalHeaderKey(hf.Name)
+		key := canonicalHeader(hf.Name)
 		trailer[key] = append(trailer[key], hf.Value)
 	}
 	cs.trailer = trailer
