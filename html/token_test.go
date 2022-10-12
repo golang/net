@@ -366,6 +366,16 @@ var tokenTests = []tokenTest{
 		"a<!--x--!>z",
 		"a$<!--x-->$z",
 	},
+	{
+		"comment14",
+		"a<!--!-->z",
+		"a$<!--!-->$z",
+	},
+	{
+		"comment15",
+		"a<!-- !-->z",
+		"a$<!-- !-->$z",
+	},
 	// An attribute with a backslash.
 	{
 		"backslash",
@@ -456,26 +466,27 @@ var tokenTests = []tokenTest{
 }
 
 func TestTokenizer(t *testing.T) {
-loop:
 	for _, tt := range tokenTests {
-		z := NewTokenizer(strings.NewReader(tt.html))
-		if tt.golden != "" {
-			for i, s := range strings.Split(tt.golden, "$") {
-				if z.Next() == ErrorToken {
-					t.Errorf("%s token %d: want %q got error %v", tt.desc, i, s, z.Err())
-					continue loop
-				}
-				actual := z.Token().String()
-				if s != actual {
-					t.Errorf("%s token %d: want %q got %q", tt.desc, i, s, actual)
-					continue loop
+		t.Run(tt.desc, func(t *testing.T) {
+			z := NewTokenizer(strings.NewReader(tt.html))
+			if tt.golden != "" {
+				for i, s := range strings.Split(tt.golden, "$") {
+					if z.Next() == ErrorToken {
+						t.Errorf("%s token %d: want %q got error %v", tt.desc, i, s, z.Err())
+						return
+					}
+					actual := z.Token().String()
+					if s != actual {
+						t.Errorf("%s token %d: want %q got %q", tt.desc, i, s, actual)
+						return
+					}
 				}
 			}
-		}
-		z.Next()
-		if z.Err() != io.EOF {
-			t.Errorf("%s: want EOF got %q", tt.desc, z.Err())
-		}
+			z.Next()
+			if z.Err() != io.EOF {
+				t.Errorf("%s: want EOF got %q", tt.desc, z.Err())
+			}
+		})
 	}
 }
 
