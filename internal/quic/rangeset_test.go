@@ -295,3 +295,23 @@ func TestRangesetIsRange(t *testing.T) {
 		}
 	}
 }
+
+func TestRangesetNumRanges(t *testing.T) {
+	for _, test := range []struct {
+		s    rangeset[int64]
+		want int
+	}{{
+		s:    rangeset[int64]{},
+		want: 0,
+	}, {
+		s:    rangeset[int64]{{0, 100}},
+		want: 1,
+	}, {
+		s:    rangeset[int64]{{0, 100}, {200, 300}},
+		want: 2,
+	}} {
+		if got, want := test.s.numRanges(), test.want; got != want {
+			t.Errorf("%+v.numRanges() = %v, want %v", test.s, got, want)
+		}
+	}
+}
