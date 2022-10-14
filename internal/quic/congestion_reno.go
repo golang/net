@@ -54,7 +54,7 @@ type ccReno struct {
 	// persistent congestion is declared.
 	//
 	// https://www.rfc-editor.org/rfc/rfc9002#section-7.6
-	persistentCongestion [3]struct {
+	persistentCongestion [numberSpaceCount]struct {
 		start time.Time    // send time of first lost packet
 		end   time.Time    // send time of last lost packet
 		next  packetNumber // one plus the number of the last lost packet

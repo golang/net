@@ -445,7 +445,7 @@ type ccTest struct {
 	rtt         rttState
 	maxAckDelay time.Duration
 	now         time.Time
-	nextNum     [3]packetNumber
+	nextNum     [numberSpaceCount]packetNumber
 }
 
 func newRenoTest(t *testing.T, maxDatagramSize int) *ccTest {

@@ -66,6 +66,7 @@ const (
 	initialSpace = numberSpace(iota)
 	handshakeSpace
 	appDataSpace
+	numberSpaceCount
 )
 
 func (n numberSpace) String() string {
