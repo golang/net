@@ -4489,3 +4489,29 @@ func TestProtocolErrorAfterGoAway(t *testing.T) {
 		}
 	}
 }
+
+// TestCanonicalHeaderCacheGrowth verifies that the canonical header cache
+// size is capped to a reasonable level.
+func TestCanonicalHeaderCacheGrowth(t *testing.T) {
+	for _, size := range []int{1, (1 << 20) - 10} {
+		base := strings.Repeat("X", size)
+		sc := &serverConn{
+			serveG: newGoroutineLock(),
+		}
+		const count = 1000
+		for i := 0; i < count; i++ {
+			h := fmt.Sprintf("%v-%v", base, i)
+			c := sc.canonicalHeader(h)
+			if len(h) != len(c) {
+				t.Errorf("sc.canonicalHeader(%q) = %q, want same length", h, c)
+			}
+		}
+		total := 0
+		for k, v := range sc.canonHeader {
+			total += len(k) + len(v) + 100
+		}
+		if total > maxCachedCanonicalHeadersKeysSize {
+			t.Errorf("after adding %v ~%v-byte headers, canonHeader cache is ~%v bytes, want <%v", count, size, total, maxCachedCanonicalHeadersKeysSize)
+		}
+	}
+}
