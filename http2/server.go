@@ -2336,13 +2336,13 @@ func (sc *serverConn) sendWindowUpdate(st *stream) {
 
 	var n int32
 	if st == nil {
-		if avail, windowSize := sc.inflow.available(), sc.srv.initialConnRecvWindowSize(); avail > windowSize/2 {
+		if avail, windowSize := sc.inflow.n, sc.srv.initialConnRecvWindowSize(); avail > windowSize/2 {
 			return
 		} else {
 			n = windowSize - avail
 		}
 	} else {
-		if avail, windowSize := st.inflow.available(), sc.srv.initialStreamRecvWindowSize(); avail > windowSize/2 {
+		if avail, windowSize := st.inflow.n, sc.srv.initialStreamRecvWindowSize(); avail > windowSize/2 {
 			return
 		} else {
 			n = windowSize - avail
@@ -2358,7 +2358,7 @@ func (sc *serverConn) sendWindowUpdate(st *stream) {
 		sc.sendWindowUpdate32(st, maxUint31)
 		n -= maxUint31
 	}
-	sc.sendWindowUpdate32(st, int32(n))
+	sc.sendWindowUpdate32(st, n)
 }
 
 // st may be nil for conn-level

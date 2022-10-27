@@ -315,7 +315,7 @@ func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error
 			if f.FrameHeader.StreamID != 0 {
 				st.t.Fatalf("WindowUpdate StreamID = %d; want 0", f.FrameHeader.StreamID)
 			}
-			incr := uint32((&Server{}).initialConnRecvWindowSize() - initialWindowSize)
+			incr := uint32(st.sc.srv.initialConnRecvWindowSize() - initialWindowSize)
 			if f.Increment != incr {
 				st.t.Fatalf("WindowUpdate increment = %d; want %d", f.Increment, incr)
 			}
@@ -1324,6 +1324,44 @@ func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
 
 	puppet.do(readBodyHandler(t, "abc"))
 	puppet.do(readBodyHandler(t, "def"))
+}
+
+// This is a regression test to make sure the correct window increment size is
+// calculated for a stream.
+// See https://go.dev/issue/56315#issuecomment-1287642591.
+func TestServer_Handler_Sends_WindowUpdate_IncrementSize(t *testing.T) {
+	maxSizePerConn := initialWindowSize * 2
+	maxSizePerStream := maxSizePerConn*2 + 100
+
+	puppet := newHandlerPuppet()
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		puppet.act(w, r)
+	}, func(s *Server) {
+		s.MaxUploadBufferPerConnection = int32(maxSizePerConn)
+		s.MaxUploadBufferPerStream = int32(maxSizePerStream)
+	})
+	defer st.Close()
+	defer puppet.done()
+
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(":method", "POST"),
+		EndStream:     false,
+		EndHeaders:    true,
+	})
+
+	st.writeData(1, false, bytes.Repeat([]byte("a"), maxSizePerConn/2))
+	puppet.do(readBodyHandler(t, strings.Repeat("a", maxSizePerConn/2)))
+	st.wantWindowUpdate(0, uint32(maxSizePerConn/2))
+
+	st.writeData(1, false, bytes.Repeat([]byte("b"), maxSizePerConn/2+100))
+	puppet.do(readBodyHandler(t, strings.Repeat("b", maxSizePerConn/2+100)))
+	st.wantWindowUpdate(0, uint32(maxSizePerConn/2+100))
+	st.wantWindowUpdate(1, uint32(maxSizePerConn+100))
+
+	st.writeData(1, true, nil) // END_STREAM here
 }
 
 func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
