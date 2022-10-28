@@ -624,6 +624,7 @@ type stream struct {
 	wroteHeaders     bool        // whether we wrote headers (not status 100)
 	readDeadline     *time.Timer // nil if unused
 	writeDeadline    *time.Timer // nil if unused
+	closeErr         error       // set before cw is closed
 
 	trailer    http.Header // accumulated trailers
 	reqTrailer http.Header // handler's Request.Trailer
@@ -1608,6 +1609,14 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 
 		p.CloseWithError(err)
 	}
+	if e, ok := err.(StreamError); ok {
+		if e.Cause != nil {
+			err = e.Cause
+		} else {
+			err = errStreamClosed
+		}
+	}
+	st.closeErr = err
 	st.cw.Close() // signals Handler's CloseNotifier, unblocks writes, etc
 	sc.writeSched.CloseStream(st.id)
 }
@@ -1857,7 +1866,11 @@ func (st *stream) onReadTimeout() {
 // onWriteTimeout is run on its own goroutine (from time.AfterFunc)
 // when the stream's WriteTimeout has fired.
 func (st *stream) onWriteTimeout() {
-	st.sc.writeFrameFromHandler(FrameWriteRequest{write: streamError(st.id, ErrCodeInternal)})
+	st.sc.writeFrameFromHandler(FrameWriteRequest{write: StreamError{
+		StreamID: st.id,
+		Code:     ErrCodeInternal,
+		Cause:    os.ErrDeadlineExceeded,
+	}})
 }
 
 func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
@@ -2471,7 +2484,15 @@ type responseWriterState struct {
 
 type chunkWriter struct{ rws *responseWriterState }
 
-func (cw chunkWriter) Write(p []byte) (n int, err error) { return cw.rws.writeChunk(p) }
+func (cw chunkWriter) Write(p []byte) (n int, err error) {
+	n, err = cw.rws.writeChunk(p)
+	if err == errStreamClosed {
+		// If writing failed because the stream has been closed,
+		// return the reason it was closed.
+		err = cw.rws.stream.closeErr
+	}
+	return n, err
+}
 
 func (rws *responseWriterState) hasTrailers() bool { return len(rws.trailers) > 0 }
 
