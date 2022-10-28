@@ -622,6 +622,7 @@ type stream struct {
 	resetQueued      bool        // RST_STREAM queued for write; set by sc.resetStream
 	gotTrailerHeader bool        // HEADER frame for trailers was seen
 	wroteHeaders     bool        // whether we wrote headers (not status 100)
+	readDeadline     *time.Timer // nil if unused
 	writeDeadline    *time.Timer // nil if unused
 
 	trailer    http.Header // accumulated trailers
@@ -1579,6 +1580,9 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 		panic(fmt.Sprintf("invariant; can't close stream in state %v", st.state))
 	}
 	st.state = stateClosed
+	if st.readDeadline != nil {
+		st.readDeadline.Stop()
+	}
 	if st.writeDeadline != nil {
 		st.writeDeadline.Stop()
 	}
@@ -1842,6 +1846,14 @@ func (st *stream) copyTrailersToHandlerRequest() {
 	}
 }
 
+// onReadTimeout is run on its own goroutine (from time.AfterFunc)
+// when the stream's ReadTimeout has fired.
+func (st *stream) onReadTimeout() {
+	// Wrap the ErrDeadlineExceeded to avoid callers depending on us
+	// returning the bare error.
+	st.body.CloseWithError(fmt.Errorf("%w", os.ErrDeadlineExceeded))
+}
+
 // onWriteTimeout is run on its own goroutine (from time.AfterFunc)
 // when the stream's WriteTimeout has fired.
 func (st *stream) onWriteTimeout() {
@@ -1953,6 +1965,9 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	// (in Go 1.8), though. That's a more sane option anyway.
 	if sc.hs.ReadTimeout != 0 {
 		sc.conn.SetReadDeadline(time.Time{})
+		if st.body != nil {
+			st.readDeadline = time.AfterFunc(sc.hs.ReadTimeout, st.onReadTimeout)
+		}
 	}
 
 	go sc.runHandler(rw, req, handler)
