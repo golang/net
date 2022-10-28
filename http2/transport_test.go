@@ -3881,6 +3881,12 @@ func TestTransportRetryHasLimit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test in short mode")
 	}
+	retryBackoffHook = func(d time.Duration) *time.Timer {
+		return time.NewTimer(0) // fires immediately
+	}
+	defer func() {
+		retryBackoffHook = nil
+	}()
 	clientDone := make(chan struct{})
 	ct := newClientTester(t)
 	ct.client = func() error {
