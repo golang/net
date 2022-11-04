@@ -482,6 +482,22 @@ func (st *serverTester) writeDataPadded(streamID uint32, endStream bool, data, p
 	}
 }
 
+// writeReadPing sends a PING and immediately reads the PING ACK.
+// It will fail if any other unread data was pending on the connection.
+func (st *serverTester) writeReadPing() {
+	data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	if err := st.fr.WritePing(false, data); err != nil {
+		st.t.Fatalf("Error writing PING: %v", err)
+	}
+	p := st.wantPing()
+	if p.Flags&FlagPingAck == 0 {
+		st.t.Fatalf("got a PING, want a PING ACK")
+	}
+	if p.Data != data {
+		st.t.Fatalf("got PING data = %x, want %x", p.Data, data)
+	}
+}
+
 func (st *serverTester) readFrame() (Frame, error) {
 	return st.fr.ReadFrame()
 }
@@ -590,6 +606,28 @@ func (st *serverTester) wantWindowUpdate(streamID, incr uint32) {
 	if wu.Increment != incr {
 		st.t.Fatalf("WindowUpdate increment = %d; want %d", wu.Increment, incr)
 	}
+}
+
+func (st *serverTester) wantFlowControlConsumed(streamID, consumed int32) {
+	var initial int32
+	if streamID == 0 {
+		initial = st.sc.srv.initialConnRecvWindowSize()
+	} else {
+		initial = st.sc.srv.initialStreamRecvWindowSize()
+	}
+	donec := make(chan struct{})
+	st.sc.sendServeMsg(func(sc *serverConn) {
+		defer close(donec)
+		var avail int32
+		if streamID == 0 {
+			avail = sc.inflow.avail + sc.inflow.unsent
+		} else {
+		}
+		if got, want := initial-avail, consumed; got != want {
+			st.t.Errorf("stream %v flow control consumed: %v, want %v", streamID, got, want)
+		}
+	})
+	<-donec
 }
 
 func (st *serverTester) wantSettingsAck() {
@@ -811,7 +849,8 @@ func TestServer_Request_Post_Body_ContentLength_TooSmall(t *testing.T) {
 			st.writeData(1, true, []byte("12345"))
 			// Return flow control bytes back, since the data handler closed
 			// the stream.
-			st.wantWindowUpdate(0, 5)
+			st.wantRSTStream(1, ErrCodeProtocol)
+			st.wantFlowControlConsumed(0, 0)
 		})
 }
 
@@ -1238,69 +1277,89 @@ func TestServer_RejectsLargeFrames(t *testing.T) {
 }
 
 func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
+	// Need to set this to at least twice the initial window size,
+	// or st.greet gets stuck waiting for a WINDOW_UPDATE.
+	//
+	// This also needs to be less than MAX_FRAME_SIZE.
+	const windowSize = 65535 * 2
 	puppet := newHandlerPuppet()
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		puppet.act(w, r)
+	}, func(s *Server) {
+		s.MaxUploadBufferPerConnection = windowSize
+		s.MaxUploadBufferPerStream = windowSize
 	})
 	defer st.Close()
 	defer puppet.done()
 
 	st.greet()
-
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
 		BlockFragment: st.encodeHeader(":method", "POST"),
 		EndStream:     false, // data coming
 		EndHeaders:    true,
 	})
-	st.writeData(1, false, []byte("abcdef"))
-	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
+	st.writeReadPing()
 
-	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
+	// Write less than half the max window of data and consume it.
+	// The server doesn't return flow control yet, buffering the 1024 bytes to
+	// combine with a future update.
+	data := make([]byte, windowSize)
+	st.writeData(1, false, data[:1024])
+	puppet.do(readBodyHandler(t, string(data[:1024])))
+	st.writeReadPing()
 
-	st.writeData(1, true, []byte("ghijkl")) // END_STREAM here
-	puppet.do(readBodyHandler(t, "ghi"))
-	puppet.do(readBodyHandler(t, "jkl"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(0, 3) // no more stream-level, since END_STREAM
+	// Write up to the window limit.
+	// The server returns the buffered credit.
+	st.writeData(1, false, data[1024:])
+	st.wantWindowUpdate(0, 1024)
+	st.wantWindowUpdate(1, 1024)
+	st.writeReadPing()
+
+	// The handler consumes the data and the server returns credit.
+	puppet.do(readBodyHandler(t, string(data[1024:])))
+	st.wantWindowUpdate(0, windowSize-1024)
+	st.wantWindowUpdate(1, windowSize-1024)
+	st.writeReadPing()
 }
 
 // the version of the TestServer_Handler_Sends_WindowUpdate with padding.
 // See golang.org/issue/16556
 func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
+	const windowSize = 65535 * 2
 	puppet := newHandlerPuppet()
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		puppet.act(w, r)
+	}, func(s *Server) {
+		s.MaxUploadBufferPerConnection = windowSize
+		s.MaxUploadBufferPerStream = windowSize
 	})
 	defer st.Close()
 	defer puppet.done()
 
 	st.greet()
-
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1,
 		BlockFragment: st.encodeHeader(":method", "POST"),
 		EndStream:     false,
 		EndHeaders:    true,
 	})
-	st.writeDataPadded(1, false, []byte("abcdef"), []byte{0, 0, 0, 0})
+	st.writeReadPing()
 
-	// Expect to immediately get our 5 bytes of padding back for
-	// both the connection and stream (4 bytes of padding + 1 byte of length)
-	st.wantWindowUpdate(0, 5)
-	st.wantWindowUpdate(1, 5)
+	// Write half a window of data, with some padding.
+	// The server doesn't return the padding yet, buffering the 5 bytes to combine
+	// with a future update.
+	data := make([]byte, windowSize/2)
+	pad := make([]byte, 4)
+	st.writeDataPadded(1, false, data, pad)
+	st.writeReadPing()
 
-	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
-
-	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(1, 3)
+	// The handler consumes the body.
+	// The server returns flow control for the body and padding
+	// (4 bytes of padding + 1 byte of length).
+	puppet.do(readBodyHandler(t, string(data)))
+	st.wantWindowUpdate(0, uint32(len(data)+1+len(pad)))
+	st.wantWindowUpdate(1, uint32(len(data)+1+len(pad)))
 }
 
 func TestServer_Send_GoAway_After_Bogus_WindowUpdate(t *testing.T) {
@@ -2296,8 +2355,6 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 		// gigantic and/or sensitive "foo" payload now.
 		st.writeData(1, true, []byte(msg))
 
-		st.wantWindowUpdate(0, uint32(len(msg)))
-
 		hf = st.wantHeaders()
 		if hf.StreamEnded() {
 			t.Fatal("expected data to follow")
@@ -2485,14 +2542,15 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 		// it did before.
 		st.writeData(1, true, []byte("foo"))
 
-		// Get our flow control bytes back, since the handler didn't get them.
-		st.wantWindowUpdate(0, uint32(len("foo")))
-
 		// Sent after a peer sends data anyway (admittedly the
 		// previous RST_STREAM might've still been in-flight),
 		// but they'll get the more friendly 'cancel' code
 		// first.
 		st.wantRSTStream(1, ErrCodeStreamClosed)
+
+		// We should have our flow control bytes back,
+		// since the handler didn't get them.
+		st.wantFlowControlConsumed(0, 0)
 
 		// Set up a bunch of machinery to record the panic we saw
 		// previously.
@@ -3967,8 +4025,8 @@ func TestServer_Rejects_TooSmall(t *testing.T) {
 			EndHeaders: true,
 		})
 		st.writeData(1, true, []byte("12345"))
-		st.wantWindowUpdate(0, 5)
 		st.wantRSTStream(1, ErrCodeProtocol)
+		st.wantFlowControlConsumed(0, 0)
 	})
 }
 
@@ -4258,7 +4316,8 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 }
 
 func TestServerWindowUpdateOnBodyClose(t *testing.T) {
-	const content = "12345678"
+	const windowSize = 65535 * 2
+	content := make([]byte, windowSize)
 	blockCh := make(chan bool)
 	errc := make(chan error, 1)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4275,6 +4334,9 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 		blockCh <- true
 		<-blockCh
 		errc <- nil
+	}, func(s *Server) {
+		s.MaxUploadBufferPerConnection = windowSize
+		s.MaxUploadBufferPerStream = windowSize
 	})
 	defer st.Close()
 
@@ -4288,13 +4350,13 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 		EndStream:  false, // to say DATA frames are coming
 		EndHeaders: true,
 	})
-	st.writeData(1, false, []byte(content[:5]))
+	st.writeData(1, false, content[:windowSize/2])
 	<-blockCh
 	st.stream(1).body.CloseWithError(io.EOF)
-	st.writeData(1, false, []byte(content[5:]))
 	blockCh <- true
 
-	increments := len(content)
+	// Wait for flow control credit for the portion of the request written so far.
+	increments := windowSize / 2
 	for {
 		f, err := st.readFrame()
 		if err == io.EOF {
@@ -4310,6 +4372,10 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 			}
 		}
 	}
+
+	// Writing data after the stream is reset immediately returns flow control credit.
+	st.writeData(1, false, content[windowSize/2:])
+	st.wantWindowUpdate(0, windowSize/2)
 
 	if err := <-errc; err != nil {
 		t.Error(err)
@@ -4465,11 +4531,7 @@ func TestProtocolErrorAfterGoAway(t *testing.T) {
 		EndHeaders: true,
 	})
 	st.writeData(1, false, []byte(content[:5]))
-
-	_, err := st.readFrame()
-	if err != nil {
-		st.t.Fatal(err)
-	}
+	st.writeReadPing()
 
 	// Send a GOAWAY with ErrCodeNo, followed by a bogus window update.
 	// The server should close the connection.
