@@ -263,6 +263,7 @@ var (
 	errNilResouceBody     = errors.New("nil resource body")
 	errResourceLen        = errors.New("insufficient data for resource body length")
 	errSegTooLong         = errors.New("segment length too long")
+	errNameTooLong        = errors.New("name too long")
 	errZeroSegLen         = errors.New("zero length segment")
 	errResTooLong         = errors.New("resource length too long")
 	errTooManyQuestions   = errors.New("too many Questions to pack (>65535)")
@@ -1936,6 +1937,10 @@ func (n *Name) GoString() string {
 func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) ([]byte, error) {
 	oldMsg := msg
 
+	if n.Length == 255 {
+		return nil, errNameTooLong
+	}
+
 	// Add a trailing dot to canonicalize name.
 	if n.Length == 0 || n.Data[n.Length-1] != '.' {
 		return oldMsg, errNonCanonicalName
@@ -2057,8 +2062,8 @@ Loop:
 	if len(name) == 0 {
 		name = append(name, '.')
 	}
-	if len(name) > len(n.Data) {
-		return off, errCalcLen
+	if len(name) > 254 {
+		return off, errNameTooLong
 	}
 	n.Length = uint8(len(name))
 	if ptr == 0 {
