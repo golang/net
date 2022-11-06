@@ -1890,8 +1890,8 @@ func unpackBytes(msg []byte, off int, field []byte) (int, error) {
 }
 
 const (
-	maxHumanEncodedNameLen = 254
-	nameLen                = 255
+	maxDotEncodedNameLen = 254
+	nameLen              = 255
 )
 
 // A Name is a non-encoded domain name. It is used instead of strings to avoid
@@ -1940,7 +1940,7 @@ func (n *Name) GoString() string {
 func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) ([]byte, error) {
 	oldMsg := msg
 
-	if n.Length > maxHumanEncodedNameLen {
+	if n.Length > maxDotEncodedNameLen {
 		return nil, errNameTooLong
 	}
 
@@ -2065,7 +2065,7 @@ Loop:
 	if len(name) == 0 {
 		name = append(name, '.')
 	}
-	if len(name) > maxHumanEncodedNameLen {
+	if len(name) > maxDotEncodedNameLen {
 		return off, errNameTooLong
 	}
 	n.Length = uint8(len(name))
