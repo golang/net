@@ -2773,8 +2773,10 @@ func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 			cc.cond.Broadcast()
 
 			cc.initialWindowSize = s.Val
+		case SettingHeaderTableSize:
+			cc.henc.SetMaxDynamicTableSizeLimit(s.Val)
 		default:
-			// TODO(bradfitz): handle more settings? SETTINGS_HEADER_TABLE_SIZE probably.
+			// TODO(bradfitz): handle more settings?
 			cc.vlogf("Unhandled Setting: %v", s)
 		}
 		return nil
