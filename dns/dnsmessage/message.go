@@ -1729,7 +1729,7 @@ const (
 //
 // The provided extRCode must be an extended RCode.
 func (h *ResourceHeader) SetEDNS0(udpPayloadLen int, extRCode RCode, dnssecOK bool) error {
-	h.Name = Name{Data: [nameLen]byte{'.'}, Length: 1} // RFC 6891 section 6.1.2
+	h.Name = Name{Data: [255]byte{'.'}, Length: 1} // RFC 6891 section 6.1.2
 	h.Type = TypeOPT
 	h.Class = Class(udpPayloadLen)
 	h.TTL = uint32(extRCode) >> 4 << 24
@@ -1889,24 +1889,21 @@ func unpackBytes(msg []byte, off int, field []byte) (int, error) {
 	return newOff, nil
 }
 
-const (
-	maxDotEncodedNameLen = 254
-	nameLen              = 255
-)
+const nonEncodedNameMax = 254
 
 // A Name is a non-encoded domain name. It is used instead of strings to avoid
 // allocations.
 type Name struct {
-	Data   [nameLen]byte // 255 bytes
+	Data   [255]byte
 	Length uint8
 }
 
 // NewName creates a new Name from a string.
 func NewName(name string) (Name, error) {
-	if len(name) > nameLen {
+	n := Name{Length: uint8(len(name))}
+	if len(name) > len(n.Data) {
 		return Name{}, errCalcLen
 	}
-	n := Name{Length: uint8(len(name))}
 	copy(n.Data[:], name)
 	return n, nil
 }
@@ -1940,7 +1937,7 @@ func (n *Name) GoString() string {
 func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) ([]byte, error) {
 	oldMsg := msg
 
-	if n.Length > maxDotEncodedNameLen {
+	if n.Length > nonEncodedNameMax {
 		return nil, errNameTooLong
 	}
 
@@ -2065,7 +2062,7 @@ Loop:
 	if len(name) == 0 {
 		name = append(name, '.')
 	}
-	if len(name) > maxDotEncodedNameLen {
+	if len(name) > nonEncodedNameMax {
 		return off, errNameTooLong
 	}
 	n.Length = uint8(len(name))
