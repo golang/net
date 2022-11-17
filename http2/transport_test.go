@@ -741,12 +741,13 @@ func (fw flushWriter) Write(p []byte) (n int, err error) {
 }
 
 type clientTester struct {
-	t      *testing.T
-	tr     *Transport
-	sc, cc net.Conn // server and client conn
-	fr     *Framer  // server's framer
-	client func() error
-	server func() error
+	t        *testing.T
+	tr       *Transport
+	sc, cc   net.Conn // server and client conn
+	fr       *Framer  // server's framer
+	settings *SettingsFrame
+	client   func() error
+	server   func() error
 }
 
 func newClientTester(t *testing.T) *clientTester {
@@ -809,9 +810,9 @@ func (ct *clientTester) greet(settings ...Setting) {
 	if err != nil {
 		ct.t.Fatalf("Reading client settings frame: %v", err)
 	}
-	if sf, ok := f.(*SettingsFrame); !ok {
+	var ok bool
+	if ct.settings, ok = f.(*SettingsFrame); !ok {
 		ct.t.Fatalf("Wanted client settings frame; got %v", f)
-		_ = sf // stash it away?
 	}
 	if err := ct.fr.WriteSettings(settings...); err != nil {
 		ct.t.Fatal(err)
@@ -3998,62 +3999,42 @@ func TestTransportResponseDataBeforeHeaders(t *testing.T) {
 	ct.run()
 }
 
-// Test that the server received values are in range.
 func TestTransportMaxFrameReadSize(t *testing.T) {
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-	}, func(s *Server) {
-		s.MaxConcurrentStreams = 1
-	})
-	defer st.Close()
-	tr := &Transport{
-		TLSClientConfig:  tlsConfigInsecure,
-		MaxReadFrameSize: 64000,
+	for _, test := range []struct {
+		maxReadFrameSize uint32
+		want             uint32
+	}{{
+		maxReadFrameSize: 64000,
+		want:             64000,
+	}, {
+		maxReadFrameSize: 1024,
+		want:             minMaxFrameSize,
+	}} {
+		ct := newClientTester(t)
+		ct.tr.MaxReadFrameSize = test.maxReadFrameSize
+		ct.client = func() error {
+			req, _ := http.NewRequest("GET", "https://dummy.tld/", http.NoBody)
+			ct.tr.RoundTrip(req)
+			return nil
+		}
+		ct.server = func() error {
+			defer ct.cc.(*net.TCPConn).Close()
+			ct.greet()
+			var got uint32
+			ct.settings.ForeachSetting(func(s Setting) error {
+				switch s.ID {
+				case SettingMaxFrameSize:
+					got = s.Val
+				}
+				return nil
+			})
+			if got != test.want {
+				t.Errorf("Transport.MaxReadFrameSize = %v; server got %v, want %v", test.maxReadFrameSize, got, test.want)
+			}
+			return nil
+		}
+		ct.run()
 	}
-	defer tr.CloseIdleConnections()
-
-	req, err := http.NewRequest("GET", st.ts.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := tr.RoundTrip(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := res.StatusCode, 200; got != want {
-		t.Errorf("StatusCode = %v; want %v", got, want)
-	}
-	if res != nil && res.Body != nil {
-		res.Body.Close()
-	}
-	// Test that maxFrameReadSize() matches the requested size.
-	if got, want := tr.maxFrameReadSize(), uint32(64000); got != want {
-		t.Errorf("maxFrameReadSize = %v; want %v", got, want)
-	}
-	// Test that server receives the requested size.
-	if got, want := st.sc.maxFrameSize, int32(64000); got != want {
-		t.Errorf("maxFrameReadSize = %v; want %v", got, want)
-	}
-
-	// test for minimum frame read size
-	tr = &Transport{
-		TLSClientConfig:  tlsConfigInsecure,
-		MaxReadFrameSize: 1024,
-	}
-
-	if got, want := tr.maxFrameReadSize(), uint32(minMaxFrameSize); got != want {
-		t.Errorf("maxFrameReadSize = %v; want %v", got, want)
-	}
-
-	// test for maximum frame size
-	tr = &Transport{
-		TLSClientConfig:  tlsConfigInsecure,
-		MaxReadFrameSize: 1024 * 1024 * 16,
-	}
-
-	if got, want := tr.maxFrameReadSize(), uint32(maxFrameSize); got != want {
-		t.Errorf("maxFrameReadSize = %v; want %v", got, want)
-	}
-
 }
 
 func TestTransportRequestsLowServerLimit(t *testing.T) {
