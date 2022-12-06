@@ -37,6 +37,7 @@ const (
 	FrameGoAway       FrameType = 0x7
 	FrameWindowUpdate FrameType = 0x8
 	FrameContinuation FrameType = 0x9
+	FrameInvalid      FrameType = 0x10
 )
 
 var frameName = map[FrameType]string{
@@ -498,6 +499,9 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	fh, err := readFrameHeader(fr.headerBuf[:], fr.r)
 	if err != nil {
 		return nil, err
+	}
+	if fh.Type >= FrameInvalid {
+		return nil, ConnectionError(ErrCodeProtocol)
 	}
 	if fh.Length > fr.maxReadSize {
 		return nil, ErrFrameTooLarge
