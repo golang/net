@@ -4547,10 +4547,11 @@ func TestServerInitialFlowControlWindow(t *testing.T) {
 // TestCanonicalHeaderCacheGrowth verifies that the canonical header cache
 // size is capped to a reasonable level.
 func TestCanonicalHeaderCacheGrowth(t *testing.T) {
-	defer disableGoroutineTracking()()
 	for _, size := range []int{1, (1 << 20) - 10} {
 		base := strings.Repeat("X", size)
-		sc := &serverConn{}
+		sc := &serverConn{
+			serveG: newGoroutineLock(),
+		}
 		const count = 1000
 		for i := 0; i < count; i++ {
 			h := fmt.Sprintf("%v-%v", base, i)
