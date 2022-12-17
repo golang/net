@@ -23,8 +23,8 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
 
 	c, err := nettest.NewLocalPacketListener("udp6")

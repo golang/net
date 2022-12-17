@@ -20,8 +20,9 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+
+	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
@@ -53,8 +54,8 @@ func TestConnResponderPathMTU(t *testing.T) {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")

@@ -223,10 +223,10 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+	ifi, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+	if err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
-
 	c, err := nettest.NewLocalPacketListener("udp6")
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,6 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	defer p.Close()
 
 	dst := c.LocalAddr()
-	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
 
