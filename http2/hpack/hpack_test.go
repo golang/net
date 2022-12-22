@@ -709,6 +709,36 @@ func TestEmitEnabled(t *testing.T) {
 	}
 }
 
+func TestSlowIncrementalDecode(t *testing.T) {
+	// TODO(dneil): Fix for -race mode.
+	t.Skip("too slow in -race mode")
+
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	hf := HeaderField{
+		Name:  strings.Repeat("k", 1<<20),
+		Value: strings.Repeat("v", 1<<20),
+	}
+	enc.WriteField(hf)
+	hbuf := buf.Bytes()
+	count := 0
+	dec := NewDecoder(initialHeaderTableSize, func(got HeaderField) {
+		count++
+		if count != 1 {
+			t.Errorf("decoded %v fields, want 1", count)
+		}
+		if got.Name != hf.Name {
+			t.Errorf("decoded Name does not match input")
+		}
+		if got.Value != hf.Value {
+			t.Errorf("decoded Value does not match input")
+		}
+	})
+	for i := 0; i < len(hbuf); i++ {
+		dec.Write(hbuf[i : i+1])
+	}
+}
+
 func TestSaveBufLimit(t *testing.T) {
 	const maxStr = 1 << 10
 	var got []HeaderField
