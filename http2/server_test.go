@@ -1254,19 +1254,21 @@ func TestServer_Handler_Sends_WindowUpdate(t *testing.T) {
 		EndHeaders:    true,
 	})
 	st.writeData(1, false, []byte("abcdef"))
+	// Expect to immediately get connection level 6 bytes back.
+	st.wantWindowUpdate(0, 6)
+
 	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
 
 	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
 
 	st.writeData(1, true, []byte("ghijkl")) // END_STREAM here
+	st.wantWindowUpdate(0, 6)
+
+	// no more stream-level window updates, since END_STREAM
 	puppet.do(readBodyHandler(t, "ghi"))
 	puppet.do(readBodyHandler(t, "jkl"))
-	st.wantWindowUpdate(0, 3)
-	st.wantWindowUpdate(0, 3) // no more stream-level, since END_STREAM
 }
 
 // the version of the TestServer_Handler_Sends_WindowUpdate with padding.
@@ -1289,17 +1291,17 @@ func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
 	})
 	st.writeDataPadded(1, false, []byte("abcdef"), []byte{0, 0, 0, 0})
 
-	// Expect to immediately get our 5 bytes of padding back for
-	// both the connection and stream (4 bytes of padding + 1 byte of length)
-	st.wantWindowUpdate(0, 5)
+	// Expect to immediately get our 6 bytes of data + 5 bytes of padding
+	//  back at connection level.
+	// (4 bytes of padding + 1 byte of padding length)
+	st.wantWindowUpdate(0, 11)
+	// Expect to immediately get our 5 bytes of padding back at stream level.
 	st.wantWindowUpdate(1, 5)
 
 	puppet.do(readBodyHandler(t, "abc"))
-	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
 
 	puppet.do(readBodyHandler(t, "def"))
-	st.wantWindowUpdate(0, 3)
 	st.wantWindowUpdate(1, 3)
 }
 
