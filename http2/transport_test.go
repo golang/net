@@ -95,6 +95,68 @@ func startH2cServer(t *testing.T) net.Listener {
 	return l
 }
 
+func TestIdleConnTimeout(t *testing.T) {
+	for _, test := range []struct {
+		idleConnTimeout time.Duration
+		wait            time.Duration
+		baseTransport   *http.Transport
+		wantConns       int32
+	}{{
+		idleConnTimeout: 2 * time.Second,
+		wait:            1 * time.Second,
+		baseTransport:   nil,
+		wantConns:       1,
+	}, {
+		idleConnTimeout: 1 * time.Second,
+		wait:            2 * time.Second,
+		baseTransport:   nil,
+		wantConns:       5,
+	}, {
+		idleConnTimeout: 0 * time.Second,
+		wait:            1 * time.Second,
+		baseTransport: &http.Transport{
+			IdleConnTimeout: 2 * time.Second,
+		},
+		wantConns: 1,
+	}} {
+		var gotConns int32
+
+		st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, r.RemoteAddr)
+		}, optOnlyServer)
+		defer st.Close()
+
+		tr := &Transport{
+			IdleConnTimeout: test.idleConnTimeout,
+			TLSClientConfig: tlsConfigInsecure,
+		}
+		defer tr.CloseIdleConnections()
+
+		for i := 0; i < 5; i++ {
+			req, _ := http.NewRequest("GET", st.ts.URL, http.NoBody)
+			trace := &httptrace.ClientTrace{
+				GotConn: func(connInfo httptrace.GotConnInfo) {
+					if !connInfo.Reused {
+						atomic.AddInt32(&gotConns, 1)
+					}
+				},
+			}
+			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+			_, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+
+			<-time.After(test.wait)
+		}
+
+		if gotConns != test.wantConns {
+			t.Errorf("incorrect gotConns: %d != %d", gotConns, test.wantConns)
+		}
+	}
+}
+
 func TestTransportH2c(t *testing.T) {
 	l := startH2cServer(t)
 	defer l.Close()
