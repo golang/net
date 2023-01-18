@@ -4316,6 +4316,130 @@ func TestTransportRequestsStallAtServerLimit(t *testing.T) {
 	ct.run()
 }
 
+func TestMaxConnectionReuseCount(t *testing.T) {
+	const maxConnectionReuseCount = 10
+
+	errs := make(chan error, maxConnectionReuseCount)
+	dialedTwice := false
+	clientDone := make(chan struct{})
+
+	ct := newClientTester(t)
+	ct.tr.MaxConnectionReuseCount = maxConnectionReuseCount
+	ct.client = func() error {
+		var allWg sync.WaitGroup
+		var firstConnWg sync.WaitGroup
+		allWg.Add(maxConnectionReuseCount + 1)
+		firstConnWg.Add(maxConnectionReuseCount)
+		defer func() {
+			allWg.Wait()
+			close(clientDone)
+			ct.cc.(*net.TCPConn).CloseWrite()
+
+			// Check #1: All requests should have succeeded.
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					t.Error(err)
+				}
+			}
+
+			// Check #2: The connection is not reused after maxConnectionReuseCount.
+			if !dialedTwice {
+				t.Error("expected to dial twice because of reaching MaxConnectionReuseCount")
+			}
+		}()
+
+		// Make requests maxConnectionReuseCount times. All requests should be served by the same connection.
+		greet := make(chan struct{})
+		for i := 0; i < maxConnectionReuseCount; i++ {
+			go func(i int) {
+				defer allWg.Done()
+				defer firstConnWg.Done()
+
+				if i > 0 {
+					<-greet
+				}
+
+				req, _ := http.NewRequest("HEAD", "https://dummy.tld/1", nil)
+				res, err := ct.tr.RoundTrip(req)
+				if err != nil {
+					errs <- fmt.Errorf("RoundTrip(%d): unexpected error: %v", i, err)
+					return
+				}
+				ioutil.ReadAll(res.Body)
+				res.Body.Close()
+
+				if i == 0 {
+					close(greet)
+				}
+			}(i)
+		}
+
+		// Spawn another goroutine to make another request after reaching maxConnectionReuseCount.
+		go func() {
+			defer allWg.Done()
+			firstConnWg.Wait()
+
+			// This request should fail with "only one dial allowed in test mode", exploting the fact that
+			// the client tester doesn't support dialing more than once.
+			req, _ := http.NewRequest("HEAD", "https://dummy.tld/2", nil)
+			res, err := ct.tr.RoundTrip(req)
+			if err != nil {
+				if err.Error() == "only one dial allowed in test mode" {
+					dialedTwice = true
+				} else {
+					errs <- fmt.Errorf("RoundTrip(last): unexpected error: %v", err)
+				}
+				return
+			}
+			ioutil.ReadAll(res.Body)
+			res.Body.Close()
+		}()
+
+		return nil
+	}
+	ct.server = func() error {
+		ct.greet()
+
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+		for {
+			f, err := ct.fr.ReadFrame()
+			if err != nil {
+				select {
+				case <-clientDone:
+					// If the client's done, it will have reported any errors on its side.
+					return nil
+				default:
+					return err
+				}
+			}
+
+			switch f := f.(type) {
+			case *WindowUpdateFrame, *SettingsFrame:
+				continue
+			case *HeadersFrame:
+				if !f.HeadersEnded() {
+					return fmt.Errorf("headers should have END_HEADERS be ended: %v", f)
+				}
+
+				buf.Reset()
+				enc.WriteField(hpack.HeaderField{Name: ":status", Value: "204"})
+				ct.fr.WriteHeaders(HeadersFrameParam{
+					StreamID:      f.StreamID,
+					EndHeaders:    true,
+					EndStream:     true,
+					BlockFragment: buf.Bytes(),
+				})
+			case *DataFrame:
+			default:
+				return fmt.Errorf("Unexpected client frame %v", f)
+			}
+		}
+	}
+	ct.run()
+}
+
 func TestTransportMaxDecoderHeaderTableSize(t *testing.T) {
 	ct := newClientTester(t)
 	var reqSize, resSize uint32 = 8192, 16384

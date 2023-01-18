@@ -146,6 +146,10 @@ type Transport struct {
 	// waiting for their turn.
 	StrictMaxConcurrentStreams bool
 
+	// MaxConnectionReuseCount is the maximum number of times a connection
+	// can be reused before it is closed. If zero, no limit is enforced.
+	MaxConnectionReuseCount uint32
+
 	// ReadIdleTimeout is the timeout after which a health check using ping
 	// frame will be carried out if no frame is received on the connection.
 	// Note that a ping response will is considered a received frame, so if
@@ -324,11 +328,12 @@ type ClientConn struct {
 	lastActive      time.Time
 	lastIdle        time.Time // time last idle
 	// Settings from peer: (also guarded by wmu)
-	maxFrameSize           uint32
-	maxConcurrentStreams   uint32
-	peerMaxHeaderListSize  uint64
-	peerMaxHeaderTableSize uint32
-	initialWindowSize      uint32
+	maxFrameSize            uint32
+	maxConcurrentStreams    uint32
+	peerMaxHeaderListSize   uint64
+	peerMaxHeaderTableSize  uint32
+	initialWindowSize       uint32
+	MaxConnectionReuseCount uint32
 
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
@@ -733,19 +738,20 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 
 func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
 	cc := &ClientConn{
-		t:                     t,
-		tconn:                 c,
-		readerDone:            make(chan struct{}),
-		nextStreamID:          1,
-		maxFrameSize:          16 << 10,                    // spec default
-		initialWindowSize:     65535,                       // spec default
-		maxConcurrentStreams:  initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
-		peerMaxHeaderListSize: 0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
-		streams:               make(map[uint32]*clientStream),
-		singleUse:             singleUse,
-		wantSettingsAck:       true,
-		pings:                 make(map[[8]byte]chan struct{}),
-		reqHeaderMu:           make(chan struct{}, 1),
+		t:                       t,
+		tconn:                   c,
+		readerDone:              make(chan struct{}),
+		nextStreamID:            1,
+		maxFrameSize:            16 << 10,                    // spec default
+		initialWindowSize:       65535,                       // spec default
+		maxConcurrentStreams:    initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
+		peerMaxHeaderListSize:   0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
+		streams:                 make(map[uint32]*clientStream),
+		singleUse:               singleUse,
+		wantSettingsAck:         true,
+		pings:                   make(map[[8]byte]chan struct{}),
+		reqHeaderMu:             make(chan struct{}, 1),
+		MaxConnectionReuseCount: t.MaxConnectionReuseCount,
 	}
 	if d := t.idleConnTimeout(); d != 0 {
 		cc.idleTimeout = d
@@ -969,9 +975,14 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 		maxConcurrentOkay = int64(len(cc.streams)+cc.streamsReserved+1) <= int64(cc.maxConcurrentStreams)
 	}
 
+	streamIDUpperBound := int64(math.MaxInt32)
+	if cc.MaxConnectionReuseCount > 0 {
+		streamIDUpperBound = int64(cc.MaxConnectionReuseCount) * 2
+	}
+
 	st.canTakeNewRequest = cc.goAway == nil && !cc.closed && !cc.closing && maxConcurrentOkay &&
 		!cc.doNotReuse &&
-		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < math.MaxInt32 &&
+		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < streamIDUpperBound &&
 		!cc.tooIdleLocked()
 	return
 }
