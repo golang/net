@@ -2332,7 +2332,7 @@ func TestServer_Response_Automatic100Continue(t *testing.T) {
 	}, func(st *serverTester) {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      1, // clients send odd numbers
-			BlockFragment: st.encodeHeader(":method", "POST", "expect", "100-continue"),
+			BlockFragment: st.encodeHeader(":method", "POST", "expect", "100-Continue"),
 			EndStream:     false,
 			EndHeaders:    true,
 		})
