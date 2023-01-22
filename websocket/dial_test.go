@@ -5,10 +5,13 @@
 package websocket
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -39,5 +42,39 @@ func TestDialConfigTLSWithDialer(t *testing.T) {
 	}
 	if !neterr.Timeout() {
 		t.Fatalf("expected timeout error, got %#v", neterr)
+	}
+}
+
+func TestDialConfigTLSWithTimeouts(t *testing.T) {
+	t.Parallel()
+
+	finishedRequest := make(chan bool)
+
+	// Context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// This is a TLS server that blocks each request indefinitely (and cancels the context)
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		<-finishedRequest
+	}))
+
+	tlsServerAddr := tlsServer.Listener.Addr().String()
+	log.Print("Test TLS WebSocket server listening on ", tlsServerAddr)
+	defer tlsServer.Close()
+	defer close(finishedRequest)
+
+	config, _ := NewConfig(fmt.Sprintf("wss://%s/echo", tlsServerAddr), "http://localhost")
+	config.TlsConfig = &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	_, err := config.DialContext(ctx)
+	dialerr, ok := err.(*DialError)
+	if !ok {
+		t.Fatalf("DialError expected, got %#v", err)
+	}
+	if !errors.Is(dialerr.Err, context.Canceled) {
+		t.Fatalf("context.Canceled error expected, got %#v", dialerr.Err)
 	}
 }
