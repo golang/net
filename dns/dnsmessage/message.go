@@ -260,7 +260,7 @@ var (
 	errReserved           = errors.New("segment prefix is reserved")
 	errTooManyPtr         = errors.New("too many pointers (>10)")
 	errInvalidPtr         = errors.New("invalid pointer")
-	errNilResouceBody     = errors.New("nil resource body")
+	errNilResourceBody    = errors.New("nil resource body")
 	errResourceLen        = errors.New("insufficient data for resource body length")
 	errSegTooLong         = errors.New("segment length too long")
 	errZeroSegLen         = errors.New("zero length segment")
@@ -501,7 +501,7 @@ type ResourceBody interface {
 // pack appends the wire format of the Resource to msg.
 func (r *Resource) pack(msg []byte, compression map[string]int, compressionOff int) ([]byte, error) {
 	if r.Body == nil {
-		return msg, errNilResouceBody
+		return msg, errNilResourceBody
 	}
 	oldMsg := msg
 	r.Header.Type = r.Body.realType()
