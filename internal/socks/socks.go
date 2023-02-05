@@ -136,6 +136,8 @@ type Dialer struct {
 	// function. It must be non-nil when AuthMethods is not empty.
 	// It must return an error when the authentication is failed.
 	Authenticate func(context.Context, io.ReadWriter, AuthMethod) error
+
+	Resolver *net.Resolver
 }
 
 // DialContext connects to the provided address on the provided
@@ -266,8 +268,8 @@ func (d *Dialer) pathAddrs(address string) (proxy, dst net.Addr, err error) {
 
 // NewDialer returns a new Dialer that dials through the provided
 // proxy server's network and address.
-func NewDialer(network, address string) *Dialer {
-	return &Dialer{proxyNetwork: network, proxyAddress: address, cmd: CmdConnect}
+func NewDialer(network, address string, resolver *net.Resolver) *Dialer {
+	return &Dialer{proxyNetwork: network, proxyAddress: address, cmd: CmdConnect, Resolver: resolver}
 }
 
 const (
