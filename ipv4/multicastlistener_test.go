@@ -142,7 +142,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		}
 		c, err := net.ListenPacket("udp4", net.JoinHostPort(ip.String(), port)) // unicast address with non-reusable port
 		if err != nil {
-			// The listen may fail when the serivce is
+			// The listen may fail when the service is
 			// already in use, but it's fine because the
 			// purpose of this is not to test the
 			// bookkeeping of IP control block inside the

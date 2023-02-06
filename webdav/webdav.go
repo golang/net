@@ -655,7 +655,7 @@ func handlePropfindError(err error, info os.FileInfo) error {
 	// We need to be careful with other errors: there is no way to abort the xml stream
 	// part way through while returning a valid PROPFIND response. Returning only half
 	// the data would be misleading, but so would be returning results tainted by errors.
-	// The curent behaviour by returning an error here leads to the stream being aborted,
+	// The current behaviour by returning an error here leads to the stream being aborted,
 	// and the parent http server complaining about writing a spurious header. We should
 	// consider further enhancing this error handling to more gracefully fail, or perhaps
 	// buffer the entire response until we've walked the tree.
