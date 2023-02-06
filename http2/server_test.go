@@ -1704,7 +1704,7 @@ func TestServer_Rejects_HeadersSelfDependence(t *testing.T) {
 	})
 }
 
-// No PRIORTY frame with a self-dependence.
+// No PRIORITY frame with a self-dependence.
 func TestServer_Rejects_PrioritySelfDependence(t *testing.T) {
 	testServerRejectsStream(t, ErrCodeProtocol, func(st *serverTester) {
 		st.fr.AllowIllegalWrites = true
