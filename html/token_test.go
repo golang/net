@@ -295,7 +295,7 @@ var tokenTests = []tokenTest{
 		"<?xml?>",
 		"<!--?xml?-->",
 	},
-	// Comments.
+	// Comments. See also func TestComments.
 	{
 		"comment0",
 		"abc<b><!-- skipme --></b>def",
@@ -375,6 +375,41 @@ var tokenTests = []tokenTest{
 		"comment15",
 		"a<!-- !-->z",
 		"a$<!-- !-->$z",
+	},
+	{
+		"comment16",
+		"a<!--i\x00j-->z",
+		"a$<!--i\uFFFDj-->$z",
+	},
+	{
+		"comment17",
+		"a<!--\x00",
+		"a$<!--\uFFFD-->",
+	},
+	{
+		"comment18",
+		"a<!--<!-->z",
+		"a$<!--&lt;!-->$z",
+	},
+	{
+		"comment19",
+		"a<!--<!--",
+		"a$<!--&lt;!-->",
+	},
+	{
+		"comment20",
+		"a<!--ij--kl-->z",
+		"a$<!--ij--kl-->$z",
+	},
+	{
+		"comment21",
+		"a<!--ij--kl--!>z",
+		"a$<!--ij--kl-->$z",
+	},
+	{
+		"comment22",
+		"a<!--!--!<--!-->z",
+		"a$<!--!--!&lt;--!-->$z",
 	},
 	// An attribute with a backslash.
 	{
