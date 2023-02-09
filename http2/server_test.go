@@ -4631,3 +4631,78 @@ func TestCanonicalHeaderCacheGrowth(t *testing.T) {
 		}
 	}
 }
+
+// TestServerWriteDoesNotRetainBufferAfterStreamClose checks for access to
+// the slice passed to ResponseWriter.Write after Write returns.
+//
+// Terminating the request stream on the client causes Write to return.
+// We should not access the slice after this point.
+func TestServerWriteDoesNotRetainBufferAfterReturn(t *testing.T) {
+	donec := make(chan struct{})
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		defer close(donec)
+		buf := make([]byte, 1<<20)
+		var i byte
+		for {
+			i++
+			_, err := w.Write(buf)
+			for j := range buf {
+				buf[j] = byte(i) // trigger race detector
+			}
+			if err != nil {
+				return
+			}
+		}
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	req, _ := http.NewRequest("GET", st.ts.URL, nil)
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	<-donec
+}
+
+// TestServerWriteDoesNotRetainBufferAfterServerClose checks for access to
+// the slice passed to ResponseWriter.Write after Write returns.
+//
+// Shutting down the Server causes Write to return.
+// We should not access the slice after this point.
+func TestServerWriteDoesNotRetainBufferAfterServerClose(t *testing.T) {
+	donec := make(chan struct{}, 1)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		donec <- struct{}{}
+		defer close(donec)
+		buf := make([]byte, 1<<20)
+		var i byte
+		for {
+			i++
+			_, err := w.Write(buf)
+			for j := range buf {
+				buf[j] = byte(i)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}, optOnlyServer)
+	defer st.Close()
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	req, _ := http.NewRequest("GET", st.ts.URL, nil)
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	<-donec
+	st.ts.Config.Close()
+	<-donec
+}
