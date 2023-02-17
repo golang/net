@@ -14,6 +14,24 @@ import (
 	"testing"
 )
 
+// https://github.com/golang/go/issues/58246
+const issue58246 = `<!--[if gte mso 12]>
+  <xml>
+      <o:OfficeDocumentSettings>
+      <o:AllowPNG/>
+      <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+<![endif]-->`
+const issue58246Rendered = `<!--[if gte mso 12]&gt;
+  &lt;xml&gt;
+      &lt;o:OfficeDocumentSettings&gt;
+      &lt;o:AllowPNG/&gt;
+      &lt;o:PixelsPerInch&gt;96&lt;/o:PixelsPerInch&gt;
+      &lt;/o:OfficeDocumentSettings&gt;
+    &lt;/xml&gt;
+&lt;![endif]-->`
+
 type tokenTest struct {
 	// A short description of the test case.
 	desc string
@@ -410,6 +428,78 @@ var tokenTests = []tokenTest{
 		"comment22",
 		"a<!--!--!<--!-->z",
 		"a$<!--!--!&lt;--!-->$z",
+	},
+	{
+		"comment23",
+		"a<!--&gt;-->z",
+		"a$<!--&gt;-->$z",
+	},
+	{
+		"comment24",
+		"a<!--&gt;>x",
+		"a$<!--&gt;&gt;x-->",
+	},
+	{
+		"comment25",
+		"a<!--&gt;&gt;",
+		"a$<!--&gt;&gt;-->",
+	},
+	{
+		"comment26",
+		"a<!--&gt;&gt;-",
+		"a$<!--&gt;&gt;-->",
+	},
+	{
+		"comment27",
+		"a<!--&gt;&gt;-->z",
+		"a$<!--&gt;&gt;-->$z",
+	},
+	{
+		"comment28",
+		"a<!--&amp;&gt;-->z",
+		"a$<!--&amp;&gt;-->$z",
+	},
+	{
+		"comment29",
+		"a<!--&amp;gt;-->z",
+		"a$<!--&amp;gt;-->$z",
+	},
+	{
+		"comment30",
+		"a<!--&nosuchentity;-->z",
+		"a$<!--&amp;nosuchentity;-->$z",
+	},
+	// https://stackoverflow.design/email/base/mso/#targeting-specific-outlook-versions
+	// says "[For] Windows Outlook 2003 and above... conditional comments allow
+	// us to add bits of HTML that are only read by the Word-based versions of
+	// Outlook". TODO: these comments (with angle brackets) should pass through
+	// unchanged (by this Go package) when rendering.
+	//
+	// We should also still escape ">" as "&gt;" when necessary.
+	// https://github.com/golang/go/issues/48237
+	//
+	// The "your code" example below comes from that stackoverflow.design link
+	// above but note that it can contain angle-bracket-rich XML.
+	// https://github.com/golang/go/issues/58246
+	{
+		"issue48237CommentWithAmpgtsemi1",
+		"a<!--<p></p>&lt;!--[video]--&gt;-->z",
+		"a$<!--&lt;p&gt;&lt;/p&gt;&lt;!--[video]--&gt;-->$z",
+	},
+	{
+		"issue48237CommentWithAmpgtsemi2",
+		"a<!--<p></p>&lt;!--[video]--!&gt;-->z",
+		"a$<!--&lt;p&gt;&lt;/p&gt;&lt;!--[video]--!&gt;-->$z",
+	},
+	{
+		"issue58246MicrosoftOutlookComment1",
+		"a<!--[if mso]> your code <![endif]-->z",
+		"a$<!--[if mso]&gt; your code &lt;![endif]-->$z",
+	},
+	{
+		"issue58246MicrosoftOutlookComment2",
+		"a" + issue58246 + "z",
+		"a$" + issue58246Rendered + "$z",
 	},
 	// An attribute with a backslash.
 	{
