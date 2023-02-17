@@ -23,14 +23,6 @@ const issue58246 = `<!--[if gte mso 12]>
       </o:OfficeDocumentSettings>
     </xml>
 <![endif]-->`
-const issue58246Rendered = `<!--[if gte mso 12]&gt;
-  &lt;xml&gt;
-      &lt;o:OfficeDocumentSettings&gt;
-      &lt;o:AllowPNG/&gt;
-      &lt;o:PixelsPerInch&gt;96&lt;/o:PixelsPerInch&gt;
-      &lt;/o:OfficeDocumentSettings&gt;
-    &lt;/xml&gt;
-&lt;![endif]-->`
 
 type tokenTest struct {
 	// A short description of the test case.
@@ -332,7 +324,7 @@ var tokenTests = []tokenTest{
 	{
 		"comment3",
 		"a<!--x>-->z",
-		"a$<!--x&gt;-->$z",
+		"a$<!--x>-->$z",
 	},
 	{
 		"comment4",
@@ -352,7 +344,7 @@ var tokenTests = []tokenTest{
 	{
 		"comment7",
 		"a<!---<>z",
-		"a$<!---&lt;&gt;z-->",
+		"a$<!---<>z-->",
 	},
 	{
 		"comment8",
@@ -407,12 +399,12 @@ var tokenTests = []tokenTest{
 	{
 		"comment18",
 		"a<!--<!-->z",
-		"a$<!--&lt;!-->$z",
+		"a$<!--<!-->$z",
 	},
 	{
 		"comment19",
 		"a<!--<!--",
-		"a$<!--&lt;!-->",
+		"a$<!--<!-->",
 	},
 	{
 		"comment20",
@@ -427,7 +419,7 @@ var tokenTests = []tokenTest{
 	{
 		"comment22",
 		"a<!--!--!<--!-->z",
-		"a$<!--!--!&lt;--!-->$z",
+		"a$<!--!--!<--!-->$z",
 	},
 	{
 		"comment23",
@@ -437,27 +429,27 @@ var tokenTests = []tokenTest{
 	{
 		"comment24",
 		"a<!--&gt;>x",
-		"a$<!--&gt;&gt;x-->",
+		"a$<!--&gt;>x-->",
 	},
 	{
 		"comment25",
 		"a<!--&gt;&gt;",
-		"a$<!--&gt;&gt;-->",
+		"a$<!--&gt;>-->",
 	},
 	{
 		"comment26",
 		"a<!--&gt;&gt;-",
-		"a$<!--&gt;&gt;-->",
+		"a$<!--&gt;>-->",
 	},
 	{
 		"comment27",
 		"a<!--&gt;&gt;-->z",
-		"a$<!--&gt;&gt;-->$z",
+		"a$<!--&gt;>-->$z",
 	},
 	{
 		"comment28",
 		"a<!--&amp;&gt;-->z",
-		"a$<!--&amp;&gt;-->$z",
+		"a$<!--&amp;>-->$z",
 	},
 	{
 		"comment29",
@@ -469,10 +461,20 @@ var tokenTests = []tokenTest{
 		"a<!--&nosuchentity;-->z",
 		"a$<!--&amp;nosuchentity;-->$z",
 	},
+	{
+		"comment31",
+		"a<!--i>>j-->z",
+		"a$<!--i>>j-->$z",
+	},
+	{
+		"comment32",
+		"a<!--i!>>j-->z",
+		"a$<!--i!&gt;>j-->$z",
+	},
 	// https://stackoverflow.design/email/base/mso/#targeting-specific-outlook-versions
 	// says "[For] Windows Outlook 2003 and above... conditional comments allow
 	// us to add bits of HTML that are only read by the Word-based versions of
-	// Outlook". TODO: these comments (with angle brackets) should pass through
+	// Outlook". These comments (with angle brackets) should pass through
 	// unchanged (by this Go package) when rendering.
 	//
 	// We should also still escape ">" as "&gt;" when necessary.
@@ -484,22 +486,22 @@ var tokenTests = []tokenTest{
 	{
 		"issue48237CommentWithAmpgtsemi1",
 		"a<!--<p></p>&lt;!--[video]--&gt;-->z",
-		"a$<!--&lt;p&gt;&lt;/p&gt;&lt;!--[video]--&gt;-->$z",
+		"a$<!--<p></p><!--[video]--&gt;-->$z",
 	},
 	{
 		"issue48237CommentWithAmpgtsemi2",
 		"a<!--<p></p>&lt;!--[video]--!&gt;-->z",
-		"a$<!--&lt;p&gt;&lt;/p&gt;&lt;!--[video]--!&gt;-->$z",
+		"a$<!--<p></p><!--[video]--!&gt;-->$z",
 	},
 	{
 		"issue58246MicrosoftOutlookComment1",
 		"a<!--[if mso]> your code <![endif]-->z",
-		"a$<!--[if mso]&gt; your code &lt;![endif]-->$z",
+		"a$<!--[if mso]> your code <![endif]-->$z",
 	},
 	{
 		"issue58246MicrosoftOutlookComment2",
 		"a" + issue58246 + "z",
-		"a$" + issue58246Rendered + "$z",
+		"a$" + issue58246 + "$z",
 	},
 	// An attribute with a backslash.
 	{

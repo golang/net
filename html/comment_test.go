@@ -6,12 +6,13 @@ package html
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
 // TestComments exhaustively tests every 'interesting' N-byte string is
-// correctly parsed as a comment. N ranges from 4+1 to 4+suffixLen inclusive,
-// where 4 is the length of the "<!--" prefix that starts an HTML comment.
+// correctly parsed as a comment. N ranges from 4+1 to 4+maxSuffixLen
+// inclusive. 4 is the length of the "<!--" prefix that starts an HTML comment.
 //
 // 'Interesting' means that the N-4 byte suffix consists entirely of bytes
 // sampled from the interestingCommentBytes const string, below. These cover
@@ -27,8 +28,8 @@ import (
 // two algorithms match.
 func TestComments(t *testing.T) {
 	const prefix = "<!--"
-	const suffixLen = 6
-	buffer := make([]byte, 0, len(prefix)+suffixLen)
+	const maxSuffixLen = 6
+	buffer := make([]byte, 0, len(prefix)+maxSuffixLen)
 	testAllComments(t, append(buffer, prefix...))
 }
 
@@ -205,6 +206,26 @@ loop:
 	if (gotComment != wantComment) || (gotRemainder != wantRemainder) {
 		t.Errorf("input=%q\ngot:  %q + %q\nwant: %q + %q",
 			b, gotComment, gotRemainder, wantComment, wantRemainder)
+		return
+	}
+
+	// suffix is the "N-4 byte suffix" per the TestComments comment.
+	suffix := string(b[4:])
+
+	// Test that a round trip, rendering (escaped) and re-parsing, of a comment
+	// token (with that suffix as the Token.Data) preserves that string.
+	tok := Token{
+		Type: CommentToken,
+		Data: suffix,
+	}
+	z2 := NewTokenizer(strings.NewReader(tok.String()))
+	if next := z2.Next(); next != CommentToken {
+		t.Fatalf("round-trip Next(%q): got %v, want %v", suffix, next, CommentToken)
+	}
+	gotComment2 := string(z2.Text())
+	if gotComment2 != suffix {
+		t.Errorf("round-trip\ngot:  %q\nwant: %q", gotComment2, suffix)
+		return
 	}
 }
 
