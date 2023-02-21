@@ -91,7 +91,8 @@ func writeLockInfo(w io.Writer, token string, ld LockDetails) (int, error) {
 	// PathEscape the root. Any URLs in this response body should match data on the wire
 	// meaning if a request came in escaped (which it should have), it should go out that
 	// way as well.
-	root := url.PathEscape(ld.Root)
+	rootUrl := url.URL{Path: ld.Root}
+	root := rootUrl.EscapedPath()
 	return fmt.Fprintf(w, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"+
 		"<D:prop xmlns:D=\"DAV:\"><D:lockdiscovery><D:activelock>\n"+
 		"	<D:locktype><D:write/></D:locktype>\n"+

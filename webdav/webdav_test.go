@@ -540,3 +540,91 @@ func TestMoveLockedSrcUnlockedDst(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestLockRootEscape(t *testing.T) {
+	lockrootRe := regexp.MustCompile(`<D:lockroot><D:href>([^<]*)</D:href></D:lockroot>`)
+	do := func(urlStr string) (string, error) {
+		bodyReader := strings.NewReader(createLockBody)
+		req, err := http.NewRequest("LOCK", urlStr, bodyReader)
+		if err != nil {
+			return "", err
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer res.Body.Close()
+
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return "", err
+		}
+		lockrootMatch := lockrootRe.FindStringSubmatch(string(b))
+		if len(lockrootMatch) != 2 {
+			return "", errors.New("D:lockroot not found")
+		}
+
+		return lockrootMatch[1], nil
+	}
+
+	testCases := []struct {
+		name, wantLockroot string
+	}{{
+		name:         `/foo%bar`,
+		wantLockroot: `/foo%25bar`,
+	}, {
+		name:         `/こんにちわ世界`,
+		wantLockroot: `/%E3%81%93%E3%82%93%E3%81%AB%E3%81%A1%E3%82%8F%E4%B8%96%E7%95%8C`,
+	}, {
+		name:         `/Program Files/`,
+		wantLockroot: `/Program%20Files/`,
+	}, {
+		name:         `/go+lang`,
+		wantLockroot: `/go+lang`,
+	}, {
+		name:         `/go&lang`,
+		wantLockroot: `/go&amp;lang`,
+	}, {
+		name:         `/go<lang`,
+		wantLockroot: `/go%3Clang`,
+	}}
+	ctx := context.Background()
+	fs := NewMemFS()
+	for _, tc := range testCases {
+		if tc.name != "/" {
+			if strings.HasSuffix(tc.name, "/") {
+				if err := fs.Mkdir(ctx, tc.name, 0755); err != nil {
+					t.Fatalf("name=%q: Mkdir: %v", tc.name, err)
+				}
+			} else {
+				f, err := fs.OpenFile(ctx, tc.name, os.O_CREATE, 0644)
+				if err != nil {
+					t.Fatalf("name=%q: OpenFile: %v", tc.name, err)
+				}
+				f.Close()
+			}
+		}
+	}
+
+	srv := httptest.NewServer(&Handler{
+		FileSystem: fs,
+		LockSystem: NewMemLS(),
+	})
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range testCases {
+		u.Path = tc.name
+		gotLockroot, err := do(u.String())
+		if err != nil {
+			t.Errorf("name=%q: LOCK: %v", tc.name, err)
+			continue
+		}
+		if gotLockroot != tc.wantLockroot {
+			t.Errorf("name=%q: got lockroot %q, want %q", tc.name, gotLockroot, tc.wantLockroot)
+		}
+	}
+}
