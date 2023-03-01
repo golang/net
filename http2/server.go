@@ -2880,6 +2880,11 @@ func (w *responseWriter) SetWriteDeadline(deadline time.Time) error {
 	return nil
 }
 
+func (w *responseWriter) EnableFullDuplex() error {
+	// We always support full duplex responses, so this is a no-op.
+	return nil
+}
+
 func (w *responseWriter) Flush() {
 	w.FlushError()
 }
