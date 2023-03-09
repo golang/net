@@ -125,14 +125,14 @@ func TestPipeBreakWithError(t *testing.T) {
 	if p.Len() != 3 {
 		t.Errorf("pipe should have 3 unread bytes")
 	}
-	// Write should succeed silently.
-	if n, err := p.Write([]byte("abc")); err != nil || n != 3 {
-		t.Errorf("Write(abc) after break\ngot %v, %v\nwant 0, nil", n, err)
+	// Write should fail.
+	if n, err := p.Write([]byte("abc")); err != errClosedPipeWrite || n != 0 {
+		t.Errorf("Write(abc) after break\ngot %v, %v\nwant 0, errClosedPipeWrite", n, err)
 	}
 	if p.b != nil {
 		t.Errorf("buffer should be nil after Write")
 	}
-	if p.Len() != 6 {
+	if p.Len() != 3 {
 		t.Errorf("pipe should have 6 unread bytes")
 	}
 	// Read should fail.

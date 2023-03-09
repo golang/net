@@ -2555,6 +2555,9 @@ func (b transportResponseBody) Close() error {
 	cs := b.cs
 	cc := cs.cc
 
+	cs.bufPipe.BreakWithError(errClosedResponseBody)
+	cs.abortStream(errClosedResponseBody)
+
 	unread := cs.bufPipe.Len()
 	if unread > 0 {
 		cc.mu.Lock()
@@ -2572,9 +2575,6 @@ func (b transportResponseBody) Close() error {
 		cc.bw.Flush()
 		cc.wmu.Unlock()
 	}
-
-	cs.bufPipe.BreakWithError(errClosedResponseBody)
-	cs.abortStream(errClosedResponseBody)
 
 	select {
 	case <-cs.donec:

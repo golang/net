@@ -3906,6 +3906,32 @@ func TestUnreadFlowControlReturned_Server(t *testing.T) {
 	}
 }
 
+func TestServerReturnsStreamAndConnFlowControlOnBodyClose(t *testing.T) {
+	unblockHandler := make(chan struct{})
+	defer close(unblockHandler)
+
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		r.Body.Close()
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		<-unblockHandler
+	})
+	defer st.Close()
+
+	st.greet()
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(),
+		EndHeaders:    true,
+	})
+	st.wantHeaders()
+	const size = inflowMinRefresh // enough to trigger flow control return
+	st.writeData(1, false, make([]byte, size))
+	st.wantWindowUpdate(0, size) // conn-level flow control is returned
+	unblockHandler <- struct{}{}
+	st.wantData()
+}
+
 func TestServerIdleTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
