@@ -441,7 +441,7 @@ func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
 	if s.NewWriteScheduler != nil {
 		sc.writeSched = s.NewWriteScheduler()
 	} else {
-		sc.writeSched = NewPriorityWriteScheduler(nil)
+		sc.writeSched = newRoundRobinWriteScheduler()
 	}
 
 	// These start at the RFC-specified defaults. If there is a higher
