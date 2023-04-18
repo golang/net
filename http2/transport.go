@@ -1444,8 +1444,22 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 			respHeaderRecv = nil
 			respHeaderTimer = nil // keep waiting for END_STREAM
 		case <-cs.abort:
+			// If this was the only active stream, mark the connection
+			// as not for re-use in order to address raciness if the caller
+			// tries to call closeIdleConnections() before the stream has been
+			// removed
+			if len(cc.streams) == 1 {
+				cc.doNotReuse = true
+			}
 			return cs.abortErr
 		case <-ctx.Done():
+			// If this was the only active stream, mark the connection
+			// as not for re-use in order to address raciness if the caller
+			// tries to call closeIdleConnections() before the stream has been
+			// removed
+			if len(cc.streams) == 1 {
+				cc.doNotReuse = true
+			}
 			return ctx.Err()
 		case <-cs.reqCancel:
 			return errRequestCanceled
