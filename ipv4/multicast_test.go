@@ -30,7 +30,7 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows", "zos":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -132,7 +132,7 @@ var packetConnReadWriteMulticastICMPTests = []struct {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsRawSocket() {
@@ -262,7 +262,7 @@ var rawConnReadWriteMulticastICMPTests = []struct {
 
 func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
