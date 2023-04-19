@@ -1449,7 +1449,9 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 			// tries to call closeIdleConnections() before the stream has been
 			// removed
 			if len(cc.streams) == 1 {
+				cc.mu.Lock()
 				cc.doNotReuse = true
+				cc.mu.Unlock()
 			}
 			return cs.abortErr
 		case <-ctx.Done():
@@ -1458,7 +1460,9 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 			// tries to call closeIdleConnections() before the stream has been
 			// removed
 			if len(cc.streams) == 1 {
+				cc.mu.Lock()
 				cc.doNotReuse = true
+				cc.mu.Unlock()
 			}
 			return ctx.Err()
 		case <-cs.reqCancel:
