@@ -4456,11 +4456,14 @@ func TestAuthorityAddr(t *testing.T) {
 	}{
 		{"http", "foo.com", "foo.com:80"},
 		{"https", "foo.com", "foo.com:443"},
+		{"https", "foo.com:", "foo.com:443"},
 		{"https", "foo.com:1234", "foo.com:1234"},
 		{"https", "1.2.3.4:1234", "1.2.3.4:1234"},
 		{"https", "1.2.3.4", "1.2.3.4:443"},
+		{"https", "1.2.3.4:", "1.2.3.4:443"},
 		{"https", "[::1]:1234", "[::1]:1234"},
 		{"https", "[::1]", "[::1]:443"},
+		{"https", "[::1]:", "[::1]:443"},
 	}
 	for _, tt := range tests {
 		got := authorityAddr(tt.scheme, tt.authority)
