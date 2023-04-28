@@ -65,10 +65,6 @@ var rawConnMulticastSocketOptionTests = []struct {
 }
 
 func TestRawConnMulticastSocketOptions(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "zos":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}

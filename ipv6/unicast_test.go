@@ -6,6 +6,7 @@ package ipv6_test
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"os"
 	"runtime"
@@ -90,10 +91,6 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 }
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
 	}
@@ -128,7 +125,9 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	var f ipv6.ICMPFilter
 	f.SetAll(true)
 	f.Accept(ipv6.ICMPTypeEchoReply)
-	if err := p.SetICMPFilter(&f); err != nil {
+	if err := p.SetICMPFilter(&f); errors.Is(err, ipv6.ErrNotImplemented) {
+		t.Skipf("setting ICMP filter not supported: %v", err)
+	} else if err != nil {
 		t.Fatal(err)
 	}
 

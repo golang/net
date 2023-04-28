@@ -84,10 +84,6 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 }
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -179,10 +175,6 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 }
 
 func TestRawConnReadWriteUnicastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}

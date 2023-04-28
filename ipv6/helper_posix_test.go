@@ -8,8 +8,11 @@
 package ipv6_test
 
 import (
+	"errors"
 	"os"
 	"syscall"
+
+	"golang.org/x/net/ipv6"
 )
 
 func protocolNotSupported(err error) bool {
@@ -28,5 +31,5 @@ func protocolNotSupported(err error) bool {
 			}
 		}
 	}
-	return false
+	return errors.Is(err, ipv6.ErrNotImplemented)
 }

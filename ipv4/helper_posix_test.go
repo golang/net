@@ -8,8 +8,11 @@
 package ipv4_test
 
 import (
+	"errors"
 	"os"
 	"syscall"
+
+	"golang.org/x/net/ipv4"
 )
 
 func protocolNotSupported(err error) bool {
@@ -28,5 +31,5 @@ func protocolNotSupported(err error) bool {
 			}
 		}
 	}
-	return false
+	return errors.Is(err, ipv4.ErrNotImplemented)
 }

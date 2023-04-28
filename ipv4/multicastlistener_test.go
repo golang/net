@@ -171,10 +171,6 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 }
 
 func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
@@ -216,10 +212,6 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 }
 
 func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
