@@ -3821,7 +3821,8 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 				t.Errorf("server1 failed reading HEADERS: %v", err)
 				return
 			}
-			t.Logf("server1 got %v", hf)
+			t.Logf("server1 got %v from %v", hf, ct.sc.RemoteAddr())
+
 			if err := ct.fr.WriteGoAway(0 /*max id*/, ErrCodeNo, nil); err != nil {
 				t.Errorf("server1 failed writing GOAWAY: %v", err)
 				return
@@ -3833,7 +3834,7 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 				t.Errorf("server2 failed reading HEADERS: %v", err)
 				return
 			}
-			t.Logf("server2 got %v", hf)
+			t.Logf("server2 got %v from %v", hf, ct.sc.RemoteAddr())
 
 			var buf bytes.Buffer
 			enc := hpack.NewEncoder(&buf)
