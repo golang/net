@@ -6434,15 +6434,17 @@ func TestTransportReuseAfterError(t *testing.T) {
 
 	// Request 2 is also made on conn 1.
 	// Reading the response will block.
-	// The request fails when the context deadline expires.
+	// The request is canceled once the server receives it.
 	// Conn 1 should now be flagged as unfit for reuse.
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-	_, err := tr.RoundTrip(req.Clone(timeoutCtx))
+	req2Ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-serverReqc
+		cancel()
+	}()
+	_, err := tr.RoundTrip(req.Clone(req2Ctx))
 	if err == nil {
-		t.Errorf("request 2 unexpectedly succeeded (want timeout)")
+		t.Errorf("request 2 unexpectedly succeeded (want cancel)")
 	}
-	time.Sleep(1 * time.Millisecond)
 
 	// Request 3 is made on a new conn, and succeeds.
 	res3, err := tr.RoundTrip(req.Clone(context.Background()))
