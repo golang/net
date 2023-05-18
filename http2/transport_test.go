@@ -3783,7 +3783,6 @@ func testClientMultipleDials(t *testing.T, client func(*Transport), server func(
 		go func(count int) {
 			defer wg.Done()
 			server(count, ct)
-			sc.Close()
 		}(count)
 		return cc, nil
 	}
