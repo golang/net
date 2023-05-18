@@ -211,6 +211,15 @@ func TestName(t *testing.T) {
 	}
 }
 
+func TestNameWithDotsUnpack(t *testing.T) {
+	name := []byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
+	var n Name
+	_, err := n.unpack(name, 0)
+	if err != errInvalidName {
+		t.Fatalf("expected %v, got %v", errInvalidName, err)
+	}
+}
+
 func TestNamePackUnpack(t *testing.T) {
 	const suffix = ".go.dev."
 	var longDNSPrefix = strings.Repeat("verylongdomainlabel.", 20)

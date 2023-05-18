@@ -260,6 +260,7 @@ var (
 	errReserved           = errors.New("segment prefix is reserved")
 	errTooManyPtr         = errors.New("too many pointers (>10)")
 	errInvalidPtr         = errors.New("invalid pointer")
+	errInvalidName        = errors.New("invalid dns name")
 	errNilResouceBody     = errors.New("nil resource body")
 	errResourceLen        = errors.New("insufficient data for resource body length")
 	errSegTooLong         = errors.New("segment length too long")
@@ -2034,6 +2035,15 @@ Loop:
 			if endOff > len(msg) {
 				return off, errCalcLen
 			}
+
+			// Reject names containing dots.
+			// See issue golang/go#56246
+			for _, v := range msg[currOff:endOff] {
+				if v == '.' {
+					return off, errInvalidName
+				}
+			}
+
 			name = append(name, msg[currOff:endOff]...)
 			name = append(name, '.')
 			currOff = endOff
