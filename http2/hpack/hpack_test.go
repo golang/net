@@ -477,7 +477,7 @@ func BenchmarkHuffmanDecode(b *testing.B) {
 		if _, err := HuffmanDecode(&buf, enc); err != nil {
 			b.Fatalf("decode error: %v", err)
 		}
-		if string(buf.Bytes()) != "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1" {
+		if buf.String() != "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1" {
 			b.Fatalf("bogus output %q", buf.Bytes())
 		}
 	}

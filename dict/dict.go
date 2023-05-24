@@ -194,7 +194,7 @@ func fields(s string) ([]string, error) {
 }
 
 func unquote(s string) string {
-	if strings.Index(s, "\\") < 0 {
+	if !strings.Contains(s, "\\"){
 		return s
 	}
 	b := []byte(s)

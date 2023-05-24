@@ -721,7 +721,7 @@ loop:
 		}
 	}
 	u := "14567"
-	v := string(result.Bytes())
+	v := result.String()
 	if u != v {
 		t.Errorf("TestBufAPI: want %q got %q", u, v)
 	}

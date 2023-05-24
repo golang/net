@@ -777,10 +777,7 @@ func inHeadNoscriptIM(p *parser) bool {
 		panic("html: the new current node will be a head element.")
 	}
 	p.im = inHeadIM
-	if p.tok.DataAtom == a.Noscript {
-		return true
-	}
-	return false
+	return p.tok.DataAtom == a.Noscript
 }
 
 // Section 12.2.6.4.6.

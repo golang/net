@@ -3337,7 +3337,7 @@ func benchmarkServerToClientStream(b *testing.B, newServerOpts ...interface{}) {
 	for i := 0; i < b.N; i += 1 {
 		expected := nextMsg(i)
 		df := st.wantData()
-		if bytes.Compare(expected, df.data) != 0 {
+		if !bytes.Equal(expected, df.data) {
 			b.Fatalf("Bad message received; want %v; got %v", expected, df.data)
 		}
 		// try to send infrequent but large window updates so they don't overwhelm the test

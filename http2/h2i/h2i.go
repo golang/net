@@ -172,7 +172,7 @@ func (app *h2i) Main() error {
 	}
 	state := tc.ConnectionState()
 	log.Printf("Negotiated protocol %q", state.NegotiatedProtocol)
-	if !state.NegotiatedProtocolIsMutual || state.NegotiatedProtocol == "" {
+	if state.NegotiatedProtocol == "" {
 		return fmt.Errorf("Could not negotiate protocol mutually")
 	}
 
