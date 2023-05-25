@@ -35,6 +35,10 @@ const (
 	maxAckDelay      = 25 * time.Millisecond // max_ack_delay
 )
 
+// Local timer granularity.
+// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
+const timerGranularity = 1 * time.Millisecond
+
 // A side distinguishes between the client and server sides of a connection.
 type side int8
 
