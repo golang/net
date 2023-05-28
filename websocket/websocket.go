@@ -5,8 +5,9 @@
 // Package websocket implements a client and server for the WebSocket protocol
 // as specified in RFC 6455.
 //
-// This package currently lacks some features found in an alternative
-// and more actively maintained WebSocket package:
+// This package is retired. It is stll around in order to avoid breaking
+// existing projects, but it is not actively maintained.
+// Use an alternative an more actively maintained WebSocket package instead:
 //
 //	https://pkg.go.dev/nhooyr.io/websocket
 package websocket // import "golang.org/x/net/websocket"
