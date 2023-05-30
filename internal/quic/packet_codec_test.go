@@ -222,7 +222,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		s: "ACK Delay=80µs [0,16) [17,32) [48,64)",
 		f: debugFrameAck{
 			ackDelay: (10 << ackDelayExponent) * time.Microsecond,
-			ranges: []i64range{
+			ranges: []i64range[packetNumber]{
 				{0x00, 0x10},
 				{0x11, 0x20},
 				{0x30, 0x40},
@@ -595,7 +595,7 @@ func TestFrameDecode(t *testing.T) {
 		desc: "ACK frame with ECN counts",
 		want: debugFrameAck{
 			ackDelay: (10 << ackDelayExponent) * time.Microsecond,
-			ranges: []i64range{
+			ranges: []i64range[packetNumber]{
 				{0, 1},
 			},
 		},

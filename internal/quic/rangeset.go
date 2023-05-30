@@ -11,27 +11,24 @@ package quic
 //
 // Rangesets are efficient for small numbers of ranges,
 // which is expected to be the common case.
-//
-// Once we're willing to drop support for pre-generics versions of Go, this can
-// be made into a parameterized type to permit use with packetNumber without casts.
-type rangeset []i64range
+type rangeset[T ~int64] []i64range[T]
 
-type i64range struct {
-	start, end int64 // [start, end)
+type i64range[T ~int64] struct {
+	start, end T // [start, end)
 }
 
 // size returns the size of the range.
-func (r i64range) size() int64 {
+func (r i64range[T]) size() T {
 	return r.end - r.start
 }
 
 // contains reports whether v is in the range.
-func (r i64range) contains(v int64) bool {
+func (r i64range[T]) contains(v T) bool {
 	return r.start <= v && v < r.end
 }
 
 // add adds [start, end) to the set, combining it with existing ranges if necessary.
-func (s *rangeset) add(start, end int64) {
+func (s *rangeset[T]) add(start, end T) {
 	if start == end {
 		return
 	}
@@ -65,11 +62,11 @@ func (s *rangeset) add(start, end int64) {
 		s.removeranges(i+1, j)
 		return
 	}
-	*s = append(*s, i64range{start, end})
+	*s = append(*s, i64range[T]{start, end})
 }
 
 // sub removes [start, end) from the set.
-func (s *rangeset) sub(start, end int64) {
+func (s *rangeset[T]) sub(start, end T) {
 	removefrom, removeto := -1, -1
 	for i := range *s {
 		r := &(*s)[i]
@@ -106,7 +103,7 @@ func (s *rangeset) sub(start, end int64) {
 }
 
 // contains reports whether s contains v.
-func (s rangeset) contains(v int64) bool {
+func (s rangeset[T]) contains(v T) bool {
 	for _, r := range s {
 		if v >= r.end {
 			continue
@@ -120,7 +117,7 @@ func (s rangeset) contains(v int64) bool {
 }
 
 // rangeContaining returns the range containing v, or the range [0,0) if v is not in s.
-func (s rangeset) rangeContaining(v int64) i64range {
+func (s rangeset[T]) rangeContaining(v T) i64range[T] {
 	for _, r := range s {
 		if v >= r.end {
 			continue
@@ -130,11 +127,11 @@ func (s rangeset) rangeContaining(v int64) i64range {
 		}
 		break
 	}
-	return i64range{0, 0}
+	return i64range[T]{0, 0}
 }
 
 // min returns the minimum value in the set, or 0 if empty.
-func (s rangeset) min() int64 {
+func (s rangeset[T]) min() T {
 	if len(s) == 0 {
 		return 0
 	}
@@ -142,7 +139,7 @@ func (s rangeset) min() int64 {
 }
 
 // max returns the maximum value in the set, or 0 if empty.
-func (s rangeset) max() int64 {
+func (s rangeset[T]) max() T {
 	if len(s) == 0 {
 		return 0
 	}
@@ -150,7 +147,7 @@ func (s rangeset) max() int64 {
 }
 
 // end returns the end of the last range in the set, or 0 if empty.
-func (s rangeset) end() int64 {
+func (s rangeset[T]) end() T {
 	if len(s) == 0 {
 		return 0
 	}
@@ -158,7 +155,7 @@ func (s rangeset) end() int64 {
 }
 
 // isrange reports if the rangeset covers exactly the range [start, end).
-func (s rangeset) isrange(start, end int64) bool {
+func (s rangeset[T]) isrange(start, end T) bool {
 	switch len(s) {
 	case 0:
 		return start == 0 && end == 0
@@ -169,7 +166,7 @@ func (s rangeset) isrange(start, end int64) bool {
 }
 
 // removeranges removes ranges [i,j).
-func (s *rangeset) removeranges(i, j int) {
+func (s *rangeset[T]) removeranges(i, j int) {
 	if i == j {
 		return
 	}
@@ -178,8 +175,8 @@ func (s *rangeset) removeranges(i, j int) {
 }
 
 // insert adds a new range at index i.
-func (s *rangeset) insertrange(i int, start, end int64) {
-	*s = append(*s, i64range{})
+func (s *rangeset[T]) insertrange(i int, start, end T) {
+	*s = append(*s, i64range[T]{})
 	copy((*s)[i+1:], (*s)[i:])
-	(*s)[i] = i64range{start, end}
+	(*s)[i] = i64range[T]{start, end}
 }

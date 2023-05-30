@@ -116,15 +116,15 @@ func (f debugFramePing) write(w *packetWriter) bool {
 // debugFrameAck is an ACK frame.
 type debugFrameAck struct {
 	ackDelay time.Duration
-	ranges   []i64range
+	ranges   []i64range[packetNumber]
 }
 
 func parseDebugFrameAck(b []byte) (f debugFrameAck, n int) {
 	f.ranges = nil
 	_, f.ackDelay, n = consumeAckFrame(b, ackDelayExponent, func(start, end packetNumber) {
-		f.ranges = append(f.ranges, i64range{
-			start: int64(start),
-			end:   int64(end),
+		f.ranges = append(f.ranges, i64range[packetNumber]{
+			start: start,
+			end:   end,
 		})
 	})
 	// Ranges are parsed smallest to highest; reverse ranges slice to order them high to low.
@@ -144,7 +144,7 @@ func (f debugFrameAck) String() string {
 }
 
 func (f debugFrameAck) write(w *packetWriter) bool {
-	return w.appendAckFrame(rangeset(f.ranges), ackDelayExponent, f.ackDelay)
+	return w.appendAckFrame(rangeset[packetNumber](f.ranges), ackDelayExponent, f.ackDelay)
 }
 
 // debugFrameResetStream is a RESET_STREAM frame.

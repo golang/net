@@ -13,13 +13,13 @@ import (
 
 func TestRangeSize(t *testing.T) {
 	for _, test := range []struct {
-		r    i64range
+		r    i64range[int64]
 		want int64
 	}{{
-		r:    i64range{0, 100},
+		r:    i64range[int64]{0, 100},
 		want: 100,
 	}, {
-		r:    i64range{10, 20},
+		r:    i64range[int64]{10, 20},
 		want: 10,
 	}} {
 		if got := test.r.size(); got != test.want {
@@ -29,7 +29,7 @@ func TestRangeSize(t *testing.T) {
 }
 
 func TestRangeContains(t *testing.T) {
-	r := i64range{5, 10}
+	r := i64range[int64]{5, 10}
 	for _, i := range []int64{0, 4, 10, 15} {
 		if r.contains(i) {
 			t.Errorf("%v.contains(%v) = true, want false", r, i)
@@ -45,69 +45,69 @@ func TestRangeContains(t *testing.T) {
 func TestRangesetAdd(t *testing.T) {
 	for _, test := range []struct {
 		desc string
-		set  rangeset
-		add  i64range
-		want rangeset
+		set  rangeset[int64]
+		add  i64range[int64]
+		want rangeset[int64]
 	}{{
 		desc: "add to empty set",
-		set:  rangeset{},
-		add:  i64range{0, 100},
-		want: rangeset{{0, 100}},
+		set:  rangeset[int64]{},
+		add:  i64range[int64]{0, 100},
+		want: rangeset[int64]{{0, 100}},
 	}, {
 		desc: "add empty range",
-		set:  rangeset{},
-		add:  i64range{100, 100},
-		want: rangeset{},
+		set:  rangeset[int64]{},
+		add:  i64range[int64]{100, 100},
+		want: rangeset[int64]{},
 	}, {
 		desc: "append nonadjacent range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{300, 400},
-		want: rangeset{{100, 200}, {300, 400}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{300, 400},
+		want: rangeset[int64]{{100, 200}, {300, 400}},
 	}, {
 		desc: "prepend nonadjacent range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{0, 50},
-		want: rangeset{{0, 50}, {100, 200}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{0, 50},
+		want: rangeset[int64]{{0, 50}, {100, 200}},
 	}, {
 		desc: "insert nonadjacent range",
-		set:  rangeset{{100, 200}, {500, 600}},
-		add:  i64range{300, 400},
-		want: rangeset{{100, 200}, {300, 400}, {500, 600}},
+		set:  rangeset[int64]{{100, 200}, {500, 600}},
+		add:  i64range[int64]{300, 400},
+		want: rangeset[int64]{{100, 200}, {300, 400}, {500, 600}},
 	}, {
 		desc: "prepend adjacent range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{50, 100},
-		want: rangeset{{50, 200}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{50, 100},
+		want: rangeset[int64]{{50, 200}},
 	}, {
 		desc: "append adjacent range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{200, 250},
-		want: rangeset{{100, 250}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{200, 250},
+		want: rangeset[int64]{{100, 250}},
 	}, {
 		desc: "prepend overlapping range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{50, 150},
-		want: rangeset{{50, 200}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{50, 150},
+		want: rangeset[int64]{{50, 200}},
 	}, {
 		desc: "append overlapping range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{150, 250},
-		want: rangeset{{100, 250}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{150, 250},
+		want: rangeset[int64]{{100, 250}},
 	}, {
 		desc: "replace range",
-		set:  rangeset{{100, 200}},
-		add:  i64range{50, 250},
-		want: rangeset{{50, 250}},
+		set:  rangeset[int64]{{100, 200}},
+		add:  i64range[int64]{50, 250},
+		want: rangeset[int64]{{50, 250}},
 	}, {
 		desc: "prepend and combine",
-		set:  rangeset{{100, 200}, {300, 400}, {500, 600}},
-		add:  i64range{50, 300},
-		want: rangeset{{50, 400}, {500, 600}},
+		set:  rangeset[int64]{{100, 200}, {300, 400}, {500, 600}},
+		add:  i64range[int64]{50, 300},
+		want: rangeset[int64]{{50, 400}, {500, 600}},
 	}, {
 		desc: "combine several ranges",
-		set:  rangeset{{100, 200}, {300, 400}, {500, 600}, {700, 800}, {900, 1000}},
-		add:  i64range{300, 850},
-		want: rangeset{{100, 200}, {300, 850}, {900, 1000}},
+		set:  rangeset[int64]{{100, 200}, {300, 400}, {500, 600}, {700, 800}, {900, 1000}},
+		add:  i64range[int64]{300, 850},
+		want: rangeset[int64]{{100, 200}, {300, 850}, {900, 1000}},
 	}} {
 		test := test
 		t.Run(test.desc, func(t *testing.T) {
@@ -125,59 +125,59 @@ func TestRangesetAdd(t *testing.T) {
 func TestRangesetSub(t *testing.T) {
 	for _, test := range []struct {
 		desc string
-		set  rangeset
-		sub  i64range
-		want rangeset
+		set  rangeset[int64]
+		sub  i64range[int64]
+		want rangeset[int64]
 	}{{
 		desc: "subtract from empty set",
-		set:  rangeset{},
-		sub:  i64range{0, 100},
-		want: rangeset{},
+		set:  rangeset[int64]{},
+		sub:  i64range[int64]{0, 100},
+		want: rangeset[int64]{},
 	}, {
 		desc: "subtract empty range",
-		set:  rangeset{{0, 100}},
-		sub:  i64range{0, 0},
-		want: rangeset{{0, 100}},
+		set:  rangeset[int64]{{0, 100}},
+		sub:  i64range[int64]{0, 0},
+		want: rangeset[int64]{{0, 100}},
 	}, {
 		desc: "subtract not present in set",
-		set:  rangeset{{0, 100}, {200, 300}},
-		sub:  i64range{100, 200},
-		want: rangeset{{0, 100}, {200, 300}},
+		set:  rangeset[int64]{{0, 100}, {200, 300}},
+		sub:  i64range[int64]{100, 200},
+		want: rangeset[int64]{{0, 100}, {200, 300}},
 	}, {
 		desc: "subtract prefix",
-		set:  rangeset{{100, 200}},
-		sub:  i64range{0, 150},
-		want: rangeset{{150, 200}},
+		set:  rangeset[int64]{{100, 200}},
+		sub:  i64range[int64]{0, 150},
+		want: rangeset[int64]{{150, 200}},
 	}, {
 		desc: "subtract suffix",
-		set:  rangeset{{100, 200}},
-		sub:  i64range{150, 300},
-		want: rangeset{{100, 150}},
+		set:  rangeset[int64]{{100, 200}},
+		sub:  i64range[int64]{150, 300},
+		want: rangeset[int64]{{100, 150}},
 	}, {
 		desc: "subtract middle",
-		set:  rangeset{{0, 100}},
-		sub:  i64range{40, 60},
-		want: rangeset{{0, 40}, {60, 100}},
+		set:  rangeset[int64]{{0, 100}},
+		sub:  i64range[int64]{40, 60},
+		want: rangeset[int64]{{0, 40}, {60, 100}},
 	}, {
 		desc: "subtract from two ranges",
-		set:  rangeset{{0, 100}, {200, 300}},
-		sub:  i64range{50, 250},
-		want: rangeset{{0, 50}, {250, 300}},
+		set:  rangeset[int64]{{0, 100}, {200, 300}},
+		sub:  i64range[int64]{50, 250},
+		want: rangeset[int64]{{0, 50}, {250, 300}},
 	}, {
 		desc: "subtract removes range",
-		set:  rangeset{{0, 100}, {200, 300}, {400, 500}},
-		sub:  i64range{200, 300},
-		want: rangeset{{0, 100}, {400, 500}},
+		set:  rangeset[int64]{{0, 100}, {200, 300}, {400, 500}},
+		sub:  i64range[int64]{200, 300},
+		want: rangeset[int64]{{0, 100}, {400, 500}},
 	}, {
 		desc: "subtract removes multiple ranges",
-		set:  rangeset{{0, 100}, {200, 300}, {400, 500}, {600, 700}},
-		sub:  i64range{50, 650},
-		want: rangeset{{0, 50}, {650, 700}},
+		set:  rangeset[int64]{{0, 100}, {200, 300}, {400, 500}, {600, 700}},
+		sub:  i64range[int64]{50, 650},
+		want: rangeset[int64]{{0, 50}, {650, 700}},
 	}, {
 		desc: "subtract only range",
-		set:  rangeset{{0, 100}},
-		sub:  i64range{0, 100},
-		want: rangeset{},
+		set:  rangeset[int64]{{0, 100}},
+		sub:  i64range[int64]{0, 100},
+		want: rangeset[int64]{},
 	}} {
 		test := test
 		t.Run(test.desc, func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestRangesetSub(t *testing.T) {
 }
 
 func TestRangesetContains(t *testing.T) {
-	var s rangeset
+	var s rangeset[int64]
 	s.add(10, 20)
 	s.add(30, 40)
 	for i := int64(0); i < 50; i++ {
@@ -205,23 +205,23 @@ func TestRangesetContains(t *testing.T) {
 }
 
 func TestRangesetRangeContaining(t *testing.T) {
-	var s rangeset
+	var s rangeset[int64]
 	s.add(10, 20)
 	s.add(30, 40)
 	for _, test := range []struct {
 		v    int64
-		want i64range
+		want i64range[int64]
 	}{
-		{0, i64range{0, 0}},
-		{9, i64range{0, 0}},
-		{10, i64range{10, 20}},
-		{15, i64range{10, 20}},
-		{19, i64range{10, 20}},
-		{20, i64range{0, 0}},
-		{29, i64range{0, 0}},
-		{30, i64range{30, 40}},
-		{39, i64range{30, 40}},
-		{40, i64range{0, 0}},
+		{0, i64range[int64]{0, 0}},
+		{9, i64range[int64]{0, 0}},
+		{10, i64range[int64]{10, 20}},
+		{15, i64range[int64]{10, 20}},
+		{19, i64range[int64]{10, 20}},
+		{20, i64range[int64]{0, 0}},
+		{29, i64range[int64]{0, 0}},
+		{30, i64range[int64]{30, 40}},
+		{39, i64range[int64]{30, 40}},
+		{40, i64range[int64]{0, 0}},
 	} {
 		got := s.rangeContaining(test.v)
 		if got != test.want {
@@ -232,22 +232,22 @@ func TestRangesetRangeContaining(t *testing.T) {
 
 func TestRangesetLimits(t *testing.T) {
 	for _, test := range []struct {
-		s       rangeset
+		s       rangeset[int64]
 		wantMin int64
 		wantMax int64
 		wantEnd int64
 	}{{
-		s:       rangeset{},
+		s:       rangeset[int64]{},
 		wantMin: 0,
 		wantMax: 0,
 		wantEnd: 0,
 	}, {
-		s:       rangeset{{10, 20}},
+		s:       rangeset[int64]{{10, 20}},
 		wantMin: 10,
 		wantMax: 19,
 		wantEnd: 20,
 	}, {
-		s:       rangeset{{10, 20}, {30, 40}, {50, 60}},
+		s:       rangeset[int64]{{10, 20}, {30, 40}, {50, 60}},
 		wantMin: 10,
 		wantMax: 59,
 		wantEnd: 60,
@@ -266,28 +266,28 @@ func TestRangesetLimits(t *testing.T) {
 
 func TestRangesetIsRange(t *testing.T) {
 	for _, test := range []struct {
-		s    rangeset
-		r    i64range
+		s    rangeset[int64]
+		r    i64range[int64]
 		want bool
 	}{{
-		s:    rangeset{{0, 100}},
-		r:    i64range{0, 100},
+		s:    rangeset[int64]{{0, 100}},
+		r:    i64range[int64]{0, 100},
 		want: true,
 	}, {
-		s:    rangeset{{0, 100}},
-		r:    i64range{0, 101},
+		s:    rangeset[int64]{{0, 100}},
+		r:    i64range[int64]{0, 101},
 		want: false,
 	}, {
-		s:    rangeset{{0, 10}, {11, 100}},
-		r:    i64range{0, 100},
+		s:    rangeset[int64]{{0, 10}, {11, 100}},
+		r:    i64range[int64]{0, 100},
 		want: false,
 	}, {
-		s:    rangeset{},
-		r:    i64range{0, 0},
+		s:    rangeset[int64]{},
+		r:    i64range[int64]{0, 0},
 		want: true,
 	}, {
-		s:    rangeset{},
-		r:    i64range{0, 1},
+		s:    rangeset[int64]{},
+		r:    i64range[int64]{0, 1},
 		want: false,
 	}} {
 		if got := test.s.isrange(test.r.start, test.r.end); got != test.want {

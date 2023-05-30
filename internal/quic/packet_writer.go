@@ -257,7 +257,7 @@ func (w *packetWriter) appendPingFrame() (added bool) {
 // to the peer potentially failing to receive an acknowledgement
 // for an older packet during a period of high packet loss or
 // reordering. This may result in unnecessary retransmissions.
-func (w *packetWriter) appendAckFrame(seen rangeset, ackDelayExponent uint8, delay time.Duration) (added bool) {
+func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], ackDelayExponent uint8, delay time.Duration) (added bool) {
 	if len(seen) == 0 {
 		return false
 	}

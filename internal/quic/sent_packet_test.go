@@ -13,7 +13,7 @@ func TestSentPacket(t *testing.T) {
 		byte(frameTypePing),
 		byte(frameTypeStreamBase),
 		uint64(1),
-		i64range{1 << 20, 1<<20 + 1024},
+		i64range[int64]{1 << 20, 1<<20 + 1024},
 	}
 	// Record sent frames.
 	sent := newSentPacket()
@@ -23,7 +23,7 @@ func TestSentPacket(t *testing.T) {
 			sent.appendAckElicitingFrame(f)
 		case uint64:
 			sent.appendInt(f)
-		case i64range:
+		case i64range[int64]:
 			sent.appendOffAndSize(f.start, int(f.size()))
 		}
 	}
@@ -41,7 +41,7 @@ func TestSentPacket(t *testing.T) {
 			if got := sent.nextInt(); got != want {
 				t.Fatalf("%v: sent.nextInt() = %v, want %v", i, got, want)
 			}
-		case i64range:
+		case i64range[int64]:
 			if start, end := sent.nextRange(); start != want.start || end != want.end {
 				t.Fatalf("%v: sent.nextRange() = [%v,%v), want %v", i, start, end, want)
 			}
