@@ -1643,3 +1643,31 @@ func TestNoFmt(t *testing.T) {
 		}
 	}
 }
+
+func FuzzUnpackPack(f *testing.F) {
+	for _, msg := range []Message{smallTestMsg(), largeTestMsg()} {
+		bytes, _ := msg.Pack()
+		f.Add(bytes)
+	}
+
+	f.Fuzz(func(t *testing.T, msg []byte) {
+		var m Message
+		if err := m.Unpack(msg); err != nil {
+			return
+		}
+
+		msgPacked, err := m.Pack()
+		if err != nil {
+			t.Fatalf("failed to pack message that was succesfully unpacked: %v", err)
+		}
+
+		var m2 Message
+		if err := m2.Unpack(msgPacked); err != nil {
+			t.Fatalf("failed to unpack message that was succesfully packed: %v", err)
+		}
+
+		if !reflect.DeepEqual(m, m2) {
+			t.Fatal("unpack(msg) is not deep equal to unpack(pack(unpack(msg)))")
+		}
+	})
+}
