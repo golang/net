@@ -1903,6 +1903,9 @@ const nonEncodedNameMax = 254
 
 // A Name is a non-encoded domain name. It is used instead of strings to avoid
 // allocations.
+//
+// WARNING: characters inside the Data field are not escaped in any way, meaning
+// that the DNS name labels might contain arbitrary byte values.
 type Name struct {
 	Data   [255]byte
 	Length uint8
