@@ -16,7 +16,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -83,7 +82,7 @@ func (frame *hybiFrameReader) Read(msg []byte) (n int, err error) {
 	n, err = frame.reader.Read(msg)
 	if frame.header.MaskingKey != nil {
 		for i := 0; i < n; i++ {
-			msg[i] = msg[i] ^ frame.header.MaskingKey[frame.pos%4]
+			msg[i] ^= frame.header.MaskingKey[frame.pos%4]
 			frame.pos++
 		}
 	}
@@ -111,7 +110,8 @@ type hybiFrameReaderFactory struct {
 	*bufio.Reader
 }
 
-// NewFrameReader reads a frame header from the connection, and creates new reader for the frame.
+// NewFrameReader reads a frame header from the connection, and creates
+// a new reader for the frame.
 // See Section 5.2 Base Framing protocol for detail.
 // http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-17#section-5.2
 func (buf hybiFrameReaderFactory) NewFrameReader() (frame frameReader, err error) {
@@ -279,7 +279,7 @@ func (handler *hybiFrameHandler) HandleFrame(frame frameReader) (frameReader, er
 		}
 	}
 	if header := frame.HeaderReader(); header != nil {
-		io.Copy(ioutil.Discard, header)
+		io.Copy(io.Discard, header)
 	}
 	switch frame.PayloadType() {
 	case ContinuationFrame:
@@ -294,7 +294,7 @@ func (handler *hybiFrameHandler) HandleFrame(frame frameReader) (frameReader, er
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return nil, err
 		}
-		io.Copy(ioutil.Discard, frame)
+		io.Copy(io.Discard, frame)
 		if frame.PayloadType() == PingFrame {
 			if _, err := handler.WritePong(b[:n]); err != nil {
 				return nil, err
@@ -351,9 +351,7 @@ func newHybiConn(config *Config, buf *bufio.ReadWriter, rwc io.ReadWriteCloser, 
 // generateMaskingKey generates a masking key for a frame.
 func generateMaskingKey() (maskingKey []byte, err error) {
 	maskingKey = make([]byte, 4)
-	if _, err = io.ReadFull(rand.Reader, maskingKey); err != nil {
-		return
-	}
+	_, err = io.ReadFull(rand.Reader, maskingKey)
 	return
 }
 

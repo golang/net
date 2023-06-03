@@ -6,6 +6,7 @@ package websocket
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,7 +66,7 @@ type Server struct {
 	Handler
 }
 
-// ServeHTTP implements the http.Handler interface for a WebSocket
+// ServeHTTP implements the http.Handler interface for a WebSocket.
 func (s Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s.serveWebSocket(w, req)
 }
@@ -101,12 +102,12 @@ type Handler func(*Conn)
 func checkOrigin(config *Config, req *http.Request) (err error) {
 	config.Origin, err = Origin(config, req)
 	if err == nil && config.Origin == nil {
-		return fmt.Errorf("null origin")
+		return errors.New("null origin")
 	}
 	return err
 }
 
-// ServeHTTP implements the http.Handler interface for a WebSocket
+// ServeHTTP implements the http.Handler interface for a WebSocket.
 func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s := Server{Handler: h, Handshake: checkOrigin}
 	s.serveWebSocket(w, req)

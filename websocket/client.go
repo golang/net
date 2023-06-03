@@ -69,9 +69,9 @@ var portMap = map[string]string{
 }
 
 func parseAuthority(location *url.URL) string {
-	if _, ok := portMap[location.Scheme]; ok {
+	if port, ok := portMap[location.Scheme]; ok {
 		if _, _, err := net.SplitHostPort(location.Host); err != nil {
-			return net.JoinHostPort(location.Host, portMap[location.Scheme])
+			return net.JoinHostPort(location.Host, port)
 		}
 	}
 	return location.Host

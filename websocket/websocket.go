@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -66,7 +65,7 @@ var (
 )
 
 // ErrFrameTooLarge is returned by Codec's Receive method if payload size
-// exceeds limit set by Conn.MaxPayloadBytes
+// exceeds limit set by Conn.MaxPayloadBytes.
 var ErrFrameTooLarge = errors.New("websocket: frame payload size exceeds limit")
 
 // Addr is an implementation of net.Addr for WebSocket.
@@ -77,7 +76,7 @@ type Addr struct {
 // Network returns the network type for a WebSocket, "websocket".
 func (addr *Addr) Network() string { return "websocket" }
 
-// Config is a WebSocket configuration
+// Config is a WebSocket configuration.
 type Config struct {
 	// A WebSocket server address.
 	Location *url.URL
@@ -208,7 +207,7 @@ again:
 	n, err = ws.frameReader.Read(msg)
 	if err == io.EOF {
 		if trailer := ws.frameReader.TrailerReader(); trailer != nil {
-			io.Copy(ioutil.Discard, trailer)
+			io.Copy(io.Discard, trailer)
 		}
 		ws.frameReader = nil
 		goto again
@@ -330,7 +329,7 @@ func (cd Codec) Receive(ws *Conn, v interface{}) (err error) {
 	ws.rio.Lock()
 	defer ws.rio.Unlock()
 	if ws.frameReader != nil {
-		_, err = io.Copy(ioutil.Discard, ws.frameReader)
+		_, err = io.Copy(io.Discard, ws.frameReader)
 		if err != nil {
 			return err
 		}
@@ -362,7 +361,7 @@ again:
 		return ErrFrameTooLarge
 	}
 	payloadType := frame.PayloadType()
-	data, err := ioutil.ReadAll(frame)
+	data, err := io.ReadAll(frame)
 	if err != nil {
 		return err
 	}
