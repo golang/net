@@ -33,7 +33,7 @@ func FromEnvironment() Dialer {
 	return FromEnvironmentUsing(Direct)
 }
 
-// FromEnvironmentUsing returns the dialer specify by the proxy-related
+// FromEnvironmentUsing returns the Dialer specified by the proxy-related
 // variables in the environment and makes underlying connections
 // using the provided forwarding Dialer (for instance, a *net.Dialer
 // with desired configuration).
