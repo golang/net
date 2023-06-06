@@ -19,13 +19,12 @@ var (
 	_ ContextDialer = Direct
 )
 
-// Dial directly invokes net.Dial with the address addr on the given network.
+// Dial directly invokes net.Dial with the supplied parameters.
 func (direct) Dial(network, addr string) (net.Conn, error) {
 	return net.Dial(network, addr)
 }
 
-// DialContext instantiates a net.Dialer and invokes its DialContext receiver with
-// the address addr on the given network.
+// DialContext instantiates a net.Dialer and invokes its DialContext receiver with the supplied parameters.
 func (direct) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	var d net.Dialer
 	return d.DialContext(ctx, network, addr)
