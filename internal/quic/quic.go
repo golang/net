@@ -39,15 +39,15 @@ const (
 // https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
 const timerGranularity = 1 * time.Millisecond
 
-// A side distinguishes between the client and server sides of a connection.
-type side int8
+// A connSide distinguishes between the client and server sides of a connection.
+type connSide int8
 
 const (
-	clientSide = side(iota)
+	clientSide = connSide(iota)
 	serverSide
 )
 
-func (s side) String() string {
+func (s connSide) String() string {
 	switch s {
 	case clientSide:
 		return "client"
@@ -118,7 +118,7 @@ const (
 	dirStreamBitMask = 0x2
 )
 
-func newStreamID(initiator side, typ streamType, num int64) streamID {
+func newStreamID(initiator connSide, typ streamType, num int64) streamID {
 	id := streamID(num << 2)
 	if typ == uniStream {
 		id |= uniStreamBit
@@ -129,7 +129,7 @@ func newStreamID(initiator side, typ streamType, num int64) streamID {
 	return id
 }
 
-func (s streamID) initiator() side {
+func (s streamID) initiator() connSide {
 	if s&initiatorStreamBitMask == serverInitiatedStreamBit {
 		return serverSide
 	}
