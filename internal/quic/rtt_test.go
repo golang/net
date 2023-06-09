@@ -134,14 +134,14 @@ func TestRTTInitialRTT(t *testing.T) {
 	handshakeConfirmed = true
 	rtt.updateSample(now, handshakeConfirmed, handshakeSpace, 40*time.Millisecond, ackDelay, maxAckDelay)
 	adjustedRTT = 15 * time.Millisecond // latest_rtt (40ms) - max_ack_delay (25ms)
-	smoothedRTT = (7*smoothedRTT + adjustedRTT) / 8
-	if got, want := rtt.smoothedRTT, smoothedRTT; got != want {
-		t.Errorf("smoothed_rtt = %v, want %v", got, want)
-	}
 	rttvarSample = abs(smoothedRTT - adjustedRTT)
 	rttvar = (3*rttvar + rttvarSample) / 4
 	if got, want := rtt.rttvar, rttvar; got != want {
 		t.Errorf("rttvar = %v, want %v", got, want)
+	}
+	smoothedRTT = (7*smoothedRTT + adjustedRTT) / 8
+	if got, want := rtt.smoothedRTT, smoothedRTT; got != want {
+		t.Errorf("smoothed_rtt = %v, want %v", got, want)
 	}
 
 	// "[...] MUST NOT subtract the acknowledgment delay from
@@ -156,13 +156,13 @@ func TestRTTInitialRTT(t *testing.T) {
 	}
 	// latest_rtt (30ms) - ack_delay (25ms) = 5ms, which is less than min_rtt (10ms)
 	adjustedRTT = 30 * time.Millisecond // latest_rtt
-	smoothedRTT = (7*smoothedRTT + adjustedRTT) / 8
-	if got, want := rtt.smoothedRTT, smoothedRTT; got != want {
-		t.Errorf("smoothed_rtt = %v, want %v", got, want)
-	}
 	rttvarSample = abs(smoothedRTT - adjustedRTT)
 	rttvar = (3*rttvar + rttvarSample) / 4
 	if got, want := rtt.rttvar, rttvar; got != want {
 		t.Errorf("rttvar = %v, want %v", got, want)
+	}
+	smoothedRTT = (7*smoothedRTT + adjustedRTT) / 8
+	if got, want := rtt.smoothedRTT, smoothedRTT; got != want {
+		t.Errorf("smoothed_rtt = %v, want %v", got, want)
 	}
 }

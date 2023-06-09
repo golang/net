@@ -67,7 +67,7 @@ func (r *rttState) updateSample(now time.Time, handshakeConfirmed bool, spaceID 
 	if adjustedRTT < r.minRTT {
 		adjustedRTT = latestRTT
 	}
-	r.smoothedRTT = ((7 * r.smoothedRTT) + adjustedRTT) / 8
 	rttvarSample := abs(r.smoothedRTT - adjustedRTT)
 	r.rttvar = (3*r.rttvar + rttvarSample) / 4
+	r.smoothedRTT = ((7 * r.smoothedRTT) + adjustedRTT) / 8
 }
