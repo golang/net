@@ -29,6 +29,8 @@ type sentPacket struct {
 	// we need to process an ack for or loss of this packet.
 	// For example, a CRYPTO frame is recorded as the frame type (0x06), offset, and length,
 	// but does not include the sent data.
+	//
+	// This buffer is written by packetWriter.append* and read by Conn.handleAckOrLoss.
 	b []byte
 	n int // read offset into b
 }

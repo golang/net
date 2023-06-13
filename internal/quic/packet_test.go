@@ -9,9 +9,26 @@ package quic
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func (p packetType) String() string {
+	switch p {
+	case packetTypeInitial:
+		return "Initial"
+	case packetType0RTT:
+		return "0-RTT"
+	case packetTypeHandshake:
+		return "Handshake"
+	case packetTypeRetry:
+		return "Retry"
+	case packetType1RTT:
+		return "1-RTT"
+	}
+	return fmt.Sprintf("unknown packet type %v", byte(p))
+}
 
 func TestPacketHeader(t *testing.T) {
 	for _, test := range []struct {

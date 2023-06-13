@@ -120,7 +120,7 @@ type debugFrameAck struct {
 
 func parseDebugFrameAck(b []byte) (f debugFrameAck, n int) {
 	f.ranges = nil
-	_, f.ackDelay, n = consumeAckFrame(b, func(start, end packetNumber) {
+	_, f.ackDelay, n = consumeAckFrame(b, func(_ int, start, end packetNumber) {
 		f.ranges = append(f.ranges, i64range[packetNumber]{
 			start: start,
 			end:   end,

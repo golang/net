@@ -163,8 +163,8 @@ func (k keys) xorIV(pnum packetNumber) {
 	k.iv[len(k.iv)-1] ^= uint8(pnum)
 }
 
-// initialized returns true if valid keys are available.
-func (k keys) initialized() bool {
+// isSet returns true if valid keys are available.
+func (k keys) isSet() bool {
 	return k.aead != nil
 }
 

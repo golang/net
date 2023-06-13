@@ -41,6 +41,10 @@ const (
 // https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
 const timerGranularity = 1 * time.Millisecond
 
+// Minimum size of a UDP datagram sent by a client carrying an Initial packet.
+// https://www.rfc-editor.org/rfc/rfc9000#section-14.1
+const minimumClientInitialDatagramSize = 1200
+
 // A connSide distinguishes between the client and server sides of a connection.
 type connSide int8
 

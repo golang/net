@@ -91,7 +91,7 @@ func parseLongHeaderPacket(pkt []byte, k keys, pnumMax packetNumber) (p longPack
 	pnumOff := len(pkt) - len(b)
 	pkt = pkt[:pnumOff+int(payLen)]
 
-	if k.initialized() {
+	if k.isSet() {
 		var err error
 		p.payload, p.num, err = k.unprotect(pkt, pnumOff, pnumMax)
 		if err != nil {
@@ -162,7 +162,7 @@ func parse1RTTPacket(pkt []byte, k keys, dstConnIDLen int, pnumMax packetNumber)
 // which includes both general parse failures and specific violations of frame
 // constraints.
 
-func consumeAckFrame(frame []byte, f func(start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, n int) {
+func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, n int) {
 	b := frame[1:] // type
 
 	largestAck, n := consumeVarint(b)
@@ -195,7 +195,7 @@ func consumeAckFrame(frame []byte, f func(start, end packetNumber)) (largest pac
 		if rangeMin < 0 || rangeMin > rangeMax {
 			return 0, 0, -1
 		}
-		f(rangeMin, rangeMax+1)
+		f(int(i), rangeMin, rangeMax+1)
 
 		if i == ackRangeCount {
 			break

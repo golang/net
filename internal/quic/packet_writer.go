@@ -237,7 +237,10 @@ func (w *packetWriter) appendPingFrame() (added bool) {
 		return false
 	}
 	w.b = append(w.b, frameTypePing)
-	w.sent.appendAckElicitingFrame(frameTypePing)
+	// Mark this packet as ack-eliciting and in-flight,
+	// but there's no need to record the presence of a PING frame in it.
+	w.sent.ackEliciting = true
+	w.sent.inFlight = true
 	return true
 }
 
