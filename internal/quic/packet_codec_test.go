@@ -185,7 +185,7 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 			w.b = append(w.b, test.payload...)
 			w.finish1RTTPacket(test.num, 0, connID, test.k)
 			pkt := w.datagram()
-			p, n := parse1RTTPacket(pkt, test.k, 0)
+			p, n := parse1RTTPacket(pkt, test.k, connIDLen, 0)
 			if n != len(pkt) {
 				t.Errorf("parse1RTTPacket: n=%v, want %v", n, len(pkt))
 			}
