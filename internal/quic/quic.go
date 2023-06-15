@@ -146,3 +146,12 @@ func (s streamID) streamType() streamType {
 	}
 	return bidiStream
 }
+
+// packetFate is the fate of a sent packet: Either acknowledged by the peer,
+// or declared lost.
+type packetFate byte
+
+const (
+	packetLost = packetFate(iota)
+	packetAcked
+)

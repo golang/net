@@ -80,67 +80,67 @@ func TestSentVal(t *testing.T) {
 		name: "v.ackOrLoss(!pnum, true)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackOrLoss(0, true) // ack different packet containing the val
+			v.ackOrLoss(0, packetAcked) // ack different packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    false,
 		wantShouldSendPTO: false,
 		wantIsReceived:    true,
 	}, {
-		name: "v.ackOrLoss(!pnum, false)",
+		name: "v.ackOrLoss(!pnum, packetLost)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackOrLoss(0, false) // lose different packet containing the val
+			v.ackOrLoss(0, packetLost) // lose different packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    false,
 		wantShouldSendPTO: true,
 		wantIsReceived:    false,
 	}, {
-		name: "v.ackOrLoss(pnum, false)",
+		name: "v.ackOrLoss(pnum, packetLost)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackOrLoss(1, false) // lose same packet containing the val
+			v.ackOrLoss(1, packetLost) // lose same packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    true,
 		wantShouldSendPTO: true,
 		wantIsReceived:    false,
 	}, {
-		name: "v.ackLatestOrLoss(!pnum, true)",
+		name: "v.ackLatestOrLoss(!pnum, packetAcked)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackLatestOrLoss(0, true) // ack different packet containing the val
+			v.ackLatestOrLoss(0, packetAcked) // ack different packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    false,
 		wantShouldSendPTO: true,
 		wantIsReceived:    false,
 	}, {
-		name: "v.ackLatestOrLoss(pnum, true)",
+		name: "v.ackLatestOrLoss(pnum, packetAcked)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackLatestOrLoss(1, true) // ack same packet containing the val
+			v.ackLatestOrLoss(1, packetAcked) // ack same packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    false,
 		wantShouldSendPTO: false,
 		wantIsReceived:    true,
 	}, {
-		name: "v.ackLatestOrLoss(!pnum, false)",
+		name: "v.ackLatestOrLoss(!pnum, packetLost)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackLatestOrLoss(0, false) // lose different packet containing the val
+			v.ackLatestOrLoss(0, packetLost) // lose different packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    false,
 		wantShouldSendPTO: true,
 		wantIsReceived:    false,
 	}, {
-		name: "v.ackLatestOrLoss(pnum, false)",
+		name: "v.ackLatestOrLoss(pnum, packetLost)",
 		f: func(v *sentVal) {
 			v.setSent(1)
-			v.ackLatestOrLoss(1, false) // lose same packet containing the val
+			v.ackLatestOrLoss(1, packetLost) // lose same packet containing the val
 		},
 		wantIsSet:         true,
 		wantShouldSend:    true,

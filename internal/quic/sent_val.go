@@ -73,9 +73,9 @@ func (s *sentVal) setSent(pnum packetNumber) {
 func (s *sentVal) setReceived() { *s = sentValReceived }
 
 // ackOrLoss reports that an acknowledgement has been received for the value,
-// or (if acked is false) that the packet carrying the value has been lost.
-func (s *sentVal) ackOrLoss(pnum packetNumber, acked bool) {
-	if acked {
+// or that the packet carrying the value has been lost.
+func (s *sentVal) ackOrLoss(pnum packetNumber, fate packetFate) {
+	if fate == packetAcked {
 		*s = sentValReceived
 	} else if *s == sentVal(pnum)|sentValSent {
 		*s = sentValUnsent
@@ -83,15 +83,15 @@ func (s *sentVal) ackOrLoss(pnum packetNumber, acked bool) {
 }
 
 // ackLatestOrLoss reports that an acknowledgement has been received for the value,
-// or (if acked is false) that the packet carrying the value has been lost.
+// or that the packet carrying the value has been lost.
 // The value is set to the acked state only if pnum is the latest packet containing it.
 //
 // We use this to handle acks for data that varies every time it is sent.
 // For example, if we send a MAX_DATA frame followed by an updated MAX_DATA value in a
 // second packet, we consider the data sent only upon receiving an ack for the most
 // recent value.
-func (s *sentVal) ackLatestOrLoss(pnum packetNumber, acked bool) {
-	if acked {
+func (s *sentVal) ackLatestOrLoss(pnum packetNumber, fate packetFate) {
+	if fate == packetAcked {
 		if *s == sentVal(pnum)|sentValSent {
 			*s = sentValReceived
 		}
