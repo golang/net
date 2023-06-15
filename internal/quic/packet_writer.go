@@ -8,7 +8,6 @@ package quic
 
 import (
 	"encoding/binary"
-	"time"
 )
 
 // A packetWriter constructs QUIC datagrams.
@@ -257,21 +256,20 @@ func (w *packetWriter) appendPingFrame() (added bool) {
 // to the peer potentially failing to receive an acknowledgement
 // for an older packet during a period of high packet loss or
 // reordering. This may result in unnecessary retransmissions.
-func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], ackDelayExponent uint8, delay time.Duration) (added bool) {
+func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscaledAckDelay) (added bool) {
 	if len(seen) == 0 {
 		return false
 	}
 	var (
 		largest    = uint64(seen.max())
-		mdelay     = uint64(delay.Microseconds() / (1 << ackDelayExponent))
 		firstRange = uint64(seen[len(seen)-1].size() - 1)
 	)
-	if w.avail() < 1+sizeVarint(largest)+sizeVarint(mdelay)+1+sizeVarint(firstRange) {
+	if w.avail() < 1+sizeVarint(largest)+sizeVarint(uint64(delay))+1+sizeVarint(firstRange) {
 		return false
 	}
 	w.b = append(w.b, frameTypeAck)
 	w.b = appendVarint(w.b, largest)
-	w.b = appendVarint(w.b, mdelay)
+	w.b = appendVarint(w.b, uint64(delay))
 	// The range count is technically a varint, but we'll reserve a single byte for it
 	// and never add more than 62 ranges (the maximum varint that fits in a byte).
 	rangeCountOff := len(w.b)

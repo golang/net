@@ -8,7 +8,6 @@ package quic
 
 import (
 	"fmt"
-	"time"
 )
 
 // A debugFrame is a representation of the contents of a QUIC frame,
@@ -115,13 +114,13 @@ func (f debugFramePing) write(w *packetWriter) bool {
 
 // debugFrameAck is an ACK frame.
 type debugFrameAck struct {
-	ackDelay time.Duration
+	ackDelay unscaledAckDelay
 	ranges   []i64range[packetNumber]
 }
 
 func parseDebugFrameAck(b []byte) (f debugFrameAck, n int) {
 	f.ranges = nil
-	_, f.ackDelay, n = consumeAckFrame(b, ackDelayExponent, func(start, end packetNumber) {
+	_, f.ackDelay, n = consumeAckFrame(b, func(start, end packetNumber) {
 		f.ranges = append(f.ranges, i64range[packetNumber]{
 			start: start,
 			end:   end,
@@ -144,7 +143,7 @@ func (f debugFrameAck) String() string {
 }
 
 func (f debugFrameAck) write(w *packetWriter) bool {
-	return w.appendAckFrame(rangeset[packetNumber](f.ranges), ackDelayExponent, f.ackDelay)
+	return w.appendAckFrame(rangeset[packetNumber](f.ranges), f.ackDelay)
 }
 
 // debugFrameResetStream is a RESET_STREAM frame.

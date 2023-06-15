@@ -6,10 +6,6 @@
 
 package quic
 
-import (
-	"time"
-)
-
 // parseLongHeaderPacket parses a QUIC long header packet.
 //
 // It does not parse Version Negotiation packets.
@@ -166,7 +162,7 @@ func parse1RTTPacket(pkt []byte, k keys, pnumMax packetNumber) (p shortPacket, n
 // which includes both general parse failures and specific violations of frame
 // constraints.
 
-func consumeAckFrame(frame []byte, ackDelayExponent uint8, f func(start, end packetNumber)) (largest packetNumber, ackDelay time.Duration, n int) {
+func consumeAckFrame(frame []byte, f func(start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, n int) {
 	b := frame[1:] // type
 
 	largestAck, n := consumeVarint(b)
@@ -175,12 +171,12 @@ func consumeAckFrame(frame []byte, ackDelayExponent uint8, f func(start, end pac
 	}
 	b = b[n:]
 
-	ackDelayScaled, n := consumeVarint(b)
+	v, n := consumeVarintInt64(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
 	b = b[n:]
-	ackDelay = time.Duration(ackDelayScaled*(1<<ackDelayExponent)) * time.Microsecond
+	ackDelay = unscaledAckDelay(v)
 
 	ackRangeCount, n := consumeVarint(b)
 	if n < 0 {

@@ -11,7 +11,6 @@ import (
 	"crypto/tls"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestParseLongHeaderPacket(t *testing.T) {
@@ -219,9 +218,9 @@ func TestFrameEncodeDecode(t *testing.T) {
 			0x01, // TYPE(i) = 0x01
 		},
 	}, {
-		s: "ACK Delay=80µs [0,16) [17,32) [48,64)",
+		s: "ACK Delay=10 [0,16) [17,32) [48,64)",
 		f: debugFrameAck{
-			ackDelay: (10 << ackDelayExponent) * time.Microsecond,
+			ackDelay: 10,
 			ranges: []i64range[packetNumber]{
 				{0x00, 0x10},
 				{0x11, 0x20},
@@ -594,7 +593,7 @@ func TestFrameDecode(t *testing.T) {
 	}, {
 		desc: "ACK frame with ECN counts",
 		want: debugFrameAck{
-			ackDelay: (10 << ackDelayExponent) * time.Microsecond,
+			ackDelay: 10,
 			ranges: []i64range[packetNumber]{
 				{0, 1},
 			},
