@@ -215,7 +215,6 @@ func (k keys) protect(hdr, pay []byte, pnumOff int, pnum packetNumber) []byte {
 // the unprotected payload and packet number.
 func (k keys) unprotect(pkt []byte, pnumOff int, pnumMax packetNumber) (pay []byte, num packetNumber, err error) {
 	if len(pkt) < pnumOff+4+headerProtectionSampleSize {
-		fmt.Println("too short")
 		return nil, 0, errInvalidPacket
 	}
 	numpay := pkt[pnumOff:]
