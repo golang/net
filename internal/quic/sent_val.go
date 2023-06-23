@@ -37,7 +37,7 @@ func (s sentVal) isSet() bool { return s != 0 }
 // shouldSend reports whether the value is set and has not been sent to the peer.
 func (s sentVal) shouldSend() bool { return s.state() == sentValUnsent }
 
-// shouldSend reports whether the the value needs to be sent to the peer.
+// shouldSend reports whether the value needs to be sent to the peer.
 // The value needs to be sent if it is set and has not been sent.
 // If pto is true, indicating that we are sending a PTO probe, the value
 // should also be sent if it is set and has not been acknowledged.
