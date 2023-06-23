@@ -864,7 +864,7 @@ func TestResourcePack(t *testing.T) {
 				},
 				Answers: []Resource{{ResourceHeader{}, nil}},
 			},
-			&nestedError{"packing Answer", errNilResouceBody},
+			&nestedError{"packing Answer", errNilResourceBody},
 		},
 		{
 			Message{
@@ -894,7 +894,7 @@ func TestResourcePack(t *testing.T) {
 				},
 				Additionals: []Resource{{ResourceHeader{}, nil}},
 			},
-			&nestedError{"packing Additional", errNilResouceBody},
+			&nestedError{"packing Additional", errNilResourceBody},
 		},
 	} {
 		_, err := tt.m.Pack()
