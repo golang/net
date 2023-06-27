@@ -19,6 +19,8 @@ const connIDLen = 8
 // Local values of various transport parameters.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-18.2
 const (
+	defaultMaxIdleTimeout = 30 * time.Second // max_idle_timeout
+
 	// The max_udp_payload_size transport parameter is the size of our
 	// network receive buffer.
 	//
