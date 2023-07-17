@@ -7,6 +7,9 @@
 package quic
 
 import (
+	"bytes"
+	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math"
@@ -111,8 +114,22 @@ type testConn struct {
 	// we use Handshake keys to encrypt the packet.
 	// The client only acquires those keys when it processes
 	// the Initial packet.
-	rkeys [numberSpaceCount]keys // for packets sent to the conn
-	wkeys [numberSpaceCount]keys // for packets sent by the conn
+	rkeys [numberSpaceCount]keyData // for packets sent to the conn
+	wkeys [numberSpaceCount]keyData // for packets sent by the conn
+
+	// testConn uses a test hook to snoop on the conn's TLS events.
+	// CRYPTO data produced by the conn's QUICConn is placed in
+	// cryptoDataOut.
+	//
+	// The peerTLSConn is is a QUICConn representing the peer.
+	// CRYPTO data produced by the conn is written to peerTLSConn,
+	// and data produced by peerTLSConn is placed in cryptoDataIn.
+	cryptoDataOut map[tls.QUICEncryptionLevel][]byte
+	cryptoDataIn  map[tls.QUICEncryptionLevel][]byte
+	peerTLSConn   *tls.QUICConn
+
+	localConnID     []byte
+	transientConnID []byte
 
 	// Information about the conn's (fake) peer.
 	peerConnID        []byte                         // source conn id of peer's packets
@@ -129,12 +146,18 @@ type testConn struct {
 	ignoreFrames map[byte]bool
 }
 
+type keyData struct {
+	suite  uint16
+	secret []byte
+	k      keys
+}
+
 // newTestConn creates a Conn for testing.
 //
 // The Conn's event loop is controlled by the test,
 // allowing test code to access Conn state directly
 // by first ensuring the loop goroutine is idle.
-func newTestConn(t *testing.T, side connSide) *testConn {
+func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	t.Helper()
 	tc := &testConn{
 		t:          t,
@@ -143,8 +166,23 @@ func newTestConn(t *testing.T, side connSide) *testConn {
 		ignoreFrames: map[byte]bool{
 			frameTypePadding: true, // ignore PADDING by default
 		},
+		cryptoDataOut: make(map[tls.QUICEncryptionLevel][]byte),
+		cryptoDataIn:  make(map[tls.QUICEncryptionLevel][]byte),
 	}
 	t.Cleanup(tc.cleanup)
+
+	config := &Config{
+		TLSConfig: newTestTLSConfig(side),
+	}
+	peerProvidedParams := defaultTransportParameters()
+	for _, o := range opts {
+		switch o := o.(type) {
+		case func(*tls.Config):
+			o(config.TLSConfig)
+		default:
+			t.Fatalf("unknown newTestConn option %T", o)
+		}
+	}
 
 	var initialConnID []byte
 	if side == serverSide {
@@ -157,11 +195,21 @@ func newTestConn(t *testing.T, side connSide) *testConn {
 		}
 	}
 
+	peerQUICConfig := &tls.QUICConfig{TLSConfig: newTestTLSConfig(side.peer())}
+	if side == clientSide {
+		tc.peerTLSConn = tls.QUICServer(peerQUICConfig)
+	} else {
+		tc.peerTLSConn = tls.QUICClient(peerQUICConfig)
+	}
+	tc.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
+	tc.peerTLSConn.Start(context.Background())
+
 	conn, err := newConn(
 		tc.now,
 		side,
 		initialConnID,
 		netip.MustParseAddrPort("127.0.0.1:443"),
+		config,
 		(*testConnListener)(tc),
 		(*testConnHooks)(tc))
 	if err != nil {
@@ -169,8 +217,16 @@ func newTestConn(t *testing.T, side connSide) *testConn {
 	}
 	tc.conn = conn
 
-	tc.wkeys[initialSpace] = conn.tlsState.wkeys[initialSpace]
-	tc.rkeys[initialSpace] = conn.tlsState.rkeys[initialSpace]
+	if side == serverSide {
+		tc.transientConnID = tc.conn.connIDState.local[0].cid
+		tc.localConnID = tc.conn.connIDState.local[1].cid
+	} else if side == clientSide {
+		tc.transientConnID = tc.conn.connIDState.remote[0].cid
+		tc.localConnID = tc.conn.connIDState.local[0].cid
+	}
+
+	tc.wkeys[initialSpace].k = conn.wkeys[initialSpace]
+	tc.rkeys[initialSpace].k = conn.rkeys[initialSpace]
 
 	tc.wait()
 	return tc
@@ -385,7 +441,7 @@ func (tc *testConn) wantFrame(expectation string, wantType packetType, want debu
 		tc.t.Fatalf("%v:\nconnection is idle\nwant %v frame: %v", expectation, wantType, want)
 	}
 	if gotType != wantType {
-		tc.t.Fatalf("%v:\ngot %v packet, want %v", expectation, wantType, want)
+		tc.t.Fatalf("%v:\ngot %v packet, want %v\ngot frame:  %v", expectation, gotType, wantType, got)
 	}
 	if !reflect.DeepEqual(got, want) {
 		tc.t.Fatalf("%v:\ngot frame:  %v\nwant frame: %v", expectation, got, want)
@@ -426,12 +482,12 @@ func (tc *testConn) encodeTestPacket(p *testPacket) []byte {
 		f.write(&w)
 	}
 	space := spaceForPacketType(p.ptype)
-	if !tc.rkeys[space].isSet() {
+	if !tc.rkeys[space].k.isSet() {
 		tc.t.Fatalf("sending packet with no %v keys available", space)
 		return nil
 	}
 	if p.ptype != packetType1RTT {
-		w.finishProtectedLongHeaderPacket(pnumMaxAcked, tc.rkeys[space], longPacket{
+		w.finishProtectedLongHeaderPacket(pnumMaxAcked, tc.rkeys[space].k, longPacket{
 			ptype:     p.ptype,
 			version:   p.version,
 			num:       p.num,
@@ -439,7 +495,7 @@ func (tc *testConn) encodeTestPacket(p *testPacket) []byte {
 			srcConnID: p.srcConnID,
 		})
 	} else {
-		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, tc.rkeys[space])
+		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, tc.rkeys[space].k)
 	}
 	return w.datagram()
 }
@@ -455,12 +511,12 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 		}
 		ptype := getPacketType(buf)
 		space := spaceForPacketType(ptype)
-		if !tc.wkeys[space].isSet() {
+		if !tc.wkeys[space].k.isSet() {
 			tc.t.Fatalf("no keys for space %v, packet type %v", space, ptype)
 		}
 		if isLongHeader(buf[0]) {
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parseLongHeaderPacket(buf, tc.wkeys[space], pnumMax)
+			p, n := parseLongHeaderPacket(buf, tc.wkeys[space].k, pnumMax)
 			if n < 0 {
 				tc.t.Fatalf("packet parse error")
 			}
@@ -479,11 +535,10 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			buf = buf[n:]
 		} else {
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parse1RTTPacket(buf, tc.wkeys[space], len(tc.peerConnID), pnumMax)
+			p, n := parse1RTTPacket(buf, tc.wkeys[space].k, len(tc.peerConnID), pnumMax)
 			if n < 0 {
 				tc.t.Fatalf("packet parse error")
 			}
-			dstConnID, _ := dstConnIDForDatagram(buf)
 			frames, err := tc.parseTestFrames(p.payload)
 			if err != nil {
 				tc.t.Fatal(err)
@@ -491,7 +546,7 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			d.packets = append(d.packets, &testPacket{
 				ptype:     packetType1RTT,
 				num:       p.num,
-				dstConnID: dstConnID,
+				dstConnID: buf[1:][:len(tc.peerConnID)],
 				frames:    frames,
 			})
 			buf = buf[n:]
@@ -534,6 +589,73 @@ func spaceForPacketType(ptype packetType) numberSpace {
 
 // testConnHooks implements connTestHooks.
 type testConnHooks testConn
+
+// handleTLSEvent processes TLS events generated by
+// the connection under test's tls.QUICConn.
+//
+// We maintain a second tls.QUICConn representing the peer,
+// and feed the TLS handshake data into it.
+//
+// We stash TLS handshake data from both sides in the testConn,
+// where it can be used by tests.
+//
+// We snoop packet protection keys out of the tls.QUICConns,
+// and verify that both sides of the connection are getting
+// matching keys.
+func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
+	setKey := func(keys *[numberSpaceCount]keyData, e tls.QUICEvent) {
+		k, err := newKeys(e.Suite, e.Data)
+		if err != nil {
+			tc.t.Errorf("newKeys: %v", err)
+			return
+		}
+		var space numberSpace
+		switch {
+		case e.Level == tls.QUICEncryptionLevelHandshake:
+			space = handshakeSpace
+		case e.Level == tls.QUICEncryptionLevelApplication:
+			space = appDataSpace
+		default:
+			tc.t.Errorf("unexpected encryption level %v", e.Level)
+			return
+		}
+		s := "read"
+		if keys == &tc.wkeys {
+			s = "write"
+		}
+		if keys[space].k.isSet() {
+			if keys[space].suite != e.Suite || !bytes.Equal(keys[space].secret, e.Data) {
+				tc.t.Errorf("%v key mismatch for level for level %v", s, e.Level)
+			}
+			return
+		}
+		keys[space].suite = e.Suite
+		keys[space].secret = append([]byte{}, e.Data...)
+		keys[space].k = k
+	}
+	switch e.Kind {
+	case tls.QUICSetReadSecret:
+		setKey(&tc.rkeys, e)
+	case tls.QUICSetWriteSecret:
+		setKey(&tc.wkeys, e)
+	case tls.QUICWriteData:
+		tc.cryptoDataOut[e.Level] = append(tc.cryptoDataOut[e.Level], e.Data...)
+		tc.peerTLSConn.HandleData(e.Level, e.Data)
+	}
+	for {
+		e := tc.peerTLSConn.NextEvent()
+		switch e.Kind {
+		case tls.QUICNoEvent:
+			return
+		case tls.QUICSetReadSecret:
+			setKey(&tc.wkeys, e)
+		case tls.QUICSetWriteSecret:
+			setKey(&tc.rkeys, e)
+		case tls.QUICWriteData:
+			tc.cryptoDataIn[e.Level] = append(tc.cryptoDataIn[e.Level], e.Data...)
+		}
+	}
+}
 
 // nextMessage is called by the Conn's event loop to request its next event.
 func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.Time, m any) {

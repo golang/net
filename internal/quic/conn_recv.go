@@ -41,12 +41,12 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 }
 
 func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpace, buf []byte) int {
-	if !c.tlsState.rkeys[space].isSet() {
+	if !c.rkeys[space].isSet() {
 		return skipLongHeaderPacket(buf)
 	}
 
 	pnumMax := c.acks[space].largestSeen()
-	p, n := parseLongHeaderPacket(buf, c.tlsState.rkeys[space], pnumMax)
+	p, n := parseLongHeaderPacket(buf, c.rkeys[space], pnumMax)
 	if n < 0 {
 		return -1
 	}
@@ -66,21 +66,23 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if p.ptype == packetTypeHandshake && c.side == serverSide {
 		c.loss.validateClientAddress()
 
-		// TODO: Discard Initial keys.
+		// "[...] a server MUST discard Initial keys when it first successfully
+		// processes a Handshake packet [...]"
 		// https://www.rfc-editor.org/rfc/rfc9001#section-4.9.1-2
+		c.discardKeys(now, initialSpace)
 	}
 	return n
 }
 
 func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
-	if !c.tlsState.rkeys[appDataSpace].isSet() {
+	if !c.rkeys[appDataSpace].isSet() {
 		// 1-RTT packets extend to the end of the datagram,
 		// so skip the remainder of the datagram if we can't parse this.
 		return len(buf)
 	}
 
 	pnumMax := c.acks[appDataSpace].largestSeen()
-	p, n := parse1RTTPacket(buf, c.tlsState.rkeys[appDataSpace], connIDLen, pnumMax)
+	p, n := parse1RTTPacket(buf, c.rkeys[appDataSpace], connIDLen, pnumMax)
 	if n < 0 {
 		return -1
 	}
@@ -163,7 +165,7 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			if !frameOK(c, ptype, IH_1) {
 				return
 			}
-			_, _, n = consumeCryptoFrame(payload)
+			n = c.handleCryptoFrame(now, space, payload)
 		case frameTypeNewToken:
 			if !frameOK(c, ptype, ___1) {
 				return
@@ -207,14 +209,18 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 		case frameTypeConnectionCloseTransport:
 			// CONNECTION_CLOSE is OK in all spaces.
 			_, _, _, n = consumeConnectionCloseTransportFrame(payload)
+			// TODO: https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.2
+			c.abort(now, localTransportError(errNo))
 		case frameTypeConnectionCloseApplication:
 			// CONNECTION_CLOSE is OK in all spaces.
 			_, _, n = consumeConnectionCloseApplicationFrame(payload)
+			// TODO: https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.2
+			c.abort(now, localTransportError(errNo))
 		case frameTypeHandshakeDone:
 			if !frameOK(c, ptype, ___1) {
 				return
 			}
-			n = 1
+			n = c.handleHandshakeDoneFrame(now, space, payload)
 		}
 		if n < 0 {
 			c.abort(now, localTransportError(errFrameEncoding))
@@ -261,4 +267,25 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 	}
 	c.loss.receiveAckEnd(now, space, delay, c.handleAckOrLoss)
 	return n
+}
+
+func (c *Conn) handleCryptoFrame(now time.Time, space numberSpace, payload []byte) int {
+	off, data, n := consumeCryptoFrame(payload)
+	err := c.handleCrypto(now, space, off, data)
+	if err != nil {
+		c.abort(now, err)
+		return -1
+	}
+	return n
+}
+
+func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payload []byte) int {
+	if c.side == serverSide {
+		// Clients should never send HANDSHAKE_DONE.
+		// https://www.rfc-editor.org/rfc/rfc9000#section-19.20-4
+		c.abort(now, localTransportError(errProtocolViolation))
+		return -1
+	}
+	c.confirmHandshake(now)
+	return 1
 }

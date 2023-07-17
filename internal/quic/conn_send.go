@@ -7,6 +7,8 @@
 package quic
 
 import (
+	"crypto/tls"
+	"errors"
 	"time"
 )
 
@@ -45,7 +47,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		// Initial packet.
 		pad := false
 		var sentInitial *sentPacket
-		if k := c.tlsState.wkeys[initialSpace]; k.isSet() {
+		if k := c.wkeys[initialSpace]; k.isSet() {
 			pnumMaxAcked := c.acks[initialSpace].largestSeen()
 			pnum := c.loss.nextNumber(initialSpace)
 			p := longPacket{
@@ -62,14 +64,14 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				// Client initial packets need to be sent in a datagram padded to
 				// at least 1200 bytes. We can't add the padding yet, however,
 				// since we may want to coalesce additional packets with this one.
-				if c.side == clientSide || sentInitial.ackEliciting {
+				if c.side == clientSide {
 					pad = true
 				}
 			}
 		}
 
 		// Handshake packet.
-		if k := c.tlsState.wkeys[handshakeSpace]; k.isSet() {
+		if k := c.wkeys[handshakeSpace]; k.isSet() {
 			pnumMaxAcked := c.acks[handshakeSpace].largestSeen()
 			pnum := c.loss.nextNumber(handshakeSpace)
 			p := longPacket{
@@ -84,14 +86,16 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, p); sent != nil {
 				c.loss.packetSent(now, handshakeSpace, sent)
 				if c.side == clientSide {
-					// TODO: Discard the Initial keys.
-					// https://www.rfc-editor.org/rfc/rfc9001.html#section-4.9.1
+					// "[...] a client MUST discard Initial keys when it first
+					// sends a Handshake packet [...]"
+					// https://www.rfc-editor.org/rfc/rfc9001.html#section-4.9.1-2
+					c.discardKeys(now, initialSpace)
 				}
 			}
 		}
 
 		// 1-RTT packet.
-		if k := c.tlsState.wkeys[appDataSpace]; k.isSet() {
+		if k := c.wkeys[appDataSpace]; k.isSet() {
 			pnumMaxAcked := c.acks[appDataSpace].largestSeen()
 			pnum := c.loss.nextNumber(appDataSpace)
 			dstConnID := c.connIDState.dstConnID()
@@ -133,7 +137,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 					sentInitial.inFlight = true
 				}
 			}
-			if k := c.tlsState.wkeys[initialSpace]; k.isSet() {
+			if k := c.wkeys[initialSpace]; k.isSet() {
 				c.loss.packetSent(now, initialSpace, sentInitial)
 			}
 		}
@@ -143,6 +147,26 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 }
 
 func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber, limit ccLimit) {
+	if c.errForPeer != nil {
+		// This is the bare minimum required to send a CONNECTION_CLOSE frame
+		// when closing a connection immediately, for example in response to a
+		// protocol error.
+		//
+		// This does not handle the closing and draining states
+		// (https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2),
+		// but it's enough to let us write tests that result in a CONNECTION_CLOSE,
+		// and have those tests still pass when we finish implementing
+		// connection shutdown.
+		//
+		// TODO: Finish implementing connection shutdown.
+		if !c.connCloseSent[space] {
+			c.exited = true
+			c.appendConnectionCloseFrame(c.errForPeer)
+			c.connCloseSent[space] = true
+		}
+		return
+	}
+
 	shouldSendAck := c.acks[space].shouldSendAck(now)
 	if limit != ccOK {
 		// ACKs are not limited by congestion control.
@@ -184,6 +208,21 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 	pto := c.loss.ptoExpired
 
 	// TODO: Add all the other frames we can send.
+
+	// HANDSHAKE_DONE
+	if c.handshakeConfirmed.shouldSendPTO(pto) {
+		if !c.w.appendHandshakeDoneFrame() {
+			return
+		}
+		c.handshakeConfirmed.setSent(pnum)
+	}
+
+	// CRYPTO
+	c.crypto[space].dataToSend(pto, func(off, size int64) int64 {
+		b, _ := c.w.appendCryptoFrame(off, int(size))
+		c.crypto[space].sendData(off, b)
+		return int64(len(b))
+	})
 
 	// Test-only PING frames.
 	if space == c.testSendPingSpace && c.testSendPing.shouldSendPTO(pto) {
@@ -252,4 +291,23 @@ func (c *Conn) appendAckFrame(now time.Time, space numberSpace) bool {
 	}
 	d := unscaledAckDelayFromDuration(delay, ackDelayExponent)
 	return c.w.appendAckFrame(seen, d)
+}
+
+func (c *Conn) appendConnectionCloseFrame(err error) {
+	// TODO: Send application errors.
+	switch e := err.(type) {
+	case localTransportError:
+		c.w.appendConnectionCloseTransportFrame(transportError(e), 0, "")
+	default:
+		// TLS alerts are sent using error codes [0x0100,0x01ff).
+		// https://www.rfc-editor.org/rfc/rfc9000#section-20.1-2.36.1
+		var alert tls.AlertError
+		if errors.As(err, &alert) {
+			// tls.AlertError is a uint8, so this can't exceed 0x01ff.
+			code := errTLSBase + transportError(alert)
+			c.w.appendConnectionCloseTransportFrame(code, 0, "")
+			return
+		}
+		c.w.appendConnectionCloseTransportFrame(errInternal, 0, "")
+	}
 }

@@ -25,7 +25,7 @@ type transportParameters struct {
 	initialMaxStreamDataUni        int64
 	initialMaxStreamsBidi          int64
 	initialMaxStreamsUni           int64
-	ackDelayExponent               uint8
+	ackDelayExponent               int8
 	maxAckDelay                    time.Duration
 	disableActiveMigration         bool
 	preferredAddrV4                netip.AddrPort
@@ -220,7 +220,7 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			if v > 20 {
 				return p, localTransportError(errTransportParameter)
 			}
-			p.ackDelayExponent = uint8(v)
+			p.ackDelayExponent = int8(v)
 		case paramMaxAckDelay:
 			var v uint64
 			v, n = consumeVarint(val)

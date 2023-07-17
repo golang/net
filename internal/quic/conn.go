@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -19,6 +20,7 @@ import (
 type Conn struct {
 	side      connSide
 	listener  connListener
+	config    *Config
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
 
@@ -29,13 +31,26 @@ type Conn struct {
 	w           packetWriter
 	acks        [numberSpaceCount]ackState // indexed by number space
 	connIDState connIDState
-	tlsState    tlsState
 	loss        lossState
+
+	// errForPeer is set when the connection is being closed.
+	errForPeer    error
+	connCloseSent [numberSpaceCount]bool
 
 	// idleTimeout is the time at which the connection will be closed due to inactivity.
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.1
 	maxIdleTimeout time.Duration
 	idleTimeout    time.Time
+
+	// Packet protection keys, CRYPTO streams, and TLS state.
+	rkeys  [numberSpaceCount]keys
+	wkeys  [numberSpaceCount]keys
+	crypto [numberSpaceCount]cryptoStream
+	tls    *tls.QUICConn
+
+	// handshakeConfirmed is set when the handshake is confirmed.
+	// For server connections, it tracks sending HANDSHAKE_DONE.
+	handshakeConfirmed sentVal
 
 	peerAckDelayExponent int8 // -1 when unknown
 
@@ -53,12 +68,14 @@ type connListener interface {
 // connTestHooks override conn behavior in tests.
 type connTestHooks interface {
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
+	handleTLSEvent(tls.QUICEvent)
 }
 
-func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, l connListener, hooks connTestHooks) (*Conn, error) {
+func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
+		config:               config,
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
@@ -88,10 +105,56 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	const maxDatagramSize = 1200
 	c.loss.init(c.side, maxDatagramSize, now)
 
-	c.tlsState.init(c.side, initialConnID)
+	c.startTLS(now, initialConnID, transportParameters{
+		initialSrcConnID:  c.connIDState.srcConnID(),
+		ackDelayExponent:  ackDelayExponent,
+		maxUDPPayloadSize: maxUDPPayloadSize,
+		maxAckDelay:       maxAckDelay,
+	})
 
 	go c.loop(now)
 	return c, nil
+}
+
+// confirmHandshake is called when the handshake is confirmed.
+// https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2
+func (c *Conn) confirmHandshake(now time.Time) {
+	// If handshakeConfirmed is unset, the handshake is not confirmed.
+	// If it is unsent, the handshake is confirmed and we need to send a HANDSHAKE_DONE.
+	// If it is sent, we have sent a HANDSHAKE_DONE.
+	// If it is received, the handshake is confirmed and we do not need to send anything.
+	if c.handshakeConfirmed.isSet() {
+		return // already confirmed
+	}
+	if c.side == serverSide {
+		// When the server confirms the handshake, it sends a HANDSHAKE_DONE.
+		c.handshakeConfirmed.setUnsent()
+	} else {
+		// The client never sends a HANDSHAKE_DONE, so we set handshakeConfirmed
+		// to the received state, indicating that the handshake is confirmed and we
+		// don't need to send anything.
+		c.handshakeConfirmed.setReceived()
+	}
+	c.loss.confirmHandshake()
+	// "An endpoint MUST discard its Handshake keys when the TLS handshake is confirmed"
+	// https://www.rfc-editor.org/rfc/rfc9001#section-4.9.2-1
+	c.discardKeys(now, handshakeSpace)
+}
+
+// discardKeys discards unused packet protection keys.
+// https://www.rfc-editor.org/rfc/rfc9001#section-4.9
+func (c *Conn) discardKeys(now time.Time, space numberSpace) {
+	c.rkeys[space].discard()
+	c.wkeys[space].discard()
+	c.loss.discardKeys(now, space)
+}
+
+// receiveTransportParameters applies transport parameters sent by the peer.
+func (c *Conn) receiveTransportParameters(p transportParameters) {
+	c.peerAckDelayExponent = p.ackDelayExponent
+	c.loss.setMaxAckDelay(p.maxAckDelay)
+
+	// TODO: Many more transport parameters to come.
 }
 
 type timerEvent struct{}
@@ -104,6 +167,7 @@ type timerEvent struct{}
 // Other goroutines may examine or modify conn state by sending the loop funcs to execute.
 func (c *Conn) loop(now time.Time) {
 	defer close(c.donec)
+	defer c.tls.Close()
 
 	// The connection timer sends a message to the connection loop on expiry.
 	// We need to give it an expiry when creating it, so set the initial timeout to
@@ -201,8 +265,9 @@ func (c *Conn) runOnLoop(f func(now time.Time, c *Conn)) error {
 
 // abort terminates a connection with an error.
 func (c *Conn) abort(now time.Time, err error) {
-	// TODO: Send CONNECTION_CLOSE frames.
-	c.exit()
+	if c.errForPeer == nil {
+		c.errForPeer = err
+	}
 }
 
 // exit fully terminates a connection immediately.

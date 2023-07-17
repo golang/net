@@ -64,6 +64,14 @@ func (s connSide) String() string {
 	}
 }
 
+func (s connSide) peer() connSide {
+	if s == clientSide {
+		return serverSide
+	} else {
+		return clientSide
+	}
+}
+
 // A numberSpace is the context in which a packet number applies.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-12.3-7
 type numberSpace byte

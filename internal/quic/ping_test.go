@@ -10,26 +10,34 @@ import "testing"
 
 func TestPing(t *testing.T) {
 	tc := newTestConn(t, clientSide)
-	tc.conn.ping(initialSpace)
+	tc.handshake()
+
+	tc.conn.ping(appDataSpace)
 	tc.wantFrame("connection should send a PING frame",
-		packetTypeInitial, debugFramePing{})
+		packetType1RTT, debugFramePing{})
 
 	tc.advanceToTimer()
 	tc.wantFrame("on PTO, connection should send another PING frame",
-		packetTypeInitial, debugFramePing{})
+		packetType1RTT, debugFramePing{})
 
 	tc.wantIdle("after sending PTO probe, no additional frames to send")
 }
 
 func TestAck(t *testing.T) {
 	tc := newTestConn(t, serverSide)
-	tc.writeFrames(packetTypeInitial,
+	tc.handshake()
+
+	// Send two packets, to trigger an immediate ACK.
+	tc.writeFrames(packetType1RTT,
+		debugFramePing{},
+	)
+	tc.writeFrames(packetType1RTT,
 		debugFramePing{},
 	)
 	tc.wantFrame("connection should respond to ack-eliciting packet with an ACK frame",
-		packetTypeInitial,
+		packetType1RTT,
 		debugFrameAck{
-			ranges: []i64range[packetNumber]{{0, 1}},
+			ranges: []i64range[packetNumber]{{0, 3}},
 		},
 	)
 }

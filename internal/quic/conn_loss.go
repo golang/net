@@ -29,7 +29,7 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 	for !sent.done() {
 		switch f := sent.next(); f {
 		default:
-			panic(fmt.Sprintf("BUG: unhandled lost frame type %x", f))
+			panic(fmt.Sprintf("BUG: unhandled acked/lost frame type %x", f))
 		case frameTypeAck:
 			// Unlike most information, loss of an ACK frame does not trigger
 			// retransmission. ACKs are sent in response to ack-eliciting packets,
@@ -41,6 +41,11 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 			if fate == packetAcked {
 				c.acks[space].handleAck(largest)
 			}
+		case frameTypeCrypto:
+			start, end := sent.nextRange()
+			c.crypto[space].ackOrLoss(start, end, fate)
+		case frameTypeHandshakeDone:
+			c.handshakeConfirmed.ackOrLoss(sent.num, fate)
 		}
 	}
 }
