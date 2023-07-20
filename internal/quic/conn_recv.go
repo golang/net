@@ -211,7 +211,12 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			if !frameOK(c, ptype, __01) {
 				return
 			}
-			_, _, _, _, n = consumeNewConnectionIDFrame(payload)
+			n = c.handleNewConnectionIDFrame(now, space, payload)
+		case frameTypeRetireConnectionID:
+			if !frameOK(c, ptype, __01) {
+				return
+			}
+			n = c.handleRetireConnectionIDFrame(now, space, payload)
 		case frameTypeConnectionCloseTransport:
 			// CONNECTION_CLOSE is OK in all spaces.
 			_, _, _, n = consumeConnectionCloseTransportFrame(payload)
@@ -281,6 +286,28 @@ func (c *Conn) handleCryptoFrame(now time.Time, space numberSpace, payload []byt
 	if err != nil {
 		c.abort(now, err)
 		return -1
+	}
+	return n
+}
+
+func (c *Conn) handleNewConnectionIDFrame(now time.Time, space numberSpace, payload []byte) int {
+	seq, retire, connID, resetToken, n := consumeNewConnectionIDFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	if err := c.connIDState.handleNewConnID(seq, retire, connID, resetToken); err != nil {
+		c.abort(now, err)
+	}
+	return n
+}
+
+func (c *Conn) handleRetireConnectionIDFrame(now time.Time, space numberSpace, payload []byte) int {
+	seq, n := consumeRetireConnectionIDFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	if err := c.connIDState.handleRetireConnID(seq, c.newConnIDFunc()); err != nil {
+		c.abort(now, err)
 	}
 	return n
 }

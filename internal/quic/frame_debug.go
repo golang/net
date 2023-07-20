@@ -386,10 +386,7 @@ func (f debugFrameNewConnectionID) write(w *packetWriter) bool {
 
 // debugFrameRetireConnectionID is a NEW_CONNECTION_ID frame.
 type debugFrameRetireConnectionID struct {
-	seq           uint64
-	retirePriorTo uint64
-	connID        []byte
-	token         [16]byte
+	seq int64
 }
 
 func parseDebugFrameRetireConnectionID(b []byte) (f debugFrameRetireConnectionID, n int) {

@@ -69,6 +69,7 @@ type connListener interface {
 type connTestHooks interface {
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
 	handleTLSEvent(tls.QUICEvent)
+	newConnID(seq int64) ([]byte, error)
 }
 
 func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
@@ -90,12 +91,12 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.msgc = make(chan any, 1)
 
 	if c.side == clientSide {
-		if err := c.connIDState.initClient(newRandomConnID); err != nil {
+		if err := c.connIDState.initClient(c.newConnIDFunc()); err != nil {
 			return nil, err
 		}
-		initialConnID = c.connIDState.dstConnID()
+		initialConnID, _ = c.connIDState.dstConnID()
 	} else {
-		if err := c.connIDState.initServer(newRandomConnID, initialConnID); err != nil {
+		if err := c.connIDState.initServer(c.newConnIDFunc(), initialConnID); err != nil {
 			return nil, err
 		}
 	}
@@ -154,11 +155,27 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 }
 
 // receiveTransportParameters applies transport parameters sent by the peer.
-func (c *Conn) receiveTransportParameters(p transportParameters) {
+func (c *Conn) receiveTransportParameters(p transportParameters) error {
 	c.peerAckDelayExponent = p.ackDelayExponent
 	c.loss.setMaxAckDelay(p.maxAckDelay)
+	if err := c.connIDState.setPeerActiveConnIDLimit(p.activeConnIDLimit, c.newConnIDFunc()); err != nil {
+		return err
+	}
+	if p.preferredAddrConnID != nil {
+		var (
+			seq           int64 = 1 // sequence number of this conn id is 1
+			retirePriorTo int64 = 0 // retire nothing
+			resetToken    [16]byte
+		)
+		copy(resetToken[:], p.preferredAddrResetToken)
+		if err := c.connIDState.handleNewConnID(seq, retirePriorTo, p.preferredAddrConnID, resetToken); err != nil {
+			return err
+		}
+	}
 
 	// TODO: Many more transport parameters to come.
+
+	return nil
 }
 
 type timerEvent struct{}
@@ -294,4 +311,11 @@ func firstTime(a, b time.Time) time.Time {
 	default:
 		return b
 	}
+}
+
+func (c *Conn) newConnIDFunc() newConnIDFunc {
+	if c.testHooks != nil {
+		return c.testHooks.newConnID
+	}
+	return newRandomConnID
 }

@@ -37,7 +37,7 @@ func TestAck(t *testing.T) {
 	tc.wantFrame("connection should respond to ack-eliciting packet with an ACK frame",
 		packetType1RTT,
 		debugFrameAck{
-			ranges: []i64range[packetNumber]{{0, 3}},
+			ranges: []i64range[packetNumber]{{0, 4}},
 		},
 	)
 }

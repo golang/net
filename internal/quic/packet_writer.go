@@ -482,13 +482,14 @@ func (w *packetWriter) appendNewConnectionIDFrame(seq, retirePriorTo int64, conn
 	return true
 }
 
-func (w *packetWriter) appendRetireConnectionIDFrame(seq uint64) (added bool) {
-	if w.avail() < 1+sizeVarint(seq) {
+func (w *packetWriter) appendRetireConnectionIDFrame(seq int64) (added bool) {
+	if w.avail() < 1+sizeVarint(uint64(seq)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeRetireConnectionID)
-	w.b = appendVarint(w.b, seq)
+	w.b = appendVarint(w.b, uint64(seq))
 	w.sent.appendAckElicitingFrame(frameTypeRetireConnectionID)
+	w.sent.appendInt(uint64(seq))
 	return true
 }
 

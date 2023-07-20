@@ -454,10 +454,10 @@ func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, re
 	return seq, retire, connID, resetToken, n
 }
 
-func consumeRetireConnectionIDFrame(b []byte) (seq uint64, n int) {
+func consumeRetireConnectionIDFrame(b []byte) (seq int64, n int) {
 	n = 1
 	var nn int
-	seq, nn = consumeVarint(b[n:])
+	seq, nn = consumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, -1
 	}

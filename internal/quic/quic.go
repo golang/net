@@ -35,6 +35,16 @@ const (
 
 	ackDelayExponent = 3                     // ack_delay_exponent
 	maxAckDelay      = 25 * time.Millisecond // max_ack_delay
+
+	// The active_conn_id_limit transport parameter is the maximum
+	// number of connection IDs from the peer we're willing to store.
+	//
+	// maxPeerActiveConnIDLimit is the maximum number of connection IDs
+	// we're willing to send to the peer.
+	//
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-18.2-6.2.1
+	activeConnIDLimit        = 2
+	maxPeerActiveConnIDLimit = 4
 )
 
 // Local timer granularity.

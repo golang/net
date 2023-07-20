@@ -128,19 +128,16 @@ type testConn struct {
 	cryptoDataIn  map[tls.QUICEncryptionLevel][]byte
 	peerTLSConn   *tls.QUICConn
 
-	localConnID     []byte
-	transientConnID []byte
-
 	// Information about the conn's (fake) peer.
 	peerConnID        []byte                         // source conn id of peer's packets
 	peerNextPacketNum [numberSpaceCount]packetNumber // next packet number to use
 
 	// Datagrams, packets, and frames sent by the conn,
 	// but not yet processed by the test.
-	sentDatagrams       [][]byte
-	sentPackets         []*testPacket
-	sentFrames          []debugFrame
-	sentFramePacketType packetType
+	sentDatagrams   [][]byte
+	sentPackets     []*testPacket
+	sentFrames      []debugFrame
+	sentFramePacket *testPacket
 
 	// Frame types to ignore in tests.
 	ignoreFrames map[byte]bool
@@ -162,7 +159,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	tc := &testConn{
 		t:          t,
 		now:        time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-		peerConnID: []byte{0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5},
+		peerConnID: testPeerConnID(0),
 		ignoreFrames: map[byte]bool{
 			frameTypePadding: true, // ignore PADDING by default
 		},
@@ -179,6 +176,8 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		switch o := o.(type) {
 		case func(*tls.Config):
 			o(config.TLSConfig)
+		case func(p *transportParameters):
+			o(&peerProvidedParams)
 		default:
 			t.Fatalf("unknown newTestConn option %T", o)
 		}
@@ -189,7 +188,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		// The initial connection ID for the server is chosen by the client.
 		// When creating a server-side connection, pick a random connection ID here.
 		var err error
-		initialConnID, err = newRandomConnID()
+		initialConnID, err = newRandomConnID(0)
 		if err != nil {
 			tc.t.Fatal(err)
 		}
@@ -216,14 +215,6 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		tc.t.Fatal(err)
 	}
 	tc.conn = conn
-
-	if side == serverSide {
-		tc.transientConnID = tc.conn.connIDState.local[0].cid
-		tc.localConnID = tc.conn.connIDState.local[1].cid
-	} else if side == clientSide {
-		tc.transientConnID = tc.conn.connIDState.remote[0].cid
-		tc.localConnID = tc.conn.connIDState.local[0].cid
-	}
 
 	tc.wkeys[initialSpace].k = conn.wkeys[initialSpace]
 	tc.rkeys[initialSpace].k = conn.rkeys[initialSpace]
@@ -326,7 +317,11 @@ func (tc *testConn) write(d *testDatagram) {
 		if p.num >= tc.peerNextPacketNum[space] {
 			tc.peerNextPacketNum[space] = p.num + 1
 		}
-		buf = append(buf, tc.encodeTestPacket(p)...)
+		pad := 0
+		if p.ptype == packetType1RTT {
+			pad = d.paddedSize
+		}
+		buf = append(buf, tc.encodeTestPacket(p, pad)...)
 	}
 	for len(buf) < d.paddedSize {
 		buf = append(buf, 0)
@@ -407,12 +402,12 @@ func (tc *testConn) readFrame() (debugFrame, packetType) {
 		if p == nil {
 			return nil, packetTypeInvalid
 		}
-		tc.sentFramePacketType = p.ptype
+		tc.sentFramePacket = p
 		tc.sentFrames = p.frames
 	}
 	f := tc.sentFrames[0]
 	tc.sentFrames = tc.sentFrames[1:]
-	return f, tc.sentFramePacketType
+	return f, tc.sentFramePacket.ptype
 }
 
 // wantDatagram indicates that we expect the Conn to send a datagram.
@@ -462,7 +457,7 @@ func (tc *testConn) wantIdle(expectation string) {
 	}
 }
 
-func (tc *testConn) encodeTestPacket(p *testPacket) []byte {
+func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 	tc.t.Helper()
 	var w packetWriter
 	w.reset(1200)
@@ -486,6 +481,7 @@ func (tc *testConn) encodeTestPacket(p *testPacket) []byte {
 		tc.t.Fatalf("sending packet with no %v keys available", space)
 		return nil
 	}
+	w.appendPaddingTo(pad)
 	if p.ptype != packetType1RTT {
 		w.finishProtectedLongHeaderPacket(pnumMaxAcked, tc.rkeys[space].k, longPacket{
 			ptype:     p.ptype,
@@ -504,6 +500,7 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 	tc.t.Helper()
 	bufSize := len(buf)
 	d := &testDatagram{}
+	size := len(buf)
 	for len(buf) > 0 {
 		if buf[0] == 0 {
 			d.paddedSize = bufSize
@@ -550,6 +547,20 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 				frames:    frames,
 			})
 			buf = buf[n:]
+		}
+	}
+	// This is rather hackish: If the last frame in the last packet
+	// in the datagram is PADDING, then remove it and record
+	// the padded size in the testDatagram.paddedSize.
+	//
+	// This makes it easier to write a test that expects a datagram
+	// padded to 1200 bytes.
+	if len(d.packets) > 0 && len(d.packets[len(d.packets)-1].frames) > 0 {
+		p := d.packets[len(d.packets)-1]
+		f := p.frames[len(p.frames)-1]
+		if _, ok := f.(debugFramePadding); ok {
+			p.frames = p.frames[:len(p.frames)-1]
+			d.paddedSize = size
 		}
 	}
 	return d
@@ -684,6 +695,27 @@ func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.T
 	}
 	m = <-msgc
 	return tc.now, m
+}
+
+func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
+	return testLocalConnID(seq), nil
+}
+
+// testLocalConnID returns the connection ID with a given sequence number
+// used by a Conn under test.
+func testLocalConnID(seq int64) []byte {
+	cid := make([]byte, connIDLen)
+	copy(cid, []byte{0xc0, 0xff, 0xee})
+	cid[len(cid)-1] = byte(seq)
+	return cid
+}
+
+// testPeerConnID returns the connection ID with a given sequence number
+// used by the fake peer of a Conn under test.
+func testPeerConnID(seq int64) []byte {
+	// Use a different length than we choose for our own conn ids,
+	// to help catch any bad assumptions.
+	return []byte{0xbe, 0xee, 0xff, byte(seq)}
 }
 
 // testConnListener implements connListener.

@@ -44,6 +44,12 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 		case frameTypeCrypto:
 			start, end := sent.nextRange()
 			c.crypto[space].ackOrLoss(start, end, fate)
+		case frameTypeNewConnectionID:
+			seq := int64(sent.nextInt())
+			c.connIDState.ackOrLossNewConnectionID(sent.num, seq, fate)
+		case frameTypeRetireConnectionID:
+			seq := int64(sent.nextInt())
+			c.connIDState.ackOrLossRetireConnectionID(sent.num, seq, fate)
 		case frameTypeHandshakeDone:
 			c.handshakeConfirmed.ackOrLoss(sent.num, fate)
 		}

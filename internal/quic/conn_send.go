@@ -44,6 +44,13 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		// Prepare to write a datagram of at most maxSendSize bytes.
 		c.w.reset(c.loss.maxSendSize())
 
+		dstConnID, ok := c.connIDState.dstConnID()
+		if !ok {
+			// It is currently not possible for us to end up without a connection ID,
+			// but handle the case anyway.
+			return time.Time{}
+		}
+
 		// Initial packet.
 		pad := false
 		var sentInitial *sentPacket
@@ -54,7 +61,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				ptype:     packetTypeInitial,
 				version:   1,
 				num:       pnum,
-				dstConnID: c.connIDState.dstConnID(),
+				dstConnID: dstConnID,
 				srcConnID: c.connIDState.srcConnID(),
 			}
 			c.w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
@@ -81,7 +88,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				ptype:     packetTypeHandshake,
 				version:   1,
 				num:       pnum,
-				dstConnID: c.connIDState.dstConnID(),
+				dstConnID: dstConnID,
 				srcConnID: c.connIDState.srcConnID(),
 			}
 			c.w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
@@ -104,7 +111,6 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		if k := c.wkeys[appDataSpace]; k.isSet() {
 			pnumMaxAcked := c.acks[appDataSpace].largestSeen()
 			pnum := c.loss.nextNumber(appDataSpace)
-			dstConnID := c.connIDState.dstConnID()
 			c.w.start1RTTPacket(pnum, pnumMaxAcked, dstConnID)
 			c.appendFrames(now, appDataSpace, pnum, limit)
 			if pad && len(c.w.payload()) > 0 {
@@ -232,6 +238,13 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 		c.crypto[space].sendData(off, b)
 		return int64(len(b))
 	})
+
+	// NEW_CONNECTION_ID, RETIRE_CONNECTION_ID
+	if space == appDataSpace {
+		if !c.connIDState.appendFrames(&c.w, pnum, pto) {
+			return
+		}
+	}
 
 	// Test-only PING frames.
 	if space == c.testSendPingSpace && c.testSendPing.shouldSendPTO(pto) {

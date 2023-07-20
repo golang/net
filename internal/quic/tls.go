@@ -83,7 +83,9 @@ func (c *Conn) handleTLSEvents(now time.Time) error {
 			if err != nil {
 				return err
 			}
-			c.receiveTransportParameters(params)
+			if err := c.receiveTransportParameters(params); err != nil {
+				return err
+			}
 		}
 	}
 }

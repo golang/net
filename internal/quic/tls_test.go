@@ -63,15 +63,26 @@ func (tc *testConn) handshake() {
 
 func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 	var (
-		clientConnID []byte
-		serverConnID []byte
+		clientConnIDs   [][]byte
+		serverConnIDs   [][]byte
+		transientConnID []byte
 	)
+	localConnIDs := [][]byte{
+		testLocalConnID(0),
+		testLocalConnID(1),
+	}
+	peerConnIDs := [][]byte{
+		testPeerConnID(0),
+		testPeerConnID(1),
+	}
 	if tc.conn.side == clientSide {
-		clientConnID = tc.localConnID
-		serverConnID = tc.peerConnID
+		clientConnIDs = localConnIDs
+		serverConnIDs = peerConnIDs
+		transientConnID = testLocalConnID(-1)
 	} else {
-		clientConnID = tc.peerConnID
-		serverConnID = tc.localConnID
+		clientConnIDs = peerConnIDs
+		serverConnIDs = localConnIDs
+		transientConnID = []byte{0xde, 0xad, 0xbe, 0xef}
 	}
 	return []*testDatagram{{
 		// Client Initial
@@ -79,21 +90,21 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 			ptype:     packetTypeInitial,
 			num:       0,
 			version:   1,
-			srcConnID: clientConnID,
-			dstConnID: tc.transientConnID,
+			srcConnID: clientConnIDs[0],
+			dstConnID: transientConnID,
 			frames: []debugFrame{
 				debugFrameCrypto{},
 			},
 		}},
 		paddedSize: 1200,
 	}, {
-		// Server Initial + Handshake
+		// Server Initial + Handshake + 1-RTT
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       0,
 			version:   1,
-			srcConnID: serverConnID,
-			dstConnID: clientConnID,
+			srcConnID: serverConnIDs[0],
+			dstConnID: clientConnIDs[0],
 			frames: []debugFrame{
 				debugFrameAck{
 					ranges: []i64range[packetNumber]{{0, 1}},
@@ -104,20 +115,30 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 			ptype:     packetTypeHandshake,
 			num:       0,
 			version:   1,
-			srcConnID: serverConnID,
-			dstConnID: clientConnID,
+			srcConnID: serverConnIDs[0],
+			dstConnID: clientConnIDs[0],
 			frames: []debugFrame{
 				debugFrameCrypto{},
 			},
+		}, {
+			ptype:     packetType1RTT,
+			num:       0,
+			dstConnID: clientConnIDs[0],
+			frames: []debugFrame{
+				debugFrameNewConnectionID{
+					seq:    1,
+					connID: serverConnIDs[1],
+				},
+			},
 		}},
 	}, {
-		// Client Handshake
+		// Client Initial + Handshake + 1-RTT
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
 			version:   1,
-			srcConnID: clientConnID,
-			dstConnID: serverConnID,
+			srcConnID: clientConnIDs[0],
+			dstConnID: serverConnIDs[0],
 			frames: []debugFrame{
 				debugFrameAck{
 					ranges: []i64range[packetNumber]{{0, 1}},
@@ -127,13 +148,26 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 			ptype:     packetTypeHandshake,
 			num:       0,
 			version:   1,
-			srcConnID: clientConnID,
-			dstConnID: serverConnID,
+			srcConnID: clientConnIDs[0],
+			dstConnID: serverConnIDs[0],
 			frames: []debugFrame{
 				debugFrameAck{
 					ranges: []i64range[packetNumber]{{0, 1}},
 				},
 				debugFrameCrypto{},
+			},
+		}, {
+			ptype:     packetType1RTT,
+			num:       0,
+			dstConnID: serverConnIDs[0],
+			frames: []debugFrame{
+				debugFrameAck{
+					ranges: []i64range[packetNumber]{{0, 1}},
+				},
+				debugFrameNewConnectionID{
+					seq:    1,
+					connID: clientConnIDs[1],
+				},
 			},
 		}},
 		paddedSize: 1200,
@@ -141,9 +175,12 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		// Server HANDSHAKE_DONE and session ticket
 		packets: []*testPacket{{
 			ptype:     packetType1RTT,
-			num:       0,
-			dstConnID: clientConnID,
+			num:       1,
+			dstConnID: clientConnIDs[0],
 			frames: []debugFrame{
+				debugFrameAck{
+					ranges: []i64range[packetNumber]{{0, 1}},
+				},
 				debugFrameHandshakeDone{},
 				debugFrameCrypto{},
 			},
@@ -152,13 +189,13 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		// Client ack (after max_ack_delay)
 		packets: []*testPacket{{
 			ptype:     packetType1RTT,
-			num:       0,
-			dstConnID: serverConnID,
+			num:       1,
+			dstConnID: serverConnIDs[0],
 			frames: []debugFrame{
 				debugFrameAck{
 					ackDelay: unscaledAckDelayFromDuration(
 						maxAckDelay, ackDelayExponent),
-					ranges: []i64range[packetNumber]{{0, 1}},
+					ranges: []i64range[packetNumber]{{0, 2}},
 				},
 			},
 		}},
@@ -188,6 +225,69 @@ func fillCryptoFrames(d *testDatagram, data map[tls.QUICEncryptionLevel][]byte) 
 			p.frames[i] = c
 		}
 	}
+}
+
+// uncheckedHandshake executes the handshake.
+//
+// Unlike testConn.handshake, it sends nothing unnecessary
+// (in particular, no NEW_CONNECTION_ID frames),
+// and does not validate the conn's responses.
+//
+// Useful for testing scenarios where configuration has
+// changed the handshake responses in some way.
+func (tc *testConn) uncheckedHandshake() {
+	defer func(saved map[byte]bool) {
+		tc.ignoreFrames = saved
+	}(tc.ignoreFrames)
+	tc.ignoreFrames = map[byte]bool{
+		frameTypeAck:             true,
+		frameTypeCrypto:          true,
+		frameTypeNewConnectionID: true,
+	}
+	if tc.conn.side == serverSide {
+		tc.writeFrames(packetTypeInitial,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+			})
+		tc.writeFrames(packetTypeHandshake,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+			})
+		tc.wantFrame("send HANDSHAKE_DONE after handshake completes",
+			packetType1RTT, debugFrameHandshakeDone{})
+		tc.writeFrames(packetType1RTT,
+			debugFrameAck{
+				ackDelay: unscaledAckDelayFromDuration(
+					maxAckDelay, ackDelayExponent),
+				ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
+			})
+	} else {
+		tc.writeFrames(packetTypeInitial,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+			})
+		tc.writeFrames(packetTypeHandshake,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+			})
+		tc.wantIdle("don't expect any frames we aren't ignoring")
+		// Send the next two frames in separate packets, so the client sends an
+		// ack immediately without delay. We want to consume that ack here, rather
+		// than returning with a delayed ack waiting to be sent.
+		tc.ignoreFrames = nil
+		tc.writeFrames(packetType1RTT,
+			debugFrameHandshakeDone{})
+		tc.writeFrames(packetType1RTT,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+			})
+		tc.wantFrame("client ACKs server's first 1-RTT packet",
+			packetType1RTT, debugFrameAck{
+				ranges: []i64range[packetNumber]{{0, 2}},
+			})
+
+	}
+	tc.wantIdle("handshake is done")
 }
 
 func TestConnClientHandshake(t *testing.T) {
@@ -223,6 +323,11 @@ func TestConnKeysDiscardedClient(t *testing.T) {
 	tc.wantFrame("client sends Handshake CRYPTO frame",
 		packetTypeHandshake, debugFrameCrypto{
 			data: tc.cryptoDataOut[tls.QUICEncryptionLevelHandshake],
+		})
+	tc.wantFrame("client provides an additional connection ID",
+		packetType1RTT, debugFrameNewConnectionID{
+			seq:    1,
+			connID: testLocalConnID(1),
 		})
 
 	// The client discards Initial keys after sending a Handshake packet.
@@ -273,6 +378,11 @@ func TestConnKeysDiscardedServer(t *testing.T) {
 		})
 	tc.writeFrames(packetTypeInitial,
 		debugFrameConnectionCloseTransport{code: errInternal})
+	tc.wantFrame("server provides an additional connection ID",
+		packetType1RTT, debugFrameNewConnectionID{
+			seq:    1,
+			connID: testLocalConnID(1),
+		})
 	tc.wantIdle("server has discarded Initial keys, cannot read CONNECTION_CLOSE")
 
 	// The server discards Handshake keys after sending a HANDSHAKE_DONE frame.

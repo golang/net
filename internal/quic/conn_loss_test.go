@@ -93,10 +93,70 @@ func TestLostCRYPTOFrame(t *testing.T) {
 			packetTypeHandshake, debugFrameCrypto{
 				data: tc.cryptoDataOut[tls.QUICEncryptionLevelHandshake],
 			})
+		tc.wantFrame("client provides server with an additional connection ID",
+			packetType1RTT, debugFrameNewConnectionID{
+				seq:    1,
+				connID: testLocalConnID(1),
+			})
 		tc.triggerLossOrPTO(packetTypeHandshake, pto)
 		tc.wantFrame("client resends Handshake CRYPTO frame",
 			packetTypeHandshake, debugFrameCrypto{
 				data: tc.cryptoDataOut[tls.QUICEncryptionLevelHandshake],
+			})
+	})
+}
+
+func TestLostNewConnectionIDFrame(t *testing.T) {
+	// "New connection IDs are [...] retransmitted if the packet containing them is lost."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.13
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		tc := newTestConn(t, serverSide)
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+
+		tc.writeFrames(packetType1RTT,
+			debugFrameRetireConnectionID{
+				seq: 1,
+			})
+		tc.wantFrame("provide a new connection ID after peer retires old one",
+			packetType1RTT, debugFrameNewConnectionID{
+				seq:    2,
+				connID: testLocalConnID(2),
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resend new connection ID",
+			packetType1RTT, debugFrameNewConnectionID{
+				seq:    2,
+				connID: testLocalConnID(2),
+			})
+	})
+}
+
+func TestLostRetireConnectionIDFrame(t *testing.T) {
+	// "[...] retired connection IDs are [...] retransmitted
+	// if the packet containing them is lost."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.13
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		tc := newTestConn(t, clientSide)
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+
+		tc.writeFrames(packetType1RTT,
+			debugFrameNewConnectionID{
+				seq:           2,
+				retirePriorTo: 1,
+				connID:        testPeerConnID(2),
+			})
+		tc.wantFrame("peer requested connection id be retired",
+			packetType1RTT, debugFrameRetireConnectionID{
+				seq: 0,
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resend RETIRE_CONNECTION_ID",
+			packetType1RTT, debugFrameRetireConnectionID{
+				seq: 0,
 			})
 	})
 }
@@ -119,6 +179,11 @@ func TestLostHandshakeDoneFrame(t *testing.T) {
 		tc.wantFrame("server sends Handshake CRYPTO frame",
 			packetTypeHandshake, debugFrameCrypto{
 				data: tc.cryptoDataOut[tls.QUICEncryptionLevelHandshake],
+			})
+		tc.wantFrame("server provides an additional connection ID",
+			packetType1RTT, debugFrameNewConnectionID{
+				seq:    1,
+				connID: testLocalConnID(1),
 			})
 		tc.writeFrames(packetTypeHandshake,
 			debugFrameCrypto{
