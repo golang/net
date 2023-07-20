@@ -43,9 +43,6 @@ func TestConnTestConn(t *testing.T) {
 	tc.wait()
 
 	tc.advanceToTimer()
-	if err := tc.conn.sendMsg(nil); err == nil {
-		t.Errorf("after advancing to idle timeout, sendMsg = nil, want error")
-	}
 	if !tc.conn.exited {
 		t.Errorf("after advancing to idle timeout, exited = false, want true")
 	}

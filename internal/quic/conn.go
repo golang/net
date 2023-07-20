@@ -176,24 +176,21 @@ func (c *Conn) loop(now time.Time) {
 
 // sendMsg sends a message to the conn's loop.
 // It does not wait for the message to be processed.
-func (c *Conn) sendMsg(m any) error {
+// The conn may close before processing the message, in which case it is lost.
+func (c *Conn) sendMsg(m any) {
 	select {
 	case c.msgc <- m:
 	case <-c.donec:
-		return errors.New("quic: connection closed")
 	}
-	return nil
 }
 
 // runOnLoop executes a function within the conn's loop goroutine.
 func (c *Conn) runOnLoop(f func(now time.Time, c *Conn)) error {
 	donec := make(chan struct{})
-	if err := c.sendMsg(func(now time.Time, c *Conn) {
+	c.sendMsg(func(now time.Time, c *Conn) {
 		defer close(donec)
 		f(now, c)
-	}); err != nil {
-		return err
-	}
+	})
 	select {
 	case <-donec:
 	case <-c.donec:
