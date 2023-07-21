@@ -116,6 +116,10 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	return c, nil
 }
 
+func (c *Conn) String() string {
+	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.peerAddr)
+}
+
 // confirmHandshake is called when the handshake is confirmed.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2
 func (c *Conn) confirmHandshake(now time.Time) {

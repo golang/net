@@ -59,6 +59,9 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			c.w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
 			c.appendFrames(now, initialSpace, pnum, limit)
+			if logPackets {
+				logSentPacket(c, packetTypeInitial, pnum, p.srcConnID, p.dstConnID, c.w.payload())
+			}
 			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, p)
 			if sentInitial != nil {
 				// Client initial packets need to be sent in a datagram padded to
@@ -83,6 +86,9 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			c.w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
 			c.appendFrames(now, handshakeSpace, pnum, limit)
+			if logPackets {
+				logSentPacket(c, packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.payload())
+			}
 			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, p); sent != nil {
 				c.loss.packetSent(now, handshakeSpace, sent)
 				if c.side == clientSide {
@@ -107,6 +113,9 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				// padding we need to add it inside the 1-RTT packet.
 				c.w.appendPaddingTo(minimumClientInitialDatagramSize)
 				pad = false
+			}
+			if logPackets {
+				logSentPacket(c, packetType1RTT, pnum, nil, dstConnID, c.w.payload())
 			}
 			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, k); sent != nil {
 				c.loss.packetSent(now, appDataSpace, sent)
