@@ -27,12 +27,16 @@ import (
 type Config struct {
 	// HTTPProxy represents the value of the HTTP_PROXY or
 	// http_proxy environment variable. It will be used as the proxy
-	// URL for HTTP requests unless overridden by NoProxy.
+	// URL for HTTP requests unless overridden by NoProxy. It may
+	// include user information ("user:password" format) that will
+	// be used as client proxy authentication.
 	HTTPProxy string
 
 	// HTTPSProxy represents the HTTPS_PROXY or https_proxy
 	// environment variable. It will be used as the proxy URL for
-	// HTTPS requests unless overridden by NoProxy.
+	// HTTPS requests unless overridden by NoProxy.  It may
+	// include user information ("user:password" format) that will
+	// be used as client proxy authentication.
 	HTTPSProxy string
 
 	// NoProxy represents the NO_PROXY or no_proxy environment
