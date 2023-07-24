@@ -9,7 +9,7 @@
 // existing projects, but it is not actively maintained.
 // Use an alternative an more actively maintained WebSocket package instead:
 //
-//	https://pkg.go.dev/nhooyr.io/websocket
+//	https://godoc.org/github.com/gorilla/websocket
 package websocket // import "golang.org/x/net/websocket"
 
 import (
