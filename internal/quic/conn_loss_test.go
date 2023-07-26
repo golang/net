@@ -106,6 +106,38 @@ func TestLostCRYPTOFrame(t *testing.T) {
 	})
 }
 
+func TestLostStreamFrameEmpty(t *testing.T) {
+	// A STREAM frame opening a stream, but containing no stream data, should
+	// be retransmitted if lost.
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		ctx := canceledContext()
+		tc := newTestConn(t, clientSide, func(p *transportParameters) {
+			p.initialMaxStreamDataBidiRemote = 100
+		})
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+
+		c, err := tc.conn.NewStream(ctx)
+		if err != nil {
+			t.Fatalf("NewStream: %v", err)
+		}
+		c.Write(nil) // open the stream
+		tc.wantFrame("created bidirectional stream 0",
+			packetType1RTT, debugFrameStream{
+				id:   newStreamID(clientSide, bidiStream, 0),
+				data: []byte{},
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resent stream frame",
+			packetType1RTT, debugFrameStream{
+				id:   newStreamID(clientSide, bidiStream, 0),
+				data: []byte{},
+			})
+	})
+
+}
+
 func TestLostNewConnectionIDFrame(t *testing.T) {
 	// "New connection IDs are [...] retransmitted if the packet containing them is lost."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.13

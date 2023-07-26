@@ -32,6 +32,7 @@ type Conn struct {
 	acks        [numberSpaceCount]ackState // indexed by number space
 	connIDState connIDState
 	loss        lossState
+	streams     streamsState
 
 	// errForPeer is set when the connection is being closed.
 	errForPeer    error
@@ -105,6 +106,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	// TODO: PMTU discovery.
 	const maxDatagramSize = 1200
 	c.loss.init(c.side, maxDatagramSize, now)
+	c.streamsInit()
 
 	c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:  c.connIDState.srcConnID(),
@@ -178,7 +180,10 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 	return nil
 }
 
-type timerEvent struct{}
+type (
+	timerEvent struct{}
+	wakeEvent  struct{}
+)
 
 // loop is the connection main loop.
 //
@@ -250,6 +255,8 @@ func (c *Conn) loop(now time.Time) {
 				return
 			}
 			c.loss.advance(now, c.handleAckOrLoss)
+		case wakeEvent:
+			// We're being woken up to try sending some frames.
 		case func(time.Time, *Conn):
 			// Send a func to msgc to run it on the main Conn goroutine
 			m(now, c)
@@ -266,6 +273,14 @@ func (c *Conn) sendMsg(m any) {
 	select {
 	case c.msgc <- m:
 	case <-c.donec:
+	}
+}
+
+// wake wakes up the conn's loop.
+func (c *Conn) wake() {
+	select {
+	case c.msgc <- wakeEvent{}:
+	default:
 	}
 }
 

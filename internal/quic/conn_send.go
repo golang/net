@@ -254,6 +254,13 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 		c.testSendPing.setSent(pnum)
 	}
 
+	// All stream-related frames. This should come last in the packet,
+	// so large amounts of STREAM data don't crowd out other frames
+	// we may need to send.
+	if !c.appendStreamFrames(&c.w, pnum, pto) {
+		return
+	}
+
 	// If this is a PTO probe and we haven't added an ack-eliciting frame yet,
 	// add a PING to make this an ack-eliciting probe.
 	//

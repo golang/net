@@ -330,6 +330,9 @@ func consumeStreamFrame(b []byte) (id streamID, off int64, fin bool, data []byte
 		data = b[n:]
 		n += len(data)
 	}
+	if off+int64(len(data)) >= 1<<62 {
+		return 0, 0, false, nil, -1
+	}
 	return streamID(idInt), off, fin, data, n
 }
 

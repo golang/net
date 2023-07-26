@@ -112,6 +112,7 @@ type streamType uint8
 const (
 	bidiStream = streamType(iota)
 	uniStream
+	streamTypeCount
 )
 
 func (s streamType) String() string {

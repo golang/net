@@ -44,6 +44,16 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 		case frameTypeCrypto:
 			start, end := sent.nextRange()
 			c.crypto[space].ackOrLoss(start, end, fate)
+		case frameTypeStreamBase,
+			frameTypeStreamBase | streamFinBit:
+			id := streamID(sent.nextInt())
+			start, end := sent.nextRange()
+			s := c.streamForID(id)
+			if s == nil {
+				continue
+			}
+			fin := f&streamFinBit != 0
+			s.ackOrLossData(sent.num, start, end, fin, fate)
 		case frameTypeNewConnectionID:
 			seq := int64(sent.nextInt())
 			c.connIDState.ackOrLossNewConnectionID(sent.num, seq, fate)

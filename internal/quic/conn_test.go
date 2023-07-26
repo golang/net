@@ -725,3 +725,14 @@ func (tc *testConnListener) sendDatagram(p []byte, addr netip.AddrPort) error {
 	tc.sentDatagrams = append(tc.sentDatagrams, append([]byte(nil), p...))
 	return nil
 }
+
+// canceledContext returns a canceled Context.
+//
+// Functions which take a context preference progress over cancelation.
+// For example, a read with a canceled context will return data if any is available.
+// Tests use canceled contexts to perform non-blocking operations.
+func canceledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
