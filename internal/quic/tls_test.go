@@ -172,7 +172,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		}},
 		paddedSize: 1200,
 	}, {
-		// Server HANDSHAKE_DONE and session ticket
+		// Server HANDSHAKE_DONE
 		packets: []*testPacket{{
 			ptype:     packetType1RTT,
 			num:       1,
@@ -182,7 +182,6 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 					ranges: []i64range[packetNumber]{{0, 1}},
 				},
 				debugFrameHandshakeDone{},
-				debugFrameCrypto{},
 			},
 		}},
 	}, {
@@ -351,9 +350,7 @@ func TestConnKeysDiscardedClient(t *testing.T) {
 }
 
 func TestConnKeysDiscardedServer(t *testing.T) {
-	tc := newTestConn(t, serverSide, func(c *tls.Config) {
-		c.SessionTicketsDisabled = true
-	})
+	tc := newTestConn(t, serverSide)
 	tc.ignoreFrame(frameTypeAck)
 
 	tc.writeFrames(packetTypeInitial,

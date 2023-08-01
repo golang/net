@@ -72,11 +72,6 @@ func (c *Conn) handleTLSEvents(now time.Time) error {
 				// at the server when the handshake completes."
 				// https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2-1
 				c.confirmHandshake(now)
-				if !c.config.TLSConfig.SessionTicketsDisabled {
-					if err := c.tls.SendSessionTicket(false); err != nil {
-						return err
-					}
-				}
 			}
 		case tls.QUICTransportParameters:
 			params, err := unmarshalTransportParams(e.Data)

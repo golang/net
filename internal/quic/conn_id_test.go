@@ -229,9 +229,7 @@ func TestConnIDPeerWithZeroLengthConnIDSendsNewConnectionID(t *testing.T) {
 	// An endpoint that selects a zero-length connection ID during the handshake
 	// cannot issue a new connection ID."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-5.1.1-8
-	tc := newTestConn(t, clientSide, func(c *tls.Config) {
-		c.SessionTicketsDisabled = true
-	})
+	tc := newTestConn(t, clientSide)
 	tc.peerConnID = []byte{}
 	tc.ignoreFrame(frameTypeAck)
 	tc.uncheckedHandshake()

@@ -224,17 +224,9 @@ func TestLostHandshakeDoneFrame(t *testing.T) {
 
 		tc.wantFrame("server sends HANDSHAKE_DONE after handshake completes",
 			packetType1RTT, debugFrameHandshakeDone{})
-		tc.wantFrame("server sends session ticket in CRYPTO frame",
-			packetType1RTT, debugFrameCrypto{
-				data: tc.cryptoDataOut[tls.QUICEncryptionLevelApplication],
-			})
 
 		tc.triggerLossOrPTO(packetType1RTT, pto)
 		tc.wantFrame("server resends HANDSHAKE_DONE",
 			packetType1RTT, debugFrameHandshakeDone{})
-		tc.wantFrame("server resends session ticket",
-			packetType1RTT, debugFrameCrypto{
-				data: tc.cryptoDataOut[tls.QUICEncryptionLevelApplication],
-			})
 	})
 }
