@@ -601,6 +601,7 @@ func (p *Parser) resourceHeader(sec section) (ResourceHeader, error) {
 	if p.resHeaderValid {
 		p.off = p.resHeaderOffset
 	}
+
 	if err := p.checkAdvance(sec); err != nil {
 		return ResourceHeader{}, err
 	}
