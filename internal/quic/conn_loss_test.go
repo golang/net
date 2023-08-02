@@ -30,8 +30,18 @@ func (tc *testConn) triggerLossOrPTO(ptype packetType, pto bool) {
 		if !tc.conn.loss.ptoTimerArmed {
 			tc.t.Fatalf("PTO timer not armed, expected it to be")
 		}
+		if *testVV {
+			tc.t.Logf("advancing to PTO timer")
+		}
 		tc.advanceTo(tc.conn.loss.timer)
 		return
+	}
+	if *testVV {
+		*testVV = false
+		defer func() {
+			tc.t.Logf("cause conn to declare last packet lost")
+			*testVV = true
+		}()
 	}
 	defer func(ignoreFrames map[byte]bool) {
 		tc.ignoreFrames = ignoreFrames

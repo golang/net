@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"flag"
 	"fmt"
 	"math"
 	"net/netip"
@@ -19,6 +20,8 @@ import (
 	"testing"
 	"time"
 )
+
+var testVV = flag.Bool("vv", false, "even more verbose test output")
 
 func TestConnTestConn(t *testing.T) {
 	tc := newTestConn(t, serverSide)
@@ -308,10 +311,34 @@ func (tc *testConn) cleanup() {
 	tc.conn.exit()
 }
 
+func (tc *testConn) logDatagram(text string, d *testDatagram) {
+	tc.t.Helper()
+	if !*testVV {
+		return
+	}
+	pad := ""
+	if d.paddedSize > 0 {
+		pad = fmt.Sprintf(" (padded to %v)", d.paddedSize)
+	}
+	tc.t.Logf("%v datagram%v", text, pad)
+	for _, p := range d.packets {
+		switch p.ptype {
+		case packetType1RTT:
+			tc.t.Logf("  %v pnum=%v", p.ptype, p.num)
+		default:
+			tc.t.Logf("  %v pnum=%v ver=%v dst={%x} src={%x}", p.ptype, p.num, p.version, p.dstConnID, p.srcConnID)
+		}
+		for _, f := range p.frames {
+			tc.t.Logf("    %v", f)
+		}
+	}
+}
+
 // write sends the Conn a datagram.
 func (tc *testConn) write(d *testDatagram) {
 	tc.t.Helper()
 	var buf []byte
+	tc.logDatagram("<- conn under test receives", d)
 	for _, p := range d.packets {
 		space := spaceForPacketType(p.ptype)
 		if p.num >= tc.peerNextPacketNum[space] {
@@ -374,7 +401,9 @@ func (tc *testConn) readDatagram() *testDatagram {
 	}
 	buf := tc.sentDatagrams[0]
 	tc.sentDatagrams = tc.sentDatagrams[1:]
-	return tc.parseTestDatagram(buf)
+	d := tc.parseTestDatagram(buf)
+	tc.logDatagram("-> conn under test sends", d)
+	return d
 }
 
 // readPacket reads the next packet sent by the Conn.

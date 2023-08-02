@@ -18,6 +18,13 @@ import (
 // handshake executes the handshake.
 func (tc *testConn) handshake() {
 	tc.t.Helper()
+	if *testVV {
+		*testVV = false
+		defer func() {
+			*testVV = true
+			tc.t.Logf("performed connection handshake")
+		}()
+	}
 	defer func(saved map[byte]bool) {
 		tc.ignoreFrames = saved
 	}(tc.ignoreFrames)
