@@ -20,6 +20,10 @@ type streamsState struct {
 	streams   map[streamID]*Stream
 	opened    [streamTypeCount]int64 // number of streams opened by us
 
+	// Peer configuration provided in transport parameters.
+	peerInitialMaxStreamDataRemote    [streamTypeCount]int64 // streams opened by us
+	peerInitialMaxStreamDataBidiLocal int64                  // streams opened by them
+
 	// Streams with frames to send are stored in a circular linked list.
 	// sendHead is the next stream to write, or nil if there are no streams
 	// with data to send. sendTail is the last stream to write.
@@ -55,15 +59,24 @@ func (c *Conn) NewSendOnlyStream(ctx context.Context) (*Stream, error) {
 	return c.newLocalStream(ctx, uniStream)
 }
 
-func (c *Conn) newLocalStream(ctx context.Context, typ streamType) (*Stream, error) {
+func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, error) {
 	// TODO: Stream limits.
 	c.streams.streamsMu.Lock()
 	defer c.streams.streamsMu.Unlock()
 
-	num := c.streams.opened[typ]
-	c.streams.opened[typ]++
+	num := c.streams.opened[styp]
+	c.streams.opened[styp]++
 
-	s := newStream(c, newStreamID(c.side, typ, num))
+	s := newStream(c, newStreamID(c.side, styp, num))
+	s.outmaxbuf = c.config.streamWriteBufferSize()
+	s.outwin = c.streams.peerInitialMaxStreamDataRemote[styp]
+	if styp == bidiStream {
+		s.inmaxbuf = c.config.streamReadBufferSize()
+		s.inwin = c.config.streamReadBufferSize()
+	}
+	s.inUnlock()
+	s.outUnlock()
+
 	c.streams.streams[s.id] = s
 	return s, nil
 }
@@ -117,7 +130,17 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 		c.abort(now, localTransportError(errStreamState))
 		return nil
 	}
+
 	s := newStream(c, id)
+	s.inmaxbuf = c.config.streamReadBufferSize()
+	s.inwin = c.config.streamReadBufferSize()
+	if id.streamType() == bidiStream {
+		s.outmaxbuf = c.config.streamWriteBufferSize()
+		s.outwin = c.streams.peerInitialMaxStreamDataBidiLocal
+	}
+	s.inUnlock()
+	s.outUnlock()
+
 	c.streams.streams[id] = s
 	c.streams.queue.put(s)
 	return s

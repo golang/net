@@ -20,13 +20,19 @@ type gate struct {
 	unset chan struct{}
 }
 
+// newGate returns a new, unlocked gate with the condition unset.
 func newGate() gate {
-	g := gate{
+	g := newLockedGate()
+	g.unlock(false)
+	return g
+}
+
+// newLocked gate returns a new, locked gate.
+func newLockedGate() gate {
+	return gate{
 		set:   make(chan struct{}, 1),
 		unset: make(chan struct{}, 1),
 	}
-	g.unset <- struct{}{}
-	return g
 }
 
 // lock acquires the gate unconditionally.

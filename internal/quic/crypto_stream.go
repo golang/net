@@ -118,28 +118,7 @@ func (s *cryptoStream) ackOrLoss(start, end int64, fate packetFate) {
 // copy the data it wants into position.
 func (s *cryptoStream) dataToSend(pto bool, f func(off, size int64) (sent int64)) {
 	for {
-		var off, size int64
-		if pto {
-			// On PTO, resend unacked data that fits in the probe packet.
-			// For simplicity, we send the range starting at s.out.start
-			// (which is definitely unacked, or else we would have discarded it)
-			// up to the next acked byte (if any).
-			//
-			// This may miss unacked data starting after that acked byte,
-			// but avoids resending data the peer has acked.
-			off = s.out.start
-			end := s.out.end
-			for _, r := range s.outacked {
-				if r.start > off {
-					end = r.start
-					break
-				}
-			}
-			size = end - s.out.start
-		} else if s.outunsent.numRanges() > 0 {
-			off = s.outunsent.min()
-			size = s.outunsent[0].size()
-		}
+		off, size := dataToSend(s.out, s.outunsent, s.outacked, pto)
 		if size == 0 {
 			return
 		}

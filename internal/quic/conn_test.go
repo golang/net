@@ -179,6 +179,8 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	peerProvidedParams := defaultTransportParameters()
 	for _, o := range opts {
 		switch o := o.(type) {
+		case func(*Config):
+			o(config)
 		case func(*tls.Config):
 			o(config.TLSConfig)
 		case func(p *transportParameters):
