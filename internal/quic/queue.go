@@ -45,8 +45,20 @@ func (q *queue[T]) put(v T) bool {
 // get removes the first item from the queue, blocking until ctx is done, an item is available,
 // or the queue is closed.
 func (q *queue[T]) get(ctx context.Context) (T, error) {
+	return q.getWithHooks(ctx, nil)
+}
+
+// getWithHooks is get, but uses testHooks for locking when non-nil.
+// This is a bit of an layer violation, but a simplification overall.
+func (q *queue[T]) getWithHooks(ctx context.Context, testHooks connTestHooks) (T, error) {
 	var zero T
-	if err := q.gate.waitAndLockContext(ctx); err != nil {
+	var err error
+	if testHooks != nil {
+		err = testHooks.waitAndLockGate(ctx, &q.gate)
+	} else {
+		err = q.gate.waitAndLockContext(ctx)
+	}
+	if err != nil {
 		return zero, err
 	}
 	defer q.unlock()

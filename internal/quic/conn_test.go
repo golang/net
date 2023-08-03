@@ -144,6 +144,8 @@ type testConn struct {
 
 	// Frame types to ignore in tests.
 	ignoreFrames map[byte]bool
+
+	asyncTestState
 }
 
 type keyData struct {
@@ -700,21 +702,26 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 // nextMessage is called by the Conn's event loop to request its next event.
 func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.Time, m any) {
 	tc.timer = timer
-	if !timer.IsZero() && !timer.After(tc.now) {
-		if timer.Equal(tc.timerLastFired) {
-			// If the connection timer fires at time T, the Conn should take some
-			// action to advance the timer into the future. If the Conn reschedules
-			// the timer for the same time, it isn't making progress and we have a bug.
-			tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.now, timer)
-		} else {
-			tc.timerLastFired = timer
-			return tc.now, timerEvent{}
+	for {
+		if !timer.IsZero() && !timer.After(tc.now) {
+			if timer.Equal(tc.timerLastFired) {
+				// If the connection timer fires at time T, the Conn should take some
+				// action to advance the timer into the future. If the Conn reschedules
+				// the timer for the same time, it isn't making progress and we have a bug.
+				tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.now, timer)
+			} else {
+				tc.timerLastFired = timer
+				return tc.now, timerEvent{}
+			}
 		}
-	}
-	select {
-	case m := <-msgc:
-		return tc.now, m
-	default:
+		select {
+		case m := <-msgc:
+			return tc.now, m
+		default:
+		}
+		if !tc.wakeAsync() {
+			break
+		}
 	}
 	// If the message queue is empty, then the conn is idle.
 	if tc.idlec != nil {

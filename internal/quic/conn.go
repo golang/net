@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -71,6 +72,7 @@ type connTestHooks interface {
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
 	handleTLSEvent(tls.QUICEvent)
 	newConnID(seq int64) ([]byte, error)
+	waitAndLockGate(ctx context.Context, g *gate) error
 }
 
 func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
@@ -297,6 +299,13 @@ func (c *Conn) runOnLoop(f func(now time.Time, c *Conn)) error {
 		return errors.New("quic: connection closed")
 	}
 	return nil
+}
+
+func (c *Conn) waitAndLockGate(ctx context.Context, g *gate) error {
+	if c.testHooks != nil {
+		return c.testHooks.waitAndLockGate(ctx, g)
+	}
+	return g.waitAndLockContext(ctx)
 }
 
 // abort terminates a connection with an error.

@@ -95,6 +95,35 @@ func TestStreamsAccept(t *testing.T) {
 	}
 }
 
+func TestStreamsBlockingAccept(t *testing.T) {
+	tc := newTestConn(t, serverSide)
+	tc.handshake()
+
+	a := runAsync(tc, func(ctx context.Context) (*Stream, error) {
+		return tc.conn.AcceptStream(ctx)
+	})
+	if _, err := a.result(); err != errNotDone {
+		tc.t.Fatalf("AcceptStream() = _, %v; want errNotDone", err)
+	}
+
+	sid := newStreamID(clientSide, bidiStream, 0)
+	tc.writeFrames(packetType1RTT,
+		debugFrameStream{
+			id: sid,
+		})
+
+	s, err := a.result()
+	if err != nil {
+		t.Fatalf("conn.AcceptStream() = _, %v, want stream", err)
+	}
+	if got, want := s.id, sid; got != want {
+		t.Fatalf("conn.AcceptStream() = stream %v, want %v", got, want)
+	}
+	if got, want := s.IsReadOnly(), false; got != want {
+		t.Fatalf("s.IsReadOnly() = %v, want %v", got, want)
+	}
+}
+
 func TestStreamsStreamNotCreated(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream that has
