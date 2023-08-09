@@ -163,6 +163,7 @@ func (c *Conn) queueStreamForSend(s *Stream) {
 		// Insert this stream at the end of the queue.
 		c.streams.sendTail.next = s
 		c.streams.sendTail = s
+		s.next = c.streams.sendHead
 	}
 	c.streams.needSend.Store(true)
 	c.wake()
@@ -202,7 +203,11 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 			}
 			return false
 		}
+		next := s.next
 		s.next = nil
+		if (next == s) != (s == c.streams.sendTail) {
+			panic("BUG: sendable stream list state is inconsistent")
+		}
 		if s == c.streams.sendTail {
 			// This was the last stream.
 			c.streams.sendHead = nil
@@ -211,9 +216,8 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 			return true
 		}
 		// We've sent all data for this stream, so remove it from the list.
-		c.streams.sendTail.next = s.next
-		c.streams.sendHead = s.next
-		s.next = nil
+		c.streams.sendTail.next = next
+		c.streams.sendHead = next
 	}
 }
 
