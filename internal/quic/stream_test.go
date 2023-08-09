@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -489,32 +490,76 @@ func TestStreamReceiveDuplicateDataDoesNotViolateLimits(t *testing.T) {
 	})
 }
 
-func TestStreamFinalSizeChangedByStreamFrame(t *testing.T) {
-	// "If a [...] STREAM frame is received indicating a change
-	// in the final size for the stream, an endpoint SHOULD
-	// respond with an error of type FINAL_SIZE_ERROR [...]"
-	// https://www.rfc-editor.org/rfc/rfc9000#section-4.5-5
+func finalSizeTest(t *testing.T, wantErr transportError, f func(tc *testConn, sid streamID) (finalSize int64), opts ...any) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		tc := newTestConn(t, serverSide)
-		tc.handshake()
-		sid := newStreamID(clientSide, styp, 0)
+		for _, test := range []struct {
+			name       string
+			finalFrame func(tc *testConn, sid streamID, finalSize int64)
+		}{{
+			name: "FIN",
+			finalFrame: func(tc *testConn, sid streamID, finalSize int64) {
+				tc.writeFrames(packetType1RTT, debugFrameStream{
+					id:  sid,
+					off: finalSize,
+					fin: true,
+				})
+			},
+		}, {
+			name: "RESET_STREAM",
+			finalFrame: func(tc *testConn, sid streamID, finalSize int64) {
+				tc.writeFrames(packetType1RTT, debugFrameResetStream{
+					id:        sid,
+					finalSize: finalSize,
+				})
+			},
+		}} {
+			t.Run(test.name, func(t *testing.T) {
+				tc := newTestConn(t, serverSide, opts...)
+				tc.handshake()
+				sid := newStreamID(clientSide, styp, 0)
+				finalSize := f(tc, sid)
+				test.finalFrame(tc, sid, finalSize)
+				tc.wantFrame("change in final size of stream is an error",
+					packetType1RTT, debugFrameConnectionCloseTransport{
+						code: wantErr,
+					},
+				)
+			})
+		}
+	})
+}
 
-		const write1size = 4
+func TestStreamFinalSizeChangedAfterFin(t *testing.T) {
+	// "If a RESET_STREAM or STREAM frame is received indicating a change
+	// in the final size for the stream, an endpoint SHOULD respond with
+	// an error of type FINAL_SIZE_ERROR [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000#section-4.5-5
+	finalSizeTest(t, errFinalSize, func(tc *testConn, sid streamID) (finalSize int64) {
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:  sid,
 			off: 10,
 			fin: true,
 		})
+		return 9
+	})
+}
+
+func TestStreamFinalSizeBeforePreviousData(t *testing.T) {
+	finalSizeTest(t, errFinalSize, func(tc *testConn, sid streamID) (finalSize int64) {
 		tc.writeFrames(packetType1RTT, debugFrameStream{
-			id:  sid,
-			off: 9,
-			fin: true,
+			id:   sid,
+			off:  10,
+			data: []byte{0},
 		})
-		tc.wantFrame("change in final size of stream is an error",
-			packetType1RTT, debugFrameConnectionCloseTransport{
-				code: errFinalSize,
-			},
-		)
+		return 9
+	})
+}
+
+func TestStreamFinalSizePastMaxStreamData(t *testing.T) {
+	finalSizeTest(t, errFlowControl, func(tc *testConn, sid streamID) (finalSize int64) {
+		return 11
+	}, func(c *Config) {
+		c.StreamReadBufferSize = 10
 	})
 }
 
@@ -637,6 +682,19 @@ func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFra
 	})
 }
 
+func TestStreamResetStreamInvalidState(t *testing.T) {
+	// "An endpoint that receives a RESET_STREAM frame for a send-only
+	// stream MUST terminate the connection with error STREAM_STATE_ERROR."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-19.4-3
+	testStreamSendFrameInvalidState(t, func(sid streamID) debugFrame {
+		return debugFrameResetStream{
+			id:        sid,
+			code:      0,
+			finalSize: 0,
+		}
+	})
+}
+
 func TestStreamStreamFrameInvalidState(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream
@@ -686,6 +744,20 @@ func testStreamReceiveFrameInvalidState(t *testing.T, f func(sid streamID) debug
 			packetType1RTT, debugFrameConnectionCloseTransport{
 				code: errStreamState,
 			})
+	})
+}
+
+func TestStreamStopSendingInvalidState(t *testing.T) {
+	// "Receiving a STOP_SENDING frame for a locally initiated stream
+	// that has not yet been created MUST be treated as a connection error
+	// of type STREAM_STATE_ERROR. An endpoint that receives a STOP_SENDING
+	// frame for a receive-only stream MUST terminate the connection with
+	// error STREAM_STATE_ERROR."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-19.5-2
+	testStreamReceiveFrameInvalidState(t, func(sid streamID) debugFrame {
+		return debugFrameStopSending{
+			id: sid,
+		}
 	})
 }
 
@@ -743,13 +815,47 @@ func TestStreamWriteToReadOnlyStream(t *testing.T) {
 	}
 }
 
-func TestStreamWriteToClosedStream(t *testing.T) {
-	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, func(p *transportParameters) {
-		p.initialMaxStreamsBidi = 1
-		p.initialMaxData = 1 << 20
-		p.initialMaxStreamDataBidiRemote = 1 << 20
+func TestStreamReadFromClosedStream(t *testing.T) {
+	tc, s := newTestConnAndRemoteStream(t, serverSide, bidiStream, permissiveTransportParameters)
+	s.CloseRead()
+	tc.wantFrame("CloseRead sends a STOP_SENDING frame",
+		packetType1RTT, debugFrameStopSending{
+			id: s.id,
+		})
+	wantErr := "read from closed stream"
+	if n, err := s.Read(make([]byte, 16)); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("s.Read() = %v, %v; want error %q", n, err, wantErr)
+	}
+	// Data which shows up after STOP_SENDING is discarded.
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   s.id,
+		data: []byte{1, 2, 3},
+		fin:  true,
 	})
-	s.Close()
+	if n, err := s.Read(make([]byte, 16)); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("s.Read() = %v, %v; want error %q", n, err, wantErr)
+	}
+}
+
+func TestStreamCloseReadWithAllDataReceived(t *testing.T) {
+	tc, s := newTestConnAndRemoteStream(t, serverSide, bidiStream, permissiveTransportParameters)
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   s.id,
+		data: []byte{1, 2, 3},
+		fin:  true,
+	})
+	s.CloseRead()
+	tc.wantIdle("CloseRead in Data Recvd state doesn't need to send STOP_SENDING")
+	// We had all the data for the stream, but CloseRead discarded it.
+	wantErr := "read from closed stream"
+	if n, err := s.Read(make([]byte, 16)); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("s.Read() = %v, %v; want error %q", n, err, wantErr)
+	}
+}
+
+func TestStreamWriteToClosedStream(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, permissiveTransportParameters)
+	s.CloseWrite()
 	tc.wantFrame("stream is opened after being closed",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,
@@ -758,6 +864,45 @@ func TestStreamWriteToClosedStream(t *testing.T) {
 			data: []byte{},
 		})
 	wantErr := "write to closed stream"
+	if n, err := s.Write([]byte{}); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("s.Write() = %v, %v; want error %q", n, err, wantErr)
+	}
+}
+
+func TestStreamResetBlockedStream(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, func(p *transportParameters) {
+		p.initialMaxStreamsBidi = 1
+		p.initialMaxData = 1 << 20
+		p.initialMaxStreamDataBidiRemote = 4
+	})
+	tc.ignoreFrame(frameTypeStreamDataBlocked)
+	writing := runAsync(tc, func(ctx context.Context) (int, error) {
+		return s.WriteContext(ctx, []byte{0, 1, 2, 3, 4, 5, 6, 7})
+	})
+	tc.wantFrame("stream writes data until blocked by flow control",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  0,
+			data: []byte{0, 1, 2, 3},
+		})
+	s.Reset(42)
+	tc.wantFrame("stream is reset",
+		packetType1RTT, debugFrameResetStream{
+			id:        s.id,
+			code:      42,
+			finalSize: 4,
+		})
+	wantErr := "write to reset stream"
+	if n, err := writing.result(); n != 4 || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("s.Write() interrupted by Reset: %v, %q; want 4, %q", n, err, wantErr)
+	}
+	tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
+		id:  s.id,
+		max: 1 << 20,
+	})
+	tc.wantIdle("flow control is available, but stream has been reset")
+	s.Reset(100)
+	tc.wantIdle("resetting stream a second time has no effect")
 	if n, err := s.Write([]byte{}); err == nil || !strings.Contains(err.Error(), wantErr) {
 		t.Errorf("s.Write() = %v, %v; want error %q", n, err, wantErr)
 	}
@@ -797,6 +942,209 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 	}
 }
 
+func TestStreamCloseWaitsForAcks(t *testing.T) {
+	ctx := canceledContext()
+	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
+	data := make([]byte, 100)
+	s.WriteContext(ctx, data)
+	tc.wantFrame("conn sends data for the stream",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data,
+		})
+	if err := s.CloseContext(ctx); err != context.Canceled {
+		t.Fatalf("s.Close() = %v, want context.Canceled (data not acked yet)", err)
+	}
+	tc.wantFrame("conn sends FIN for closed stream",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  int64(len(data)),
+			fin:  true,
+			data: []byte{},
+		})
+	closing := runAsync(tc, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, s.CloseContext(ctx)
+	})
+	if _, err := closing.result(); err != errNotDone {
+		t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
+	}
+	tc.writeFrames(packetType1RTT, debugFrameAck{
+		ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
+	})
+	if _, err := closing.result(); err != nil {
+		t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
+	}
+}
+
+func TestStreamCloseUnblocked(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		unblock func(tc *testConn, s *Stream)
+	}{{
+		name: "data received",
+		unblock: func(tc *testConn, s *Stream) {
+			tc.writeFrames(packetType1RTT, debugFrameAck{
+				ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
+			})
+		},
+	}, {
+		name: "stop sending received",
+		unblock: func(tc *testConn, s *Stream) {
+			tc.writeFrames(packetType1RTT, debugFrameStopSending{
+				id: s.id,
+			})
+		},
+	}, {
+		name: "stream reset",
+		unblock: func(tc *testConn, s *Stream) {
+			s.Reset(0)
+			tc.wait() // wait for test conn to process the Reset
+		},
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := canceledContext()
+			tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
+			data := make([]byte, 100)
+			s.WriteContext(ctx, data)
+			tc.wantFrame("conn sends data for the stream",
+				packetType1RTT, debugFrameStream{
+					id:   s.id,
+					data: data,
+				})
+			if err := s.CloseContext(ctx); err != context.Canceled {
+				t.Fatalf("s.Close() = %v, want context.Canceled (data not acked yet)", err)
+			}
+			tc.wantFrame("conn sends FIN for closed stream",
+				packetType1RTT, debugFrameStream{
+					id:   s.id,
+					off:  int64(len(data)),
+					fin:  true,
+					data: []byte{},
+				})
+			closing := runAsync(tc, func(ctx context.Context) (struct{}, error) {
+				return struct{}{}, s.CloseContext(ctx)
+			})
+			if _, err := closing.result(); err != errNotDone {
+				t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
+			}
+			test.unblock(tc, s)
+			if _, err := closing.result(); err != nil {
+				t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
+			}
+		})
+	}
+}
+
+func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		ctx := canceledContext()
+		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
+		data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data,
+		})
+		got := make([]byte, 4)
+		if n, err := s.ReadContext(ctx, got); n != len(got) || err != nil {
+			t.Fatalf("Read start of stream: got %v, %v; want %v, nil", n, err, len(got))
+		}
+		const sentCode = 42
+		tc.writeFrames(packetType1RTT, debugFrameResetStream{
+			id:        s.id,
+			finalSize: 20,
+			code:      sentCode,
+		})
+		wantErr := StreamErrorCode(sentCode)
+		if n, err := s.ReadContext(ctx, got); n != 0 || !errors.Is(err, wantErr) {
+			t.Fatalf("Read reset stream: got %v, %v; want 0, %v", n, err, wantErr)
+		}
+	})
+}
+
+func TestStreamPeerResetWakesBlockedRead(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
+		reader := runAsync(tc, func(ctx context.Context) (int, error) {
+			got := make([]byte, 4)
+			return s.ReadContext(ctx, got)
+		})
+		const sentCode = 42
+		tc.writeFrames(packetType1RTT, debugFrameResetStream{
+			id:        s.id,
+			finalSize: 20,
+			code:      sentCode,
+		})
+		wantErr := StreamErrorCode(sentCode)
+		if n, err := reader.result(); n != 0 || !errors.Is(err, wantErr) {
+			t.Fatalf("Read reset stream: got %v, %v; want 0, %v", n, err, wantErr)
+		}
+	})
+}
+
+func TestStreamPeerResetFollowedByData(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
+		tc.writeFrames(packetType1RTT, debugFrameResetStream{
+			id:        s.id,
+			finalSize: 4,
+			code:      1,
+		})
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: []byte{0, 1, 2, 3},
+		})
+		// Another reset with a different code, for good measure.
+		tc.writeFrames(packetType1RTT, debugFrameResetStream{
+			id:        s.id,
+			finalSize: 4,
+			code:      2,
+		})
+		wantErr := StreamErrorCode(1)
+		if n, err := s.Read(make([]byte, 16)); n != 0 || !errors.Is(err, wantErr) {
+			t.Fatalf("Read from reset stream: got %v, %v; want 0, %v", n, err, wantErr)
+		}
+	})
+}
+
+func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
+	// "An endpoint that receives a STOP_SENDING frame MUST send a RESET_STREAM frame if
+	// the stream is in the "Ready" or "Send" state."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-3.5-4
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndLocalStream(t, serverSide, styp, permissiveTransportParameters)
+		for i := 0; i < 4; i++ {
+			s.Write([]byte{byte(i)})
+			tc.wantFrame("write sends a STREAM frame to peer",
+				packetType1RTT, debugFrameStream{
+					id:   s.id,
+					off:  int64(i),
+					data: []byte{byte(i)},
+				})
+		}
+		tc.writeFrames(packetType1RTT, debugFrameStopSending{
+			id:   s.id,
+			code: 42,
+		})
+		tc.wantFrame("receiving STOP_SENDING causes stream reset",
+			packetType1RTT, debugFrameResetStream{
+				id:        s.id,
+				code:      42,
+				finalSize: 4,
+			})
+		if n, err := s.Write([]byte{0}); err == nil {
+			t.Errorf("s.Write() after STOP_SENDING = %v, %v; want error", n, err)
+		}
+		// This ack will result in some of the previous frames being marked as lost.
+		tc.writeFrames(packetType1RTT, debugFrameAck{
+			ranges: []i64range[packetNumber]{{
+				tc.sentFramePacket.num,
+				tc.sentFramePacket.num + 1,
+			}},
+		})
+		tc.wantIdle("lost STREAM frames for reset stream are not resent")
+	})
+}
+
 func newTestConnAndLocalStream(t *testing.T, side connSide, styp streamType, opts ...any) (*testConn, *Stream) {
 	t.Helper()
 	ctx := canceledContext()
@@ -824,4 +1172,14 @@ func newTestConnAndRemoteStream(t *testing.T, side connSide, styp streamType, op
 		t.Fatalf("conn.AcceptStream() = %v", err)
 	}
 	return tc, s
+}
+
+// permissiveTransportParameters may be passed as an option to newTestConn.
+func permissiveTransportParameters(p *transportParameters) {
+	p.initialMaxStreamsBidi = maxVarint
+	p.initialMaxStreamsUni = maxVarint
+	p.initialMaxData = maxVarint
+	p.initialMaxStreamDataBidiRemote = maxVarint
+	p.initialMaxStreamDataBidiLocal = maxVarint
+	p.initialMaxStreamDataUni = maxVarint
 }

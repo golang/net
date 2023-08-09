@@ -9,6 +9,7 @@ package quic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -20,28 +21,33 @@ type Stream struct {
 	//
 	// The gate condition is set if a read from the stream will not block,
 	// either because the stream has available data or because the read will fail.
-	ingate    gate
-	in        pipe            // received data
-	inwin     int64           // last MAX_STREAM_DATA sent to the peer
-	insendmax sentVal         // set when we should send MAX_STREAM_DATA to the peer
-	inmaxbuf  int64           // maximum amount of data we will buffer
-	insize    int64           // stream final size; -1 before this is known
-	inset     rangeset[int64] // received ranges
+	ingate      gate
+	in          pipe            // received data
+	inwin       int64           // last MAX_STREAM_DATA sent to the peer
+	insendmax   sentVal         // set when we should send MAX_STREAM_DATA to the peer
+	inmaxbuf    int64           // maximum amount of data we will buffer
+	insize      int64           // stream final size; -1 before this is known
+	inset       rangeset[int64] // received ranges
+	inclosed    sentVal         // set by CloseRead
+	inresetcode int64           // RESET_STREAM code received from the peer; -1 if not reset
 
 	// outgate's lock guards all send-related state.
 	//
 	// The gate condition is set if a write to the stream will not block,
 	// either because the stream has available flow control or because
 	// the write will fail.
-	outgate    gate
-	out        pipe            // buffered data to send
-	outwin     int64           // maximum MAX_STREAM_DATA received from the peer
-	outmaxbuf  int64           // maximum amount of data we will buffer
-	outunsent  rangeset[int64] // ranges buffered but not yet sent
-	outacked   rangeset[int64] // ranges sent and acknowledged
-	outopened  sentVal         // set if we should open the stream
-	outclosed  sentVal         // set by CloseWrite
-	outblocked sentVal         // set when a write to the stream is blocked by flow control
+	outgate      gate
+	out          pipe            // buffered data to send
+	outwin       int64           // maximum MAX_STREAM_DATA received from the peer
+	outmaxbuf    int64           // maximum amount of data we will buffer
+	outunsent    rangeset[int64] // ranges buffered but not yet sent
+	outacked     rangeset[int64] // ranges sent and acknowledged
+	outopened    sentVal         // set if we should open the stream
+	outclosed    sentVal         // set by CloseWrite
+	outblocked   sentVal         // set when a write to the stream is blocked by flow control
+	outreset     sentVal         // set by Reset
+	outresetcode uint64          // reset code to send in RESET_STREAM
+	outdone      chan struct{}   // closed when all data sent
 
 	prev, next *Stream // guarded by streamsState.sendMu
 }
@@ -54,11 +60,13 @@ type Stream struct {
 // unlocking outgate will set the stream writability state.)
 func newStream(c *Conn, id streamID) *Stream {
 	s := &Stream{
-		conn:    c,
-		id:      id,
-		insize:  -1, // -1 indicates the stream size is unknown
-		ingate:  newLockedGate(),
-		outgate: newLockedGate(),
+		conn:        c,
+		id:          id,
+		insize:      -1, // -1 indicates the stream size is unknown
+		inresetcode: -1, // -1 indicates no RESET_STREAM received
+		ingate:      newLockedGate(),
+		outgate:     newLockedGate(),
+		outdone:     make(chan struct{}),
 	}
 	return s
 }
@@ -87,7 +95,8 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 //
 // If the peer closes the stream cleanly, ReadContext returns io.EOF after
 // returning all data sent by the peer.
-// If the peer terminates reads abruptly, ReadContext returns StreamResetError.
+// If the peer aborts reads on the stream, ReadContext returns
+// an error wrapping StreamResetCode.
 func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	if s.IsWriteOnly() {
 		return 0, errors.New("read from write-only stream")
@@ -97,6 +106,12 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 		return 0, err
 	}
 	defer s.inUnlock()
+	if s.inresetcode != -1 {
+		return 0, fmt.Errorf("stream reset by peer: %w", StreamErrorCode(s.inresetcode))
+	}
+	if s.inclosed.isSet() {
+		return 0, errors.New("read from closed stream")
+	}
 	if s.insize == s.in.start {
 		return 0, io.EOF
 	}
@@ -145,26 +160,17 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 // Buffered data is only sent when the buffer is sufficiently full.
 // Call the Flush method to ensure buffered data is sent.
 //
-// If the peer aborts reads on the stream, ReadContext returns StreamResetError.
+// TODO: Implement Flush.
 func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) {
 	if s.IsReadOnly() {
 		return 0, errors.New("write to read-only stream")
 	}
 	canWrite := s.outgate.lock()
-	if s.outclosed.isSet() {
-		s.outUnlock()
-		return 0, errors.New("write to closed stream")
-	}
-	if len(b) == 0 {
-		// We aren't writing any data, but send a STREAM frame to open the stream
-		// if we haven't done so already.
-		s.outopened.set()
-	}
-	for len(b) > 0 {
+	for {
 		// The first time through this loop, we may or may not be write blocked.
 		// We exit the loop after writing all data, so on subsequent passes through
 		// the loop we are always write blocked.
-		if !canWrite {
+		if len(b) > 0 && !canWrite {
 			// We're blocked, either by flow control or by our own buffer limit.
 			// We either need the peer to extend our flow control window,
 			// or ack some of our outstanding packets.
@@ -181,6 +187,21 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 			// write blocked. (Unlike traditional condition variables, gates do not
 			// have spurious wakeups.)
 		}
+		if s.outreset.isSet() {
+			s.outUnlock()
+			return n, errors.New("write to reset stream")
+		}
+		if s.outclosed.isSet() {
+			s.outUnlock()
+			return n, errors.New("write to closed stream")
+		}
+		// We set outopened here rather than below,
+		// so if this is a zero-length write we still
+		// open the stream despite not writing any data to it.
+		s.outopened.set()
+		if len(b) == 0 {
+			break
+		}
 		s.outblocked.clear()
 		// Write limit is min(our own buffer limit, the peer-provided flow control window).
 		// This is a stream offset.
@@ -191,7 +212,6 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 		// Copy the data into the output buffer and mark it as unsent.
 		s.outunsent.add(s.out.end, s.out.end+nn)
 		s.out.writeAt(b[:nn], s.out.end)
-		s.outopened.set()
 		b = b[nn:]
 		n += int(nn)
 		// If we have bytes left to send, we're blocked.
@@ -218,9 +238,8 @@ func (s *Stream) Close() error {
 func (s *Stream) CloseContext(ctx context.Context) error {
 	s.CloseRead()
 	s.CloseWrite()
-	// TODO: wait for peer to acknowledge data
 	// TODO: Return code from peer's RESET_STREAM frame?
-	return nil
+	return s.conn.waitOnDone(ctx, s.outdone)
 }
 
 // CloseRead aborts reads on the stream.
@@ -233,7 +252,17 @@ func (s *Stream) CloseRead() {
 	if s.IsWriteOnly() {
 		return
 	}
-	// TODO: support read-closing streams with a STOP_SENDING frame
+	s.ingate.lock()
+	defer s.inUnlock()
+	if s.inset.isrange(0, s.insize) || s.inresetcode != -1 {
+		// We've already received all data from the peer,
+		// so there's no need to send STOP_SENDING.
+		// This is the same as saying we sent one and they got it.
+		s.inclosed.setReceived()
+	} else {
+		s.inclosed.set()
+	}
+	s.in.discardBefore(s.in.end)
 }
 
 // CloseWrite aborts writes on the stream.
@@ -251,6 +280,29 @@ func (s *Stream) CloseWrite() {
 	s.outclosed.set()
 }
 
+// Reset aborts writes on the stream and notifies the peer
+// that the stream was terminated abruptly.
+// Any blocked writes will be unblocked and return errors.
+//
+// Reset sends the application protocol error code to the peer.
+// It does not wait for the peer to acknowledge receipt of the error.
+// Use CloseContext to wait for the peer's acknowledgement.
+func (s *Stream) Reset(code uint64) {
+	s.outgate.lock()
+	defer s.outUnlock()
+	if s.outreset.isSet() {
+		return
+	}
+	// We could check here to see if the stream is closed and the
+	// peer has acked all the data and the FIN, but sending an
+	// extra RESET_STREAM in this case is harmless.
+	s.outreset.set()
+	s.outresetcode = code
+	s.out.discardBefore(s.out.end)
+	s.outunsent = rangeset[int64]{}
+	s.outblocked.clear()
+}
+
 // inUnlock unlocks s.ingate.
 // It sets the gate condition if reads from s will not block.
 // If s has receive-related frames to write, it notifies the Conn.
@@ -263,11 +315,13 @@ func (s *Stream) inUnlock() {
 // inUnlockNoQueue is inUnlock,
 // but reports whether s has frames to write rather than notifying the Conn.
 func (s *Stream) inUnlockNoQueue() (shouldSend bool) {
-	// TODO: STOP_SENDING
 	canRead := s.inset.contains(s.in.start) || // data available to read
-		s.insize == s.in.start // at EOF
-	s.ingate.unlock(canRead)
-	return s.insendmax.shouldSend() // STREAM_MAX_DATA
+		s.insize == s.in.start || // at EOF
+		s.inresetcode != -1 || // reset by peer
+		s.inclosed.isSet() // closed locally
+	defer s.ingate.unlock(canRead)
+	return s.insendmax.shouldSend() || // STREAM_MAX_DATA
+		s.inclosed.shouldSend() // STOP_SENDING
 }
 
 // outUnlock unlocks s.outgate.
@@ -282,10 +336,24 @@ func (s *Stream) outUnlock() {
 // outUnlockNoQueue is outUnlock,
 // but reports whether s has frames to write rather than notifying the Conn.
 func (s *Stream) outUnlockNoQueue() (shouldSend bool) {
+	isDone := s.outclosed.isReceived() && s.outacked.isrange(0, s.out.end) || // all data acked
+		s.outreset.isSet() // reset locally
+	if isDone {
+		select {
+		case <-s.outdone:
+		default:
+			close(s.outdone)
+		}
+	}
 	lim := min(s.out.start+s.outmaxbuf, s.outwin)
 	canWrite := lim > s.out.end || // available flow control
-		s.outclosed.isSet() // closed
-	s.outgate.unlock(canWrite)
+		s.outclosed.isSet() || // closed locally
+		s.outreset.isSet() // reset locally
+	defer s.outgate.unlock(canWrite)
+	if s.outreset.isSet() {
+		// If the stream is reset locally, the only frame we'll send is RESET_STREAM.
+		return s.outreset.shouldSend()
+	}
 	return len(s.outunsent) > 0 || // STREAM frame with data
 		s.outclosed.shouldSend() || // STREAM frame with FIN bit
 		s.outopened.shouldSend() || // STREAM frame with no data
@@ -297,6 +365,44 @@ func (s *Stream) handleData(off int64, b []byte, fin bool) error {
 	s.ingate.lock()
 	defer s.inUnlock()
 	end := off + int64(len(b))
+	if err := s.checkStreamBounds(end, fin); err != nil {
+		return err
+	}
+	if s.inclosed.isSet() || s.inresetcode != -1 {
+		// The user read-closed the stream, or the peer reset it.
+		// Either way, we can discard this frame.
+		return nil
+	}
+	s.in.writeAt(b, off)
+	s.inset.add(off, end)
+	if fin {
+		s.insize = end
+		// The peer has enough flow control window to send the entire stream.
+		s.insendmax.clear()
+	}
+	return nil
+}
+
+// handleReset handles a RESET_STREAM frame.
+func (s *Stream) handleReset(code uint64, finalSize int64) error {
+	s.ingate.lock()
+	defer s.inUnlock()
+	const fin = true
+	if err := s.checkStreamBounds(finalSize, fin); err != nil {
+		return err
+	}
+	if s.inresetcode != -1 {
+		// The stream was already reset.
+		return nil
+	}
+	s.in.discardBefore(s.in.end)
+	s.inresetcode = int64(code)
+	s.insize = finalSize
+	return nil
+}
+
+// checkStreamBounds validates the stream offset in a STREAM or RESET_STREAM frame.
+func (s *Stream) checkStreamBounds(end int64, fin bool) error {
 	if end > s.inwin {
 		// The peer sent us data past the maximum flow control window we gave them.
 		return localTransportError(errFlowControl)
@@ -305,17 +411,22 @@ func (s *Stream) handleData(off int64, b []byte, fin bool) error {
 		// The peer sent us data past the final size of the stream they previously gave us.
 		return localTransportError(errFinalSize)
 	}
-	s.in.writeAt(b, off)
-	s.inset.add(off, end)
-	if fin {
-		if s.insize != -1 && s.insize != end {
-			// The peer changed the final size of the stream.
-			return localTransportError(errFinalSize)
-		}
-		s.insize = end
-		// The peer has enough flow control window to send the entire stream.
-		s.insendmax.clear()
+	if fin && s.insize != -1 && end != s.insize {
+		// The peer changed the final size of the stream.
+		return localTransportError(errFinalSize)
 	}
+	if fin && end < s.in.end {
+		// The peer has previously sent us data past the final size.
+		return localTransportError(errFinalSize)
+	}
+	return nil
+}
+
+// handleStopSending handles a STOP_SENDING frame.
+func (s *Stream) handleStopSending(code uint64) error {
+	// Peer requests that we reset this stream.
+	// https://www.rfc-editor.org/rfc/rfc9000#section-3.5-4
+	s.Reset(code)
 	return nil
 }
 
@@ -336,6 +447,14 @@ func (s *Stream) ackOrLoss(pnum packetNumber, ftype byte, fate packetFate) {
 	// Frames which are always the same (STOP_SENDING, RESET_STREAM)
 	// can be marked as received if any packet carrying this frame is acked.
 	switch ftype {
+	case frameTypeResetStream:
+		s.outgate.lock()
+		s.outreset.ackOrLoss(pnum, fate)
+		s.outUnlock()
+	case frameTypeStopSending:
+		s.ingate.lock()
+		s.inclosed.ackOrLoss(pnum, fate)
+		s.inUnlock()
 	case frameTypeMaxStreamData:
 		s.ingate.lock()
 		s.insendmax.ackLatestOrLoss(pnum, fate)
@@ -345,7 +464,6 @@ func (s *Stream) ackOrLoss(pnum packetNumber, ftype byte, fate packetFate) {
 		s.outblocked.ackLatestOrLoss(pnum, fate)
 		s.outUnlock()
 	default:
-		// TODO: Handle STOP_SENDING, RESET_STREAM.
 		panic("unhandled frame type")
 	}
 }
@@ -357,6 +475,10 @@ func (s *Stream) ackOrLossData(pnum packetNumber, start, end int64, fin bool, fa
 	s.outopened.ackOrLoss(pnum, fate)
 	if fin {
 		s.outclosed.ackOrLoss(pnum, fate)
+	}
+	if s.outreset.isSet() {
+		// If the stream has been reset, we don't care any more.
+		return
 	}
 	switch fate {
 	case packetAcked:
@@ -385,6 +507,15 @@ func (s *Stream) ackOrLossData(pnum packetNumber, start, end int64, fin bool, fa
 func (s *Stream) appendInFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
 	s.ingate.lock()
 	defer s.inUnlockNoQueue()
+	if s.inclosed.shouldSendPTO(pto) {
+		// We don't currently have an API for setting the error code.
+		// Just send zero.
+		code := uint64(0)
+		if !w.appendStopSendingFrame(s.id, code) {
+			return false
+		}
+		s.inclosed.setSent(pnum)
+	}
 	// TODO: STOP_SENDING
 	if s.insendmax.shouldSendPTO(pto) {
 		// MAX_STREAM_DATA
@@ -406,7 +537,17 @@ func (s *Stream) appendInFrames(w *packetWriter, pnum packetNumber, pto bool) bo
 func (s *Stream) appendOutFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
 	s.outgate.lock()
 	defer s.outUnlockNoQueue()
-	// TODO: RESET_STREAM
+	if s.outreset.isSet() {
+		// RESET_STREAM
+		if s.outreset.shouldSendPTO(pto) {
+			if !w.appendResetStreamFrame(s.id, s.outresetcode, s.out.end) {
+				return false
+			}
+			s.outreset.setSent(pnum)
+			s.frameOpensStream(pnum)
+		}
+		return true
+	}
 	if s.outblocked.shouldSendPTO(pto) {
 		// STREAM_DATA_BLOCKED
 		if !w.appendStreamDataBlockedFrame(s.id, s.out.end) {

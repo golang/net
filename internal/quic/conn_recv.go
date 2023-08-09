@@ -161,12 +161,12 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			if !frameOK(c, ptype, __01) {
 				return
 			}
-			_, _, _, n = consumeResetStreamFrame(payload)
+			n = c.handleResetStreamFrame(now, space, payload)
 		case frameTypeStopSending:
 			if !frameOK(c, ptype, __01) {
 				return
 			}
-			_, _, n = consumeStopSendingFrame(payload)
+			n = c.handleStopSendingFrame(now, space, payload)
 		case frameTypeCrypto:
 			if !frameOK(c, ptype, IH_1) {
 				return
@@ -286,6 +286,32 @@ func (c *Conn) handleMaxStreamDataFrame(now time.Time, payload []byte) int {
 		if err := s.handleMaxStreamData(maxStreamData); err != nil {
 			c.abort(now, err)
 			return -1
+		}
+	}
+	return n
+}
+
+func (c *Conn) handleResetStreamFrame(now time.Time, space numberSpace, payload []byte) int {
+	id, code, finalSize, n := consumeResetStreamFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	if s := c.streamForFrame(now, id, recvStream); s != nil {
+		if err := s.handleReset(code, finalSize); err != nil {
+			c.abort(now, err)
+		}
+	}
+	return n
+}
+
+func (c *Conn) handleStopSendingFrame(now time.Time, space numberSpace, payload []byte) int {
+	id, code, n := consumeStopSendingFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	if s := c.streamForFrame(now, id, sendStream); s != nil {
+		if err := s.handleStopSending(code); err != nil {
+			c.abort(now, err)
 		}
 	}
 	return n

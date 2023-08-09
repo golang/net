@@ -44,7 +44,9 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 		case frameTypeCrypto:
 			start, end := sent.nextRange()
 			c.crypto[space].ackOrLoss(start, end, fate)
-		case frameTypeMaxStreamData,
+		case frameTypeResetStream,
+			frameTypeStopSending,
+			frameTypeMaxStreamData,
 			frameTypeStreamDataBlocked:
 			id := streamID(sent.nextInt())
 			s := c.streamForID(id)

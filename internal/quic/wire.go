@@ -8,7 +8,10 @@ package quic
 
 import "encoding/binary"
 
-const maxVarintSize = 8
+const (
+	maxVarintSize = 8 // encoded size in bytes
+	maxVarint     = (1 << 62) - 1
+)
 
 // consumeVarint parses a variable-length integer, reporting its length.
 // It returns a negative length upon an error.

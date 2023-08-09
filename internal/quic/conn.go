@@ -73,6 +73,7 @@ type connTestHooks interface {
 	handleTLSEvent(tls.QUICEvent)
 	newConnID(seq int64) ([]byte, error)
 	waitAndLockGate(ctx context.Context, g *gate) error
+	waitOnDone(ctx context.Context, ch <-chan struct{}) error
 }
 
 func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
@@ -309,6 +310,26 @@ func (c *Conn) waitAndLockGate(ctx context.Context, g *gate) error {
 		return c.testHooks.waitAndLockGate(ctx, g)
 	}
 	return g.waitAndLockContext(ctx)
+}
+
+func (c *Conn) waitOnDone(ctx context.Context, ch <-chan struct{}) error {
+	if c.testHooks != nil {
+		return c.testHooks.waitOnDone(ctx, ch)
+	}
+	// Check the channel before the context.
+	// We always prefer to return results when available,
+	// even when provided with an already-canceled context.
+	select {
+	case <-ch:
+		return nil
+	default:
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
 }
 
 // abort terminates a connection with an error.

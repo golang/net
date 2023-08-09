@@ -82,10 +82,11 @@ func (a *asyncOp[T]) result() (v T, err error) {
 }
 
 // A blockedAsync is a blocked async operation.
-//
-// Currently, the only type of blocked operation is one waiting on a gate.
 type blockedAsync struct {
-	g     *gate
+	// Exactly one of these will be set, depending on the type of blocked operation.
+	g  *gate
+	ch <-chan struct{}
+
 	donec chan struct{} // closed when the operation is unblocked
 }
 
@@ -133,6 +134,25 @@ func (as *asyncTestState) waitAndLockGate(ctx context.Context, g *gate) error {
 		// Gate can be acquired without blocking.
 		return nil
 	}
+	return as.block(ctx, &blockedAsync{
+		g: g,
+	})
+}
+
+// waitOnDone replaces receiving from a chan struct{} in tests.
+func (as *asyncTestState) waitOnDone(ctx context.Context, ch <-chan struct{}) error {
+	select {
+	case <-ch:
+		return nil // read without blocking
+	default:
+	}
+	return as.block(ctx, &blockedAsync{
+		ch: ch,
+	})
+}
+
+// block waits for a blocked async operation to complete.
+func (as *asyncTestState) block(ctx context.Context, b *blockedAsync) error {
 	if err := ctx.Err(); err != nil {
 		// Context has already expired.
 		return err
@@ -144,12 +164,9 @@ func (as *asyncTestState) waitAndLockGate(ctx context.Context, g *gate) error {
 		// which may have unpredictable results.
 		panic("blocking async point with unexpected Context")
 	}
+	b.donec = make(chan struct{})
 	// Record this as a pending blocking operation.
 	as.mu.Lock()
-	b := &blockedAsync{
-		g:     g,
-		donec: make(chan struct{}),
-	}
 	as.blocked[b] = struct{}{}
 	as.mu.Unlock()
 	// Notify the creator of the operation that we're blocked,
@@ -169,8 +186,19 @@ func (as *asyncTestState) wakeAsync() bool {
 	as.mu.Lock()
 	var woken *blockedAsync
 	for w := range as.blocked {
-		if w.g.lockIfSet() {
-			woken = w
+		switch {
+		case w.g != nil:
+			if w.g.lockIfSet() {
+				woken = w
+			}
+		case w.ch != nil:
+			select {
+			case <-w.ch:
+				woken = w
+			default:
+			}
+		}
+		if woken != nil {
 			delete(as.blocked, woken)
 			break
 		}

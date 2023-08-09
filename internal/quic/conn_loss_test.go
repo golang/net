@@ -75,7 +75,58 @@ func (tc *testConn) triggerLossOrPTO(ptype packetType, pto bool) {
 	})
 }
 
-func TestLostCRYPTOFrame(t *testing.T) {
+func TestLostResetStreamFrame(t *testing.T) {
+	// "Cancellation of stream transmission, as carried in a RESET_STREAM frame,
+	// is sent until acknowledged or until all stream data is acknowledged by the peer [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.4
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
+		tc.ignoreFrame(frameTypeAck)
+
+		s.Reset(1)
+		tc.wantFrame("reset stream",
+			packetType1RTT, debugFrameResetStream{
+				id:   s.id,
+				code: 1,
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resent RESET_STREAM frame",
+			packetType1RTT, debugFrameResetStream{
+				id:   s.id,
+				code: 1,
+			})
+	})
+}
+
+func TestLostStopSendingFrame(t *testing.T) {
+	// "[...] a request to cancel stream transmission, as encoded in a STOP_SENDING frame,
+	// is sent until the receiving part of the stream enters either a "Data Recvd" or
+	// "Reset Recvd" state [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.5
+	//
+	// Technically, we can stop sending a STOP_SENDING frame if the peer sends
+	// us all the data for the stream or resets it. We don't bother tracking this,
+	// however, so we'll keep sending the frame until it is acked. This is harmless.
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, permissiveTransportParameters)
+		tc.ignoreFrame(frameTypeAck)
+
+		s.CloseRead()
+		tc.wantFrame("stream is read-closed",
+			packetType1RTT, debugFrameStopSending{
+				id: s.id,
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resent STOP_SENDING frame",
+			packetType1RTT, debugFrameStopSending{
+				id: s.id,
+			})
+	})
+}
+
+func TestLostCryptoFrame(t *testing.T) {
 	// "Data sent in CRYPTO frames is retransmitted [...] until all data has been acknowledged."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.1
 	lostFrameTest(t, func(t *testing.T, pto bool) {
@@ -176,7 +227,7 @@ func TestLostStreamWithData(t *testing.T) {
 				off:  4,
 				data: data[4:8],
 			})
-		s.Close()
+		s.CloseWrite()
 		tc.wantFrame("send FIN",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
