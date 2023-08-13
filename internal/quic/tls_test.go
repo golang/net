@@ -266,7 +266,7 @@ func (tc *testConn) uncheckedHandshake() {
 			debugFrameAck{
 				ackDelay: unscaledAckDelayFromDuration(
 					maxAckDelay, ackDelayExponent),
-				ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
+				ranges: []i64range[packetNumber]{{0, tc.lastPacket.num + 1}},
 			})
 	} else {
 		tc.wantIdle("initial frames are ignored")

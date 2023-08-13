@@ -264,7 +264,7 @@ func TestConnIDPeerRequestsRetirement(t *testing.T) {
 		packetType1RTT, debugFrameRetireConnectionID{
 			seq: 0,
 		})
-	if got, want := tc.sentFramePacket.dstConnID, testPeerConnID(1); !bytes.Equal(got, want) {
+	if got, want := tc.lastPacket.dstConnID, testPeerConnID(1); !bytes.Equal(got, want) {
 		t.Fatalf("used destination conn id {%x}, want {%x}", got, want)
 	}
 }
@@ -467,7 +467,7 @@ func TestConnIDUsePreferredAddressConnID(t *testing.T) {
 		packetType1RTT, debugFrameRetireConnectionID{
 			seq: 0,
 		})
-	if got, want := tc.sentFramePacket.dstConnID, cid; !bytes.Equal(got, want) {
+	if got, want := tc.lastPacket.dstConnID, cid; !bytes.Equal(got, want) {
 		t.Fatalf("used destination conn id {%x}, want {%x} from preferred address transport parameter", got, want)
 	}
 }

@@ -193,9 +193,7 @@ func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
 		tc.wantIdle("no STREAM_DATA_BLOCKED, we're blocked locally not by flow control")
 
 		// ACK for previously-sent data allows making more progress.
-		tc.writeFrames(packetType1RTT, debugFrameAck{
-			ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
-		})
+		tc.writeAckForAll()
 		tc.wantFrame("ACK for previous data allows making progress",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -968,9 +966,7 @@ func TestStreamCloseWaitsForAcks(t *testing.T) {
 	if _, err := closing.result(); err != errNotDone {
 		t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
 	}
-	tc.writeFrames(packetType1RTT, debugFrameAck{
-		ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
-	})
+	tc.writeAckForAll()
 	if _, err := closing.result(); err != nil {
 		t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
 	}
@@ -983,9 +979,7 @@ func TestStreamCloseUnblocked(t *testing.T) {
 	}{{
 		name: "data received",
 		unblock: func(tc *testConn, s *Stream) {
-			tc.writeFrames(packetType1RTT, debugFrameAck{
-				ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
-			})
+			tc.writeAckForAll()
 		},
 	}, {
 		name: "stop sending received",
@@ -1135,12 +1129,7 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 			t.Errorf("s.Write() after STOP_SENDING = %v, %v; want error", n, err)
 		}
 		// This ack will result in some of the previous frames being marked as lost.
-		tc.writeFrames(packetType1RTT, debugFrameAck{
-			ranges: []i64range[packetNumber]{{
-				tc.sentFramePacket.num,
-				tc.sentFramePacket.num + 1,
-			}},
-		})
+		tc.writeAckForLatest()
 		tc.wantIdle("lost STREAM frames for reset stream are not resent")
 	})
 }

@@ -271,12 +271,7 @@ func TestLostStreamPartialLoss(t *testing.T) {
 				data: data[i : i+1],
 			})
 		if i%2 == 0 {
-			num := tc.sentFramePacket.num
-			tc.writeFrames(packetType1RTT, debugFrameAck{
-				ranges: []i64range[packetNumber]{
-					{num, num + 1},
-				},
-			})
+			tc.writeAckForLatest()
 		}
 	}
 	const pto = false

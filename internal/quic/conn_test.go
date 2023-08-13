@@ -137,10 +137,10 @@ type testConn struct {
 
 	// Datagrams, packets, and frames sent by the conn,
 	// but not yet processed by the test.
-	sentDatagrams   [][]byte
-	sentPackets     []*testPacket
-	sentFrames      []debugFrame
-	sentFramePacket *testPacket
+	sentDatagrams [][]byte
+	sentPackets   []*testPacket
+	sentFrames    []debugFrame
+	lastPacket    *testPacket
 
 	// Frame types to ignore in tests.
 	ignoreFrames map[byte]bool
@@ -388,6 +388,28 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 	tc.write(d)
 }
 
+// writeAckForAll sends the Conn a datagram containing an ack for all packets up to the
+// last one received.
+func (tc *testConn) writeAckForAll() {
+	if tc.lastPacket == nil {
+		return
+	}
+	tc.writeFrames(tc.lastPacket.ptype, debugFrameAck{
+		ranges: []i64range[packetNumber]{{0, tc.lastPacket.num + 1}},
+	})
+}
+
+// writeAckForLatest sends the Conn a datagram containing an ack for the
+// most recent packet received.
+func (tc *testConn) writeAckForLatest() {
+	if tc.lastPacket == nil {
+		return
+	}
+	tc.writeFrames(tc.lastPacket.ptype, debugFrameAck{
+		ranges: []i64range[packetNumber]{{tc.lastPacket.num, tc.lastPacket.num + 1}},
+	})
+}
+
 // ignoreFrame hides frames of the given type sent by the Conn.
 func (tc *testConn) ignoreFrame(frameType byte) {
 	tc.ignoreFrames[frameType] = true
@@ -423,6 +445,7 @@ func (tc *testConn) readPacket() *testPacket {
 	}
 	p := tc.sentPackets[0]
 	tc.sentPackets = tc.sentPackets[1:]
+	tc.lastPacket = p
 	return p
 }
 
@@ -435,12 +458,11 @@ func (tc *testConn) readFrame() (debugFrame, packetType) {
 		if p == nil {
 			return nil, packetTypeInvalid
 		}
-		tc.sentFramePacket = p
 		tc.sentFrames = p.frames
 	}
 	f := tc.sentFrames[0]
 	tc.sentFrames = tc.sentFrames[1:]
-	return f, tc.sentFramePacket.ptype
+	return f, tc.lastPacket.ptype
 }
 
 // wantDatagram indicates that we expect the Conn to send a datagram.
