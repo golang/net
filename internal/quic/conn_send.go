@@ -224,27 +224,12 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 
 	// TODO: Add all the other frames we can send.
 
-	// HANDSHAKE_DONE
-	if c.handshakeConfirmed.shouldSendPTO(pto) {
-		if !c.w.appendHandshakeDoneFrame() {
-			return
-		}
-		c.handshakeConfirmed.setSent(pnum)
-	}
-
 	// CRYPTO
 	c.crypto[space].dataToSend(pto, func(off, size int64) int64 {
 		b, _ := c.w.appendCryptoFrame(off, int(size))
 		c.crypto[space].sendData(off, b)
 		return int64(len(b))
 	})
-
-	// NEW_CONNECTION_ID, RETIRE_CONNECTION_ID
-	if space == appDataSpace {
-		if !c.connIDState.appendFrames(&c.w, pnum, pto) {
-			return
-		}
-	}
 
 	// Test-only PING frames.
 	if space == c.testSendPingSpace && c.testSendPing.shouldSendPTO(pto) {
@@ -254,11 +239,26 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 		c.testSendPing.setSent(pnum)
 	}
 
-	// All stream-related frames. This should come last in the packet,
-	// so large amounts of STREAM data don't crowd out other frames
-	// we may need to send.
-	if !c.appendStreamFrames(&c.w, pnum, pto) {
-		return
+	if space == appDataSpace {
+		// HANDSHAKE_DONE
+		if c.handshakeConfirmed.shouldSendPTO(pto) {
+			if !c.w.appendHandshakeDoneFrame() {
+				return
+			}
+			c.handshakeConfirmed.setSent(pnum)
+		}
+
+		// NEW_CONNECTION_ID, RETIRE_CONNECTION_ID
+		if !c.connIDState.appendFrames(&c.w, pnum, pto) {
+			return
+		}
+
+		// All stream-related frames. This should come last in the packet,
+		// so large amounts of STREAM data don't crowd out other frames
+		// we may need to send.
+		if !c.appendStreamFrames(&c.w, pnum, pto) {
+			return
+		}
 	}
 
 	// If this is a PTO probe and we haven't added an ack-eliciting frame yet,
