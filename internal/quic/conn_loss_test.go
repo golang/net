@@ -289,18 +289,58 @@ func TestLostStreamPartialLoss(t *testing.T) {
 	tc.wantIdle("no more frames sent after packet loss")
 }
 
+func TestLostMaxDataFrame(t *testing.T) {
+	// "An updated value is sent in a MAX_DATA frame if the packet
+	// containing the most recently sent MAX_DATA frame is declared lost [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.7
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		const maxWindowSize = 32
+		buf := make([]byte, maxWindowSize)
+		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
+			c.MaxConnReadBufferSize = 32
+		})
+
+		// We send MAX_DATA = 63.
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  0,
+			data: make([]byte, maxWindowSize),
+		})
+		if n, err := s.Read(buf[:maxWindowSize-1]); err != nil || n != maxWindowSize-1 {
+			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, maxWindowSize-1)
+		}
+		tc.wantFrame("conn window is extended after reading data",
+			packetType1RTT, debugFrameMaxData{
+				max: (maxWindowSize * 2) - 1,
+			})
+
+		// MAX_DATA = 64, which is only one more byte, so we don't send the frame.
+		if n, err := s.Read(buf); err != nil || n != 1 {
+			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, 1)
+		}
+		tc.wantIdle("read doesn't extend window enough to send another MAX_DATA")
+
+		// The MAX_DATA = 63 packet was lost, so we send 64.
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("resent MAX_DATA includes most current value",
+			packetType1RTT, debugFrameMaxData{
+				max: maxWindowSize * 2,
+			})
+	})
+}
+
 func TestLostMaxStreamDataFrame(t *testing.T) {
 	// "[...] an updated value is sent when the packet containing
 	// the most recent MAX_STREAM_DATA frame for a stream is lost"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.8
 	lostFrameTest(t, func(t *testing.T, pto bool) {
-		const maxWindowSize = 10
+		const maxWindowSize = 32
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
 			c.MaxStreamReadBufferSize = maxWindowSize
 		})
 
-		// We send MAX_STREAM_DATA = 19.
+		// We send MAX_STREAM_DATA = 63.
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:   s.id,
 			off:  0,
@@ -315,13 +355,13 @@ func TestLostMaxStreamDataFrame(t *testing.T) {
 				max: (maxWindowSize * 2) - 1,
 			})
 
-		// MAX_STREAM_DATA = 20, which is only one more byte, so we don't send the frame.
+		// MAX_STREAM_DATA = 64, which is only one more byte, so we don't send the frame.
 		if n, err := s.Read(buf); err != nil || n != 1 {
 			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, 1)
 		}
 		tc.wantIdle("read doesn't extend window enough to send another MAX_STREAM_DATA")
 
-		// The MAX_STREAM_DATA = 19 packet was lost, so we send 20.
+		// The MAX_STREAM_DATA = 63 packet was lost, so we send 64.
 		tc.triggerLossOrPTO(packetType1RTT, pto)
 		tc.wantFrame("resent MAX_STREAM_DATA includes most current value",
 			packetType1RTT, debugFrameMaxStreamData{

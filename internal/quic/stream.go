@@ -156,9 +156,10 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	start := s.in.start
 	end := start + int64(len(b))
 	s.in.copy(start, b)
+	s.conn.handleStreamBytesReadOffLoop(int64(len(b)))
 	s.in.discardBefore(end)
 	if s.insize == -1 || s.insize > s.inwin {
-		if shouldUpdateFlowControl(s.inwin-s.in.start, s.inmaxbuf) {
+		if shouldUpdateFlowControl(s.inmaxbuf, s.in.start+s.inmaxbuf-s.inwin) {
 			// Update stream flow control with a STREAM_MAX_DATA frame.
 			s.insendmax.setUnsent()
 		}
@@ -173,10 +174,8 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 //
 // We want to balance keeping the peer well-supplied with flow control with not sending
 // many small updates.
-func shouldUpdateFlowControl(curwin, maxwin int64) bool {
-	// Update flow control if doing so gives the peer at least 64k tokens,
-	// or if it will double the current window.
-	return maxwin-curwin >= 64<<10 || curwin*2 < maxwin
+func shouldUpdateFlowControl(maxWindow, addedWindow int64) bool {
+	return addedWindow >= maxWindow/8
 }
 
 // Write writes data to the stream.
@@ -295,6 +294,7 @@ func (s *Stream) CloseRead() {
 	} else {
 		s.inclosed.set()
 	}
+	s.conn.handleStreamBytesReadOffLoop(s.in.end - s.in.start)
 	s.in.discardBefore(s.in.end)
 }
 
@@ -470,6 +470,12 @@ func (s *Stream) handleData(off int64, b []byte, fin bool) error {
 		// Either way, we can discard this frame.
 		return nil
 	}
+	if s.insize == -1 && end > s.in.end {
+		added := end - s.in.end
+		if err := s.conn.handleStreamBytesReceived(added); err != nil {
+			return err
+		}
+	}
 	s.in.writeAt(b, off)
 	s.inset.add(off, end)
 	if fin {
@@ -492,6 +498,13 @@ func (s *Stream) handleReset(code uint64, finalSize int64) error {
 		// The stream was already reset.
 		return nil
 	}
+	if s.insize == -1 {
+		added := finalSize - s.in.end
+		if err := s.conn.handleStreamBytesReceived(added); err != nil {
+			return err
+		}
+	}
+	s.conn.handleStreamBytesReadOnLoop(finalSize - s.in.start)
 	s.in.discardBefore(s.in.end)
 	s.inresetcode = int64(code)
 	s.insize = finalSize

@@ -41,6 +41,12 @@ type Config struct {
 	// If zero, the default value of 1MiB is used.
 	// If negative, the limit is zero.
 	MaxStreamWriteBufferSize int64
+
+	// MaxConnReadBufferSize is the maximum amount of data sent by the peer that a
+	// connection will buffer for reading, across all streams.
+	// If zero, the default value of 1MiB is used.
+	// If negative, the limit is zero.
+	MaxConnReadBufferSize int64
 }
 
 func configDefault(v, def, limit int64) int64 {
@@ -68,4 +74,8 @@ func (c *Config) maxStreamReadBufferSize() int64 {
 
 func (c *Config) maxStreamWriteBufferSize() int64 {
 	return configDefault(c.MaxStreamWriteBufferSize, 1<<20, maxVarint)
+}
+
+func (c *Config) maxConnReadBufferSize() int64 {
+	return configDefault(c.MaxConnReadBufferSize, 1<<20, maxVarint)
 }

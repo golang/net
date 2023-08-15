@@ -117,6 +117,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		maxUDPPayloadSize:              maxUDPPayloadSize,
 		maxAckDelay:                    maxAckDelay,
 		disableActiveMigration:         true,
+		initialMaxData:                 config.maxConnReadBufferSize(),
 		initialMaxStreamDataBidiLocal:  config.maxStreamReadBufferSize(),
 		initialMaxStreamDataBidiRemote: config.maxStreamReadBufferSize(),
 		initialMaxStreamDataUni:        config.maxStreamReadBufferSize(),

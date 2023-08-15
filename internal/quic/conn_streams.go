@@ -27,6 +27,9 @@ type streamsState struct {
 	peerInitialMaxStreamDataRemote    [streamTypeCount]int64 // streams opened by us
 	peerInitialMaxStreamDataBidiLocal int64                  // streams opened by them
 
+	// Connection-level flow control.
+	inflow connInflow
+
 	// Streams with frames to send are stored in a circular linked list.
 	// sendHead is the next stream to write, or nil if there are no streams
 	// with data to send. sendTail is the last stream to write.
@@ -43,6 +46,7 @@ func (c *Conn) streamsInit() {
 	c.streams.localLimit[uniStream].init()
 	c.streams.remoteLimit[bidiStream].init(c.config.maxBidiRemoteStreams())
 	c.streams.remoteLimit[uniStream].init(c.config.maxUniRemoteStreams())
+	c.inflowInit()
 }
 
 // AcceptStream waits for and returns the next stream created by the peer.
@@ -212,6 +216,11 @@ func (c *Conn) queueStreamForSend(s *Stream) {
 // It returns true if no more frames need appending,
 // false if not everything fit in the current packet.
 func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
+	// MAX_DATA
+	if !c.appendMaxDataFrame(w, pnum, pto) {
+		return false
+	}
+
 	// MAX_STREAM_DATA
 	if !c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto) {
 		return false
