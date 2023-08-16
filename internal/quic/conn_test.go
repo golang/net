@@ -142,6 +142,9 @@ type testConn struct {
 	sentFrames    []debugFrame
 	lastPacket    *testPacket
 
+	// Transport parameters sent by the conn.
+	sentTransportParameters *transportParameters
+
 	// Frame types to ignore in tests.
 	ignoreFrames map[byte]bool
 
@@ -719,6 +722,13 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 			setKey(&tc.rkeys, e)
 		case tls.QUICWriteData:
 			tc.cryptoDataIn[e.Level] = append(tc.cryptoDataIn[e.Level], e.Data...)
+		case tls.QUICTransportParameters:
+			p, err := unmarshalTransportParams(e.Data)
+			if err != nil {
+				tc.t.Logf("sent unparseable transport parameters %x %v", e.Data, err)
+			} else {
+				tc.sentTransportParameters = &p
+			}
 		}
 	}
 }

@@ -111,11 +111,17 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.loss.init(c.side, maxDatagramSize, now)
 	c.streamsInit()
 
+	// TODO: initial_source_connection_id, retry_source_connection_id
 	c.startTLS(now, initialConnID, transportParameters{
-		initialSrcConnID:  c.connIDState.srcConnID(),
-		ackDelayExponent:  ackDelayExponent,
-		maxUDPPayloadSize: maxUDPPayloadSize,
-		maxAckDelay:       maxAckDelay,
+		initialSrcConnID:               c.connIDState.srcConnID(),
+		ackDelayExponent:               ackDelayExponent,
+		maxUDPPayloadSize:              maxUDPPayloadSize,
+		maxAckDelay:                    maxAckDelay,
+		disableActiveMigration:         true,
+		initialMaxStreamDataBidiLocal:  config.streamReadBufferSize(),
+		initialMaxStreamDataBidiRemote: config.streamReadBufferSize(),
+		initialMaxStreamDataUni:        config.streamReadBufferSize(),
+		activeConnIDLimit:              activeConnIDLimit,
 	})
 
 	go c.loop(now)
