@@ -361,6 +361,8 @@ func (m *Header) GoString() string {
 		"Truncated: " + printBool(m.Truncated) + ", " +
 		"RecursionDesired: " + printBool(m.RecursionDesired) + ", " +
 		"RecursionAvailable: " + printBool(m.RecursionAvailable) + ", " +
+		"AuthenticData: " + printBool(m.AuthenticData) + ", " +
+		"CheckingDisabled: " + printBool(m.CheckingDisabled) + ", " +
 		"RCode: " + m.RCode.GoString() + "}"
 }
 
