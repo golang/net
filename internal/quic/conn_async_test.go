@@ -83,10 +83,7 @@ func (a *asyncOp[T]) result() (v T, err error) {
 
 // A blockedAsync is a blocked async operation.
 type blockedAsync struct {
-	// Exactly one of these will be set, depending on the type of blocked operation.
-	g  *gate
-	ch <-chan struct{}
-
+	until func() bool   // when this returns true, the operation is unblocked
 	donec chan struct{} // closed when the operation is unblocked
 }
 
@@ -130,31 +127,12 @@ func runAsync[T any](ts *testConn, f func(context.Context) (T, error)) *asyncOp[
 	return a
 }
 
-// waitAndLockGate replaces gate.waitAndLock in tests.
-func (as *asyncTestState) waitAndLockGate(ctx context.Context, g *gate) error {
-	if g.lockIfSet() {
-		// Gate can be acquired without blocking.
+// waitUntil waits for a blocked async operation to complete.
+// The operation is complete when the until func returns true.
+func (as *asyncTestState) waitUntil(ctx context.Context, until func() bool) error {
+	if until() {
 		return nil
 	}
-	return as.block(ctx, &blockedAsync{
-		g: g,
-	})
-}
-
-// waitOnDone replaces receiving from a chan struct{} in tests.
-func (as *asyncTestState) waitOnDone(ctx context.Context, ch <-chan struct{}) error {
-	select {
-	case <-ch:
-		return nil // read without blocking
-	default:
-	}
-	return as.block(ctx, &blockedAsync{
-		ch: ch,
-	})
-}
-
-// block waits for a blocked async operation to complete.
-func (as *asyncTestState) block(ctx context.Context, b *blockedAsync) error {
 	if err := ctx.Err(); err != nil {
 		// Context has already expired.
 		return err
@@ -166,7 +144,10 @@ func (as *asyncTestState) block(ctx context.Context, b *blockedAsync) error {
 		// which may have unpredictable results.
 		panic("blocking async point with unexpected Context")
 	}
-	b.donec = make(chan struct{})
+	b := &blockedAsync{
+		until: until,
+		donec: make(chan struct{}),
+	}
 	// Record this as a pending blocking operation.
 	as.mu.Lock()
 	as.blocked[b] = struct{}{}
@@ -188,20 +169,9 @@ func (as *asyncTestState) wakeAsync() bool {
 	as.mu.Lock()
 	var woken *blockedAsync
 	for w := range as.blocked {
-		switch {
-		case w.g != nil:
-			if w.g.lockIfSet() {
-				woken = w
-			}
-		case w.ch != nil:
-			select {
-			case <-w.ch:
-				woken = w
-			default:
-			}
-		}
-		if woken != nil {
-			delete(as.blocked, woken)
+		if w.until() {
+			woken = w
+			delete(as.blocked, w)
 			break
 		}
 	}

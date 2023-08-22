@@ -47,13 +47,11 @@ func (g *gate) lock() (set bool) {
 }
 
 // waitAndLock waits until the condition is set before acquiring the gate.
-func (g *gate) waitAndLock() {
-	<-g.set
-}
-
-// waitAndLockContext waits until the condition is set before acquiring the gate.
-// If the context expires, waitAndLockContext returns an error and does not acquire the gate.
-func (g *gate) waitAndLockContext(ctx context.Context) error {
+// If the context expires, waitAndLock returns an error and does not acquire the gate.
+func (g *gate) waitAndLock(ctx context.Context, testHooks connTestHooks) error {
+	if testHooks != nil {
+		return testHooks.waitUntil(ctx, g.lockIfSet)
+	}
 	select {
 	case <-g.set:
 		return nil
@@ -65,23 +63,6 @@ func (g *gate) waitAndLockContext(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// waitWithLock releases an acquired gate until the condition is set.
-// The caller must have previously acquired the gate.
-// Upon return from waitWithLock, the gate will still be held.
-// If waitWithLock returns nil, the condition is set.
-func (g *gate) waitWithLock(ctx context.Context) error {
-	g.unlock(false)
-	err := g.waitAndLockContext(ctx)
-	if err != nil {
-		if g.lock() {
-			// The condition was set in between the context expiring
-			// and us reacquiring the gate.
-			err = nil
-		}
-	}
-	return err
 }
 
 // lockIfSet acquires the gate if and only if the condition is set.

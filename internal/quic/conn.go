@@ -72,8 +72,7 @@ type connTestHooks interface {
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
 	handleTLSEvent(tls.QUICEvent)
 	newConnID(seq int64) ([]byte, error)
-	waitAndLockGate(ctx context.Context, g *gate) error
-	waitOnDone(ctx context.Context, ch <-chan struct{}) error
+	waitUntil(ctx context.Context, until func() bool) error
 }
 
 func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
@@ -315,16 +314,16 @@ func (c *Conn) runOnLoop(f func(now time.Time, c *Conn)) error {
 	return nil
 }
 
-func (c *Conn) waitAndLockGate(ctx context.Context, g *gate) error {
-	if c.testHooks != nil {
-		return c.testHooks.waitAndLockGate(ctx, g)
-	}
-	return g.waitAndLockContext(ctx)
-}
-
 func (c *Conn) waitOnDone(ctx context.Context, ch <-chan struct{}) error {
 	if c.testHooks != nil {
-		return c.testHooks.waitOnDone(ctx, ch)
+		return c.testHooks.waitUntil(ctx, func() bool {
+			select {
+			case <-ch:
+				return true
+			default:
+			}
+			return false
+		})
 	}
 	// Check the channel before the context.
 	// We always prefer to return results when available,

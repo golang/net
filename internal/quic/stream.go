@@ -133,7 +133,7 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 		return 0, errors.New("read from write-only stream")
 	}
 	// Wait until data is available.
-	if err := s.conn.waitAndLockGate(ctx, &s.ingate); err != nil {
+	if err := s.ingate.waitAndLock(ctx, s.conn.testHooks); err != nil {
 		return 0, err
 	}
 	defer s.inUnlock()
@@ -211,7 +211,7 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 				s.outblocked.setUnsent()
 			}
 			s.outUnlock()
-			if err := s.conn.waitAndLockGate(ctx, &s.outgate); err != nil {
+			if err := s.outgate.waitAndLock(ctx, s.conn.testHooks); err != nil {
 				return n, err
 			}
 			// Successfully returning from waitAndLockGate means we are no longer
