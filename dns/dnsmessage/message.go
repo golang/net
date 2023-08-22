@@ -619,7 +619,7 @@ func (p *Parser) resourceHeader(sec section) (ResourceHeader, error) {
 }
 
 func (p *Parser) skipResource(sec section) error {
-	if p.resHeaderValid {
+	if p.resHeaderValid && p.section == sec {
 		newOff := p.off + int(p.resHeaderLength)
 		if newOff > len(p.msg) {
 			return errResourceLen

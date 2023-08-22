@@ -1784,3 +1784,32 @@ func TestParseDifferentResourceHeadersWithoutParsingRData(t *testing.T) {
 		t.Errorf("p.AuthorityHeader() unexpected success")
 	}
 }
+
+func TestParseWrongSection(t *testing.T) {
+	msg := smallTestMsg()
+	raw, err := msg.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var p Parser
+	if _, err := p.Start(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipAllQuestions(); err != nil {
+		t.Fatalf("p.SkipAllQuestions() = %v", err)
+	}
+	if _, err := p.AnswerHeader(); err != nil {
+		t.Fatalf("p.AnswerHeader() = %v", err)
+	}
+	if _, err := p.AuthorityHeader(); err == nil {
+		t.Fatalf("p.AuthorityHeader(): unexpected success in Answer section")
+	}
+	if err := p.SkipAuthority(); err == nil {
+		t.Fatalf("p.SkipAuthority(): unexpected success in Answer section")
+	}
+	if err := p.SkipAllAuthorities(); err == nil {
+		t.Fatalf("p.SkipAllAuthorities(): unexpected success in Answer section")
+	}
+}
