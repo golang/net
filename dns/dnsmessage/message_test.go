@@ -1755,3 +1755,32 @@ func TestParseResourceHeaderMultipleTimes(t *testing.T) {
 		t.Fatalf("unexpected error: %v, want: %v", err, ErrSectionDone)
 	}
 }
+
+func TestParseDifferentResourceHeadersWithoutParsingRData(t *testing.T) {
+	msg := smallTestMsg()
+	raw, err := msg.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var p Parser
+	if _, err := p.Start(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipAllQuestions(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AnswerHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AdditionalHeader(); err == nil {
+		t.Errorf("p.AdditionalHeader() unexpected success")
+	}
+
+	if _, err := p.AuthorityHeader(); err == nil {
+		t.Errorf("p.AuthorityHeader() unexpected success")
+	}
+}
