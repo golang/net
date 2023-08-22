@@ -1670,3 +1670,117 @@ func FuzzUnpackPack(f *testing.F) {
 		}
 	})
 }
+
+func TestParseResourceHeaderMultipleTimes(t *testing.T) {
+	msg := Message{
+		Header: Header{Response: true, Authoritative: true},
+		Answers: []Resource{
+			{
+				ResourceHeader{
+					Name:  MustNewName("go.dev."),
+					Type:  TypeA,
+					Class: ClassINET,
+				},
+				&AResource{[4]byte{127, 0, 0, 1}},
+			},
+		},
+		Authorities: []Resource{
+			{
+				ResourceHeader{
+					Name:  MustNewName("go.dev."),
+					Type:  TypeA,
+					Class: ClassINET,
+				},
+				&AResource{[4]byte{127, 0, 0, 1}},
+			},
+		},
+	}
+
+	raw, err := msg.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var p Parser
+
+	if _, err := p.Start(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipAllQuestions(); err != nil {
+		t.Fatal(err)
+	}
+
+	hdr1, err := p.AnswerHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hdr2, err := p.AnswerHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hdr1 != hdr2 {
+		t.Fatal("AnswerHeader called multiple times without parsing the RData returned different headers")
+	}
+
+	if _, err := p.AResource(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AnswerHeader(); err != ErrSectionDone {
+		t.Fatalf("unexpected error: %v, want: %v", err, ErrSectionDone)
+	}
+
+	hdr3, err := p.AuthorityHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hdr4, err := p.AuthorityHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hdr3 != hdr4 {
+		t.Fatal("AuthorityHeader called multiple times without parsing the RData returned different headers")
+	}
+
+	if _, err := p.AResource(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AuthorityHeader(); err != ErrSectionDone {
+		t.Fatalf("unexpected error: %v, want: %v", err, ErrSectionDone)
+	}
+}
+
+func TestParseDifferentResourceHeadersWithoutParsingRData(t *testing.T) {
+	msg := smallTestMsg()
+	raw, err := msg.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var p Parser
+	if _, err := p.Start(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipAllQuestions(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AnswerHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.AdditionalHeader(); err == nil {
+		t.Errorf("p.AdditionalHeader() unexpected success")
+	}
+
+	if _, err := p.AuthorityHeader(); err == nil {
+		t.Errorf("p.AuthorityHeader() unexpected success")
+	}
+}
