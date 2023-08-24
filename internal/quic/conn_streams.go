@@ -76,11 +76,11 @@ func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, er
 	}
 
 	s := newStream(c, newStreamID(c.side, styp, num))
-	s.outmaxbuf = c.config.streamWriteBufferSize()
+	s.outmaxbuf = c.config.maxStreamWriteBufferSize()
 	s.outwin = c.streams.peerInitialMaxStreamDataRemote[styp]
 	if styp == bidiStream {
-		s.inmaxbuf = c.config.streamReadBufferSize()
-		s.inwin = c.config.streamReadBufferSize()
+		s.inmaxbuf = c.config.maxStreamReadBufferSize()
+		s.inwin = c.config.maxStreamReadBufferSize()
 	}
 	s.inUnlock()
 	s.outUnlock()
@@ -170,10 +170,10 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 	}
 
 	s = newStream(c, id)
-	s.inmaxbuf = c.config.streamReadBufferSize()
-	s.inwin = c.config.streamReadBufferSize()
+	s.inmaxbuf = c.config.maxStreamReadBufferSize()
+	s.inwin = c.config.maxStreamReadBufferSize()
 	if id.streamType() == bidiStream {
-		s.outmaxbuf = c.config.streamWriteBufferSize()
+		s.outmaxbuf = c.config.maxStreamWriteBufferSize()
 		s.outwin = c.streams.peerInitialMaxStreamDataBidiLocal
 	}
 	s.inUnlock()

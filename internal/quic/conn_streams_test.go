@@ -207,7 +207,7 @@ func TestStreamsWriteQueueFairness(t *testing.T) {
 		p.initialMaxData = 1<<62 - 1
 		p.initialMaxStreamDataBidiRemote = dataLen
 	}, func(c *Config) {
-		c.StreamWriteBufferSize = dataLen
+		c.MaxStreamWriteBufferSize = dataLen
 	})
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)

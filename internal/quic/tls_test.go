@@ -21,6 +21,7 @@ func (tc *testConn) handshake() {
 	if *testVV {
 		*testVV = false
 		defer func() {
+			tc.t.Helper()
 			*testVV = true
 			tc.t.Logf("performed connection handshake")
 		}()

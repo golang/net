@@ -297,7 +297,7 @@ func TestLostMaxStreamDataFrame(t *testing.T) {
 		const maxWindowSize = 10
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
-			c.StreamReadBufferSize = maxWindowSize
+			c.MaxStreamReadBufferSize = maxWindowSize
 		})
 
 		// We send MAX_STREAM_DATA = 19.
@@ -339,7 +339,7 @@ func TestLostMaxStreamDataFrameAfterStreamFinReceived(t *testing.T) {
 		const maxWindowSize = 10
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
-			c.StreamReadBufferSize = maxWindowSize
+			c.MaxStreamReadBufferSize = maxWindowSize
 		})
 
 		tc.writeFrames(packetType1RTT, debugFrameStream{

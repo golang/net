@@ -17,7 +17,7 @@ func TestConfigTransportParameters(t *testing.T) {
 	tc := newTestConn(t, clientSide, func(c *Config) {
 		c.MaxBidiRemoteStreams = wantInitialMaxStreamsBidi
 		c.MaxUniRemoteStreams = wantInitialMaxStreamsUni
-		c.StreamReadBufferSize = wantInitialMaxStreamData
+		c.MaxStreamReadBufferSize = wantInitialMaxStreamData
 	})
 	tc.handshake()
 	if tc.sentTransportParameters == nil {

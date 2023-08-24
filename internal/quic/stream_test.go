@@ -18,6 +18,67 @@ import (
 	"testing"
 )
 
+func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		ctx := canceledContext()
+		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+		const writeBufferSize = 4
+		tc := newTestConn(t, clientSide, permissiveTransportParameters, func(c *Config) {
+			c.MaxStreamWriteBufferSize = writeBufferSize
+		})
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+
+		s, err := tc.conn.newLocalStream(ctx, styp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Non-blocking write.
+		n, err := s.WriteContext(ctx, want)
+		if n != writeBufferSize || err != context.Canceled {
+			t.Fatalf("s.WriteContext() = %v, %v; want %v, context.Canceled", n, err, writeBufferSize)
+		}
+		tc.wantFrame("first write buffer of data sent",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				data: want[:writeBufferSize],
+			})
+		off := int64(writeBufferSize)
+
+		// Blocking write, which must wait for buffer space.
+		w := runAsync(tc, func(ctx context.Context) (int, error) {
+			return s.WriteContext(ctx, want[writeBufferSize:])
+		})
+		tc.wantIdle("write buffer is full, no more data can be sent")
+
+		// The peer's ack of the STREAM frame allows progress.
+		tc.writeAckForAll()
+		tc.wantFrame("second write buffer of data sent",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				off:  off,
+				data: want[off:][:writeBufferSize],
+			})
+		off += writeBufferSize
+		tc.wantIdle("write buffer is full, no more data can be sent")
+
+		// The peer's ack of the second STREAM frame allows sending the remaining data.
+		tc.writeAckForAll()
+		tc.wantFrame("remaining data sent",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				off:  off,
+				data: want[off:],
+			})
+
+		if n, err := w.result(); n != len(want)-writeBufferSize || err != nil {
+			t.Fatalf("s.WriteContext() = %v, %v; want %v, nil",
+				len(want)-writeBufferSize, err, writeBufferSize)
+		}
+	})
+}
+
 func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()
@@ -30,14 +91,15 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
 
-		// Non-blocking write with no flow control.
 		s, err := tc.conn.newLocalStream(ctx, styp)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = s.WriteContext(ctx, want)
-		if err != context.Canceled {
-			t.Fatalf("write to stream with no flow control: err = %v, want context.Canceled", err)
+
+		// Data is written to the stream output buffer, but we have no flow control.
+		_, err = s.WriteContext(ctx, want[:1])
+		if err != nil {
+			t.Fatalf("write with available output buffer: unexpected error: %v", err)
 		}
 		tc.wantFrame("write blocked by flow control triggers a STREAM_DATA_BLOCKED frame",
 			packetType1RTT, debugFrameStreamDataBlocked{
@@ -45,15 +107,14 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 				max: 0,
 			})
 
-		// Blocking write waiting for flow control.
-		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.WriteContext(ctx, want)
-		})
-		tc.wantFrame("second blocked write triggers another STREAM_DATA_BLOCKED",
-			packetType1RTT, debugFrameStreamDataBlocked{
-				id:  s.id,
-				max: 0,
-			})
+		// Write more data.
+		_, err = s.WriteContext(ctx, want[1:])
+		if err != nil {
+			t.Fatalf("write with available output buffer: unexpected error: %v", err)
+		}
+		tc.wantIdle("adding more blocked data does not trigger another STREAM_DATA_BLOCKED")
+
+		// Provide some flow control window.
 		tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
 			id:  s.id,
 			max: 4,
@@ -69,6 +130,7 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 				data: want[:4],
 			})
 
+		// Provide more flow control window.
 		tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
 			id:  s.id,
 			max: int64(len(want)),
@@ -79,10 +141,6 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 				off:  4,
 				data: want[4:],
 			})
-		n, err := w.result()
-		if n != len(want) || err != nil {
-			t.Errorf("Write() = %v, %v; want %v, nil", n, err, len(want))
-		}
 	})
 }
 
@@ -169,7 +227,7 @@ func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
 			p.initialMaxStreamDataBidiRemote = 1 << 20
 			p.initialMaxStreamDataUni = 1 << 20
 		}, func(c *Config) {
-			c.StreamWriteBufferSize = maxWriteBuffer
+			c.MaxStreamWriteBufferSize = maxWriteBuffer
 		})
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -391,7 +449,7 @@ func TestStreamReceiveExtendsStreamWindow(t *testing.T) {
 		const maxWindowSize = 20
 		ctx := canceledContext()
 		tc := newTestConn(t, serverSide, func(c *Config) {
-			c.StreamReadBufferSize = maxWindowSize
+			c.MaxStreamReadBufferSize = maxWindowSize
 		})
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -448,7 +506,7 @@ func TestStreamReceiveViolatesStreamDataLimit(t *testing.T) {
 			size: 2,
 		}} {
 			tc := newTestConn(t, serverSide, func(c *Config) {
-				c.StreamReadBufferSize = maxStreamData
+				c.MaxStreamReadBufferSize = maxStreamData
 			})
 			tc.handshake()
 			tc.ignoreFrame(frameTypeAck)
@@ -473,7 +531,7 @@ func TestStreamReceiveDuplicateDataDoesNotViolateLimits(t *testing.T) {
 		const maxData = 10
 		tc := newTestConn(t, serverSide, func(c *Config) {
 			// TODO: Add connection-level maximum data here as well.
-			c.StreamReadBufferSize = maxData
+			c.MaxStreamReadBufferSize = maxData
 		})
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -557,7 +615,7 @@ func TestStreamFinalSizePastMaxStreamData(t *testing.T) {
 	finalSizeTest(t, errFlowControl, func(tc *testConn, sid streamID) (finalSize int64) {
 		return 11
 	}, func(c *Config) {
-		c.StreamReadBufferSize = 10
+		c.MaxStreamReadBufferSize = 10
 	})
 }
 
@@ -868,16 +926,15 @@ func TestStreamWriteToClosedStream(t *testing.T) {
 }
 
 func TestStreamResetBlockedStream(t *testing.T) {
-	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, func(p *transportParameters) {
-		p.initialMaxStreamsBidi = 1
-		p.initialMaxData = 1 << 20
-		p.initialMaxStreamDataBidiRemote = 4
-	})
+	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, permissiveTransportParameters,
+		func(c *Config) {
+			c.MaxStreamWriteBufferSize = 4
+		})
 	tc.ignoreFrame(frameTypeStreamDataBlocked)
 	writing := runAsync(tc, func(ctx context.Context) (int, error) {
 		return s.WriteContext(ctx, []byte{0, 1, 2, 3, 4, 5, 6, 7})
 	})
-	tc.wantFrame("stream writes data until blocked by flow control",
+	tc.wantFrame("stream writes data until write buffer fills",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,
 			off:  0,
@@ -894,11 +951,8 @@ func TestStreamResetBlockedStream(t *testing.T) {
 	if n, err := writing.result(); n != 4 || !strings.Contains(err.Error(), wantErr) {
 		t.Errorf("s.Write() interrupted by Reset: %v, %q; want 4, %q", n, err, wantErr)
 	}
-	tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
-		id:  s.id,
-		max: 1 << 20,
-	})
-	tc.wantIdle("flow control is available, but stream has been reset")
+	tc.writeAckForAll()
+	tc.wantIdle("buffer space is available, but stream has been reset")
 	s.Reset(100)
 	tc.wantIdle("resetting stream a second time has no effect")
 	if n, err := s.Write([]byte{}); err == nil || !strings.Contains(err.Error(), wantErr) {

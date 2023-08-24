@@ -30,17 +30,17 @@ type Config struct {
 	// If negative, the limit is zero.
 	MaxUniRemoteStreams int64
 
-	// StreamReadBufferSize is the maximum amount of data sent by the peer that a
+	// MaxStreamReadBufferSize is the maximum amount of data sent by the peer that a
 	// stream will buffer for reading.
 	// If zero, the default value of 1MiB is used.
 	// If negative, the limit is zero.
-	StreamReadBufferSize int64
+	MaxStreamReadBufferSize int64
 
-	// StreamWriteBufferSize is the maximum amount of data a stream will buffer for
+	// MaxStreamWriteBufferSize is the maximum amount of data a stream will buffer for
 	// sending to the peer.
 	// If zero, the default value of 1MiB is used.
 	// If negative, the limit is zero.
-	StreamWriteBufferSize int64
+	MaxStreamWriteBufferSize int64
 }
 
 func configDefault(v, def, limit int64) int64 {
@@ -62,10 +62,10 @@ func (c *Config) maxUniRemoteStreams() int64 {
 	return configDefault(c.MaxUniRemoteStreams, 100, maxStreamsLimit)
 }
 
-func (c *Config) streamReadBufferSize() int64 {
-	return configDefault(c.StreamReadBufferSize, 1<<20, maxVarint)
+func (c *Config) maxStreamReadBufferSize() int64 {
+	return configDefault(c.MaxStreamReadBufferSize, 1<<20, maxVarint)
 }
 
-func (c *Config) streamWriteBufferSize() int64 {
-	return configDefault(c.StreamWriteBufferSize, 1<<20, maxVarint)
+func (c *Config) maxStreamWriteBufferSize() int64 {
+	return configDefault(c.MaxStreamWriteBufferSize, 1<<20, maxVarint)
 }

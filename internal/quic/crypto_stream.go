@@ -118,7 +118,7 @@ func (s *cryptoStream) ackOrLoss(start, end int64, fate packetFate) {
 // copy the data it wants into position.
 func (s *cryptoStream) dataToSend(pto bool, f func(off, size int64) (sent int64)) {
 	for {
-		off, size := dataToSend(s.out, s.outunsent, s.outacked, pto)
+		off, size := dataToSend(s.out.start, s.out.end, s.outunsent, s.outacked, pto)
 		if size == 0 {
 			return
 		}

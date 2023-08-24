@@ -202,14 +202,7 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 		// We exit the loop after writing all data, so on subsequent passes through
 		// the loop we are always write blocked.
 		if len(b) > 0 && !canWrite {
-			// We're blocked, either by flow control or by our own buffer limit.
-			// We either need the peer to extend our flow control window,
-			// or ack some of our outstanding packets.
-			if s.out.end == s.outwin {
-				// We're blocked by flow control.
-				// Send a STREAM_DATA_BLOCKED frame to let the peer know.
-				s.outblocked.setUnsent()
-			}
+			// Our send buffer is full. Wait for the peer to ack some data.
 			s.outUnlock()
 			if err := s.outgate.waitAndLock(ctx, s.conn.testHooks); err != nil {
 				return n, err
@@ -233,18 +226,24 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 		if len(b) == 0 {
 			break
 		}
-		s.outblocked.clear()
-		// Write limit is min(our own buffer limit, the peer-provided flow control window).
+		// Write limit is our send buffer limit.
 		// This is a stream offset.
-		lim := min(s.out.start+s.outmaxbuf, s.outwin)
+		lim := s.out.start + s.outmaxbuf
 		// Amount to write is min(the full buffer, data up to the write limit).
 		// This is a number of bytes.
 		nn := min(int64(len(b)), lim-s.out.end)
 		// Copy the data into the output buffer and mark it as unsent.
-		s.outunsent.add(s.out.end, s.out.end+nn)
+		if s.out.end <= s.outwin {
+			s.outunsent.add(s.out.end, min(s.out.end+nn, s.outwin))
+		}
 		s.out.writeAt(b[:nn], s.out.end)
 		b = b[nn:]
 		n += int(nn)
+		if s.out.end > s.outwin {
+			// We're blocked by flow control.
+			// Send a STREAM_DATA_BLOCKED frame to let the peer know.
+			s.outblocked.set()
+		}
 		// If we have bytes left to send, we're blocked.
 		canWrite = false
 	}
@@ -425,8 +424,8 @@ func (s *Stream) outUnlockNoQueue() streamState {
 			}
 		}
 	}
-	lim := min(s.out.start+s.outmaxbuf, s.outwin)
-	canWrite := lim > s.out.end || // available flow control
+	lim := s.out.start + s.outmaxbuf
+	canWrite := lim > s.out.end || // available send buffer
 		s.outclosed.isSet() || // closed locally
 		s.outreset.isSet() // reset locally
 	defer s.outgate.unlock(canWrite)
@@ -533,7 +532,19 @@ func (s *Stream) handleStopSending(code uint64) error {
 func (s *Stream) handleMaxStreamData(maxStreamData int64) error {
 	s.outgate.lock()
 	defer s.outUnlock()
-	s.outwin = max(maxStreamData, s.outwin)
+	if maxStreamData <= s.outwin {
+		return nil
+	}
+	if s.out.end > s.outwin {
+		s.outunsent.add(s.outwin, min(maxStreamData, s.out.end))
+	}
+	s.outwin = maxStreamData
+	if s.out.end > s.outwin {
+		// We've still got more data than flow control window.
+		s.outblocked.setUnsent()
+	} else {
+		s.outblocked.clear()
+	}
 	return nil
 }
 
@@ -635,7 +646,7 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 	if s.outreset.isSet() {
 		// RESET_STREAM
 		if s.outreset.shouldSendPTO(pto) {
-			if !w.appendResetStreamFrame(s.id, s.outresetcode, s.out.end) {
+			if !w.appendResetStreamFrame(s.id, s.outresetcode, min(s.outwin, s.out.end)) {
 				return false
 			}
 			s.outreset.setSent(pnum)
@@ -645,15 +656,15 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 	}
 	if s.outblocked.shouldSendPTO(pto) {
 		// STREAM_DATA_BLOCKED
-		if !w.appendStreamDataBlockedFrame(s.id, s.out.end) {
+		if !w.appendStreamDataBlockedFrame(s.id, s.outwin) {
 			return false
 		}
 		s.outblocked.setSent(pnum)
 		s.frameOpensStream(pnum)
 	}
-	// STREAM
 	for {
-		off, size := dataToSend(s.out, s.outunsent, s.outacked, pto)
+		// STREAM
+		off, size := dataToSend(min(s.out.start, s.outwin), min(s.out.end, s.outwin), s.outunsent, s.outacked, pto)
 		fin := s.outclosed.isSet() && off+size == s.out.end
 		shouldSend := size > 0 || // have data to send
 			s.outopened.shouldSendPTO(pto) || // should open the stream
@@ -691,7 +702,7 @@ func (s *Stream) frameOpensStream(pnum packetNumber) {
 }
 
 // dataToSend returns the next range of data to send in a STREAM or CRYPTO_STREAM.
-func dataToSend(out pipe, outunsent, outacked rangeset[int64], pto bool) (start, size int64) {
+func dataToSend(start, end int64, outunsent, outacked rangeset[int64], pto bool) (sendStart, size int64) {
 	switch {
 	case pto:
 		// On PTO, resend unacked data that fits in the probe packet.
@@ -702,14 +713,14 @@ func dataToSend(out pipe, outunsent, outacked rangeset[int64], pto bool) (start,
 		// This may miss unacked data starting after that acked byte,
 		// but avoids resending data the peer has acked.
 		for _, r := range outacked {
-			if r.start > out.start {
-				return out.start, r.start - out.start
+			if r.start > start {
+				return start, r.start - start
 			}
 		}
-		return out.start, out.end - out.start
+		return start, end - start
 	case outunsent.numRanges() > 0:
 		return outunsent.min(), outunsent[0].size()
 	default:
-		return out.end, 0
+		return end, 0
 	}
 }
