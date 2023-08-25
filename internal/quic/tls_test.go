@@ -242,6 +242,7 @@ func fillCryptoFrames(d *testDatagram, data map[tls.QUICEncryptionLevel][]byte) 
 // Useful for testing scenarios where configuration has
 // changed the handshake responses in some way.
 func (tc *testConn) uncheckedHandshake() {
+	tc.t.Helper()
 	defer func(saved map[byte]bool) {
 		tc.ignoreFrames = saved
 	}(tc.ignoreFrames)
@@ -268,6 +269,7 @@ func (tc *testConn) uncheckedHandshake() {
 				ranges: []i64range[packetNumber]{{0, tc.sentFramePacket.num + 1}},
 			})
 	} else {
+		tc.wantIdle("initial frames are ignored")
 		tc.writeFrames(packetTypeInitial,
 			debugFrameCrypto{
 				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
@@ -285,7 +287,7 @@ func (tc *testConn) uncheckedHandshake() {
 			debugFrameHandshakeDone{})
 		tc.writeFrames(packetType1RTT,
 			debugFrameCrypto{
-				data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelApplication],
 			})
 		tc.wantFrame("client ACKs server's first 1-RTT packet",
 			packetType1RTT, debugFrameAck{
