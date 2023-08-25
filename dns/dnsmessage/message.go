@@ -2000,7 +2000,7 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 			}
 
 			// Miss. Add the suffix to the compression table if the
-			// offset can be stored in the available 14 bytes.
+			// offset can be stored in the available 14 bits.
 			newPtr := len(msg) - compressionOff
 			if newPtr <= int(^uint16(0)>>2) {
 				if nameAsStr == "" {
@@ -2008,7 +2008,7 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 					// multiple times (for next labels).
 					nameAsStr = string(n.Data[:n.Length])
 				}
-				compression[string(n.Data[i:])] = newPtr
+				compression[nameAsStr[i:]] = newPtr
 			}
 		}
 	}

@@ -1820,20 +1820,24 @@ func TestBuilderNameCompressionWithNonZeroedName(t *testing.T) {
 	if err := b.StartQuestions(); err != nil {
 		t.Fatalf("b.StartQuestions() unexpected error: %v", err)
 	}
+
 	name := MustNewName("go.dev.")
 	if err := b.Question(Question{Name: name}); err != nil {
 		t.Fatalf("b.Question() unexpected error: %v", err)
 	}
+
 	// Character that is not part of the name (name.Data[:name.Length]),
 	// shouldn't affect the compression algorithm.
 	name.Data[name.Length] = '1'
 	if err := b.Question(Question{Name: name}); err != nil {
 		t.Fatalf("b.Question() unexpected error: %v", err)
 	}
+
 	msg, err := b.Finish()
 	if err != nil {
 		t.Fatalf("b.Finish() unexpected error: %v", err)
 	}
+
 	expect := []byte{
 		0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, // header
 		2, 'g', 'o', 3, 'd', 'e', 'v', 0, 0, 0, 0, 0, // question 1
