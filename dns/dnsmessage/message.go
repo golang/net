@@ -1961,6 +1961,8 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 		return append(msg, 0), nil
 	}
 
+	var nameAsStr string
+
 	// Emit sequence of counted strings, chopping at dots.
 	for i, begin := 0, 0; i < int(n.Length); i++ {
 		// Check for the end of the segment.
@@ -1991,7 +1993,7 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 		// segment. A pointer is two bytes with the two most significant
 		// bits set to 1 to indicate that it is a pointer.
 		if (i == 0 || n.Data[i-1] == '.') && compression != nil {
-			if ptr, ok := compression[string(n.Data[i:])]; ok {
+			if ptr, ok := compression[string(n.Data[i:n.Length])]; ok {
 				// Hit. Emit a pointer instead of the rest of
 				// the domain.
 				return append(msg, byte(ptr>>8|0xC0), byte(ptr)), nil
@@ -2000,7 +2002,12 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 			// Miss. Add the suffix to the compression table if the
 			// offset can be stored in the available 14 bytes.
 			if len(msg) <= int(^uint16(0)>>2) {
-				compression[string(n.Data[i:])] = len(msg) - compressionOff
+				if nameAsStr == "" {
+					// allocate n.Data on the heap once, to avoid allocating it
+					// multiple times (for next labels).
+					nameAsStr = string(n.Data[:n.Length])
+				}
+				compression[nameAsStr[i:]] = len(msg) - compressionOff
 			}
 		}
 	}
