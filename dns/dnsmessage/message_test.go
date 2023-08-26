@@ -1814,7 +1814,7 @@ func TestParseWrongSection(t *testing.T) {
 	}
 }
 
-func TestBuilderNameCompressionWithResuedName(t *testing.T) {
+func TestBuilderNameCompressionWithNonZeroedName(t *testing.T) {
 	b := NewBuilder(nil, Header{})
 	b.EnableCompression()
 	if err := b.StartQuestions(); err != nil {
