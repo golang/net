@@ -106,6 +106,8 @@ func (frame *hybiFrameReader) TrailerReader() io.Reader { return nil }
 
 func (frame *hybiFrameReader) Len() (n int) { return frame.length }
 
+func (frame *hybiFrameReader) FrameDataLength() (n int64) { return frame.header.Length }
+
 // A hybiFrameReaderFactory creates new frame reader based on its frame type.
 type hybiFrameReaderFactory struct {
 	*bufio.Reader
