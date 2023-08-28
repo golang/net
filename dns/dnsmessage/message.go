@@ -2000,14 +2000,15 @@ func (n *Name) pack(msg []byte, compression map[string]int, compressionOff int) 
 			}
 
 			// Miss. Add the suffix to the compression table if the
-			// offset can be stored in the available 14 bytes.
-			if len(msg) <= int(^uint16(0)>>2) {
+			// offset can be stored in the available 14 bits.
+			newPtr := len(msg) - compressionOff
+			if newPtr <= int(^uint16(0)>>2) {
 				if nameAsStr == "" {
 					// allocate n.Data on the heap once, to avoid allocating it
 					// multiple times (for next labels).
 					nameAsStr = string(n.Data[:n.Length])
 				}
-				compression[nameAsStr[i:]] = len(msg) - compressionOff
+				compression[nameAsStr[i:]] = newPtr
 			}
 		}
 	}

@@ -1847,3 +1847,30 @@ func TestBuilderNameCompressionWithNonZeroedName(t *testing.T) {
 		t.Fatalf("b.Finish() = %v, want: %v", msg, expect)
 	}
 }
+
+func TestBuilderCompressionInAppendMode(t *testing.T) {
+	maxPtr := int(^uint16(0) >> 2)
+	b := NewBuilder(make([]byte, maxPtr, maxPtr+512), Header{})
+	b.EnableCompression()
+	if err := b.StartQuestions(); err != nil {
+		t.Fatalf("b.StartQuestions() unexpected error: %v", err)
+	}
+	if err := b.Question(Question{Name: MustNewName("go.dev.")}); err != nil {
+		t.Fatalf("b.Question() unexpected error: %v", err)
+	}
+	if err := b.Question(Question{Name: MustNewName("go.dev.")}); err != nil {
+		t.Fatalf("b.Question() unexpected error: %v", err)
+	}
+	msg, err := b.Finish()
+	if err != nil {
+		t.Fatalf("b.Finish() unexpected error: %v", err)
+	}
+	expect := []byte{
+		0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, // header
+		2, 'g', 'o', 3, 'd', 'e', 'v', 0, 0, 0, 0, 0, // question 1
+		0xC0, 12, 0, 0, 0, 0, // question 2
+	}
+	if !bytes.Equal(msg[maxPtr:], expect) {
+		t.Fatalf("msg[maxPtr:] = %v, want: %v", msg[maxPtr:], expect)
+	}
+}
