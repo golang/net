@@ -77,7 +77,7 @@ func ExamplePublicSuffix_manager() {
 	// >               golang.dev             dev  is  ICANN Managed
 	// >               golang.net             net  is  ICANN Managed
 	// >          play.golang.org             org  is  ICANN Managed
-	// >  gophers.in.space.museum    space.museum  is  ICANN Managed
+	// >  gophers.in.space.museum          museum  is  ICANN Managed
 	// >
 	// >                 0emm.com             com  is  ICANN Managed
 	// >               a.0emm.com      a.0emm.com  is  Privately Managed

@@ -3845,7 +3845,6 @@ func testClientMultipleDials(t *testing.T, client func(*Transport), server func(
 		go func(count int) {
 			defer wg.Done()
 			server(count, ct)
-			sc.Close()
 		}(count)
 		return cc, nil
 	}
@@ -3936,10 +3935,11 @@ func TestTransportRetryAfterRefusedStream(t *testing.T) {
 		}
 	}
 
-	server := func(count int, ct *clientTester) {
+	server := func(_ int, ct *clientTester) {
 		ct.greet()
 		var buf bytes.Buffer
 		enc := hpack.NewEncoder(&buf)
+		var count int
 		for {
 			f, err := ct.fr.ReadFrame()
 			if err != nil {
@@ -3960,6 +3960,7 @@ func TestTransportRetryAfterRefusedStream(t *testing.T) {
 					t.Errorf("headers should have END_HEADERS be ended: %v", f)
 					return
 				}
+				count++
 				if count == 1 {
 					ct.fr.WriteRSTStream(f.StreamID, ErrCodeRefusedStream)
 				} else {
@@ -4517,11 +4518,14 @@ func TestAuthorityAddr(t *testing.T) {
 	}{
 		{"http", "foo.com", "foo.com:80"},
 		{"https", "foo.com", "foo.com:443"},
+		{"https", "foo.com:", "foo.com:443"},
 		{"https", "foo.com:1234", "foo.com:1234"},
 		{"https", "1.2.3.4:1234", "1.2.3.4:1234"},
 		{"https", "1.2.3.4", "1.2.3.4:443"},
+		{"https", "1.2.3.4:", "1.2.3.4:443"},
 		{"https", "[::1]:1234", "[::1]:1234"},
 		{"https", "[::1]", "[::1]:443"},
+		{"https", "[::1]:", "[::1]:443"},
 	}
 	for _, tt := range tests {
 		got := authorityAddr(tt.scheme, tt.authority)
@@ -6426,96 +6430,4 @@ func TestTransportSlowClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-}
-
-type blockReadConn struct {
-	net.Conn
-	blockc chan struct{}
-}
-
-func (c *blockReadConn) Read(b []byte) (n int, err error) {
-	<-c.blockc
-	return c.Conn.Read(b)
-}
-
-func TestTransportReuseAfterError(t *testing.T) {
-	serverReqc := make(chan struct{}, 3)
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		serverReqc <- struct{}{}
-	}, optOnlyServer)
-	defer st.Close()
-
-	var (
-		unblockOnce sync.Once
-		blockc      = make(chan struct{})
-		connCountMu sync.Mutex
-		connCount   int
-	)
-	tr := &Transport{
-		TLSClientConfig: tlsConfigInsecure,
-		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
-			// The first connection dialed will block on reads until blockc is closed.
-			connCountMu.Lock()
-			defer connCountMu.Unlock()
-			connCount++
-			conn, err := tls.Dial(network, addr, cfg)
-			if err != nil {
-				return nil, err
-			}
-			if connCount == 1 {
-				return &blockReadConn{
-					Conn:   conn,
-					blockc: blockc,
-				}, nil
-			}
-			return conn, nil
-		},
-	}
-	defer tr.CloseIdleConnections()
-	defer unblockOnce.Do(func() {
-		// Ensure that reads on blockc are unblocked if we return early.
-		close(blockc)
-	})
-
-	req, _ := http.NewRequest("GET", st.ts.URL, nil)
-
-	// Request 1 is made on conn 1.
-	// Reading the response will block.
-	// Wait until the server receives the request, and continue.
-	req1c := make(chan struct{})
-	go func() {
-		defer close(req1c)
-		res1, err := tr.RoundTrip(req.Clone(context.Background()))
-		if err != nil {
-			t.Errorf("request 1: %v", err)
-		} else {
-			res1.Body.Close()
-		}
-	}()
-	<-serverReqc
-
-	// Request 2 is also made on conn 1.
-	// Reading the response will block.
-	// The request fails when the context deadline expires.
-	// Conn 1 should now be flagged as unfit for reuse.
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-	_, err := tr.RoundTrip(req.Clone(timeoutCtx))
-	if err == nil {
-		t.Errorf("request 2 unexpectedly succeeded (want timeout)")
-	}
-	time.Sleep(1 * time.Millisecond)
-
-	// Request 3 is made on a new conn, and succeeds.
-	res3, err := tr.RoundTrip(req.Clone(context.Background()))
-	if err != nil {
-		t.Fatalf("request 3: %v", err)
-	}
-	res3.Body.Close()
-
-	// Unblock conn 1, and verify that request 1 completes.
-	unblockOnce.Do(func() {
-		close(blockc)
-	})
-	<-req1c
 }
