@@ -147,6 +147,12 @@ type Transport struct {
 	// waiting for their turn.
 	StrictMaxConcurrentStreams bool
 
+	// IdleConnTimeout is the maximum amount of time an idle
+	// (keep-alive) connection will remain idle before closing
+	// itself.
+	// Zero means no limit.
+	IdleConnTimeout time.Duration
+
 	// ReadIdleTimeout is the timeout after which a health check using ping
 	// frame will be carried out if no frame is received on the connection.
 	// Note that a ping response will is considered a received frame, so if
@@ -3150,9 +3156,17 @@ func (rt noDialH2RoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 func (t *Transport) idleConnTimeout() time.Duration {
+	// to keep things backwards compatible, we use non-zero values of
+	// IdleConnTimeout, followed by using the IdleConnTimeout on the underlying
+	// http1 transport, followed by 0
+	if t.IdleConnTimeout != 0 {
+		return t.IdleConnTimeout
+	}
+
 	if t.t1 != nil {
 		return t.t1.IdleConnTimeout
 	}
+
 	return 0
 }
 
