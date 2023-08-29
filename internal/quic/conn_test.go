@@ -431,7 +431,80 @@ func (tc *testConn) readDatagram() *testDatagram {
 	buf := tc.sentDatagrams[0]
 	tc.sentDatagrams = tc.sentDatagrams[1:]
 	d := tc.parseTestDatagram(buf)
+	// Log the datagram before removing ignored frames.
+	// When things go wrong, it's useful to see all the frames.
 	tc.logDatagram("-> conn under test sends", d)
+	typeForFrame := func(f debugFrame) byte {
+		// This is very clunky, and points at a problem
+		// in how we specify what frames to ignore in tests.
+		//
+		// We mark frames to ignore using the frame type,
+		// but we've got a debugFrame data structure here.
+		// Perhaps we should be ignoring frames by debugFrame
+		// type instead: tc.ignoreFrame[debugFrameAck]().
+		switch f := f.(type) {
+		case debugFramePadding:
+			return frameTypePadding
+		case debugFramePing:
+			return frameTypePing
+		case debugFrameAck:
+			return frameTypeAck
+		case debugFrameResetStream:
+			return frameTypeResetStream
+		case debugFrameStopSending:
+			return frameTypeStopSending
+		case debugFrameCrypto:
+			return frameTypeCrypto
+		case debugFrameNewToken:
+			return frameTypeNewToken
+		case debugFrameStream:
+			return frameTypeStreamBase
+		case debugFrameMaxData:
+			return frameTypeMaxData
+		case debugFrameMaxStreamData:
+			return frameTypeMaxStreamData
+		case debugFrameMaxStreams:
+			if f.streamType == bidiStream {
+				return frameTypeMaxStreamsBidi
+			} else {
+				return frameTypeMaxStreamsUni
+			}
+		case debugFrameDataBlocked:
+			return frameTypeDataBlocked
+		case debugFrameStreamDataBlocked:
+			return frameTypeStreamDataBlocked
+		case debugFrameStreamsBlocked:
+			if f.streamType == bidiStream {
+				return frameTypeStreamsBlockedBidi
+			} else {
+				return frameTypeStreamsBlockedUni
+			}
+		case debugFrameNewConnectionID:
+			return frameTypeNewConnectionID
+		case debugFrameRetireConnectionID:
+			return frameTypeRetireConnectionID
+		case debugFramePathChallenge:
+			return frameTypePathChallenge
+		case debugFramePathResponse:
+			return frameTypePathResponse
+		case debugFrameConnectionCloseTransport:
+			return frameTypeConnectionCloseTransport
+		case debugFrameConnectionCloseApplication:
+			return frameTypeConnectionCloseApplication
+		case debugFrameHandshakeDone:
+			return frameTypeHandshakeDone
+		}
+		panic(fmt.Errorf("unhandled frame type %T", f))
+	}
+	for _, p := range d.packets {
+		var frames []debugFrame
+		for _, f := range p.frames {
+			if !tc.ignoreFrames[typeForFrame(f)] {
+				frames = append(frames, f)
+			}
+		}
+		p.frames = frames
+	}
 	return d
 }
 
@@ -632,9 +705,7 @@ func (tc *testConn) parseTestFrames(payload []byte) ([]debugFrame, error) {
 		if n < 0 {
 			return nil, errors.New("error parsing frames")
 		}
-		if !tc.ignoreFrames[payload[0]] {
-			frames = append(frames, f)
-		}
+		frames = append(frames, f)
 		payload = payload[n:]
 	}
 	return frames, nil
