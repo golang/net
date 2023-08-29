@@ -101,7 +101,9 @@ func runAsync[T any](ts *testConn, f func(context.Context) (T, error)) *asyncOp[
 	as := &ts.asyncTestState
 	if as.notify == nil {
 		as.notify = make(chan struct{})
+		as.mu.Lock()
 		as.blocked = make(map[*blockedAsync]struct{})
+		as.mu.Unlock()
 	}
 	_, file, line, _ := runtime.Caller(1)
 	ctx := context.WithValue(context.Background(), asyncContextKey{}, true)
