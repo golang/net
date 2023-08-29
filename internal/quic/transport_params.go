@@ -212,8 +212,14 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			p.initialMaxStreamDataUni, n = consumeVarintInt64(val)
 		case paramInitialMaxStreamsBidi:
 			p.initialMaxStreamsBidi, n = consumeVarintInt64(val)
+			if p.initialMaxStreamsBidi > maxStreamsLimit {
+				return p, localTransportError(errTransportParameter)
+			}
 		case paramInitialMaxStreamsUni:
 			p.initialMaxStreamsUni, n = consumeVarintInt64(val)
+			if p.initialMaxStreamsUni > maxStreamsLimit {
+				return p, localTransportError(errTransportParameter)
+			}
 		case paramAckDelayExponent:
 			var v uint64
 			v, n = consumeVarint(val)

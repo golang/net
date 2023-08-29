@@ -1165,8 +1165,8 @@ func newTestConnAndRemoteStream(t *testing.T, side connSide, styp streamType, op
 
 // permissiveTransportParameters may be passed as an option to newTestConn.
 func permissiveTransportParameters(p *transportParameters) {
-	p.initialMaxStreamsBidi = maxVarint
-	p.initialMaxStreamsUni = maxVarint
+	p.initialMaxStreamsBidi = maxStreamsLimit
+	p.initialMaxStreamsUni = maxStreamsLimit
 	p.initialMaxData = maxVarint
 	p.initialMaxStreamDataBidiRemote = maxVarint
 	p.initialMaxStreamDataBidiLocal = maxVarint

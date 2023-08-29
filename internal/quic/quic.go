@@ -55,6 +55,10 @@ const timerGranularity = 1 * time.Millisecond
 // https://www.rfc-editor.org/rfc/rfc9000#section-14.1
 const minimumClientInitialDatagramSize = 1200
 
+// Maximum number of streams of a given type which may be created.
+// https://www.rfc-editor.org/rfc/rfc9000.html#section-4.6-2
+const maxStreamsLimit = 1 << 60
+
 // A connSide distinguishes between the client and server sides of a connection.
 type connSide int8
 

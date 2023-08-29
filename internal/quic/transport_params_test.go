@@ -237,6 +237,20 @@ func TestTransportParametersErrors(t *testing.T) {
 			0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 		},
 	}, {
+		desc: "initial_max_streams_bidi is too large",
+		enc: []byte{
+			0x08, // initial_max_streams_bidi,
+			8,    // length,
+			0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+		},
+	}, {
+		desc: "initial_max_streams_uni is too large",
+		enc: []byte{
+			0x08, // initial_max_streams_uni,
+			9,    // length,
+			0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+		},
+	}, {
 		desc: "preferred_address is too short",
 		enc: []byte{
 			0x0d, // preferred_address

@@ -378,7 +378,7 @@ func consumeMaxStreamsFrame(b []byte) (typ streamType, max int64, n int) {
 		return 0, 0, -1
 	}
 	n += nn
-	if v > 1<<60 {
+	if v > maxStreamsLimit {
 		return 0, 0, -1
 	}
 	return typ, int64(v), n
