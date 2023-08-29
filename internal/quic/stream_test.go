@@ -972,6 +972,17 @@ func TestStreamCloseWaitsForAcks(t *testing.T) {
 	}
 }
 
+func TestStreamCloseReadOnly(t *testing.T) {
+	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, permissiveTransportParameters)
+	if err := s.CloseContext(canceledContext()); err != nil {
+		t.Errorf("s.CloseContext() = %v, want nil", err)
+	}
+	tc.wantFrame("closed stream sends STOP_SENDING",
+		packetType1RTT, debugFrameStopSending{
+			id: s.id,
+		})
+}
+
 func TestStreamCloseUnblocked(t *testing.T) {
 	for _, test := range []struct {
 		name    string

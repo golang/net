@@ -66,7 +66,9 @@ func newStream(c *Conn, id streamID) *Stream {
 		inresetcode: -1, // -1 indicates no RESET_STREAM received
 		ingate:      newLockedGate(),
 		outgate:     newLockedGate(),
-		outdone:     make(chan struct{}),
+	}
+	if !s.IsReadOnly() {
+		s.outdone = make(chan struct{})
 	}
 	return s
 }
@@ -237,6 +239,9 @@ func (s *Stream) Close() error {
 // CloseContext discards the buffer and returns the context error.
 func (s *Stream) CloseContext(ctx context.Context) error {
 	s.CloseRead()
+	if s.IsReadOnly() {
+		return nil
+	}
 	s.CloseWrite()
 	// TODO: Return code from peer's RESET_STREAM frame?
 	return s.conn.waitOnDone(ctx, s.outdone)
