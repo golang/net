@@ -185,24 +185,46 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 	for {
 		s := c.streams.sendHead
 		const pto = false
-		if !s.appendInFrames(w, pnum, pto) {
-			return false
-		}
-		avail := w.avail()
-		if !s.appendOutFrames(w, pnum, pto) {
-			// We've sent some data for this stream, but it still has more to send.
-			// If the stream got a reasonable chance to put data in a packet,
-			// advance sendHead to the next stream in line, to avoid starvation.
-			// We'll come back to this stream after going through the others.
-			//
-			// If the packet was already mostly out of space, leave sendHead alone
-			// and come back to this stream again on the next packet.
-			if avail > 512 {
-				c.streams.sendHead = s.next
-				c.streams.sendTail = s
+
+		state := s.state.load()
+		if state&streamInSend != 0 {
+			s.ingate.lock()
+			ok := s.appendInFramesLocked(w, pnum, pto)
+			state = s.inUnlockNoQueue()
+			if !ok {
+				return false
 			}
-			return false
 		}
+
+		if state&streamOutSend != 0 {
+			avail := w.avail()
+			s.outgate.lock()
+			ok := s.appendOutFramesLocked(w, pnum, pto)
+			state = s.outUnlockNoQueue()
+			if !ok {
+				// We've sent some data for this stream, but it still has more to send.
+				// If the stream got a reasonable chance to put data in a packet,
+				// advance sendHead to the next stream in line, to avoid starvation.
+				// We'll come back to this stream after going through the others.
+				//
+				// If the packet was already mostly out of space, leave sendHead alone
+				// and come back to this stream again on the next packet.
+				if avail > 512 {
+					c.streams.sendHead = s.next
+					c.streams.sendTail = s
+				}
+				return false
+			}
+		}
+
+		if state == streamInDone|streamOutDone {
+			// Stream is finished, remove it from the conn.
+			s.state.set(streamConnRemoved, streamConnRemoved)
+			delete(c.streams.streams, s.id)
+
+			// TODO: Provide the peer with additional stream quota (MAX_STREAMS).
+		}
+
 		next := s.next
 		s.next = nil
 		if (next == s) != (s == c.streams.sendTail) {
@@ -231,10 +253,16 @@ func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 	defer c.streams.sendMu.Unlock()
 	for _, s := range c.streams.streams {
 		const pto = true
-		if !s.appendInFrames(w, pnum, pto) {
+		s.ingate.lock()
+		inOK := s.appendInFramesLocked(w, pnum, pto)
+		s.inUnlockNoQueue()
+		if !inOK {
 			return false
 		}
-		if !s.appendOutFrames(w, pnum, pto) {
+		s.outgate.lock()
+		outOK := s.appendOutFramesLocked(w, pnum, pto)
+		s.outUnlockNoQueue()
+		if !outOK {
 			return false
 		}
 	}

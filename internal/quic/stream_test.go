@@ -1111,6 +1111,24 @@ func TestStreamPeerResetFollowedByData(t *testing.T) {
 	})
 }
 
+func TestStreamResetInvalidCode(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream)
+	s.Reset(1 << 62)
+	tc.wantFrame("reset with invalid code sends a RESET_STREAM anyway",
+		packetType1RTT, debugFrameResetStream{
+			id: s.id,
+			// The code we send here isn't specified,
+			// so this could really be any value.
+			code: (1 << 62) - 1,
+		})
+}
+
+func TestStreamResetReceiveOnly(t *testing.T) {
+	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream)
+	s.Reset(0)
+	tc.wantIdle("resetting a receive-only stream has no effect")
+}
+
 func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 	// "An endpoint that receives a STOP_SENDING frame MUST send a RESET_STREAM frame if
 	// the stream is in the "Ready" or "Send" state."
@@ -1143,6 +1161,21 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 		tc.writeAckForLatest()
 		tc.wantIdle("lost STREAM frames for reset stream are not resent")
 	})
+}
+
+type streamSide string
+
+const (
+	localStream  = streamSide("local")
+	remoteStream = streamSide("remote")
+)
+
+func newTestConnAndStream(t *testing.T, side connSide, sside streamSide, styp streamType, opts ...any) (*testConn, *Stream) {
+	if sside == localStream {
+		return newTestConnAndLocalStream(t, side, styp, opts...)
+	} else {
+		return newTestConnAndRemoteStream(t, side, styp, opts...)
+	}
 }
 
 func newTestConnAndLocalStream(t *testing.T, side connSide, styp streamType, opts ...any) (*testConn, *Stream) {

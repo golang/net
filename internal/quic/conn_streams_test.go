@@ -8,6 +8,8 @@ package quic
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"testing"
 )
 
@@ -251,5 +253,92 @@ func TestStreamsWriteQueueFairness(t *testing.T) {
 		if s != dataLen {
 			t.Errorf("stream %v sent %v bytes, want %v", num, s, dataLen)
 		}
+	}
+}
+
+func TestStreamsShutdown(t *testing.T) {
+	// These tests verify that a stream is removed from the Conn's map of live streams
+	// after it is fully shut down.
+	//
+	// Each case consists of a setup step, after which one stream should exist,
+	// and a shutdown step, after which no streams should remain in the Conn.
+	for _, test := range []struct {
+		name     string
+		side     streamSide
+		styp     streamType
+		setup    func(*testing.T, *testConn, *Stream)
+		shutdown func(*testing.T, *testConn, *Stream)
+	}{{
+		name: "closed",
+		side: localStream,
+		styp: uniStream,
+		setup: func(t *testing.T, tc *testConn, s *Stream) {
+			s.CloseContext(canceledContext())
+		},
+		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
+			tc.writeAckForAll()
+		},
+	}, {
+		name: "local close",
+		side: localStream,
+		styp: bidiStream,
+		setup: func(t *testing.T, tc *testConn, s *Stream) {
+			tc.writeFrames(packetType1RTT, debugFrameResetStream{
+				id: s.id,
+			})
+			s.CloseContext(canceledContext())
+		},
+		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
+			tc.writeAckForAll()
+		},
+	}, {
+		name: "remote reset",
+		side: localStream,
+		styp: bidiStream,
+		setup: func(t *testing.T, tc *testConn, s *Stream) {
+			s.CloseContext(canceledContext())
+			tc.wantIdle("all frames after CloseContext are ignored")
+			tc.writeAckForAll()
+		},
+		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
+			tc.writeFrames(packetType1RTT, debugFrameResetStream{
+				id: s.id,
+			})
+		},
+	}, {
+		name: "local close",
+		side: remoteStream,
+		styp: uniStream,
+		setup: func(t *testing.T, tc *testConn, s *Stream) {
+			ctx := canceledContext()
+			tc.writeFrames(packetType1RTT, debugFrameStream{
+				id:  s.id,
+				fin: true,
+			})
+			if n, err := s.ReadContext(ctx, make([]byte, 16)); n != 0 || err != io.EOF {
+				t.Errorf("ReadContext() = %v, %v; want 0, io.EOF", n, err)
+			}
+		},
+		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
+			s.CloseRead()
+		},
+	}} {
+		name := fmt.Sprintf("%v/%v/%v", test.side, test.styp, test.name)
+		t.Run(name, func(t *testing.T) {
+			tc, s := newTestConnAndStream(t, serverSide, test.side, test.styp,
+				permissiveTransportParameters)
+			tc.ignoreFrame(frameTypeStreamBase)
+			tc.ignoreFrame(frameTypeStopSending)
+			test.setup(t, tc, s)
+			tc.wantIdle("conn should be idle after setup")
+			if got, want := len(tc.conn.streams.streams), 1; got != want {
+				t.Fatalf("after setup: %v streams in Conn's map; want %v", got, want)
+			}
+			test.shutdown(t, tc, s)
+			tc.wantIdle("conn should be idle after shutdown")
+			if got, want := len(tc.conn.streams.streams), 0; got != want {
+				t.Fatalf("after shutdown: %v streams in Conn's map; want %v", got, want)
+			}
+		})
 	}
 }

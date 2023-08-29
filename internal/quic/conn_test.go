@@ -394,6 +394,7 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 // writeAckForAll sends the Conn a datagram containing an ack for all packets up to the
 // last one received.
 func (tc *testConn) writeAckForAll() {
+	tc.t.Helper()
 	if tc.lastPacket == nil {
 		return
 	}
@@ -405,6 +406,7 @@ func (tc *testConn) writeAckForAll() {
 // writeAckForLatest sends the Conn a datagram containing an ack for the
 // most recent packet received.
 func (tc *testConn) writeAckForLatest() {
+	tc.t.Helper()
 	if tc.lastPacket == nil {
 		return
 	}
