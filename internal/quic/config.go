@@ -18,6 +18,18 @@ type Config struct {
 	// It must be non-nil and include at least one certificate or else set GetCertificate.
 	TLSConfig *tls.Config
 
+	// MaxBidiRemoteStreams limits the number of simultaneous bidirectional streams
+	// a peer may open.
+	// If zero, the default value of 100 is used.
+	// If negative, the limit is zero.
+	MaxBidiRemoteStreams int64
+
+	// MaxUniRemoteStreams limits the number of simultaneous unidirectional streams
+	// a peer may open.
+	// If zero, the default value of 100 is used.
+	// If negative, the limit is zero.
+	MaxUniRemoteStreams int64
+
 	// StreamReadBufferSize is the maximum amount of data sent by the peer that a
 	// stream will buffer for reading.
 	// If zero, the default value of 1MiB is used.
@@ -31,15 +43,29 @@ type Config struct {
 	StreamWriteBufferSize int64
 }
 
-func configDefault(v, def int64) int64 {
-	switch v {
-	case -1:
-		return 0
-	case 0:
+func configDefault(v, def, limit int64) int64 {
+	switch {
+	case v == 0:
 		return def
+	case v < 0:
+		return 0
+	default:
+		return min(v, limit)
 	}
-	return v
 }
 
-func (c *Config) streamReadBufferSize() int64  { return configDefault(c.StreamReadBufferSize, 1<<20) }
-func (c *Config) streamWriteBufferSize() int64 { return configDefault(c.StreamWriteBufferSize, 1<<20) }
+func (c *Config) maxBidiRemoteStreams() int64 {
+	return configDefault(c.MaxBidiRemoteStreams, 100, maxStreamsLimit)
+}
+
+func (c *Config) maxUniRemoteStreams() int64 {
+	return configDefault(c.MaxUniRemoteStreams, 100, maxStreamsLimit)
+}
+
+func (c *Config) streamReadBufferSize() int64 {
+	return configDefault(c.StreamReadBufferSize, 1<<20, maxVarint)
+}
+
+func (c *Config) streamWriteBufferSize() int64 {
+	return configDefault(c.StreamWriteBufferSize, 1<<20, maxVarint)
+}

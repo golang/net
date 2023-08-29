@@ -121,6 +121,8 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		initialMaxStreamDataBidiLocal:  config.streamReadBufferSize(),
 		initialMaxStreamDataBidiRemote: config.streamReadBufferSize(),
 		initialMaxStreamDataUni:        config.streamReadBufferSize(),
+		initialMaxStreamsBidi:          c.streams.remoteLimit[bidiStream].max,
+		initialMaxStreamsUni:           c.streams.remoteLimit[uniStream].max,
 		activeConnIDLimit:              activeConnIDLimit,
 	})
 
@@ -167,6 +169,8 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 
 // receiveTransportParameters applies transport parameters sent by the peer.
 func (c *Conn) receiveTransportParameters(p transportParameters) error {
+	c.streams.localLimit[bidiStream].setMax(p.initialMaxStreamsBidi)
+	c.streams.localLimit[uniStream].setMax(p.initialMaxStreamsUni)
 	c.streams.peerInitialMaxStreamDataBidiLocal = p.initialMaxStreamDataBidiLocal
 	c.streams.peerInitialMaxStreamDataRemote[bidiStream] = p.initialMaxStreamDataBidiRemote
 	c.streams.peerInitialMaxStreamDataRemote[uniStream] = p.initialMaxStreamDataUni

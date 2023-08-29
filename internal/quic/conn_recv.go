@@ -196,7 +196,7 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			if !frameOK(c, ptype, __01) {
 				return
 			}
-			_, _, n = consumeMaxStreamsFrame(payload)
+			n = c.handleMaxStreamsFrame(now, payload)
 		case frameTypeStreamsBlockedBidi, frameTypeStreamsBlockedUni:
 			if !frameOK(c, ptype, __01) {
 				return
@@ -282,12 +282,24 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 
 func (c *Conn) handleMaxStreamDataFrame(now time.Time, payload []byte) int {
 	id, maxStreamData, n := consumeMaxStreamDataFrame(payload)
+	if n < 0 {
+		return -1
+	}
 	if s := c.streamForFrame(now, id, sendStream); s != nil {
 		if err := s.handleMaxStreamData(maxStreamData); err != nil {
 			c.abort(now, err)
 			return -1
 		}
 	}
+	return n
+}
+
+func (c *Conn) handleMaxStreamsFrame(now time.Time, payload []byte) int {
+	styp, max, n := consumeMaxStreamsFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.streams.localLimit[styp].setMax(max)
 	return n
 }
 

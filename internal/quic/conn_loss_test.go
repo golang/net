@@ -174,9 +174,7 @@ func TestLostStreamFrameEmpty(t *testing.T) {
 	// be retransmitted if lost.
 	lostFrameTest(t, func(t *testing.T, pto bool) {
 		ctx := canceledContext()
-		tc := newTestConn(t, clientSide, func(p *transportParameters) {
-			p.initialMaxStreamDataBidiRemote = 100
-		})
+		tc := newTestConn(t, clientSide, permissiveTransportParameters)
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
 
@@ -368,6 +366,85 @@ func TestLostMaxStreamDataFrameAfterStreamFinReceived(t *testing.T) {
 		tc.triggerLossOrPTO(packetType1RTT, pto)
 		tc.wantIdle("lost MAX_STREAM_DATA not resent for stream in 'size known'")
 	})
+}
+
+func TestLostMaxStreamsFrameMostRecent(t *testing.T) {
+	// "[...] an updated value is sent when a packet containing the
+	// most recent MAX_STREAMS for a stream type frame is declared lost [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.9
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		ctx := canceledContext()
+		tc := newTestConn(t, serverSide, func(c *Config) {
+			c.MaxUniRemoteStreams = 1
+		})
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:  newStreamID(clientSide, uniStream, 0),
+			fin: true,
+		})
+		s, err := tc.conn.AcceptStream(ctx)
+		if err != nil {
+			t.Fatalf("AcceptStream() = %v", err)
+		}
+		if err := s.CloseContext(ctx); err != nil {
+			t.Fatalf("stream.Close() = %v", err)
+		}
+		tc.wantFrame("closing stream updates peer's MAX_STREAMS",
+			packetType1RTT, debugFrameMaxStreams{
+				streamType: uniStream,
+				max:        2,
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantFrame("lost MAX_STREAMS is resent",
+			packetType1RTT, debugFrameMaxStreams{
+				streamType: uniStream,
+				max:        2,
+			})
+	})
+}
+
+func TestLostMaxStreamsFrameNotMostRecent(t *testing.T) {
+	// Send two MAX_STREAMS frames, lose the first one.
+	//
+	// No PTO mode for this test: The ack that causes the first frame
+	// to be lost arms the loss timer for the second, so the PTO timer is not armed.
+	const pto = false
+	ctx := canceledContext()
+	tc := newTestConn(t, serverSide, func(c *Config) {
+		c.MaxUniRemoteStreams = 2
+	})
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+	for i := int64(0); i < 2; i++ {
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:  newStreamID(clientSide, uniStream, i),
+			fin: true,
+		})
+		s, err := tc.conn.AcceptStream(ctx)
+		if err != nil {
+			t.Fatalf("AcceptStream() = %v", err)
+		}
+		if err := s.CloseContext(ctx); err != nil {
+			t.Fatalf("stream.Close() = %v", err)
+		}
+		tc.wantFrame("closing stream updates peer's MAX_STREAMS",
+			packetType1RTT, debugFrameMaxStreams{
+				streamType: uniStream,
+				max:        3 + i,
+			})
+	}
+
+	// The second MAX_STREAMS frame is acked.
+	tc.writeAckForLatest()
+
+	// The first MAX_STREAMS frame is lost.
+	tc.conn.ping(appDataSpace)
+	tc.wantFrame("connection should send a PING frame",
+		packetType1RTT, debugFramePing{})
+	tc.triggerLossOrPTO(packetType1RTT, pto)
+	tc.wantIdle("superseded MAX_DATA is not resent on loss")
 }
 
 func TestLostStreamDataBlockedFrame(t *testing.T) {

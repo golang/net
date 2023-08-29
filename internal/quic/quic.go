@@ -59,6 +59,13 @@ const minimumClientInitialDatagramSize = 1200
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-4.6-2
 const maxStreamsLimit = 1 << 60
 
+// Maximum number of streams we will allow the peer to create implicitly.
+// A stream ID that is used out of order results in all streams of that type
+// with lower-numbered IDs also being opened. To limit the amount of work we
+// will do in response to a single frame, we cap the peer's stream limit to
+// this value.
+const implicitStreamLimit = 100
+
 // A connSide distinguishes between the client and server sides of a connection.
 type connSide int8
 

@@ -18,7 +18,10 @@ type streamsState struct {
 
 	streamsMu sync.Mutex
 	streams   map[streamID]*Stream
-	opened    [streamTypeCount]int64 // number of streams opened by us
+
+	// Limits on the number of streams, indexed by streamType.
+	localLimit  [streamTypeCount]localStreamLimits
+	remoteLimit [streamTypeCount]remoteStreamLimits
 
 	// Peer configuration provided in transport parameters.
 	peerInitialMaxStreamDataRemote    [streamTypeCount]int64 // streams opened by us
@@ -36,6 +39,10 @@ type streamsState struct {
 func (c *Conn) streamsInit() {
 	c.streams.streams = make(map[streamID]*Stream)
 	c.streams.queue = newQueue[*Stream]()
+	c.streams.localLimit[bidiStream].init()
+	c.streams.localLimit[uniStream].init()
+	c.streams.remoteLimit[bidiStream].init(c.config.maxBidiRemoteStreams())
+	c.streams.remoteLimit[uniStream].init(c.config.maxUniRemoteStreams())
 }
 
 // AcceptStream waits for and returns the next stream created by the peer.
@@ -60,12 +67,13 @@ func (c *Conn) NewSendOnlyStream(ctx context.Context) (*Stream, error) {
 }
 
 func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, error) {
-	// TODO: Stream limits.
 	c.streams.streamsMu.Lock()
 	defer c.streams.streamsMu.Unlock()
 
-	num := c.streams.opened[styp]
-	c.streams.opened[styp]++
+	num, err := c.streams.localLimit[styp].open(ctx, c)
+	if err != nil {
+		return nil, err
+	}
 
 	s := newStream(c, newStreamID(c.side, styp, num))
 	s.outmaxbuf = c.config.streamWriteBufferSize()
@@ -122,16 +130,46 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 
 	c.streams.streamsMu.Lock()
 	defer c.streams.streamsMu.Unlock()
-	if s := c.streams.streams[id]; s != nil {
+	s, isOpen := c.streams.streams[id]
+	if s != nil {
 		return s
 	}
-	// TODO: Check for closed streams, once we support closing streams.
+
+	num := id.num()
+	styp := id.streamType()
 	if id.initiator() == c.side {
+		if num < c.streams.localLimit[styp].opened {
+			// This stream was created by us, and has been closed.
+			return nil
+		}
+		// Received a frame for a stream that should be originated by us,
+		// but which we never created.
 		c.abort(now, localTransportError(errStreamState))
+		return nil
+	} else {
+		// if isOpen, this is a stream that was implicitly opened by a
+		// previous frame for a larger-numbered stream, but we haven't
+		// actually created it yet.
+		if !isOpen && num < c.streams.remoteLimit[styp].opened {
+			// This stream was created by the peer, and has been closed.
+			return nil
+		}
+	}
+
+	prevOpened := c.streams.remoteLimit[styp].opened
+	if err := c.streams.remoteLimit[styp].open(id); err != nil {
+		c.abort(now, err)
 		return nil
 	}
 
-	s := newStream(c, id)
+	// Receiving a frame for a stream implicitly creates all streams
+	// with the same initiator and type and a lower number.
+	// Add a nil entry to the streams map for each implicitly created stream.
+	for n := newStreamID(id.initiator(), id.streamType(), prevOpened); n < id; n += 4 {
+		c.streams.streams[n] = nil
+	}
+
+	s = newStream(c, id)
 	s.inmaxbuf = c.config.streamReadBufferSize()
 	s.inwin = c.config.streamReadBufferSize()
 	if id.streamType() == bidiStream {
@@ -174,6 +212,8 @@ func (c *Conn) queueStreamForSend(s *Stream) {
 // It returns true if no more frames need appending,
 // false if not everything fit in the current packet.
 func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
+	c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto)
+	c.streams.remoteLimit[bidiStream].appendFrame(w, bidiStream, pnum, pto)
 	if pto {
 		return c.appendStreamFramesPTO(w, pnum)
 	}
@@ -222,7 +262,11 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 			s.state.set(streamConnRemoved, streamConnRemoved)
 			delete(c.streams.streams, s.id)
 
-			// TODO: Provide the peer with additional stream quota (MAX_STREAMS).
+			// Record finalization of remote streams, to know when
+			// to extend the peer's stream limit.
+			if s.id.initiator() != c.side {
+				c.streams.remoteLimit[s.id.streamType()].close()
+			}
 		}
 
 		next := s.next
@@ -251,6 +295,7 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
+	const pto = true
 	for _, s := range c.streams.streams {
 		const pto = true
 		s.ingate.lock()
@@ -259,6 +304,7 @@ func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 		if !inOK {
 			return false
 		}
+
 		s.outgate.lock()
 		outOK := s.appendOutFramesLocked(w, pnum, pto)
 		s.outUnlockNoQueue()

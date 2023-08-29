@@ -649,7 +649,7 @@ func TestStreamReceiveUnblocksReader(t *testing.T) {
 // to the conn and expects a STREAM_STATE_ERROR.
 func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFrame) {
 	testSides(t, "stream_not_created", func(t *testing.T, side connSide) {
-		tc := newTestConn(t, side)
+		tc := newTestConn(t, side, permissiveTransportParameters)
 		tc.handshake()
 		tc.writeFrames(packetType1RTT, f(newStreamID(side, bidiStream, 0)))
 		tc.wantFrame("frame for local stream which has not been created",
@@ -659,7 +659,7 @@ func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFra
 	})
 	testSides(t, "uni_stream", func(t *testing.T, side connSide) {
 		ctx := canceledContext()
-		tc := newTestConn(t, side)
+		tc := newTestConn(t, side, permissiveTransportParameters)
 		tc.handshake()
 		sid := newStreamID(side, uniStream, 0)
 		s, err := tc.conn.NewSendOnlyStream(ctx)
@@ -796,7 +796,7 @@ func TestStreamOffsetTooLarge(t *testing.T) {
 }
 
 func TestStreamReadFromWriteOnlyStream(t *testing.T) {
-	_, s := newTestConnAndLocalStream(t, serverSide, uniStream)
+	_, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	buf := make([]byte, 10)
 	wantErr := "read from write-only stream"
 	if n, err := s.Read(buf); err == nil || !strings.Contains(err.Error(), wantErr) {
@@ -1112,7 +1112,7 @@ func TestStreamPeerResetFollowedByData(t *testing.T) {
 }
 
 func TestStreamResetInvalidCode(t *testing.T) {
-	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream)
+	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	s.Reset(1 << 62)
 	tc.wantFrame("reset with invalid code sends a RESET_STREAM anyway",
 		packetType1RTT, debugFrameResetStream{

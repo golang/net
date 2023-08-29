@@ -10,9 +10,13 @@ import "testing"
 
 func TestConfigTransportParameters(t *testing.T) {
 	const (
-		wantInitialMaxStreamData = int64(2)
+		wantInitialMaxStreamData  = int64(2)
+		wantInitialMaxStreamsBidi = int64(3)
+		wantInitialMaxStreamsUni  = int64(4)
 	)
 	tc := newTestConn(t, clientSide, func(c *Config) {
+		c.MaxBidiRemoteStreams = wantInitialMaxStreamsBidi
+		c.MaxUniRemoteStreams = wantInitialMaxStreamsUni
 		c.StreamReadBufferSize = wantInitialMaxStreamData
 	})
 	tc.handshake()
@@ -27,6 +31,12 @@ func TestConfigTransportParameters(t *testing.T) {
 		t.Errorf("initial_max_stream_data_bidi_remote = %v, want %v", got, want)
 	}
 	if got, want := p.initialMaxStreamDataUni, wantInitialMaxStreamData; got != want {
+		t.Errorf("initial_max_stream_data_uni = %v, want %v", got, want)
+	}
+	if got, want := p.initialMaxStreamsBidi, wantInitialMaxStreamsBidi; got != want {
+		t.Errorf("initial_max_stream_data_uni = %v, want %v", got, want)
+	}
+	if got, want := p.initialMaxStreamsUni, wantInitialMaxStreamsUni; got != want {
 		t.Errorf("initial_max_stream_data_uni = %v, want %v", got, want)
 	}
 }

@@ -10,15 +10,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"testing"
 )
 
 func TestStreamsCreate(t *testing.T) {
 	ctx := canceledContext()
-	tc := newTestConn(t, clientSide, func(p *transportParameters) {
-		p.initialMaxStreamDataBidiLocal = 100
-		p.initialMaxStreamDataBidiRemote = 100
-	})
+	tc := newTestConn(t, clientSide, permissiveTransportParameters)
 	tc.handshake()
 
 	c, err := tc.conn.NewStream(ctx)
@@ -126,7 +124,7 @@ func TestStreamsBlockingAccept(t *testing.T) {
 	}
 }
 
-func TestStreamsStreamNotCreated(t *testing.T) {
+func TestStreamsLocalStreamNotCreated(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream that has
 	// not yet been created [...]"
@@ -144,13 +142,39 @@ func TestStreamsStreamNotCreated(t *testing.T) {
 		})
 }
 
+func TestStreamsLocalStreamClosed(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream, permissiveTransportParameters)
+	s.CloseWrite()
+	tc.wantFrame("FIN for closed stream",
+		packetType1RTT, debugFrameStream{
+			id:   newStreamID(clientSide, uniStream, 0),
+			fin:  true,
+			data: []byte{},
+		})
+	tc.writeAckForAll()
+
+	tc.writeFrames(packetType1RTT, debugFrameStopSending{
+		id: newStreamID(clientSide, uniStream, 0),
+	})
+	tc.wantIdle("frame for finalized stream is ignored")
+
+	// ACKing the last stream packet should have cleaned up the stream.
+	// Check that we don't have any state left.
+	if got := len(tc.conn.streams.streams); got != 0 {
+		t.Fatalf("after close, len(tc.conn.streams.streams) = %v, want 0", got)
+	}
+	if tc.conn.streams.sendHead != nil {
+		t.Fatalf("after close, stream send queue is not empty; should be")
+	}
+}
+
 func TestStreamsStreamSendOnly(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream that has
 	// not yet been created [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.8-3
 	ctx := canceledContext()
-	tc := newTestConn(t, serverSide)
+	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.handshake()
 
 	c, err := tc.conn.NewSendOnlyStream(ctx)
@@ -340,5 +364,117 @@ func TestStreamsShutdown(t *testing.T) {
 				t.Fatalf("after shutdown: %v streams in Conn's map; want %v", got, want)
 			}
 		})
+	}
+}
+
+func TestStreamsCreateAndCloseRemote(t *testing.T) {
+	// This test exercises creating new streams in response to frames
+	// from the peer, and cleaning up after streams are fully closed.
+	//
+	// It's overfitted to the current implementation, but works through
+	// a number of corner cases in that implementation.
+	//
+	// Disable verbose logging in this test: It sends a lot of packets,
+	// and they're not especially interesting on their own.
+	defer func(vv bool) {
+		*testVV = vv
+	}(*testVV)
+	*testVV = false
+	ctx := canceledContext()
+	tc := newTestConn(t, serverSide, permissiveTransportParameters)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+	type op struct {
+		id streamID
+	}
+	type streamOp op
+	type resetOp op
+	type acceptOp op
+	const noStream = math.MaxInt64
+	stringID := func(id streamID) string {
+		return fmt.Sprintf("%v/%v", id.streamType(), id.num())
+	}
+	for _, op := range []any{
+		"opening bidi/5 implicitly opens bidi/0-4",
+		streamOp{newStreamID(clientSide, bidiStream, 5)},
+		acceptOp{newStreamID(clientSide, bidiStream, 5)},
+		"bidi/3 was implicitly opened",
+		streamOp{newStreamID(clientSide, bidiStream, 3)},
+		acceptOp{newStreamID(clientSide, bidiStream, 3)},
+		resetOp{newStreamID(clientSide, bidiStream, 3)},
+		"bidi/3 is done, frames for it are discarded",
+		streamOp{newStreamID(clientSide, bidiStream, 3)},
+		"open and close some uni streams as well",
+		streamOp{newStreamID(clientSide, uniStream, 0)},
+		acceptOp{newStreamID(clientSide, uniStream, 0)},
+		streamOp{newStreamID(clientSide, uniStream, 1)},
+		acceptOp{newStreamID(clientSide, uniStream, 1)},
+		streamOp{newStreamID(clientSide, uniStream, 2)},
+		acceptOp{newStreamID(clientSide, uniStream, 2)},
+		resetOp{newStreamID(clientSide, uniStream, 1)},
+		resetOp{newStreamID(clientSide, uniStream, 0)},
+		resetOp{newStreamID(clientSide, uniStream, 2)},
+		"closing an implicitly opened stream causes us to accept it",
+		resetOp{newStreamID(clientSide, bidiStream, 0)},
+		acceptOp{newStreamID(clientSide, bidiStream, 0)},
+		resetOp{newStreamID(clientSide, bidiStream, 1)},
+		acceptOp{newStreamID(clientSide, bidiStream, 1)},
+		resetOp{newStreamID(clientSide, bidiStream, 2)},
+		acceptOp{newStreamID(clientSide, bidiStream, 2)},
+		"stream bidi/3 was reset previously",
+		resetOp{newStreamID(clientSide, bidiStream, 3)},
+		resetOp{newStreamID(clientSide, bidiStream, 4)},
+		acceptOp{newStreamID(clientSide, bidiStream, 4)},
+		"stream bidi/5 was reset previously",
+		resetOp{newStreamID(clientSide, bidiStream, 5)},
+		"stream bidi/6 was not implicitly opened",
+		resetOp{newStreamID(clientSide, bidiStream, 6)},
+		acceptOp{newStreamID(clientSide, bidiStream, 6)},
+	} {
+		if _, ok := op.(acceptOp); !ok {
+			if s, err := tc.conn.AcceptStream(ctx); err == nil {
+				t.Fatalf("accepted stream %v, want none", stringID(s.id))
+			}
+		}
+		switch op := op.(type) {
+		case string:
+			t.Log("# " + op)
+		case streamOp:
+			t.Logf("open stream %v", stringID(op.id))
+			tc.writeFrames(packetType1RTT, debugFrameStream{
+				id: streamID(op.id),
+			})
+		case resetOp:
+			t.Logf("reset stream %v", stringID(op.id))
+			tc.writeFrames(packetType1RTT, debugFrameResetStream{
+				id: op.id,
+			})
+		case acceptOp:
+			s, err := tc.conn.AcceptStream(ctx)
+			if err != nil {
+				t.Fatalf("AcceptStream() = %q; want stream %v", err, stringID(op.id))
+			}
+			if s.id != op.id {
+				t.Fatalf("accepted stram %v; want stream %v", err, stringID(op.id))
+			}
+			t.Logf("accepted stream %v", stringID(op.id))
+			// Immediately close the stream, so the stream becomes done when the
+			// peer closes its end.
+			s.CloseContext(ctx)
+		}
+		p := tc.readPacket()
+		if p != nil {
+			tc.writeFrames(p.ptype, debugFrameAck{
+				ranges: []i64range[packetNumber]{{0, p.num + 1}},
+			})
+		}
+	}
+	// Every stream should be fully closed now.
+	// Check that we don't have any state left.
+	if got := len(tc.conn.streams.streams); got != 0 {
+		t.Fatalf("after test, len(tc.conn.streams.streams) = %v, want 0", got)
+	}
+	if tc.conn.streams.sendHead != nil {
+		t.Fatalf("after test, stream send queue is not empty; should be")
 	}
 }

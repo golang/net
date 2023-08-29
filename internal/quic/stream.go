@@ -330,6 +330,10 @@ func (s *Stream) Reset(code uint64) {
 	s.resetInternal(code, userClosed)
 }
 
+// resetInternal resets the send side of the stream.
+//
+// If userClosed is true, this is s.Reset.
+// If userClosed is false, this is a reaction to a STOP_SENDING frame.
 func (s *Stream) resetInternal(code uint64, userClosed bool) {
 	s.outgate.lock()
 	defer s.outUnlock()

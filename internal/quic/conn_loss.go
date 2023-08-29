@@ -64,6 +64,10 @@ func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 			}
 			fin := f&streamFinBit != 0
 			s.ackOrLossData(sent.num, start, end, fin, fate)
+		case frameTypeMaxStreamsBidi:
+			c.streams.remoteLimit[bidiStream].sendMax.ackLatestOrLoss(sent.num, fate)
+		case frameTypeMaxStreamsUni:
+			c.streams.remoteLimit[uniStream].sendMax.ackLatestOrLoss(sent.num, fate)
 		case frameTypeNewConnectionID:
 			seq := int64(sent.nextInt())
 			c.connIDState.ackOrLossNewConnectionID(sent.num, seq, fate)
