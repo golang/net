@@ -1931,6 +1931,9 @@ func MustNewName(name string) Name {
 }
 
 // String implements fmt.Stringer.String.
+//
+// WARNING: This function is just string(n.Data[:n.Length]), so the resulting string
+// might not be a valid UTF-8 string and may contain arbitrary byte values.
 func (n Name) String() string {
 	return string(n.Data[:n.Length])
 }
