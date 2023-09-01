@@ -1901,7 +1901,7 @@ func unpackBytes(msg []byte, off int, field []byte) (int, error) {
 
 const nonEncodedNameMax = 254
 
-// A Name is a non-encoded domain name. It is used instead of strings to avoid
+// A Name is a non-encoded and non-escaped domain name. It is used instead of strings to avoid
 // allocations.
 type Name struct {
 	Data   [255]byte
@@ -1928,6 +1928,8 @@ func MustNewName(name string) Name {
 }
 
 // String implements fmt.Stringer.String.
+//
+// Note: characters inside the labels are not escaped in any way.
 func (n Name) String() string {
 	return string(n.Data[:n.Length])
 }
