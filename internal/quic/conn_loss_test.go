@@ -372,36 +372,46 @@ func TestLostMaxStreamsFrameMostRecent(t *testing.T) {
 	// "[...] an updated value is sent when a packet containing the
 	// most recent MAX_STREAMS for a stream type frame is declared lost [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.9
-	lostFrameTest(t, func(t *testing.T, pto bool) {
-		ctx := canceledContext()
-		tc := newTestConn(t, serverSide, func(c *Config) {
-			c.MaxUniRemoteStreams = 1
-		})
-		tc.handshake()
-		tc.ignoreFrame(frameTypeAck)
-		tc.writeFrames(packetType1RTT, debugFrameStream{
-			id:  newStreamID(clientSide, uniStream, 0),
-			fin: true,
-		})
-		s, err := tc.conn.AcceptStream(ctx)
-		if err != nil {
-			t.Fatalf("AcceptStream() = %v", err)
-		}
-		if err := s.CloseContext(ctx); err != nil {
-			t.Fatalf("stream.Close() = %v", err)
-		}
-		tc.wantFrame("closing stream updates peer's MAX_STREAMS",
-			packetType1RTT, debugFrameMaxStreams{
-				streamType: uniStream,
-				max:        2,
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		lostFrameTest(t, func(t *testing.T, pto bool) {
+			ctx := canceledContext()
+			tc := newTestConn(t, serverSide, func(c *Config) {
+				c.MaxUniRemoteStreams = 1
+				c.MaxBidiRemoteStreams = 1
 			})
+			tc.handshake()
+			tc.ignoreFrame(frameTypeAck)
+			tc.writeFrames(packetType1RTT, debugFrameStream{
+				id:  newStreamID(clientSide, styp, 0),
+				fin: true,
+			})
+			s, err := tc.conn.AcceptStream(ctx)
+			if err != nil {
+				t.Fatalf("AcceptStream() = %v", err)
+			}
+			s.CloseContext(ctx)
+			if styp == bidiStream {
+				tc.wantFrame("stream is closed",
+					packetType1RTT, debugFrameStream{
+						id:   s.id,
+						data: []byte{},
+						fin:  true,
+					})
+				tc.writeAckForAll()
+			}
+			tc.wantFrame("closing stream updates peer's MAX_STREAMS",
+				packetType1RTT, debugFrameMaxStreams{
+					streamType: styp,
+					max:        2,
+				})
 
-		tc.triggerLossOrPTO(packetType1RTT, pto)
-		tc.wantFrame("lost MAX_STREAMS is resent",
-			packetType1RTT, debugFrameMaxStreams{
-				streamType: uniStream,
-				max:        2,
-			})
+			tc.triggerLossOrPTO(packetType1RTT, pto)
+			tc.wantFrame("lost MAX_STREAMS is resent",
+				packetType1RTT, debugFrameMaxStreams{
+					streamType: styp,
+					max:        2,
+				})
+		})
 	})
 }
 
