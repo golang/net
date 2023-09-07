@@ -98,12 +98,16 @@ func (lim *remoteStreamLimits) maybeUpdateMax() {
 	}
 }
 
-// appendFrame appends a MAX_DATA frame if necessary.
-func (lim *remoteStreamLimits) appendFrame(w *packetWriter, typ streamType, pnum packetNumber, pto bool) {
-	if !lim.sendMax.shouldSendPTO(pto) {
-		return
-	}
-	if w.appendMaxStreamsFrame(typ, lim.max) {
+// appendFrame appends a MAX_STREAMS frame to the current packet, if necessary.
+//
+// It returns true if no more frames need appending,
+// false if not everything fit in the current packet.
+func (lim *remoteStreamLimits) appendFrame(w *packetWriter, typ streamType, pnum packetNumber, pto bool) bool {
+	if lim.sendMax.shouldSendPTO(pto) {
+		if !w.appendMaxStreamsFrame(typ, lim.max) {
+			return false
+		}
 		lim.sendMax.setSent(pnum)
 	}
+	return true
 }

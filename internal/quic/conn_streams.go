@@ -212,8 +212,14 @@ func (c *Conn) queueStreamForSend(s *Stream) {
 // It returns true if no more frames need appending,
 // false if not everything fit in the current packet.
 func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
-	c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto)
-	c.streams.remoteLimit[bidiStream].appendFrame(w, bidiStream, pnum, pto)
+	// MAX_STREAM_DATA
+	if !c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto) {
+		return false
+	}
+	if !c.streams.remoteLimit[bidiStream].appendFrame(w, bidiStream, pnum, pto) {
+		return false
+	}
+
 	if pto {
 		return c.appendStreamFramesPTO(w, pnum)
 	}
