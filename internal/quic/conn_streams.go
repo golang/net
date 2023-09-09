@@ -28,15 +28,15 @@ type streamsState struct {
 	peerInitialMaxStreamDataBidiLocal int64                  // streams opened by them
 
 	// Connection-level flow control.
-	inflow connInflow
+	inflow  connInflow
+	outflow connOutflow
 
-	// Streams with frames to send are stored in a circular linked list.
-	// sendHead is the next stream to write, or nil if there are no streams
-	// with data to send. sendTail is the last stream to write.
-	needSend atomic.Bool
-	sendMu   sync.Mutex
-	sendHead *Stream
-	sendTail *Stream
+	// Streams with frames to send are stored in one of two circular linked lists,
+	// depending on whether they require connection-level flow control.
+	needSend  atomic.Bool
+	sendMu    sync.Mutex
+	queueMeta streamRing // streams with any non-flow-controlled frames
+	queueData streamRing // streams with only flow-controlled frames
 }
 
 func (c *Conn) streamsInit() {
@@ -188,27 +188,65 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 	return s
 }
 
-// queueStreamForSend marks a stream as containing frames that need sending.
-func (c *Conn) queueStreamForSend(s *Stream) {
+// maybeQueueStreamForSend marks a stream as containing frames that need sending.
+func (c *Conn) maybeQueueStreamForSend(s *Stream, state streamState) {
+	if state.wantQueue() == state.inQueue() {
+		return // already on the right queue
+	}
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
-	if s.next != nil {
-		// Already in the queue.
-		return
-	}
-	if c.streams.sendHead == nil {
-		// The queue was empty.
-		c.streams.sendHead = s
-		c.streams.sendTail = s
-		s.next = s
-	} else {
-		// Insert this stream at the end of the queue.
-		c.streams.sendTail.next = s
-		c.streams.sendTail = s
-		s.next = c.streams.sendHead
-	}
+	state = s.state.load() // may have changed while waiting
+	c.queueStreamForSendLocked(s, state)
+
 	c.streams.needSend.Store(true)
 	c.wake()
+}
+
+// queueStreamForSendLocked moves a stream to the correct send queue,
+// or removes it from all queues.
+//
+// state is the last known stream state.
+func (c *Conn) queueStreamForSendLocked(s *Stream, state streamState) {
+	for {
+		wantQueue := state.wantQueue()
+		inQueue := state.inQueue()
+		if inQueue == wantQueue {
+			return // already on the right queue
+		}
+
+		switch inQueue {
+		case metaQueue:
+			c.streams.queueMeta.remove(s)
+		case dataQueue:
+			c.streams.queueData.remove(s)
+		}
+
+		switch wantQueue {
+		case metaQueue:
+			c.streams.queueMeta.append(s)
+			state = s.state.set(streamQueueMeta, streamQueueMeta|streamQueueData)
+		case dataQueue:
+			c.streams.queueData.append(s)
+			state = s.state.set(streamQueueData, streamQueueMeta|streamQueueData)
+		case noQueue:
+			state = s.state.set(0, streamQueueMeta|streamQueueData)
+		}
+
+		// If the stream state changed while we were moving the stream,
+		// we might now be on the wrong queue.
+		//
+		// For example:
+		//   - stream has data to send: streamOutSendData|streamQueueData
+		//   - appendStreamFrames sends all the data: streamQueueData
+		//   - concurrently, more data is written: streamOutSendData|streamQueueData
+		//   - appendStreamFrames calls us with the last state it observed
+		//     (streamQueueData).
+		//   - We remove the stream from the queue and observe the updated state:
+		//     streamOutSendData
+		//   - We realize that the stream needs to go back on the data queue.
+		//
+		// Go back around the loop to confirm we're on the correct queue.
+	}
 }
 
 // appendStreamFrames writes stream-related frames to the current packet.
@@ -237,44 +275,45 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 	}
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
-	for {
-		s := c.streams.sendHead
-		const pto = false
-
+	// queueMeta contains streams with non-flow-controlled frames to send.
+	for c.streams.queueMeta.head != nil {
+		s := c.streams.queueMeta.head
 		state := s.state.load()
-		if state&streamInSend != 0 {
+		if state&(streamQueueMeta|streamConnRemoved) != streamQueueMeta {
+			panic("BUG: queueMeta stream is not streamQueueMeta")
+		}
+		if state&streamInSendMeta != 0 {
 			s.ingate.lock()
 			ok := s.appendInFramesLocked(w, pnum, pto)
 			state = s.inUnlockNoQueue()
 			if !ok {
 				return false
 			}
-		}
-
-		if state&streamOutSend != 0 {
-			avail := w.avail()
-			s.outgate.lock()
-			ok := s.appendOutFramesLocked(w, pnum, pto)
-			state = s.outUnlockNoQueue()
-			if !ok {
-				// We've sent some data for this stream, but it still has more to send.
-				// If the stream got a reasonable chance to put data in a packet,
-				// advance sendHead to the next stream in line, to avoid starvation.
-				// We'll come back to this stream after going through the others.
-				//
-				// If the packet was already mostly out of space, leave sendHead alone
-				// and come back to this stream again on the next packet.
-				if avail > 512 {
-					c.streams.sendHead = s.next
-					c.streams.sendTail = s
-				}
-				return false
+			if state&streamInSendMeta != 0 {
+				panic("BUG: streamInSendMeta set after successfully appending frames")
 			}
 		}
-
-		if state == streamInDone|streamOutDone {
+		if state&streamOutSendMeta != 0 {
+			s.outgate.lock()
+			// This might also append flow-controlled frames if we have any
+			// and available conn-level quota. That's fine.
+			ok := s.appendOutFramesLocked(w, pnum, pto)
+			state = s.outUnlockNoQueue()
+			// We're checking both ok and state, because appendOutFramesLocked
+			// might have filled up the packet with flow-controlled data.
+			// If so, we want to move the stream to queueData for any remaining frames.
+			if !ok && state&streamOutSendMeta != 0 {
+				return false
+			}
+			if state&streamOutSendMeta != 0 {
+				panic("BUG: streamOutSendMeta set after successfully appending frames")
+			}
+		}
+		// We've sent all frames for this stream, so remove it from the send queue.
+		c.streams.queueMeta.remove(s)
+		if state&(streamInDone|streamOutDone) == streamInDone|streamOutDone {
 			// Stream is finished, remove it from the conn.
-			s.state.set(streamConnRemoved, streamConnRemoved)
+			state = s.state.set(streamConnRemoved, streamQueueMeta|streamConnRemoved)
 			delete(c.streams.streams, s.id)
 
 			// Record finalization of remote streams, to know when
@@ -282,24 +321,59 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 			if s.id.initiator() != c.side {
 				c.streams.remoteLimit[s.id.streamType()].close()
 			}
+		} else {
+			state = s.state.set(0, streamQueueMeta|streamConnRemoved)
 		}
-
-		next := s.next
-		s.next = nil
-		if (next == s) != (s == c.streams.sendTail) {
-			panic("BUG: sendable stream list state is inconsistent")
+		// The stream may have flow-controlled data to send,
+		// or something might have added non-flow-controlled frames after we
+		// unlocked the stream.
+		// If so, put the stream back on a queue.
+		c.queueStreamForSendLocked(s, state)
+	}
+	// queueData contains streams with flow-controlled frames.
+	for c.streams.queueData.head != nil {
+		avail := c.streams.outflow.avail()
+		if avail == 0 {
+			break // no flow control quota available
 		}
-		if s == c.streams.sendTail {
-			// This was the last stream.
-			c.streams.sendHead = nil
-			c.streams.sendTail = nil
-			c.streams.needSend.Store(false)
+		s := c.streams.queueData.head
+		s.outgate.lock()
+		ok := s.appendOutFramesLocked(w, pnum, pto)
+		state := s.outUnlockNoQueue()
+		if !ok {
+			// We've sent some data for this stream, but it still has more to send.
+			// If the stream got a reasonable chance to put data in a packet,
+			// advance sendHead to the next stream in line, to avoid starvation.
+			// We'll come back to this stream after going through the others.
+			//
+			// If the packet was already mostly out of space, leave sendHead alone
+			// and come back to this stream again on the next packet.
+			if avail > 512 {
+				c.streams.queueData.head = s.next
+			}
+			return false
+		}
+		if state&streamQueueData == 0 {
+			panic("BUG: queueData stream is not streamQueueData")
+		}
+		if state&streamOutSendData != 0 {
+			// We must have run out of connection-level flow control:
+			// appendOutFramesLocked says it wrote all it can, but there's
+			// still data to send.
+			//
+			// Advance sendHead to the next stream in line to avoid starvation.
+			if c.streams.outflow.avail() != 0 {
+				panic("BUG: streamOutSendData set and flow control available after send")
+			}
+			c.streams.queueData.head = s.next
 			return true
 		}
-		// We've sent all data for this stream, so remove it from the list.
-		c.streams.sendTail.next = next
-		c.streams.sendHead = next
+		c.streams.queueData.remove(s)
+		state = s.state.set(0, streamQueueData)
+		c.queueStreamForSendLocked(s, state)
 	}
+	c.streams.needSend.Store(c.streams.queueData.head != nil)
+	return true
 }
 
 // appendStreamFramesPTO writes stream-related frames to the current packet
@@ -328,4 +402,38 @@ func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 		}
 	}
 	return true
+}
+
+// A streamRing is a circular linked list of streams.
+type streamRing struct {
+	head *Stream
+}
+
+// remove removes s from the ring.
+// s must be on the ring.
+func (r *streamRing) remove(s *Stream) {
+	if s.next == s {
+		r.head = nil // s was the last stream in the ring
+	} else {
+		s.prev.next = s.next
+		s.next.prev = s.prev
+		if r.head == s {
+			r.head = s.next
+		}
+	}
+}
+
+// append places s at the last position in the ring.
+// s must not be attached to any ring.
+func (r *streamRing) append(s *Stream) {
+	if r.head == nil {
+		r.head = s
+		s.next = s
+		s.prev = s
+	} else {
+		s.prev = r.head.prev
+		s.next = r.head
+		s.prev.next = s
+		s.next.prev = s
+	}
 }

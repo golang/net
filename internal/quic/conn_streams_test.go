@@ -163,7 +163,7 @@ func TestStreamsLocalStreamClosed(t *testing.T) {
 	if got := len(tc.conn.streams.streams); got != 0 {
 		t.Fatalf("after close, len(tc.conn.streams.streams) = %v, want 0", got)
 	}
-	if tc.conn.streams.sendHead != nil {
+	if tc.conn.streams.queueMeta.head != nil {
 		t.Fatalf("after close, stream send queue is not empty; should be")
 	}
 }
@@ -474,7 +474,7 @@ func TestStreamsCreateAndCloseRemote(t *testing.T) {
 	if got := len(tc.conn.streams.streams); got != 0 {
 		t.Fatalf("after test, len(tc.conn.streams.streams) = %v, want 0", got)
 	}
-	if tc.conn.streams.sendHead != nil {
+	if tc.conn.streams.queueMeta.head != nil {
 		t.Fatalf("after test, stream send queue is not empty; should be")
 	}
 }

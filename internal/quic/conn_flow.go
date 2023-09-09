@@ -109,3 +109,26 @@ func (c *Conn) appendMaxDataFrame(w *packetWriter, pnum packetNumber, pto bool) 
 func (c *Conn) ackOrLossMaxData(pnum packetNumber, fate packetFate) {
 	c.streams.inflow.sent.ackLatestOrLoss(pnum, fate)
 }
+
+// connOutflow tracks connection-level flow control for data sent by us to the peer.
+type connOutflow struct {
+	max  int64 // largest MAX_DATA received from peer
+	used int64 // total bytes of STREAM data sent to peer
+}
+
+// setMaxData updates the connection-level flow control limit
+// with the initial limit conveyed in transport parameters
+// or an update from a MAX_DATA frame.
+func (f *connOutflow) setMaxData(maxData int64) {
+	f.max = max(f.max, maxData)
+}
+
+// avail returns the number of connection-level flow control bytes available.
+func (f *connOutflow) avail() int64 {
+	return f.max - f.used
+}
+
+// consume records consumption of n bytes of flow.
+func (f *connOutflow) consume(n int64) {
+	f.used += n
+}

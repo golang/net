@@ -1270,3 +1270,11 @@ func permissiveTransportParameters(p *transportParameters) {
 	p.initialMaxStreamDataBidiLocal = maxVarint
 	p.initialMaxStreamDataUni = maxVarint
 }
+
+func makeTestData(n int) []byte {
+	b := make([]byte, n)
+	for i := 0; i < n; i++ {
+		b[i] = byte(i)
+	}
+	return b
+}

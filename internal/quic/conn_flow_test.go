@@ -6,7 +6,9 @@
 
 package quic
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestConnInflowReturnOnRead(t *testing.T) {
 	ctx := canceledContext()
@@ -182,5 +184,151 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 	tc.wantFrame("closed stream triggers another MAX_DATA update",
 		packetType1RTT, debugFrameMaxData{
 			max: 128 + 32 + 1 + 32 + 1,
+		})
+}
+
+func TestConnOutflowBlocked(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
+		permissiveTransportParameters,
+		func(p *transportParameters) {
+			p.initialMaxData = 10
+		})
+	tc.ignoreFrame(frameTypeAck)
+
+	data := makeTestData(32)
+	n, err := s.Write(data)
+	if n != len(data) || err != nil {
+		t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(data))
+	}
+
+	tc.wantFrame("stream writes data up to MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data[:10],
+		})
+	tc.wantIdle("stream is blocked by MAX_DATA limit")
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 20,
+	})
+	tc.wantFrame("stream writes data up to new MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  10,
+			data: data[10:20],
+		})
+	tc.wantIdle("stream is blocked by new MAX_DATA limit")
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 100,
+	})
+	tc.wantFrame("stream writes remaining data",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  20,
+			data: data[20:],
+		})
+}
+
+func TestConnOutflowMaxDataDecreases(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
+		permissiveTransportParameters,
+		func(p *transportParameters) {
+			p.initialMaxData = 10
+		})
+	tc.ignoreFrame(frameTypeAck)
+
+	// Decrease in MAX_DATA is ignored.
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 5,
+	})
+
+	data := makeTestData(32)
+	n, err := s.Write(data)
+	if n != len(data) || err != nil {
+		t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(data))
+	}
+
+	tc.wantFrame("stream writes data up to MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data[:10],
+		})
+}
+
+func TestConnOutflowMaxDataRoundRobin(t *testing.T) {
+	ctx := canceledContext()
+	tc := newTestConn(t, clientSide, permissiveTransportParameters,
+		func(p *transportParameters) {
+			p.initialMaxData = 0
+		})
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	s1, err := tc.conn.newLocalStream(ctx, uniStream)
+	if err != nil {
+		t.Fatalf("conn.newLocalStream(%v) = %v", uniStream, err)
+	}
+	s2, err := tc.conn.newLocalStream(ctx, uniStream)
+	if err != nil {
+		t.Fatalf("conn.newLocalStream(%v) = %v", uniStream, err)
+	}
+
+	s1.Write(make([]byte, 10))
+	s2.Write(make([]byte, 10))
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 1,
+	})
+	tc.wantFrame("stream 1 writes data up to MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s1.id,
+			data: []byte{0},
+		})
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 2,
+	})
+	tc.wantFrame("stream 2 writes data up to MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s2.id,
+			data: []byte{0},
+		})
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 3,
+	})
+	tc.wantFrame("stream 1 writes data up to MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s1.id,
+			off:  1,
+			data: []byte{0},
+		})
+}
+
+func TestConnOutflowMetaAndData(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters,
+		func(p *transportParameters) {
+			p.initialMaxData = 0
+		})
+	tc.ignoreFrame(frameTypeAck)
+
+	data := makeTestData(32)
+	s.Write(data)
+
+	s.CloseRead()
+	tc.wantFrame("CloseRead sends a STOP_SENDING, not flow controlled",
+		packetType1RTT, debugFrameStopSending{
+			id: s.id,
+		})
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxData{
+		max: 100,
+	})
+	tc.wantFrame("unblocked MAX_DATA",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data,
 		})
 }

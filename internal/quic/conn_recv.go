@@ -186,7 +186,7 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			if !frameOK(c, ptype, __01) {
 				return
 			}
-			_, n = consumeMaxDataFrame(payload)
+			n = c.handleMaxDataFrame(now, payload)
 		case frameTypeMaxStreamData:
 			if !frameOK(c, ptype, __01) {
 				return
@@ -277,6 +277,15 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 		delay = ackDelay.Duration(uint8(c.peerAckDelayExponent))
 	}
 	c.loss.receiveAckEnd(now, space, delay, c.handleAckOrLoss)
+	return n
+}
+
+func (c *Conn) handleMaxDataFrame(now time.Time, payload []byte) int {
+	maxData, n := consumeMaxDataFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.streams.outflow.setMaxData(maxData)
 	return n
 }
 

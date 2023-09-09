@@ -57,6 +57,7 @@ type Stream struct {
 	// streamIn* bits must be set with ingate held.
 	// streamOut* bits must be set with outgate held.
 	// streamConn* bits are set by the conn's loop.
+	// streamQueue* bits must be set with streamsState.sendMu held.
 	state atomicBits[streamState]
 
 	prev, next *Stream // guarded by streamsState.sendMu
@@ -65,11 +66,19 @@ type Stream struct {
 type streamState uint32
 
 const (
-	// streamInSend and streamOutSend are set when there are
-	// frames to send for the inbound or outbound sides of the stream.
-	// For example, MAX_STREAM_DATA or STREAM_DATA_BLOCKED.
-	streamInSend = streamState(1 << iota)
-	streamOutSend
+	// streamInSendMeta is set when there are frames to send for the
+	// inbound side of the stream. For example, MAX_STREAM_DATA.
+	// Inbound frames are never flow-controlled.
+	streamInSendMeta = streamState(1 << iota)
+
+	// streamOutSendMeta is set when there are non-flow-controlled frames
+	// to send for the outbound side of the stream. For example, STREAM_DATA_BLOCKED.
+	// streamOutSendData is set when there are no non-flow-controlled outbound frames
+	// and the stream has data to send.
+	//
+	// At most one of streamOutSendMeta and streamOutSendData is set at any time.
+	streamOutSendMeta
+	streamOutSendData
 
 	// streamInDone and streamOutDone are set when the inbound or outbound
 	// sides of the stream are finished. When both are set, the stream
@@ -79,7 +88,47 @@ const (
 
 	// streamConnRemoved is set when the stream has been removed from the conn.
 	streamConnRemoved
+
+	// streamQueueMeta and streamQueueData indicate which of the streamsState
+	// send queues the conn is currently on.
+	streamQueueMeta
+	streamQueueData
 )
+
+type streamQueue int
+
+const (
+	noQueue   = streamQueue(iota)
+	metaQueue // streamsState.queueMeta
+	dataQueue // streamsState.queueData
+)
+
+// wantQueue returns the send queue the stream should be on.
+func (s streamState) wantQueue() streamQueue {
+	switch {
+	case s&(streamInSendMeta|streamOutSendMeta) != 0:
+		return metaQueue
+	case s&(streamInDone|streamOutDone|streamConnRemoved) == streamInDone|streamOutDone:
+		return metaQueue
+	case s&streamOutSendData != 0:
+		// The stream has no non-flow-controlled frames to send,
+		// but does have data. Put it on the data queue, which is only
+		// processed when flow control is available.
+		return dataQueue
+	}
+	return noQueue
+}
+
+// inQueue returns the send queue the stream is currently on.
+func (s streamState) inQueue() streamQueue {
+	switch {
+	case s&streamQueueMeta != 0:
+		return metaQueue
+	case s&streamQueueData != 0:
+		return dataQueue
+	}
+	return noQueue
+}
 
 // newStream returns a new stream.
 //
@@ -365,9 +414,7 @@ func (s *Stream) resetInternal(code uint64, userClosed bool) {
 // are done and the stream should be removed, it notifies the Conn.
 func (s *Stream) inUnlock() {
 	state := s.inUnlockNoQueue()
-	if state&streamInSend != 0 || state == streamInDone|streamOutDone {
-		s.conn.queueStreamForSend(s)
-	}
+	s.conn.maybeQueueStreamForSend(s, state)
 }
 
 // inUnlockNoQueue is inUnlock,
@@ -391,11 +438,11 @@ func (s *Stream) inUnlockNoQueue() streamState {
 			state = streamInDone
 		}
 	case s.insendmax.shouldSend(): // STREAM_MAX_DATA
-		state = streamInSend
+		state = streamInSendMeta
 	case s.inclosed.shouldSend(): // STOP_SENDING
-		state = streamInSend
+		state = streamInSendMeta
 	}
-	const mask = streamInDone | streamInSend
+	const mask = streamInDone | streamInSendMeta
 	return s.state.set(state, mask)
 }
 
@@ -405,9 +452,7 @@ func (s *Stream) inUnlockNoQueue() streamState {
 // are done and the stream should be removed, it notifies the Conn.
 func (s *Stream) outUnlock() {
 	state := s.outUnlockNoQueue()
-	if state&streamOutSend != 0 || state == streamInDone|streamOutDone {
-		s.conn.queueStreamForSend(s)
-	}
+	s.conn.maybeQueueStreamForSend(s, state)
 }
 
 // outUnlockNoQueue is outUnlock,
@@ -442,18 +487,18 @@ func (s *Stream) outUnlockNoQueue() streamState {
 			state = streamOutDone
 		}
 	case s.outreset.shouldSend(): // RESET_STREAM
-		state = streamOutSend
+		state = streamOutSendMeta
 	case s.outreset.isSet(): // RESET_STREAM sent but not acknowledged
-	case len(s.outunsent) > 0: // STREAM frame with data
-		state = streamOutSend
-	case s.outclosed.shouldSend(): // STREAM frame with FIN bit
-		state = streamOutSend
-	case s.outopened.shouldSend(): // STREAM frame with no data
-		state = streamOutSend
 	case s.outblocked.shouldSend(): // STREAM_DATA_BLOCKED
-		state = streamOutSend
+		state = streamOutSendMeta
+	case len(s.outunsent) > 0: // STREAM frame with data
+		state = streamOutSendData
+	case s.outclosed.shouldSend(): // STREAM frame with FIN bit, all data already sent
+		state = streamOutSendMeta
+	case s.outopened.shouldSend(): // STREAM frame with no data
+		state = streamOutSendMeta
 	}
-	const mask = streamOutDone | streamOutSend
+	const mask = streamOutDone | streamOutSendMeta | streamOutSendData
 	return s.state.set(state, mask)
 }
 
@@ -678,6 +723,7 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 	for {
 		// STREAM
 		off, size := dataToSend(min(s.out.start, s.outwin), min(s.out.end, s.outwin), s.outunsent, s.outacked, pto)
+		size = min(size, s.conn.streams.outflow.avail())
 		fin := s.outclosed.isSet() && off+size == s.out.end
 		shouldSend := size > 0 || // have data to send
 			s.outopened.shouldSendPTO(pto) || // should open the stream
@@ -690,6 +736,7 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 			return false
 		}
 		s.out.copy(off, b)
+		s.conn.streams.outflow.consume(int64(len(b)))
 		s.outunsent.sub(off, off+int64(len(b)))
 		s.frameOpensStream(pnum)
 		if fin {

@@ -169,6 +169,7 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 
 // receiveTransportParameters applies transport parameters sent by the peer.
 func (c *Conn) receiveTransportParameters(p transportParameters) error {
+	c.streams.outflow.setMaxData(p.initialMaxData)
 	c.streams.localLimit[bidiStream].setMax(p.initialMaxStreamsBidi)
 	c.streams.localLimit[uniStream].setMax(p.initialMaxStreamsUni)
 	c.streams.peerInitialMaxStreamDataBidiLocal = p.initialMaxStreamDataBidiLocal
