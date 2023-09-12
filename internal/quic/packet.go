@@ -6,6 +6,8 @@
 
 package quic
 
+import "fmt"
+
 // packetType is a QUIC packet type.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17
 type packetType byte
@@ -19,6 +21,22 @@ const (
 	packetType1RTT
 	packetTypeVersionNegotiation
 )
+
+func (p packetType) String() string {
+	switch p {
+	case packetTypeInitial:
+		return "Initial"
+	case packetType0RTT:
+		return "0-RTT"
+	case packetTypeHandshake:
+		return "Handshake"
+	case packetTypeRetry:
+		return "Retry"
+	case packetType1RTT:
+		return "1-RTT"
+	}
+	return fmt.Sprintf("unknown packet type %v", byte(p))
+}
 
 // Bits set in the first byte of a packet.
 const (
