@@ -20,13 +20,14 @@ import (
 // Multiple goroutines may invoke methods on a Conn simultaneously.
 type Conn struct {
 	side      connSide
-	listener  connListener
+	listener  *Listener
 	config    *Config
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
 
 	msgc   chan any
 	donec  chan struct{} // closed when conn loop exits
+	readyc chan struct{} // closed when TLS handshake completes
 	exited bool          // set to make the conn loop exit immediately
 
 	w           packetWriter
@@ -61,21 +62,16 @@ type Conn struct {
 	testSendPing      sentVal
 }
 
-// The connListener is the Conn's Listener.
-// Defined as an interface so we can swap it out in tests.
-type connListener interface {
-	sendDatagram(p []byte, addr netip.AddrPort) error
-}
-
 // connTestHooks override conn behavior in tests.
 type connTestHooks interface {
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
 	handleTLSEvent(tls.QUICEvent)
 	newConnID(seq int64) ([]byte, error)
 	waitUntil(ctx context.Context, until func() bool) error
+	timeNow() time.Time
 }
 
-func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l connListener, hooks connTestHooks) (*Conn, error) {
+func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener, hooks connTestHooks) (*Conn, error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
@@ -83,6 +79,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
+		readyc:               make(chan struct{}),
 		testHooks:            hooks,
 		maxIdleTimeout:       defaultMaxIdleTimeout,
 		idleTimeout:          now.Add(defaultMaxIdleTimeout),
@@ -94,12 +91,12 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.msgc = make(chan any, 1)
 
 	if c.side == clientSide {
-		if err := c.connIDState.initClient(c.newConnIDFunc()); err != nil {
+		if err := c.connIDState.initClient(c); err != nil {
 			return nil, err
 		}
 		initialConnID, _ = c.connIDState.dstConnID()
 	} else {
-		if err := c.connIDState.initServer(c.newConnIDFunc(), initialConnID); err != nil {
+		if err := c.connIDState.initServer(c, initialConnID); err != nil {
 			return nil, err
 		}
 	}
@@ -134,6 +131,14 @@ func (c *Conn) String() string {
 	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.peerAddr)
 }
 
+func (c *Conn) Close() error {
+	// TODO: Implement shutdown for real.
+	c.runOnLoop(func(now time.Time, c *Conn) {
+		c.exited = true
+	})
+	return nil
+}
+
 // confirmHandshake is called when the handshake is confirmed.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2
 func (c *Conn) confirmHandshake(now time.Time) {
@@ -147,6 +152,7 @@ func (c *Conn) confirmHandshake(now time.Time) {
 	if c.side == serverSide {
 		// When the server confirms the handshake, it sends a HANDSHAKE_DONE.
 		c.handshakeConfirmed.setUnsent()
+		c.listener.serverConnEstablished(c)
 	} else {
 		// The client never sends a HANDSHAKE_DONE, so we set handshakeConfirmed
 		// to the received state, indicating that the handshake is confirmed and we
@@ -177,7 +183,7 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 	c.streams.peerInitialMaxStreamDataRemote[uniStream] = p.initialMaxStreamDataUni
 	c.peerAckDelayExponent = p.ackDelayExponent
 	c.loss.setMaxAckDelay(p.maxAckDelay)
-	if err := c.connIDState.setPeerActiveConnIDLimit(p.activeConnIDLimit, c.newConnIDFunc()); err != nil {
+	if err := c.connIDState.setPeerActiveConnIDLimit(c, p.activeConnIDLimit); err != nil {
 		return err
 	}
 	if p.preferredAddrConnID != nil {
@@ -211,6 +217,7 @@ type (
 func (c *Conn) loop(now time.Time) {
 	defer close(c.donec)
 	defer c.tls.Close()
+	defer c.listener.connDrained(c)
 
 	// The connection timer sends a message to the connection loop on expiry.
 	// We need to give it an expiry when creating it, so set the initial timeout to
@@ -370,11 +377,4 @@ func firstTime(a, b time.Time) time.Time {
 	default:
 		return b
 	}
-}
-
-func (c *Conn) newConnIDFunc() newConnIDFunc {
-	if c.testHooks != nil {
-		return c.testHooks.newConnID
-	}
-	return newRandomConnID
 }

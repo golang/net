@@ -63,7 +63,7 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if logPackets {
 		logInboundLongPacket(c, p)
 	}
-	c.connIDState.handlePacket(c.side, p.ptype, p.srcConnID)
+	c.connIDState.handlePacket(c, p.ptype, p.srcConnID)
 	ackEliciting := c.handleFrames(now, ptype, space, p.payload)
 	c.acks[space].receive(now, space, p.num, ackEliciting)
 	if p.ptype == packetTypeHandshake && c.side == serverSide {
@@ -377,7 +377,7 @@ func (c *Conn) handleRetireConnectionIDFrame(now time.Time, space numberSpace, p
 	if n < 0 {
 		return -1
 	}
-	if err := c.connIDState.handleRetireConnID(seq, c.newConnIDFunc()); err != nil {
+	if err := c.connIDState.handleRetireConnID(c, seq); err != nil {
 		c.abort(now, err)
 	}
 	return n

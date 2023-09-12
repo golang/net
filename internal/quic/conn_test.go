@@ -13,7 +13,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
+	"net"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -105,6 +107,7 @@ func (p testPacket) String() string {
 type testConn struct {
 	t              *testing.T
 	conn           *Conn
+	listener       *Listener
 	now            time.Time
 	timer          time.Time
 	timerLastFired time.Time
@@ -142,6 +145,8 @@ type testConn struct {
 	sentFrames    []debugFrame
 	lastPacket    *testPacket
 
+	recvDatagram chan *datagram
+
 	// Transport parameters sent by the conn.
 	sentTransportParameters *transportParameters
 
@@ -173,6 +178,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		},
 		cryptoDataOut: make(map[tls.QUICEncryptionLevel][]byte),
 		cryptoDataIn:  make(map[tls.QUICEncryptionLevel][]byte),
+		recvDatagram:  make(chan *datagram),
 	}
 	t.Cleanup(tc.cleanup)
 
@@ -196,12 +202,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	var initialConnID []byte
 	if side == serverSide {
 		// The initial connection ID for the server is chosen by the client.
-		// When creating a server-side connection, pick a random connection ID here.
-		var err error
-		initialConnID, err = newRandomConnID(0)
-		if err != nil {
-			tc.t.Fatal(err)
-		}
+		initialConnID = testPeerConnID(-1)
 	}
 
 	peerQUICConfig := &tls.QUICConfig{TLSConfig: newTestTLSConfig(side.peer())}
@@ -213,14 +214,12 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	tc.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
 	tc.peerTLSConn.Start(context.Background())
 
-	conn, err := newConn(
+	tc.listener = newListener((*testConnUDPConn)(tc), config, (*testConnHooks)(tc))
+	conn, err := tc.listener.newConn(
 		tc.now,
 		side,
 		initialConnID,
-		netip.MustParseAddrPort("127.0.0.1:443"),
-		config,
-		(*testConnListener)(tc),
-		(*testConnHooks)(tc))
+		netip.MustParseAddrPort("127.0.0.1:443"))
 	if err != nil {
 		tc.t.Fatal(err)
 	}
@@ -316,6 +315,7 @@ func (tc *testConn) cleanup() {
 		return
 	}
 	tc.conn.exit()
+	tc.listener.Close(context.Background())
 }
 
 func (tc *testConn) logDatagram(text string, d *testDatagram) {
@@ -844,6 +844,10 @@ func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
 	return testLocalConnID(seq), nil
 }
 
+func (tc *testConnHooks) timeNow() time.Time {
+	return tc.now
+}
+
 // testLocalConnID returns the connection ID with a given sequence number
 // used by a Conn under test.
 func testLocalConnID(seq int64) []byte {
@@ -861,12 +865,29 @@ func testPeerConnID(seq int64) []byte {
 	return []byte{0xbe, 0xee, 0xff, byte(seq)}
 }
 
-// testConnListener implements connListener.
-type testConnListener testConn
+// testConnUDPConn implements UDPConn.
+type testConnUDPConn testConn
 
-func (tc *testConnListener) sendDatagram(p []byte, addr netip.AddrPort) error {
-	tc.sentDatagrams = append(tc.sentDatagrams, append([]byte(nil), p...))
+func (tc *testConnUDPConn) Close() error {
+	close(tc.recvDatagram)
 	return nil
+}
+
+func (tc *testConnUDPConn) LocalAddr() net.Addr {
+	return net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:443"))
+}
+
+func (tc *testConnUDPConn) ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error) {
+	for d := range tc.recvDatagram {
+		n = copy(b, d.b)
+		return n, 0, 0, d.addr, nil
+	}
+	return 0, 0, 0, netip.AddrPort{}, io.EOF
+}
+
+func (tc *testConnUDPConn) WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error) {
+	tc.sentDatagrams = append(tc.sentDatagrams, append([]byte(nil), b...))
+	return len(b), nil
 }
 
 // canceledContext returns a canceled Context.

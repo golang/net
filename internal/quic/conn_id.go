@@ -55,10 +55,10 @@ type connID struct {
 	send sentVal
 }
 
-func (s *connIDState) initClient(newID newConnIDFunc) error {
+func (s *connIDState) initClient(c *Conn) error {
 	// Client chooses its initial connection ID, and sends it
 	// in the Source Connection ID field of the first Initial packet.
-	locid, err := newID(0)
+	locid, err := c.newConnID(0)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (s *connIDState) initClient(newID newConnIDFunc) error {
 
 	// Client chooses an initial, transient connection ID for the server,
 	// and sends it in the Destination Connection ID field of the first Initial packet.
-	remid, err := newID(-1)
+	remid, err := c.newConnID(-1)
 	if err != nil {
 		return err
 	}
@@ -78,10 +78,12 @@ func (s *connIDState) initClient(newID newConnIDFunc) error {
 		seq: -1,
 		cid: remid,
 	})
+	const retired = false
+	c.listener.connIDsChanged(c, retired, s.local[:])
 	return nil
 }
 
-func (s *connIDState) initServer(newID newConnIDFunc, dstConnID []byte) error {
+func (s *connIDState) initServer(c *Conn, dstConnID []byte) error {
 	// Client-chosen, transient connection ID received in the first Initial packet.
 	// The server will not use this as the Source Connection ID of packets it sends,
 	// but remembers it because it may receive packets sent to this destination.
@@ -92,7 +94,7 @@ func (s *connIDState) initServer(newID newConnIDFunc, dstConnID []byte) error {
 
 	// Server chooses a connection ID, and sends it in the Source Connection ID of
 	// the response to the clent.
-	locid, err := newID(0)
+	locid, err := c.newConnID(0)
 	if err != nil {
 		return err
 	}
@@ -101,6 +103,8 @@ func (s *connIDState) initServer(newID newConnIDFunc, dstConnID []byte) error {
 		cid: locid,
 	})
 	s.nextLocalSeq = 1
+	const retired = false
+	c.listener.connIDsChanged(c, retired, s.local[:])
 	return nil
 }
 
@@ -125,20 +129,21 @@ func (s *connIDState) dstConnID() (cid []byte, ok bool) {
 
 // setPeerActiveConnIDLimit sets the active_connection_id_limit
 // transport parameter received from the peer.
-func (s *connIDState) setPeerActiveConnIDLimit(lim int64, newID newConnIDFunc) error {
+func (s *connIDState) setPeerActiveConnIDLimit(c *Conn, lim int64) error {
 	s.peerActiveConnIDLimit = lim
-	return s.issueLocalIDs(newID)
+	return s.issueLocalIDs(c)
 }
 
-func (s *connIDState) issueLocalIDs(newID newConnIDFunc) error {
+func (s *connIDState) issueLocalIDs(c *Conn) error {
 	toIssue := min(int(s.peerActiveConnIDLimit), maxPeerActiveConnIDLimit)
 	for i := range s.local {
 		if s.local[i].seq != -1 && !s.local[i].retired {
 			toIssue--
 		}
 	}
+	prev := len(s.local)
 	for toIssue > 0 {
-		cid, err := newID(s.nextLocalSeq)
+		cid, err := c.newConnID(s.nextLocalSeq)
 		if err != nil {
 			return err
 		}
@@ -151,14 +156,16 @@ func (s *connIDState) issueLocalIDs(newID newConnIDFunc) error {
 		s.needSend = true
 		toIssue--
 	}
+	const retired = false
+	c.listener.connIDsChanged(c, retired, s.local[prev:])
 	return nil
 }
 
 // handlePacket updates the connection ID state during the handshake
 // (Initial and Handshake packets).
-func (s *connIDState) handlePacket(side connSide, ptype packetType, srcConnID []byte) {
+func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) {
 	switch {
-	case ptype == packetTypeInitial && side == clientSide:
+	case ptype == packetTypeInitial && c.side == clientSide:
 		if len(s.remote) == 1 && s.remote[0].seq == -1 {
 			// We're a client connection processing the first Initial packet
 			// from the server. Replace the transient remote connection ID
@@ -168,7 +175,7 @@ func (s *connIDState) handlePacket(side connSide, ptype packetType, srcConnID []
 				cid: cloneBytes(srcConnID),
 			}
 		}
-	case ptype == packetTypeInitial && side == serverSide:
+	case ptype == packetTypeInitial && c.side == serverSide:
 		if len(s.remote) == 0 {
 			// We're a server connection processing the first Initial packet
 			// from the client. Set the client's connection ID.
@@ -177,11 +184,13 @@ func (s *connIDState) handlePacket(side connSide, ptype packetType, srcConnID []
 				cid: cloneBytes(srcConnID),
 			})
 		}
-	case ptype == packetTypeHandshake && side == serverSide:
+	case ptype == packetTypeHandshake && c.side == serverSide:
 		if len(s.local) > 0 && s.local[0].seq == -1 {
 			// We're a server connection processing the first Handshake packet from
 			// the client. Discard the transient, client-chosen connection ID used
 			// for Initial packets; the client will never send it again.
+			const retired = true
+			c.listener.connIDsChanged(c, retired, s.local[0:1])
 			s.local = append(s.local[:0], s.local[1:]...)
 		}
 	}
@@ -263,17 +272,19 @@ func (s *connIDState) retireRemote(rcid *connID) {
 	s.needSend = true
 }
 
-func (s *connIDState) handleRetireConnID(seq int64, newID newConnIDFunc) error {
+func (s *connIDState) handleRetireConnID(c *Conn, seq int64) error {
 	if seq >= s.nextLocalSeq {
 		return localTransportError(errProtocolViolation)
 	}
 	for i := range s.local {
 		if s.local[i].seq == seq {
+			const retired = true
+			c.listener.connIDsChanged(c, retired, s.local[i:i+1])
 			s.local = append(s.local[:i], s.local[i+1:]...)
 			break
 		}
 	}
-	s.issueLocalIDs(newID)
+	s.issueLocalIDs(c)
 	return nil
 }
 
@@ -355,7 +366,12 @@ func cloneBytes(b []byte) []byte {
 	return n
 }
 
-type newConnIDFunc func(seq int64) ([]byte, error)
+func (c *Conn) newConnID(seq int64) ([]byte, error) {
+	if c.testHooks != nil {
+		return c.testHooks.newConnID(seq)
+	}
+	return newRandomConnID(seq)
+}
 
 func newRandomConnID(_ int64) ([]byte, error) {
 	// It is not necessary for connection IDs to be cryptographically secure,
