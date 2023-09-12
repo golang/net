@@ -47,6 +47,9 @@ func (c *Conn) inflowInit() {
 //
 // This is called indirectly by the user, via Read or CloseRead.
 func (c *Conn) handleStreamBytesReadOffLoop(n int64) {
+	if n == 0 {
+		return
+	}
 	if c.shouldUpdateFlowControl(c.streams.inflow.credit.Add(n)) {
 		// We should send a MAX_DATA update to the peer.
 		// Record this on the Conn's main loop.

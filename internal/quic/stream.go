@@ -181,11 +181,13 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	if s.IsWriteOnly() {
 		return 0, errors.New("read from write-only stream")
 	}
-	// Wait until data is available.
 	if err := s.ingate.waitAndLock(ctx, s.conn.testHooks); err != nil {
 		return 0, err
 	}
-	defer s.inUnlock()
+	defer func() {
+		s.inUnlock()
+		s.conn.handleStreamBytesReadOffLoop(int64(n)) // must be done with ingate unlocked
+	}()
 	if s.inresetcode != -1 {
 		return 0, fmt.Errorf("stream reset by peer: %w", StreamErrorCode(s.inresetcode))
 	}
@@ -205,7 +207,6 @@ func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	start := s.in.start
 	end := start + int64(len(b))
 	s.in.copy(start, b)
-	s.conn.handleStreamBytesReadOffLoop(int64(len(b)))
 	s.in.discardBefore(end)
 	if s.insize == -1 || s.insize > s.inwin {
 		if shouldUpdateFlowControl(s.inmaxbuf, s.in.start+s.inmaxbuf-s.inwin) {
@@ -334,7 +335,6 @@ func (s *Stream) CloseRead() {
 		return
 	}
 	s.ingate.lock()
-	defer s.inUnlock()
 	if s.inset.isrange(0, s.insize) || s.inresetcode != -1 {
 		// We've already received all data from the peer,
 		// so there's no need to send STOP_SENDING.
@@ -343,8 +343,10 @@ func (s *Stream) CloseRead() {
 	} else {
 		s.inclosed.set()
 	}
-	s.conn.handleStreamBytesReadOffLoop(s.in.end - s.in.start)
+	discarded := s.in.end - s.in.start
 	s.in.discardBefore(s.in.end)
+	s.inUnlock()
+	s.conn.handleStreamBytesReadOffLoop(discarded) // must be done with ingate unlocked
 }
 
 // CloseWrite aborts writes on the stream.

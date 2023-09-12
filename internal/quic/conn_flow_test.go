@@ -180,6 +180,7 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 			max: 128 + 32 + 1 + 1 + 1,
 		})
 
+	tc.ignoreFrame(frameTypeStopSending)
 	streams[2].CloseRead()
 	tc.wantFrame("closed stream triggers another MAX_DATA update",
 		packetType1RTT, debugFrameMaxData{
