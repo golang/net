@@ -141,11 +141,9 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	if err != nil {
 		return nil, err
 	}
-	select {
-	case <-c.readyc:
-	case <-ctx.Done():
-		c.Close()
-		return nil, ctx.Err()
+	if err := c.waitReady(ctx); err != nil {
+		c.Abort(nil)
+		return nil, err
 	}
 	return c, nil
 }

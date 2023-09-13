@@ -114,7 +114,13 @@ type ApplicationError struct {
 	Reason string
 }
 
-func (e ApplicationError) Error() string {
+func (e *ApplicationError) Error() string {
 	// TODO: Include the Reason string here, but sanitize it first.
 	return fmt.Sprintf("AppError %v", e.Code)
+}
+
+// Is reports a match if err is an *ApplicationError with a matching Code.
+func (e *ApplicationError) Is(err error) bool {
+	e2, ok := err.(*ApplicationError)
+	return ok && e2.Code == e.Code
 }

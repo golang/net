@@ -27,18 +27,14 @@ type Conn struct {
 
 	msgc   chan any
 	donec  chan struct{} // closed when conn loop exits
-	readyc chan struct{} // closed when TLS handshake completes
 	exited bool          // set to make the conn loop exit immediately
 
 	w           packetWriter
 	acks        [numberSpaceCount]ackState // indexed by number space
+	lifetime    lifetimeState
 	connIDState connIDState
 	loss        lossState
 	streams     streamsState
-
-	// errForPeer is set when the connection is being closed.
-	errForPeer    error
-	connCloseSent [numberSpaceCount]bool
 
 	// idleTimeout is the time at which the connection will be closed due to inactivity.
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.1
@@ -79,7 +75,6 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
-		readyc:               make(chan struct{}),
 		testHooks:            hooks,
 		maxIdleTimeout:       defaultMaxIdleTimeout,
 		idleTimeout:          now.Add(defaultMaxIdleTimeout),
@@ -106,6 +101,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	const maxDatagramSize = 1200
 	c.loss.init(c.side, maxDatagramSize, now)
 	c.streamsInit()
+	c.lifetimeInit()
 
 	// TODO: initial_source_connection_id, retry_source_connection_id
 	c.startTLS(now, initialConnID, transportParameters{
@@ -129,14 +125,6 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 
 func (c *Conn) String() string {
 	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.peerAddr)
-}
-
-func (c *Conn) Close() error {
-	// TODO: Implement shutdown for real.
-	c.runOnLoop(func(now time.Time, c *Conn) {
-		c.exited = true
-	})
-	return nil
 }
 
 // confirmHandshake is called when the handshake is confirmed.
@@ -241,8 +229,12 @@ func (c *Conn) loop(now time.Time) {
 		// since the Initial and Handshake spaces always ack immediately.
 		nextTimeout := sendTimeout
 		nextTimeout = firstTime(nextTimeout, c.idleTimeout)
-		nextTimeout = firstTime(nextTimeout, c.loss.timer)
-		nextTimeout = firstTime(nextTimeout, c.acks[appDataSpace].nextAck)
+		if !c.isClosingOrDraining() {
+			nextTimeout = firstTime(nextTimeout, c.loss.timer)
+			nextTimeout = firstTime(nextTimeout, c.acks[appDataSpace].nextAck)
+		} else {
+			nextTimeout = firstTime(nextTimeout, c.lifetime.drainEndTime)
+		}
 
 		var m any
 		if hooks != nil {
@@ -279,6 +271,11 @@ func (c *Conn) loop(now time.Time) {
 				return
 			}
 			c.loss.advance(now, c.handleAckOrLoss)
+			if c.lifetimeAdvance(now) {
+				// The connection has completed the draining period,
+				// and may be shut down.
+				return
+			}
 		case wakeEvent:
 			// We're being woken up to try sending some frames.
 		case func(time.Time, *Conn):
@@ -348,21 +345,6 @@ func (c *Conn) waitOnDone(ctx context.Context, ch <-chan struct{}) error {
 		return ctx.Err()
 	}
 	return nil
-}
-
-// abort terminates a connection with an error.
-func (c *Conn) abort(now time.Time, err error) {
-	if c.errForPeer == nil {
-		c.errForPeer = err
-	}
-}
-
-// exit fully terminates a connection immediately.
-func (c *Conn) exit() {
-	c.runOnLoop(func(now time.Time, c *Conn) {
-		c.exited = true
-	})
-	<-c.donec
 }
 
 // firstTime returns the earliest non-zero time, or zero if both times are zero.

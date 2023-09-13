@@ -13,6 +13,9 @@ import (
 func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 	buf := dgram.b
 	c.loss.datagramReceived(now, len(buf))
+	if c.isDraining() {
+		return
+	}
 	for len(buf) > 0 {
 		var n int
 		ptype := getPacketType(buf)
@@ -220,15 +223,13 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			}
 			n = c.handleRetireConnectionIDFrame(now, space, payload)
 		case frameTypeConnectionCloseTransport:
-			// CONNECTION_CLOSE is OK in all spaces.
-			_, _, _, n = consumeConnectionCloseTransportFrame(payload)
-			// TODO: https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.2
-			c.abort(now, localTransportError(errNo))
+			// Transport CONNECTION_CLOSE is OK in all spaces.
+			n = c.handleConnectionCloseTransportFrame(now, payload)
 		case frameTypeConnectionCloseApplication:
-			// CONNECTION_CLOSE is OK in all spaces.
-			_, _, n = consumeConnectionCloseApplicationFrame(payload)
-			// TODO: https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.2
-			c.abort(now, localTransportError(errNo))
+			if !frameOK(c, ptype, __01) {
+				return
+			}
+			n = c.handleConnectionCloseApplicationFrame(now, payload)
 		case frameTypeHandshakeDone:
 			if !frameOK(c, ptype, ___1) {
 				return
@@ -385,6 +386,24 @@ func (c *Conn) handleRetireConnectionIDFrame(now time.Time, space numberSpace, p
 	return n
 }
 
+func (c *Conn) handleConnectionCloseTransportFrame(now time.Time, payload []byte) int {
+	code, _, reason, n := consumeConnectionCloseTransportFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.enterDraining(peerTransportError{code: code, reason: reason})
+	return n
+}
+
+func (c *Conn) handleConnectionCloseApplicationFrame(now time.Time, payload []byte) int {
+	code, reason, n := consumeConnectionCloseApplicationFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.enterDraining(&ApplicationError{Code: code, Reason: reason})
+	return n
+}
+
 func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payload []byte) int {
 	if c.side == serverSide {
 		// Clients should never send HANDSHAKE_DONE.
@@ -392,6 +411,8 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 		c.abort(now, localTransportError(errProtocolViolation))
 		return -1
 	}
-	c.confirmHandshake(now)
+	if !c.isClosingOrDraining() {
+		c.confirmHandshake(now)
+	}
 	return 1
 }

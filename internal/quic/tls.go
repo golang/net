@@ -73,7 +73,7 @@ func (c *Conn) handleTLSEvents(now time.Time) error {
 				// https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2-1
 				c.confirmHandshake(now)
 			}
-			close(c.readyc)
+			c.handshakeDone()
 		case tls.QUICTransportParameters:
 			params, err := unmarshalTransportParams(e.Data)
 			if err != nil {

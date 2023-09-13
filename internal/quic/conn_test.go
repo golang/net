@@ -304,6 +304,8 @@ func (tc *testConn) wait() {
 	select {
 	case <-idlec:
 	case <-tc.conn.donec:
+		// We may have async ops that can proceed now that the conn is done.
+		tc.wakeAsync()
 	}
 	if fail {
 		panic(fail)

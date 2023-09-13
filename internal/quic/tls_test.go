@@ -353,6 +353,7 @@ func TestConnKeysDiscardedClient(t *testing.T) {
 
 	tc.writeFrames(packetType1RTT,
 		debugFrameConnectionCloseTransport{code: errInternal})
+	tc.conn.Abort(nil)
 	tc.wantFrame("client closes connection after 1-RTT CONNECTION_CLOSE",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errNo,
@@ -406,6 +407,7 @@ func TestConnKeysDiscardedServer(t *testing.T) {
 
 	tc.writeFrames(packetType1RTT,
 		debugFrameConnectionCloseTransport{code: errInternal})
+	tc.conn.Abort(nil)
 	tc.wantFrame("server closes connection after 1-RTT CONNECTION_CLOSE",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errNo,

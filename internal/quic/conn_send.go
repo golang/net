@@ -16,6 +16,8 @@ import (
 //
 // If sending is blocked by pacing, it returns the next time
 // a datagram may be sent.
+//
+// If sending is blocked indefinitely, it returns the zero Time.
 func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 	// Assumption: The congestion window is not underutilized.
 	// If congestion control, pacing, and anti-amplification all permit sending,
@@ -38,6 +40,9 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		if limit == ccBlocked {
 			// If anti-amplification blocks sending, then no packet can be sent.
 			return next
+		}
+		if !c.sendOK(now) {
+			return time.Time{}
 		}
 		// We may still send ACKs, even if congestion control or pacing limit sending.
 
@@ -162,23 +167,8 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 }
 
 func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber, limit ccLimit) {
-	if c.errForPeer != nil {
-		// This is the bare minimum required to send a CONNECTION_CLOSE frame
-		// when closing a connection immediately, for example in response to a
-		// protocol error.
-		//
-		// This does not handle the closing and draining states
-		// (https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2),
-		// but it's enough to let us write tests that result in a CONNECTION_CLOSE,
-		// and have those tests still pass when we finish implementing
-		// connection shutdown.
-		//
-		// TODO: Finish implementing connection shutdown.
-		if !c.connCloseSent[space] {
-			c.exited = true
-			c.appendConnectionCloseFrame(c.errForPeer)
-			c.connCloseSent[space] = true
-		}
+	if c.lifetime.localErr != nil {
+		c.appendConnectionCloseFrame(now, space, c.lifetime.localErr)
 		return
 	}
 
@@ -322,11 +312,20 @@ func (c *Conn) appendAckFrame(now time.Time, space numberSpace) bool {
 	return c.w.appendAckFrame(seen, d)
 }
 
-func (c *Conn) appendConnectionCloseFrame(err error) {
-	// TODO: Send application errors.
+func (c *Conn) appendConnectionCloseFrame(now time.Time, space numberSpace, err error) {
+	c.lifetime.connCloseSentTime = now
 	switch e := err.(type) {
 	case localTransportError:
 		c.w.appendConnectionCloseTransportFrame(transportError(e), 0, "")
+	case *ApplicationError:
+		if space != appDataSpace {
+			// "CONNECTION_CLOSE frames signaling application errors (type 0x1d)
+			// MUST only appear in the application data packet number space."
+			// https://www.rfc-editor.org/rfc/rfc9000#section-12.5-2.2
+			c.w.appendConnectionCloseTransportFrame(errApplicationError, 0, "")
+		} else {
+			c.w.appendConnectionCloseApplicationFrame(e.Code, e.Reason)
+		}
 	default:
 		// TLS alerts are sent using error codes [0x0100,0x01ff).
 		// https://www.rfc-editor.org/rfc/rfc9000#section-20.1-2.36.1
@@ -335,8 +334,8 @@ func (c *Conn) appendConnectionCloseFrame(err error) {
 			// tls.AlertError is a uint8, so this can't exceed 0x01ff.
 			code := errTLSBase + transportError(alert)
 			c.w.appendConnectionCloseTransportFrame(code, 0, "")
-			return
+		} else {
+			c.w.appendConnectionCloseTransportFrame(errInternal, 0, "")
 		}
-		c.w.appendConnectionCloseTransportFrame(errInternal, 0, "")
 	}
 }
