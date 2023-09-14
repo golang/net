@@ -164,7 +164,7 @@ func TestQuestionPackUnpack(t *testing.T) {
 		Type:  TypeA,
 		Class: ClassINET,
 	}
-	buf, err := want.pack(make([]byte, 1, 50), map[string]int{}, 1)
+	buf, err := want.pack(make([]byte, 1, 50), map[string]uint16{}, 1)
 	if err != nil {
 		t.Fatal("Question.pack() =", err)
 	}
@@ -243,7 +243,7 @@ func TestNamePackUnpack(t *testing.T) {
 
 	for _, test := range tests {
 		in := MustNewName(test.in)
-		buf, err := in.pack(make([]byte, 0, 30), map[string]int{}, 0)
+		buf, err := in.pack(make([]byte, 0, 30), map[string]uint16{}, 0)
 		if err != test.err {
 			t.Errorf("got %q.pack() = %v, want = %v", test.in, err, test.err)
 			continue
@@ -305,7 +305,7 @@ func TestNameUnpackTooLongName(t *testing.T) {
 
 func TestIncompressibleName(t *testing.T) {
 	name := MustNewName("example.com.")
-	compression := map[string]int{}
+	compression := map[string]uint16{}
 	buf, err := name.pack(make([]byte, 0, 100), compression, 0)
 	if err != nil {
 		t.Fatal("first Name.pack() =", err)
@@ -623,7 +623,7 @@ func TestVeryLongTxt(t *testing.T) {
 			strings.Repeat(".", 255),
 		}},
 	}
-	buf, err := want.pack(make([]byte, 0, 8000), map[string]int{}, 0)
+	buf, err := want.pack(make([]byte, 0, 8000), map[string]uint16{}, 0)
 	if err != nil {
 		t.Fatal("Resource.pack() =", err)
 	}
@@ -647,7 +647,7 @@ func TestVeryLongTxt(t *testing.T) {
 
 func TestTooLongTxt(t *testing.T) {
 	rb := TXTResource{[]string{strings.Repeat(".", 256)}}
-	if _, err := rb.pack(make([]byte, 0, 8000), map[string]int{}, 0); err != errStringTooLong {
+	if _, err := rb.pack(make([]byte, 0, 8000), map[string]uint16{}, 0); err != errStringTooLong {
 		t.Errorf("packing TXTResource with 256 character string: got err = %v, want = %v", err, errStringTooLong)
 	}
 }
