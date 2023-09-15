@@ -89,7 +89,7 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	}
 
 	pnumMax := c.acks[appDataSpace].largestSeen()
-	p, n := parse1RTTPacket(buf, c.keysAppData.r, connIDLen, pnumMax)
+	p, n := parse1RTTPacket(buf, &c.keysAppData, connIDLen, pnumMax)
 	if n < 0 {
 		return -1
 	}
@@ -247,7 +247,7 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 
 func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) int {
 	c.loss.receiveAckStart()
-	_, ackDelay, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
+	largest, ackDelay, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
 		if end > c.loss.nextNumber(space) {
 			// Acknowledgement of a packet we never sent.
 			c.abort(now, localTransportError(errProtocolViolation))
@@ -280,6 +280,9 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 		delay = ackDelay.Duration(uint8(c.peerAckDelayExponent))
 	}
 	c.loss.receiveAckEnd(now, space, delay, c.handleAckOrLoss)
+	if space == appDataSpace {
+		c.keysAppData.handleAckFor(largest)
+	}
 	return n
 }
 

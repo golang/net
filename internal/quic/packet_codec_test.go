@@ -146,10 +146,13 @@ func TestRoundtripEncodeLongPacket(t *testing.T) {
 }
 
 func TestRoundtripEncodeShortPacket(t *testing.T) {
-	var aes128Keys, aes256Keys, chachaKeys fixedKeys
-	aes128Keys.init(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
-	aes256Keys.init(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
-	chachaKeys.init(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
+	var aes128Keys, aes256Keys, chachaKeys updatingKeyPair
+	aes128Keys.r.init(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
+	aes256Keys.r.init(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
+	chachaKeys.r.init(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
+	aes128Keys.w = aes128Keys.r
+	aes256Keys.w = aes256Keys.r
+	chachaKeys.w = chachaKeys.r
 	connID := make([]byte, connIDLen)
 	for i := range connID {
 		connID[i] = byte(i)
@@ -158,7 +161,7 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 		desc    string
 		num     packetNumber
 		payload []byte
-		k       fixedKeys
+		k       updatingKeyPair
 	}{{
 		desc:    "1-byte number, AES128",
 		num:     0, // 1-byte encoding,
@@ -185,9 +188,9 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 			w.reset(1200)
 			w.start1RTTPacket(test.num, 0, connID)
 			w.b = append(w.b, test.payload...)
-			w.finish1RTTPacket(test.num, 0, connID, test.k)
+			w.finish1RTTPacket(test.num, 0, connID, &test.k)
 			pkt := w.datagram()
-			p, n := parse1RTTPacket(pkt, test.k, connIDLen, 0)
+			p, n := parse1RTTPacket(pkt, &test.k, connIDLen, 0)
 			if n != len(pkt) {
 				t.Errorf("parse1RTTPacket: n=%v, want %v", n, len(pkt))
 			}

@@ -44,7 +44,7 @@ type Conn struct {
 	// Packet protection keys, CRYPTO streams, and TLS state.
 	keysInitial   fixedKeyPair
 	keysHandshake fixedKeyPair
-	keysAppData   fixedKeyPair
+	keysAppData   updatingKeyPair
 	crypto        [numberSpaceCount]cryptoStream
 	tls           *tls.QUICConn
 

@@ -76,12 +76,14 @@ func (d testDatagram) String() string {
 }
 
 type testPacket struct {
-	ptype     packetType
-	version   uint32
-	num       packetNumber
-	dstConnID []byte
-	srcConnID []byte
-	frames    []debugFrame
+	ptype       packetType
+	version     uint32
+	num         packetNumber
+	keyPhaseBit bool
+	keyNumber   int
+	dstConnID   []byte
+	srcConnID   []byte
+	frames      []debugFrame
 }
 
 func (p testPacket) String() string {
@@ -101,6 +103,9 @@ func (p testPacket) String() string {
 	}
 	return b.String()
 }
+
+// maxTestKeyPhases is the maximum number of 1-RTT keys we'll generate in a test.
+const maxTestKeyPhases = 3
 
 // A testConn is a Conn whose external interactions (sending and receiving packets,
 // setting timers) can be manipulated in tests.
@@ -122,9 +127,10 @@ type testConn struct {
 	// the Initial packet.
 	keysInitial   fixedKeyPair
 	keysHandshake fixedKeyPair
-	keysAppData   fixedKeyPair
-	rsecrets      [numberSpaceCount]testKeySecret
-	wsecrets      [numberSpaceCount]testKeySecret
+	rkeyAppData   test1RTTKeys
+	wkeyAppData   test1RTTKeys
+	rsecrets      [numberSpaceCount]keySecret
+	wsecrets      [numberSpaceCount]keySecret
 
 	// testConn uses a test hook to snoop on the conn's TLS events.
 	// CRYPTO data produced by the conn's QUICConn is placed in
@@ -156,10 +162,19 @@ type testConn struct {
 	// Frame types to ignore in tests.
 	ignoreFrames map[byte]bool
 
+	// Values to set in packets sent to the conn.
+	sendKeyNumber   int
+	sendKeyPhaseBit bool
+
 	asyncTestState
 }
 
-type testKeySecret struct {
+type test1RTTKeys struct {
+	hdr headerKey
+	pkt [maxTestKeyPhases]packetKey
+}
+
+type keySecret struct {
 	suite  uint16
 	secret []byte
 }
@@ -333,12 +348,20 @@ func (tc *testConn) logDatagram(text string, d *testDatagram) {
 	}
 	tc.t.Logf("%v datagram%v", text, pad)
 	for _, p := range d.packets {
+		var s string
 		switch p.ptype {
 		case packetType1RTT:
-			tc.t.Logf("  %v pnum=%v", p.ptype, p.num)
+			s = fmt.Sprintf("  %v pnum=%v", p.ptype, p.num)
 		default:
-			tc.t.Logf("  %v pnum=%v ver=%v dst={%x} src={%x}", p.ptype, p.num, p.version, p.dstConnID, p.srcConnID)
+			s = fmt.Sprintf("  %v pnum=%v ver=%v dst={%x} src={%x}", p.ptype, p.num, p.version, p.dstConnID, p.srcConnID)
 		}
+		if p.keyPhaseBit {
+			s += fmt.Sprintf(" KeyPhase")
+		}
+		if p.keyNumber != 0 {
+			s += fmt.Sprintf(" keynum=%v", p.keyNumber)
+		}
+		tc.t.Log(s)
 		for _, f := range p.frames {
 			tc.t.Logf("    %v", f)
 		}
@@ -381,12 +404,14 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 	}
 	d := &testDatagram{
 		packets: []*testPacket{{
-			ptype:     ptype,
-			num:       tc.peerNextPacketNum[space],
-			frames:    frames,
-			version:   1,
-			dstConnID: dstConnID,
-			srcConnID: tc.peerConnID,
+			ptype:       ptype,
+			num:         tc.peerNextPacketNum[space],
+			keyNumber:   tc.sendKeyNumber,
+			keyPhaseBit: tc.sendKeyPhaseBit,
+			frames:      frames,
+			version:     1,
+			dstConnID:   dstConnID,
+			srcConnID:   tc.peerConnID,
 		}},
 	}
 	if ptype == packetTypeInitial && tc.conn.side == serverSide {
@@ -580,6 +605,22 @@ func (tc *testConn) wantFrame(expectation string, wantType packetType, want debu
 	}
 }
 
+// wantFrameType indicates that we expect the Conn to send a frame,
+// although we don't care about the contents.
+func (tc *testConn) wantFrameType(expectation string, wantType packetType, want debugFrame) {
+	tc.t.Helper()
+	got, gotType := tc.readFrame()
+	if got == nil {
+		tc.t.Fatalf("%v:\nconnection is idle\nwant %v frame: %v", expectation, wantType, want)
+	}
+	if gotType != wantType {
+		tc.t.Fatalf("%v:\ngot %v packet, want %v\ngot frame:  %v", expectation, gotType, wantType, got)
+	}
+	if reflect.TypeOf(got) != reflect.TypeOf(want) {
+		tc.t.Fatalf("%v:\ngot frame:  %v\nwant frame of type: %v", expectation, got, want)
+	}
+}
+
 // wantIdle indicates that we expect the Conn to not send any more frames.
 func (tc *testConn) wantIdle(expectation string) {
 	tc.t.Helper()
@@ -615,17 +656,17 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 	}
 	w.appendPaddingTo(pad)
 	if p.ptype != packetType1RTT {
-		var k fixedKeyPair
+		var k fixedKeys
 		switch p.ptype {
 		case packetTypeInitial:
-			k = tc.keysInitial
+			k = tc.keysInitial.w
 		case packetTypeHandshake:
-			k = tc.keysHandshake
+			k = tc.keysHandshake.w
 		}
-		if !k.canWrite() {
+		if !k.isSet() {
 			tc.t.Fatalf("sending %v packet with no write key", p.ptype)
 		}
-		w.finishProtectedLongHeaderPacket(pnumMaxAcked, k.w, longPacket{
+		w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, longPacket{
 			ptype:     p.ptype,
 			version:   p.version,
 			num:       p.num,
@@ -633,10 +674,24 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 			srcConnID: p.srcConnID,
 		})
 	} else {
-		if !tc.keysAppData.canWrite() {
-			tc.t.Fatalf("sending %v packet with no write key", p.ptype)
+		if !tc.wkeyAppData.hdr.isSet() {
+			tc.t.Fatalf("sending 1-RTT packet with no write key")
 		}
-		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, tc.keysAppData.w)
+		// Somewhat hackish: Generate a temporary updatingKeyPair that will
+		// always use our desired key phase.
+		k := &updatingKeyPair{
+			w: updatingKeys{
+				hdr: tc.wkeyAppData.hdr,
+				pkt: [2]packetKey{
+					tc.wkeyAppData.pkt[p.keyNumber],
+					tc.wkeyAppData.pkt[p.keyNumber],
+				},
+			},
+		}
+		if p.keyPhaseBit {
+			k.phase |= keyPhaseBit
+		}
+		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, k)
 	}
 	return w.datagram()
 }
@@ -682,25 +737,45 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			})
 			buf = buf[n:]
 		} else {
-			if !tc.keysAppData.canRead() {
+			if !tc.rkeyAppData.hdr.isSet() {
 				tc.t.Fatalf("reading 1-RTT packet with no read key")
 			}
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parse1RTTPacket(buf, tc.keysAppData.r, len(tc.peerConnID), pnumMax)
-			if n < 0 {
-				tc.t.Fatalf("packet parse error")
+			pnumOff := 1 + len(tc.peerConnID)
+			// Try unprotecting the packet with the first maxTestKeyPhases keys.
+			var phase int
+			var pnum packetNumber
+			var hdr []byte
+			var pay []byte
+			var err error
+			for phase = 0; phase < maxTestKeyPhases; phase++ {
+				b := append([]byte{}, buf...)
+				hdr, pay, pnum, err = tc.rkeyAppData.hdr.unprotect(b, pnumOff, pnumMax)
+				if err != nil {
+					tc.t.Fatalf("1-RTT packet header parse error")
+				}
+				k := tc.rkeyAppData.pkt[phase]
+				pay, err = k.unprotect(hdr, pay, pnum)
+				if err == nil {
+					break
+				}
 			}
-			frames, err := tc.parseTestFrames(p.payload)
+			if err != nil {
+				tc.t.Fatalf("1-RTT packet payload parse error")
+			}
+			frames, err := tc.parseTestFrames(pay)
 			if err != nil {
 				tc.t.Fatal(err)
 			}
 			d.packets = append(d.packets, &testPacket{
-				ptype:     packetType1RTT,
-				num:       p.num,
-				dstConnID: buf[1:][:len(tc.peerConnID)],
-				frames:    frames,
+				ptype:       packetType1RTT,
+				num:         pnum,
+				dstConnID:   hdr[1:][:len(tc.peerConnID)],
+				keyPhaseBit: hdr[0]&keyPhaseBit != 0,
+				keyNumber:   phase,
+				frames:      frames,
 			})
-			buf = buf[n:]
+			buf = buf[len(buf):]
 		}
 	}
 	// This is rather hackish: If the last frame in the last packet
@@ -766,7 +841,7 @@ type testConnHooks testConn
 // and verify that both sides of the connection are getting
 // matching keys.
 func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
-	checkKey := func(typ string, secrets *[numberSpaceCount]testKeySecret, e tls.QUICEvent) {
+	checkKey := func(typ string, secrets *[numberSpaceCount]keySecret, e tls.QUICEvent) {
 		var space numberSpace
 		switch {
 		case e.Level == tls.QUICEncryptionLevelHandshake:
@@ -781,25 +856,32 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 			secrets[space].suite = e.Suite
 			secrets[space].secret = append([]byte{}, e.Data...)
 		} else if secrets[space].suite != e.Suite || !bytes.Equal(secrets[space].secret, e.Data) {
-			tc.t.Errorf("%v key mismatch for level %v", typ, e.Level)
+			tc.t.Errorf("%v key mismatch for level for level %v", typ, e.Level)
+		}
+	}
+	setAppDataKey := func(suite uint16, secret []byte, k *test1RTTKeys) {
+		k.hdr.init(suite, secret)
+		for i := 0; i < len(k.pkt); i++ {
+			k.pkt[i].init(suite, secret)
+			secret = updateSecret(suite, secret)
 		}
 	}
 	switch e.Kind {
 	case tls.QUICSetReadSecret:
-		checkKey("read", &tc.rsecrets, e)
+		checkKey("write", &tc.wsecrets, e)
 		switch e.Level {
 		case tls.QUICEncryptionLevelHandshake:
 			tc.keysHandshake.w.init(e.Suite, e.Data)
 		case tls.QUICEncryptionLevelApplication:
-			tc.keysAppData.w.init(e.Suite, e.Data)
+			setAppDataKey(e.Suite, e.Data, &tc.wkeyAppData)
 		}
 	case tls.QUICSetWriteSecret:
-		checkKey("write", &tc.wsecrets, e)
+		checkKey("read", &tc.rsecrets, e)
 		switch e.Level {
 		case tls.QUICEncryptionLevelHandshake:
 			tc.keysHandshake.r.init(e.Suite, e.Data)
 		case tls.QUICEncryptionLevelApplication:
-			tc.keysAppData.r.init(e.Suite, e.Data)
+			setAppDataKey(e.Suite, e.Data, &tc.rkeyAppData)
 		}
 	case tls.QUICWriteData:
 		tc.cryptoDataOut[e.Level] = append(tc.cryptoDataOut[e.Level], e.Data...)
@@ -811,20 +893,20 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 		case tls.QUICNoEvent:
 			return
 		case tls.QUICSetReadSecret:
-			checkKey("write", &tc.wsecrets, e)
+			checkKey("write", &tc.rsecrets, e)
 			switch e.Level {
 			case tls.QUICEncryptionLevelHandshake:
 				tc.keysHandshake.r.init(e.Suite, e.Data)
 			case tls.QUICEncryptionLevelApplication:
-				tc.keysAppData.r.init(e.Suite, e.Data)
+				setAppDataKey(e.Suite, e.Data, &tc.rkeyAppData)
 			}
 		case tls.QUICSetWriteSecret:
-			checkKey("read", &tc.rsecrets, e)
+			checkKey("read", &tc.wsecrets, e)
 			switch e.Level {
 			case tls.QUICEncryptionLevelHandshake:
 				tc.keysHandshake.w.init(e.Suite, e.Data)
 			case tls.QUICEncryptionLevelApplication:
-				tc.keysAppData.w.init(e.Suite, e.Data)
+				setAppDataKey(e.Suite, e.Data, &tc.wkeyAppData)
 			}
 		case tls.QUICWriteData:
 			tc.cryptoDataIn[e.Level] = append(tc.cryptoDataIn[e.Level], e.Data...)

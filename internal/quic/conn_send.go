@@ -128,7 +128,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if logPackets {
 				logSentPacket(c, packetType1RTT, pnum, nil, dstConnID, c.w.payload())
 			}
-			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, c.keysAppData.w); sent != nil {
+			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, &c.keysAppData); sent != nil {
 				c.loss.packetSent(now, appDataSpace, sent)
 			}
 		}
@@ -197,16 +197,23 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 			// All frames other than ACK and PADDING are ack-eliciting,
 			// so if the packet is ack-eliciting we've added additional
 			// frames to it.
-			if shouldSendAck || c.w.sent.ackEliciting {
-				// Either we are willing to send an ACK-only packet,
-				// or we've added additional frames.
-				c.acks[space].sentAck()
-			} else {
+			if !shouldSendAck && !c.w.sent.ackEliciting {
 				// There's nothing in this packet but ACK frames, and
 				// we don't want to send an ACK-only packet at this time.
 				// Abandoning the packet means we wrote an ACK frame for
 				// nothing, but constructing the frame is cheap.
 				c.w.abandonPacket()
+				return
+			}
+			// Either we are willing to send an ACK-only packet,
+			// or we've added additional frames.
+			c.acks[space].sentAck()
+			if !c.w.sent.ackEliciting && c.keysAppData.needAckEliciting() {
+				// The peer has initiated a key update.
+				// We haven't sent them any packets yet in the new phase.
+				// Make this an ack-eliciting packet.
+				// Their ack of this packet will complete the key update.
+				c.w.appendPingFrame()
 			}
 		}()
 	}

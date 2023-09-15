@@ -37,6 +37,10 @@ type headerKey struct {
 	hp headerProtection
 }
 
+func (k headerKey) isSet() bool {
+	return k.hp != nil
+}
+
 func (k *headerKey) init(suite uint16, secret []byte) {
 	h, keySize := hashForSuite(suite)
 	hpKey := hkdfExpandLabel(h.New, secret, "quic hp", nil, keySize)
@@ -273,6 +277,148 @@ func (k *fixedKeyPair) canRead() bool {
 
 func (k *fixedKeyPair) canWrite() bool {
 	return k.w.isSet()
+}
+
+// An updatingKeys is a header protection key and updatable packet protection key.
+// updatingKeys are used for 1-RTT keys, where the packet protection key changes
+// over the lifetime of a connection.
+// https://www.rfc-editor.org/rfc/rfc9001#section-6
+type updatingKeys struct {
+	suite      uint16
+	hdr        headerKey
+	pkt        [2]packetKey // current, next
+	nextSecret []byte       // secret used to generate pkt[1]
+}
+
+func (k *updatingKeys) init(suite uint16, secret []byte) {
+	k.suite = suite
+	k.hdr.init(suite, secret)
+	// Initialize pkt[1] with secret_0, and then call update to generate secret_1.
+	k.pkt[1].init(suite, secret)
+	k.nextSecret = secret
+	k.update()
+}
+
+// update performs a key update.
+// The current key in pkt[0] is discarded.
+// The next key in pkt[1] becomes the current key.
+// A new next key is generated in pkt[1].
+func (k *updatingKeys) update() {
+	k.nextSecret = updateSecret(k.suite, k.nextSecret)
+	k.pkt[0] = k.pkt[1]
+	k.pkt[1].init(k.suite, k.nextSecret)
+}
+
+func updateSecret(suite uint16, secret []byte) (nextSecret []byte) {
+	h, _ := hashForSuite(suite)
+	return hkdfExpandLabel(h.New, secret, "quic ku", nil, len(secret))
+}
+
+// An updatingKeyPair is a read/write pair of updating keys.
+//
+// We keep two keys (current and next) in both read and write directions.
+// When an incoming packet's phase matches the current phase bit,
+// we unprotect it using the current keys; otherwise we use the next keys.
+//
+// When updating=false, outgoing packets are protected using the current phase.
+//
+// An update is initiated and updating is set to true when:
+//   - we decide to initiate a key update; or
+//   - we successfully unprotect a packet using the next keys,
+//     indicating the peer has initiated a key update.
+//
+// When updating=true, outgoing packets are protected using the next phase.
+// We do not change the current phase bit or generate new keys yet.
+//
+// The update concludes when we receive an ACK frame for a packet sent
+// with the next keys. At this time, we set updating to false, flip the
+// phase bit, and update the keys. This permits us to handle up to 1-RTT
+// of reordered packets before discarding the previous phase's keys after
+// an update.
+type updatingKeyPair struct {
+	phase       uint8 // current key phase (r.pkt[0], w.pkt[0])
+	updating    bool
+	minSent     packetNumber // min packet number sent since entering the updating state
+	minReceived packetNumber // min packet number received in the next phase
+	r, w        updatingKeys
+}
+
+func (k *updatingKeyPair) canRead() bool {
+	return k.r.hdr.hp != nil
+}
+
+func (k *updatingKeyPair) canWrite() bool {
+	return k.w.hdr.hp != nil
+}
+
+// handleAckFor finishes a key update after receiving an ACK for a packet in the next phase.
+func (k *updatingKeyPair) handleAckFor(pnum packetNumber) {
+	if k.updating && pnum >= k.minSent {
+		k.updating = false
+		k.phase ^= keyPhaseBit
+		k.r.update()
+		k.w.update()
+	}
+}
+
+// needAckEliciting reports whether we should send an ack-eliciting packet in the next phase.
+// The first packet sent in a phase is ack-eliciting, since the peer must acknowledge a
+// packet in the new phase for us to finish the update.
+func (k *updatingKeyPair) needAckEliciting() bool {
+	return k.updating && k.minSent == maxPacketNumber
+}
+
+// protect applies packet protection to a packet.
+// Parameters and returns are as for fixedKeyPair.protect.
+func (k *updatingKeyPair) protect(hdr, pay []byte, pnumOff int, pnum packetNumber) []byte {
+	// TODO: Initiate key updates as required to avoid the AEAD usage limit.
+	// https://www.rfc-editor.org/rfc/rfc9001#section-6.6
+	var pkt []byte
+	if k.updating {
+		hdr[0] |= k.phase ^ keyPhaseBit
+		pkt = k.w.pkt[1].protect(hdr, pay, pnum)
+		k.minSent = min(pnum, k.minSent)
+	} else {
+		hdr[0] |= k.phase
+		pkt = k.w.pkt[0].protect(hdr, pay, pnum)
+	}
+	k.w.hdr.protect(pkt, pnumOff)
+	return pkt
+}
+
+// unprotect removes packet protection from a packet.
+// Parameters and returns are as for fixedKeyPair.unprotect.
+func (k *updatingKeyPair) unprotect(pkt []byte, pnumOff int, pnumMax packetNumber) (pay []byte, pnum packetNumber, err error) {
+	hdr, pay, pnum, err := k.r.hdr.unprotect(pkt, pnumOff, pnumMax)
+	if err != nil {
+		return nil, 0, err
+	}
+	// To avoid timing signals that might indicate the key phase bit is invalid,
+	// we always attempt to unprotect the packet with one key.
+	//
+	// If the key phase bit matches and the packet number doesn't come after
+	// the start of an in-progress update, use the current phase.
+	// Otherwise, use the next phase.
+	if hdr[0]&keyPhaseBit == k.phase && (!k.updating || pnum < k.minReceived) {
+		pay, err = k.r.pkt[0].unprotect(hdr, pay, pnum)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		pay, err = k.r.pkt[1].unprotect(hdr, pay, pnum)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !k.updating {
+			// The peer has initiated a key update.
+			k.updating = true
+			k.minSent = maxPacketNumber
+			k.minReceived = pnum
+		} else {
+			k.minReceived = min(pnum, k.minReceived)
+		}
+	}
+	return pay, pnum, nil
 }
 
 // https://www.rfc-editor.org/rfc/rfc9001#section-5.2-2

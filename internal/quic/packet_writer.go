@@ -163,14 +163,13 @@ func (w *packetWriter) start1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnI
 // finish1RTTPacket finishes writing a 1-RTT packet,
 // canceling the packet if it contains no payload.
 // It returns a sentPacket describing the packet, or nil if no packet was written.
-func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnID []byte, k fixedKeys) *sentPacket {
+func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnID []byte, k *updatingKeyPair) *sentPacket {
 	if len(w.b) == w.payOff {
 		// The payload is empty, so just abandon the packet.
 		w.b = w.b[:w.pktOff]
 		return nil
 	}
 	// TODO: Spin
-	// TODO: Key phase
 	pnumLen := packetNumberLength(pnum, pnumMaxAcked)
 	hdr := w.b[:w.pktOff]
 	hdr = append(hdr, 0x40|byte(pnumLen-1))

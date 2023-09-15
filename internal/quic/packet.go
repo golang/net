@@ -45,6 +45,7 @@ const (
 	fixedBit         = 0x40 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.4.1
 	reservedLongBits = 0x0c // https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
 	reserved1RTTBits = 0x18 // https://www.rfc-editor.org/rfc/rfc9000#section-17.3.1-4.8.1
+	keyPhaseBit      = 0x04 // https://www.rfc-editor.org/rfc/rfc9000#section-17.3.1-4.10.1
 )
 
 // Long Packet Type bits.

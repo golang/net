@@ -143,12 +143,13 @@ func skipLongHeaderPacket(pkt []byte) int {
 //
 // On input, pkt contains a short header packet, k the decryption keys for the packet,
 // and pnumMax the largest packet number seen in the number space of this packet.
-func parse1RTTPacket(pkt []byte, k fixedKeys, dstConnIDLen int, pnumMax packetNumber) (p shortPacket, n int) {
-	var err error
-	p.payload, p.num, err = k.unprotect(pkt, 1+dstConnIDLen, pnumMax)
+func parse1RTTPacket(pkt []byte, k *updatingKeyPair, dstConnIDLen int, pnumMax packetNumber) (p shortPacket, n int) {
+	pay, pnum, err := k.unprotect(pkt, 1+dstConnIDLen, pnumMax)
 	if err != nil {
 		return shortPacket{}, -1
 	}
+	p.num = pnum
+	p.payload = pay
 	return p, len(pkt)
 }
 
