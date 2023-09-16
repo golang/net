@@ -40,10 +40,11 @@ func (p packetType) String() string {
 
 // Bits set in the first byte of a packet.
 const (
-	headerFormLong  = 0x80 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.2.1
-	headerFormShort = 0x00 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.3.1-4.2.1
-	fixedBit        = 0x40 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.4.1
-	reservedBits    = 0x0c // https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
+	headerFormLong   = 0x80 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.2.1
+	headerFormShort  = 0x00 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.3.1-4.2.1
+	fixedBit         = 0x40 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.4.1
+	reservedLongBits = 0x0c // https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
+	reserved1RTTBits = 0x18 // https://www.rfc-editor.org/rfc/rfc9000#section-17.3.1-4.8.1
 )
 
 // Long Packet Type bits.
@@ -157,13 +158,12 @@ func dstConnIDForDatagram(pkt []byte) (id []byte, ok bool) {
 
 // A longPacket is a long header packet.
 type longPacket struct {
-	ptype        packetType
-	reservedBits uint8
-	version      uint32
-	num          packetNumber
-	dstConnID    []byte
-	srcConnID    []byte
-	payload      []byte
+	ptype     packetType
+	version   uint32
+	num       packetNumber
+	dstConnID []byte
+	srcConnID []byte
+	payload   []byte
 
 	// The extra data depends on the packet type:
 	//   Initial: Token.
@@ -173,7 +173,6 @@ type longPacket struct {
 
 // A shortPacket is a short header (1-RTT) packet.
 type shortPacket struct {
-	reservedBits uint8
-	num          packetNumber
-	payload      []byte
+	num     packetNumber
+	payload []byte
 }

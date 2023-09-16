@@ -97,9 +97,6 @@ func parseLongHeaderPacket(pkt []byte, k keys, pnumMax packetNumber) (p longPack
 		if err != nil {
 			return longPacket{}, -1
 		}
-		// Reserved bits should always be zero, but this is handled
-		// as a protocol-level violation by the caller rather than a parse error.
-		p.reservedBits = pkt[0] & reservedBits
 	}
 	return p, len(pkt)
 }
@@ -152,9 +149,6 @@ func parse1RTTPacket(pkt []byte, k keys, dstConnIDLen int, pnumMax packetNumber)
 	if err != nil {
 		return shortPacket{}, -1
 	}
-	// Reserved bits should always be zero, but this is handled
-	// as a protocol-level violation by the caller rather than a parse error.
-	p.reservedBits = pkt[0] & reservedBits
 	return p, len(pkt)
 }
 

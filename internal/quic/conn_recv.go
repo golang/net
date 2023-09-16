@@ -50,7 +50,8 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if n < 0 {
 		return -1
 	}
-	if p.reservedBits != 0 {
+	if buf[0]&reservedLongBits != 0 {
+		// Reserved header bits must be 0.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
 		c.abort(now, localTransportError(errProtocolViolation))
 		return -1
@@ -89,7 +90,8 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	if n < 0 {
 		return -1
 	}
-	if p.reservedBits != 0 {
+	if buf[0]&reserved1RTTBits != 0 {
+		// Reserved header bits must be 0.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-17.3.1-4.8.1
 		c.abort(now, localTransportError(errProtocolViolation))
 		return -1
