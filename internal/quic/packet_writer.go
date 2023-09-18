@@ -100,7 +100,7 @@ func (w *packetWriter) startProtectedLongHeaderPacket(pnumMaxAcked packetNumber,
 // finishProtectedLongHeaderPacket finishes writing an Initial, 0-RTT, or Handshake packet,
 // canceling the packet if it contains no payload.
 // It returns a sentPacket describing the packet, or nil if no packet was written.
-func (w *packetWriter) finishProtectedLongHeaderPacket(pnumMaxAcked packetNumber, k keys, p longPacket) *sentPacket {
+func (w *packetWriter) finishProtectedLongHeaderPacket(pnumMaxAcked packetNumber, k fixedKeys, p longPacket) *sentPacket {
 	if len(w.b) == w.payOff {
 		// The payload is empty, so just abandon the packet.
 		w.b = w.b[:w.pktOff]
@@ -135,7 +135,8 @@ func (w *packetWriter) finishProtectedLongHeaderPacket(pnumMaxAcked packetNumber
 	pnumOff := len(hdr)
 	hdr = appendPacketNumber(hdr, p.num, pnumMaxAcked)
 
-	return w.protect(hdr[w.pktOff:], p.num, pnumOff, k)
+	k.protect(hdr[w.pktOff:], w.b[len(hdr):], pnumOff-w.pktOff, p.num)
+	return w.finish(p.num)
 }
 
 // start1RTTPacket starts writing a 1-RTT (short header) packet.
@@ -162,7 +163,7 @@ func (w *packetWriter) start1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnI
 // finish1RTTPacket finishes writing a 1-RTT packet,
 // canceling the packet if it contains no payload.
 // It returns a sentPacket describing the packet, or nil if no packet was written.
-func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnID []byte, k keys) *sentPacket {
+func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConnID []byte, k fixedKeys) *sentPacket {
 	if len(w.b) == w.payOff {
 		// The payload is empty, so just abandon the packet.
 		w.b = w.b[:w.pktOff]
@@ -177,7 +178,8 @@ func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConn
 	pnumOff := len(hdr)
 	hdr = appendPacketNumber(hdr, pnum, pnumMaxAcked)
 	w.padPacketLength(pnumLen)
-	return w.protect(hdr[w.pktOff:], pnum, pnumOff, k)
+	k.protect(hdr[w.pktOff:], w.b[len(hdr):], pnumOff-w.pktOff, pnum)
+	return w.finish(pnum)
 }
 
 // padPacketLength pads out the payload of the current packet to the minimum size,
@@ -197,9 +199,8 @@ func (w *packetWriter) padPacketLength(pnumLen int) int {
 	return plen
 }
 
-// protect applies packet protection and finishes the current packet.
-func (w *packetWriter) protect(hdr []byte, pnum packetNumber, pnumOff int, k keys) *sentPacket {
-	k.protect(hdr, w.b[w.pktOff+len(hdr):], pnumOff-w.pktOff, pnum)
+// finish finishes the current packet after protection is applied.
+func (w *packetWriter) finish(pnum packetNumber) *sentPacket {
 	w.b = w.b[:len(w.b)+aeadOverhead]
 	w.sent.size = len(w.b) - w.pktOff
 	w.sent.num = pnum

@@ -113,15 +113,18 @@ type testConn struct {
 	timerLastFired time.Time
 	idlec          chan struct{} // only accessed on the conn's loop
 
-	// Read and write keys are distinct from the conn's keys,
+	// Keys are distinct from the conn's keys,
 	// because the test may know about keys before the conn does.
 	// For example, when sending a datagram with coalesced
 	// Initial and Handshake packets to a client conn,
 	// we use Handshake keys to encrypt the packet.
 	// The client only acquires those keys when it processes
 	// the Initial packet.
-	rkeys [numberSpaceCount]keyData // for packets sent to the conn
-	wkeys [numberSpaceCount]keyData // for packets sent by the conn
+	keysInitial   fixedKeyPair
+	keysHandshake fixedKeyPair
+	keysAppData   fixedKeyPair
+	rsecrets      [numberSpaceCount]testKeySecret
+	wsecrets      [numberSpaceCount]testKeySecret
 
 	// testConn uses a test hook to snoop on the conn's TLS events.
 	// CRYPTO data produced by the conn's QUICConn is placed in
@@ -156,10 +159,9 @@ type testConn struct {
 	asyncTestState
 }
 
-type keyData struct {
+type testKeySecret struct {
 	suite  uint16
 	secret []byte
-	k      keys
 }
 
 // newTestConn creates a Conn for testing.
@@ -225,8 +227,8 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	}
 	tc.conn = conn
 
-	tc.wkeys[initialSpace].k = conn.wkeys[initialSpace]
-	tc.rkeys[initialSpace].k = conn.rkeys[initialSpace]
+	tc.keysInitial.r = conn.keysInitial.w
+	tc.keysInitial.w = conn.keysInitial.r
 
 	tc.wait()
 	return tc
@@ -611,14 +613,19 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 	for _, f := range p.frames {
 		f.write(&w)
 	}
-	space := spaceForPacketType(p.ptype)
-	if !tc.rkeys[space].k.isSet() {
-		tc.t.Fatalf("sending packet with no %v keys available", space)
-		return nil
-	}
 	w.appendPaddingTo(pad)
 	if p.ptype != packetType1RTT {
-		w.finishProtectedLongHeaderPacket(pnumMaxAcked, tc.rkeys[space].k, longPacket{
+		var k fixedKeyPair
+		switch p.ptype {
+		case packetTypeInitial:
+			k = tc.keysInitial
+		case packetTypeHandshake:
+			k = tc.keysHandshake
+		}
+		if !k.canWrite() {
+			tc.t.Fatalf("sending %v packet with no write key", p.ptype)
+		}
+		w.finishProtectedLongHeaderPacket(pnumMaxAcked, k.w, longPacket{
 			ptype:     p.ptype,
 			version:   p.version,
 			num:       p.num,
@@ -626,7 +633,10 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 			srcConnID: p.srcConnID,
 		})
 	} else {
-		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, tc.rkeys[space].k)
+		if !tc.keysAppData.canWrite() {
+			tc.t.Fatalf("sending %v packet with no write key", p.ptype)
+		}
+		w.finish1RTTPacket(p.num, pnumMaxAcked, p.dstConnID, tc.keysAppData.w)
 	}
 	return w.datagram()
 }
@@ -642,13 +652,19 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			break
 		}
 		ptype := getPacketType(buf)
-		space := spaceForPacketType(ptype)
-		if !tc.wkeys[space].k.isSet() {
-			tc.t.Fatalf("no keys for space %v, packet type %v", space, ptype)
-		}
 		if isLongHeader(buf[0]) {
+			var k fixedKeyPair
+			switch ptype {
+			case packetTypeInitial:
+				k = tc.keysInitial
+			case packetTypeHandshake:
+				k = tc.keysHandshake
+			}
+			if !k.canRead() {
+				tc.t.Fatalf("reading %v packet with no read key", ptype)
+			}
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parseLongHeaderPacket(buf, tc.wkeys[space].k, pnumMax)
+			p, n := parseLongHeaderPacket(buf, k.r, pnumMax)
 			if n < 0 {
 				tc.t.Fatalf("packet parse error")
 			}
@@ -666,8 +682,11 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			})
 			buf = buf[n:]
 		} else {
+			if !tc.keysAppData.canRead() {
+				tc.t.Fatalf("reading 1-RTT packet with no read key")
+			}
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parse1RTTPacket(buf, tc.wkeys[space].k, len(tc.peerConnID), pnumMax)
+			p, n := parse1RTTPacket(buf, tc.keysAppData.r, len(tc.peerConnID), pnumMax)
 			if n < 0 {
 				tc.t.Fatalf("packet parse error")
 			}
@@ -747,12 +766,7 @@ type testConnHooks testConn
 // and verify that both sides of the connection are getting
 // matching keys.
 func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
-	setKey := func(keys *[numberSpaceCount]keyData, e tls.QUICEvent) {
-		k, err := newKeys(e.Suite, e.Data)
-		if err != nil {
-			tc.t.Errorf("newKeys: %v", err)
-			return
-		}
+	checkKey := func(typ string, secrets *[numberSpaceCount]testKeySecret, e tls.QUICEvent) {
 		var space numberSpace
 		switch {
 		case e.Level == tls.QUICEncryptionLevelHandshake:
@@ -763,25 +777,30 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 			tc.t.Errorf("unexpected encryption level %v", e.Level)
 			return
 		}
-		s := "read"
-		if keys == &tc.wkeys {
-			s = "write"
+		if secrets[space].secret == nil {
+			secrets[space].suite = e.Suite
+			secrets[space].secret = append([]byte{}, e.Data...)
+		} else if secrets[space].suite != e.Suite || !bytes.Equal(secrets[space].secret, e.Data) {
+			tc.t.Errorf("%v key mismatch for level %v", typ, e.Level)
 		}
-		if keys[space].k.isSet() {
-			if keys[space].suite != e.Suite || !bytes.Equal(keys[space].secret, e.Data) {
-				tc.t.Errorf("%v key mismatch for level for level %v", s, e.Level)
-			}
-			return
-		}
-		keys[space].suite = e.Suite
-		keys[space].secret = append([]byte{}, e.Data...)
-		keys[space].k = k
 	}
 	switch e.Kind {
 	case tls.QUICSetReadSecret:
-		setKey(&tc.rkeys, e)
+		checkKey("read", &tc.rsecrets, e)
+		switch e.Level {
+		case tls.QUICEncryptionLevelHandshake:
+			tc.keysHandshake.w.init(e.Suite, e.Data)
+		case tls.QUICEncryptionLevelApplication:
+			tc.keysAppData.w.init(e.Suite, e.Data)
+		}
 	case tls.QUICSetWriteSecret:
-		setKey(&tc.wkeys, e)
+		checkKey("write", &tc.wsecrets, e)
+		switch e.Level {
+		case tls.QUICEncryptionLevelHandshake:
+			tc.keysHandshake.r.init(e.Suite, e.Data)
+		case tls.QUICEncryptionLevelApplication:
+			tc.keysAppData.r.init(e.Suite, e.Data)
+		}
 	case tls.QUICWriteData:
 		tc.cryptoDataOut[e.Level] = append(tc.cryptoDataOut[e.Level], e.Data...)
 		tc.peerTLSConn.HandleData(e.Level, e.Data)
@@ -792,9 +811,21 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 		case tls.QUICNoEvent:
 			return
 		case tls.QUICSetReadSecret:
-			setKey(&tc.wkeys, e)
+			checkKey("write", &tc.wsecrets, e)
+			switch e.Level {
+			case tls.QUICEncryptionLevelHandshake:
+				tc.keysHandshake.r.init(e.Suite, e.Data)
+			case tls.QUICEncryptionLevelApplication:
+				tc.keysAppData.r.init(e.Suite, e.Data)
+			}
 		case tls.QUICSetWriteSecret:
-			setKey(&tc.rkeys, e)
+			checkKey("read", &tc.rsecrets, e)
+			switch e.Level {
+			case tls.QUICEncryptionLevelHandshake:
+				tc.keysHandshake.w.init(e.Suite, e.Data)
+			case tls.QUICEncryptionLevelApplication:
+				tc.keysAppData.w.init(e.Suite, e.Data)
+			}
 		case tls.QUICWriteData:
 			tc.cryptoDataIn[e.Level] = append(tc.cryptoDataIn[e.Level], e.Data...)
 		case tls.QUICTransportParameters:

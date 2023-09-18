@@ -16,12 +16,7 @@ import (
 
 // startTLS starts the TLS handshake.
 func (c *Conn) startTLS(now time.Time, initialConnID []byte, params transportParameters) error {
-	clientKeys, serverKeys := initialKeys(initialConnID)
-	if c.side == clientSide {
-		c.wkeys[initialSpace], c.rkeys[initialSpace] = clientKeys, serverKeys
-	} else {
-		c.wkeys[initialSpace], c.rkeys[initialSpace] = serverKeys, clientKeys
-	}
+	c.keysInitial = initialKeys(initialConnID, c.side)
 
 	qconfig := &tls.QUICConfig{TLSConfig: c.config.TLSConfig}
 	if c.side == clientSide {
@@ -49,21 +44,36 @@ func (c *Conn) handleTLSEvents(now time.Time) error {
 		case tls.QUICNoEvent:
 			return nil
 		case tls.QUICSetReadSecret:
-			space, k, err := tlsKey(e)
-			if err != nil {
+			if err := checkCipherSuite(e.Suite); err != nil {
 				return err
 			}
-			c.rkeys[space] = k
+			switch e.Level {
+			case tls.QUICEncryptionLevelHandshake:
+				c.keysHandshake.r.init(e.Suite, e.Data)
+			case tls.QUICEncryptionLevelApplication:
+				c.keysAppData.r.init(e.Suite, e.Data)
+			}
 		case tls.QUICSetWriteSecret:
-			space, k, err := tlsKey(e)
-			if err != nil {
+			if err := checkCipherSuite(e.Suite); err != nil {
 				return err
 			}
-			c.wkeys[space] = k
+			switch e.Level {
+			case tls.QUICEncryptionLevelHandshake:
+				c.keysHandshake.w.init(e.Suite, e.Data)
+			case tls.QUICEncryptionLevelApplication:
+				c.keysAppData.w.init(e.Suite, e.Data)
+			}
 		case tls.QUICWriteData:
-			space, err := spaceForLevel(e.Level)
-			if err != nil {
-				return err
+			var space numberSpace
+			switch e.Level {
+			case tls.QUICEncryptionLevelInitial:
+				space = initialSpace
+			case tls.QUICEncryptionLevelHandshake:
+				space = handshakeSpace
+			case tls.QUICEncryptionLevelApplication:
+				space = appDataSpace
+			default:
+				return fmt.Errorf("quic: internal error: write handshake data at level %v", e.Level)
 			}
 			c.crypto[space].write(e.Data)
 		case tls.QUICHandshakeDone:
@@ -83,32 +93,6 @@ func (c *Conn) handleTLSEvents(now time.Time) error {
 				return err
 			}
 		}
-	}
-}
-
-// tlsKey returns the keys in a QUICSetReadSecret or QUICSetWriteSecret event.
-func tlsKey(e tls.QUICEvent) (numberSpace, keys, error) {
-	space, err := spaceForLevel(e.Level)
-	if err != nil {
-		return 0, keys{}, err
-	}
-	k, err := newKeys(e.Suite, e.Data)
-	if err != nil {
-		return 0, keys{}, err
-	}
-	return space, k, nil
-}
-
-func spaceForLevel(level tls.QUICEncryptionLevel) (numberSpace, error) {
-	switch level {
-	case tls.QUICEncryptionLevelInitial:
-		return initialSpace, nil
-	case tls.QUICEncryptionLevelHandshake:
-		return handshakeSpace, nil
-	case tls.QUICEncryptionLevelApplication:
-		return appDataSpace, nil
-	default:
-		return 0, fmt.Errorf("quic: internal error: write handshake data at level %v", level)
 	}
 }
 

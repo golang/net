@@ -59,7 +59,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		// Initial packet.
 		pad := false
 		var sentInitial *sentPacket
-		if k := c.wkeys[initialSpace]; k.isSet() {
+		if c.keysInitial.canWrite() {
 			pnumMaxAcked := c.acks[initialSpace].largestSeen()
 			pnum := c.loss.nextNumber(initialSpace)
 			p := longPacket{
@@ -74,7 +74,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if logPackets {
 				logSentPacket(c, packetTypeInitial, pnum, p.srcConnID, p.dstConnID, c.w.payload())
 			}
-			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, p)
+			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysInitial.w, p)
 			if sentInitial != nil {
 				// Client initial packets need to be sent in a datagram padded to
 				// at least 1200 bytes. We can't add the padding yet, however,
@@ -86,7 +86,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		}
 
 		// Handshake packet.
-		if k := c.wkeys[handshakeSpace]; k.isSet() {
+		if c.keysHandshake.canWrite() {
 			pnumMaxAcked := c.acks[handshakeSpace].largestSeen()
 			pnum := c.loss.nextNumber(handshakeSpace)
 			p := longPacket{
@@ -101,7 +101,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if logPackets {
 				logSentPacket(c, packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.payload())
 			}
-			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, p); sent != nil {
+			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysHandshake.w, p); sent != nil {
 				c.loss.packetSent(now, handshakeSpace, sent)
 				if c.side == clientSide {
 					// "[...] a client MUST discard Initial keys when it first
@@ -113,7 +113,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		}
 
 		// 1-RTT packet.
-		if k := c.wkeys[appDataSpace]; k.isSet() {
+		if c.keysAppData.canWrite() {
 			pnumMaxAcked := c.acks[appDataSpace].largestSeen()
 			pnum := c.loss.nextNumber(appDataSpace)
 			c.w.start1RTTPacket(pnum, pnumMaxAcked, dstConnID)
@@ -128,7 +128,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if logPackets {
 				logSentPacket(c, packetType1RTT, pnum, nil, dstConnID, c.w.payload())
 			}
-			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, k); sent != nil {
+			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, c.keysAppData.w); sent != nil {
 				c.loss.packetSent(now, appDataSpace, sent)
 			}
 		}
@@ -157,7 +157,10 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 					sentInitial.inFlight = true
 				}
 			}
-			if k := c.wkeys[initialSpace]; k.isSet() {
+			// If we're a client and this Initial packet is coalesced
+			// with a Handshake packet, then we've discarded Initial keys
+			// since constructing the packet and shouldn't record it as in-flight.
+			if c.keysInitial.canWrite() {
 				c.loss.packetSent(now, initialSpace, sentInitial)
 			}
 		}

@@ -17,7 +17,7 @@ func TestParseLongHeaderPacket(t *testing.T) {
 	// Example Initial packet from:
 	// https://www.rfc-editor.org/rfc/rfc9001.html#section-a.3
 	cid := unhex(`8394c8f03e515708`)
-	_, initialServerKeys := initialKeys(cid)
+	initialServerKeys := initialKeys(cid, clientSide).r
 	pkt := unhex(`
 		cf000000010008f067a5502a4262b500 4075c0d95a482cd0991cd25b0aac406a
 		5816b6394100f37a1c69797554780bb3 8cc5a99f5ede4cf73c3ec2493a1839b3
@@ -65,20 +65,21 @@ func TestParseLongHeaderPacket(t *testing.T) {
 	}
 
 	// Parse with the wrong keys.
-	_, invalidKeys := initialKeys([]byte{})
+	invalidKeys := initialKeys([]byte{}, clientSide).w
 	if _, n := parseLongHeaderPacket(pkt, invalidKeys, 0); n != -1 {
 		t.Fatalf("parse long header packet with wrong keys: n=%v, want -1", n)
 	}
 }
 
 func TestRoundtripEncodeLongPacket(t *testing.T) {
-	aes128Keys, _ := newKeys(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
-	aes256Keys, _ := newKeys(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
-	chachaKeys, _ := newKeys(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
+	var aes128Keys, aes256Keys, chachaKeys fixedKeys
+	aes128Keys.init(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
+	aes256Keys.init(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
+	chachaKeys.init(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
 	for _, test := range []struct {
 		desc string
 		p    longPacket
-		k    keys
+		k    fixedKeys
 	}{{
 		desc: "Initial, 1-byte number, AES128",
 		p: longPacket{
@@ -145,9 +146,10 @@ func TestRoundtripEncodeLongPacket(t *testing.T) {
 }
 
 func TestRoundtripEncodeShortPacket(t *testing.T) {
-	aes128Keys, _ := newKeys(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
-	aes256Keys, _ := newKeys(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
-	chachaKeys, _ := newKeys(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
+	var aes128Keys, aes256Keys, chachaKeys fixedKeys
+	aes128Keys.init(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
+	aes256Keys.init(tls.TLS_AES_256_GCM_SHA384, []byte("secret"))
+	chachaKeys.init(tls.TLS_CHACHA20_POLY1305_SHA256, []byte("secret"))
 	connID := make([]byte, connIDLen)
 	for i := range connID {
 		connID[i] = byte(i)
@@ -156,7 +158,7 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 		desc    string
 		num     packetNumber
 		payload []byte
-		k       keys
+		k       fixedKeys
 	}{{
 		desc:    "1-byte number, AES128",
 		num:     0, // 1-byte encoding,
@@ -700,7 +702,7 @@ func TestFrameDecodeErrors(t *testing.T) {
 
 func FuzzParseLongHeaderPacket(f *testing.F) {
 	cid := unhex(`0000000000000000`)
-	_, initialServerKeys := initialKeys(cid)
+	initialServerKeys := initialKeys(cid, clientSide).r
 	f.Fuzz(func(t *testing.T, in []byte) {
 		parseLongHeaderPacket(in, initialServerKeys, 0)
 	})

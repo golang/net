@@ -42,10 +42,11 @@ type Conn struct {
 	idleTimeout    time.Time
 
 	// Packet protection keys, CRYPTO streams, and TLS state.
-	rkeys  [numberSpaceCount]keys
-	wkeys  [numberSpaceCount]keys
-	crypto [numberSpaceCount]cryptoStream
-	tls    *tls.QUICConn
+	keysInitial   fixedKeyPair
+	keysHandshake fixedKeyPair
+	keysAppData   fixedKeyPair
+	crypto        [numberSpaceCount]cryptoStream
+	tls           *tls.QUICConn
 
 	// handshakeConfirmed is set when the handshake is confirmed.
 	// For server connections, it tracks sending HANDSHAKE_DONE.
@@ -156,8 +157,12 @@ func (c *Conn) confirmHandshake(now time.Time) {
 // discardKeys discards unused packet protection keys.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.9
 func (c *Conn) discardKeys(now time.Time, space numberSpace) {
-	c.rkeys[space].discard()
-	c.wkeys[space].discard()
+	switch space {
+	case initialSpace:
+		c.keysInitial.discard()
+	case handshakeSpace:
+		c.keysHandshake.discard()
+	}
 	c.loss.discardKeys(now, space)
 }
 

@@ -16,10 +16,11 @@ func TestPacketProtection(t *testing.T) {
 	// Test cases from:
 	// https://www.rfc-editor.org/rfc/rfc9001#section-appendix.a
 	cid := unhex(`8394c8f03e515708`)
-	initialClientKeys, initialServerKeys := initialKeys(cid)
+	k := initialKeys(cid, clientSide)
+	initialClientKeys, initialServerKeys := k.w, k.r
 	for _, test := range []struct {
 		name string
-		k    keys
+		k    fixedKeys
 		pnum packetNumber
 		hdr  []byte
 		pay  []byte
@@ -103,15 +104,13 @@ func TestPacketProtection(t *testing.T) {
 		`),
 	}, {
 		name: "ChaCha20_Poly1305 Short Header",
-		k: func() keys {
+		k: func() fixedKeys {
 			secret := unhex(`
 				9ac312a7f877468ebe69422748ad00a1
 				5443f18203a07d6060f688f30f21632b
 			`)
-			k, err := newKeys(tls.TLS_CHACHA20_POLY1305_SHA256, secret)
-			if err != nil {
-				t.Fatal(err)
-			}
+			var k fixedKeys
+			k.init(tls.TLS_CHACHA20_POLY1305_SHA256, secret)
 			return k
 		}(),
 		pnum: 654360564,

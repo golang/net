@@ -26,9 +26,9 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 				// https://www.rfc-editor.org/rfc/rfc9000#section-14.1-4
 				return
 			}
-			n = c.handleLongHeader(now, ptype, initialSpace, buf)
+			n = c.handleLongHeader(now, ptype, initialSpace, c.keysInitial.r, buf)
 		case packetTypeHandshake:
-			n = c.handleLongHeader(now, ptype, handshakeSpace, buf)
+			n = c.handleLongHeader(now, ptype, handshakeSpace, c.keysHandshake.r, buf)
 		case packetType1RTT:
 			n = c.handle1RTT(now, buf)
 		default:
@@ -43,13 +43,13 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 	}
 }
 
-func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpace, buf []byte) int {
-	if !c.rkeys[space].isSet() {
+func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpace, k fixedKeys, buf []byte) int {
+	if !k.isSet() {
 		return skipLongHeaderPacket(buf)
 	}
 
 	pnumMax := c.acks[space].largestSeen()
-	p, n := parseLongHeaderPacket(buf, c.rkeys[space], pnumMax)
+	p, n := parseLongHeaderPacket(buf, k, pnumMax)
 	if n < 0 {
 		return -1
 	}
@@ -82,14 +82,14 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 }
 
 func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
-	if !c.rkeys[appDataSpace].isSet() {
+	if !c.keysAppData.canRead() {
 		// 1-RTT packets extend to the end of the datagram,
 		// so skip the remainder of the datagram if we can't parse this.
 		return len(buf)
 	}
 
 	pnumMax := c.acks[appDataSpace].largestSeen()
-	p, n := parse1RTTPacket(buf, c.rkeys[appDataSpace], connIDLen, pnumMax)
+	p, n := parse1RTTPacket(buf, c.keysAppData.r, connIDLen, pnumMax)
 	if n < 0 {
 		return -1
 	}
