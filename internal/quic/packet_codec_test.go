@@ -193,9 +193,9 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 			w.b = append(w.b, test.payload...)
 			w.finish1RTTPacket(test.num, 0, connID, &test.k)
 			pkt := w.datagram()
-			p, n := parse1RTTPacket(pkt, &test.k, connIDLen, 0)
-			if n != len(pkt) {
-				t.Errorf("parse1RTTPacket: n=%v, want %v", n, len(pkt))
+			p, err := parse1RTTPacket(pkt, &test.k, connIDLen, 0)
+			if err != nil {
+				t.Errorf("parse1RTTPacket: err=%v, want nil", err)
 			}
 			if p.num != test.num || !bytes.Equal(p.payload, test.payload) {
 				t.Errorf("Round-trip encode/decode did not preserve packet.\nsent: num=%v, payload={%x}\ngot: num=%v, payload={%x}", test.num, test.payload, p.num, p.payload)

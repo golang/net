@@ -143,14 +143,14 @@ func skipLongHeaderPacket(pkt []byte) int {
 //
 // On input, pkt contains a short header packet, k the decryption keys for the packet,
 // and pnumMax the largest packet number seen in the number space of this packet.
-func parse1RTTPacket(pkt []byte, k *updatingKeyPair, dstConnIDLen int, pnumMax packetNumber) (p shortPacket, n int) {
+func parse1RTTPacket(pkt []byte, k *updatingKeyPair, dstConnIDLen int, pnumMax packetNumber) (p shortPacket, err error) {
 	pay, pnum, err := k.unprotect(pkt, 1+dstConnIDLen, pnumMax)
 	if err != nil {
-		return shortPacket{}, -1
+		return shortPacket{}, err
 	}
 	p.num = pnum
 	p.payload = pay
-	return p, len(pkt)
+	return p, nil
 }
 
 // Consume functions return n=-1 on conditions which result in FRAME_ENCODING_ERROR,

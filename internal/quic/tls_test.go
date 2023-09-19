@@ -538,3 +538,66 @@ func TestConnCryptoBufferSizeExceeded(t *testing.T) {
 			code: errCryptoBufferExceeded,
 		})
 }
+
+func TestConnAEADLimitReached(t *testing.T) {
+	// "[...] endpoints MUST count the number of received packets that
+	// fail authentication during the lifetime of a connection.
+	// If the total number of received packets that fail authentication [...]
+	// exceeds the integrity limit for the selected AEAD,
+	// the endpoint MUST immediately close the connection [...]"
+	// https://www.rfc-editor.org/rfc/rfc9001#section-6.6-6
+	tc := newTestConn(t, clientSide)
+	tc.handshake()
+
+	var limit int64
+	switch suite := tc.conn.keysAppData.r.suite; suite {
+	case tls.TLS_AES_128_GCM_SHA256, tls.TLS_AES_256_GCM_SHA384:
+		limit = 1 << 52
+	case tls.TLS_CHACHA20_POLY1305_SHA256:
+		limit = 1 << 36
+	default:
+		t.Fatalf("conn.keysAppData.r.suite = %v, unknown suite", suite)
+	}
+
+	dstConnID := tc.conn.connIDState.local[0].cid
+	if tc.conn.connIDState.local[0].seq == -1 {
+		// Only use the transient connection ID in Initial packets.
+		dstConnID = tc.conn.connIDState.local[1].cid
+	}
+	invalid := tc.encodeTestPacket(&testPacket{
+		ptype:     packetType1RTT,
+		num:       1000,
+		frames:    []debugFrame{debugFramePing{}},
+		version:   1,
+		dstConnID: dstConnID,
+		srcConnID: tc.peerConnID,
+	}, 0)
+	invalid[len(invalid)-1] ^= 1
+	sendInvalid := func() {
+		t.Logf("<- conn under test receives invalid datagram")
+		tc.conn.sendMsg(&datagram{
+			b: invalid,
+		})
+		tc.wait()
+	}
+
+	// Set the conn's auth failure count to just before the AEAD integrity limit.
+	tc.conn.keysAppData.authFailures = limit - 1
+
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advanceToTimer()
+	tc.wantFrameType("auth failures less than limit: conn ACKs packet",
+		packetType1RTT, debugFrameAck{})
+
+	sendInvalid()
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advanceToTimer()
+	tc.wantFrameType("auth failures at limit: conn closes",
+		packetType1RTT, debugFrameConnectionCloseTransport{
+			code: errAEADLimitReached,
+		})
+
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advance(1 * time.Second)
+	tc.wantIdle("auth failures at limit: conn does not process additional packets")
+}

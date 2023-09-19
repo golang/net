@@ -89,8 +89,13 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	}
 
 	pnumMax := c.acks[appDataSpace].largestSeen()
-	p, n := parse1RTTPacket(buf, &c.keysAppData, connIDLen, pnumMax)
-	if n < 0 {
+	p, err := parse1RTTPacket(buf, &c.keysAppData, connIDLen, pnumMax)
+	if err != nil {
+		// A localTransportError terminates the connection.
+		// Other errors indicate an unparseable packet, but otherwise may be ignored.
+		if _, ok := err.(localTransportError); ok {
+			c.abort(now, err)
+		}
 		return -1
 	}
 	if buf[0]&reserved1RTTBits != 0 {

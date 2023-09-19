@@ -336,12 +336,13 @@ func updateSecret(suite uint16, secret []byte) (nextSecret []byte) {
 // of reordered packets before discarding the previous phase's keys after
 // an update.
 type updatingKeyPair struct {
-	phase       uint8 // current key phase (r.pkt[0], w.pkt[0])
-	updating    bool
-	minSent     packetNumber // min packet number sent since entering the updating state
-	minReceived packetNumber // min packet number received in the next phase
-	updateAfter packetNumber // packet number after which to initiate key update
-	r, w        updatingKeys
+	phase        uint8 // current key phase (r.pkt[0], w.pkt[0])
+	updating     bool
+	authFailures int64        // total packet unprotect failures
+	minSent      packetNumber // min packet number sent since entering the updating state
+	minReceived  packetNumber // min packet number received in the next phase
+	updateAfter  packetNumber // packet number after which to initiate key update
+	r, w         updatingKeys
 }
 
 func (k *updatingKeyPair) init() {
@@ -424,24 +425,43 @@ func (k *updatingKeyPair) unprotect(pkt []byte, pnumOff int, pnumMax packetNumbe
 	// Otherwise, use the next phase.
 	if hdr[0]&keyPhaseBit == k.phase && (!k.updating || pnum < k.minReceived) {
 		pay, err = k.r.pkt[0].unprotect(hdr, pay, pnum)
-		if err != nil {
-			return nil, 0, err
-		}
 	} else {
 		pay, err = k.r.pkt[1].unprotect(hdr, pay, pnum)
-		if err != nil {
-			return nil, 0, err
-		}
-		if !k.updating {
-			// The peer has initiated a key update.
-			k.updating = true
-			k.minSent = maxPacketNumber
-			k.minReceived = pnum
-		} else {
-			k.minReceived = min(pnum, k.minReceived)
+		if err == nil {
+			if !k.updating {
+				// The peer has initiated a key update.
+				k.updating = true
+				k.minSent = maxPacketNumber
+				k.minReceived = pnum
+			} else {
+				k.minReceived = min(pnum, k.minReceived)
+			}
 		}
 	}
+	if err != nil {
+		k.authFailures++
+		if k.authFailures >= aeadIntegrityLimit(k.r.suite) {
+			return nil, 0, localTransportError(errAEADLimitReached)
+		}
+		return nil, 0, err
+	}
 	return pay, pnum, nil
+}
+
+// aeadIntegrityLimit returns the integrity limit for an AEAD:
+// The maximum number of received packets that may fail authentication
+// before closing the connection.
+//
+// https://www.rfc-editor.org/rfc/rfc9001#section-6.6-4
+func aeadIntegrityLimit(suite uint16) int64 {
+	switch suite {
+	case tls.TLS_AES_128_GCM_SHA256, tls.TLS_AES_256_GCM_SHA384:
+		return 1 << 52
+	case tls.TLS_CHACHA20_POLY1305_SHA256:
+		return 1 << 36
+	default:
+		panic("BUG: unknown cipher suite")
+	}
 }
 
 // https://www.rfc-editor.org/rfc/rfc9001#section-5.2-2
