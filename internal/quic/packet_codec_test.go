@@ -153,6 +153,9 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 	aes128Keys.w = aes128Keys.r
 	aes256Keys.w = aes256Keys.r
 	chachaKeys.w = chachaKeys.r
+	aes128Keys.updateAfter = maxPacketNumber
+	aes256Keys.updateAfter = maxPacketNumber
+	chachaKeys.updateAfter = maxPacketNumber
 	connID := make([]byte, connIDLen)
 	for i := range connID {
 		connID[i] = byte(i)

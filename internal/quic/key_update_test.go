@@ -161,3 +161,74 @@ func TestKeyUpdateRejectPacketFromPriorPhase(t *testing.T) {
 			},
 		})
 }
+
+func TestKeyUpdateLocallyInitiated(t *testing.T) {
+	const updateAfter = 4 // initiate key update after 1-RTT packet 4
+	tc := newTestConn(t, serverSide)
+	tc.conn.keysAppData.updateAfter = updateAfter
+	tc.handshake()
+
+	for {
+		tc.writeFrames(packetType1RTT, debugFramePing{})
+		tc.advanceToTimer()
+		tc.wantFrameType("conn ACKs last packet",
+			packetType1RTT, debugFrameAck{})
+		if tc.lastPacket.num > updateAfter {
+			break
+		}
+		if got, want := tc.lastPacket.keyNumber, 0; got != want {
+			t.Errorf("before key update, conn sent packet with key %v, want %v", got, want)
+		}
+		if tc.lastPacket.keyPhaseBit {
+			t.Errorf("before key update, keyPhaseBit is set, want unset")
+		}
+	}
+	if got, want := tc.lastPacket.keyNumber, 1; got != want {
+		t.Errorf("after key update, conn sent packet with key %v, want %v", got, want)
+	}
+	if !tc.lastPacket.keyPhaseBit {
+		t.Errorf("after key update, keyPhaseBit is unset, want set")
+	}
+	tc.wantFrame("first packet after a key update is always ack-eliciting",
+		packetType1RTT, debugFramePing{})
+	tc.wantIdle("no more frames")
+
+	// Peer sends another packet using the prior phase keys.
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advanceToTimer()
+	tc.wantFrameType("conn ACKs packet in prior phase",
+		packetType1RTT, debugFrameAck{})
+	tc.wantIdle("packet is not ack-eliciting")
+	if got, want := tc.lastPacket.keyNumber, 1; got != want {
+		t.Errorf("after key update, conn sent packet with key %v, want %v", got, want)
+	}
+
+	// Peer updates to the next phase.
+	tc.sendKeyNumber = 1
+	tc.sendKeyPhaseBit = true
+	tc.writeAckForAll()
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advanceToTimer()
+	tc.wantFrameType("conn ACKs packet in current phase",
+		packetType1RTT, debugFrameAck{})
+	tc.wantIdle("packet is not ack-eliciting")
+	if got, want := tc.lastPacket.keyNumber, 1; got != want {
+		t.Errorf("after key update, conn sent packet with key %v, want %v", got, want)
+	}
+
+	// Peer initiates its own update.
+	tc.sendKeyNumber = 2
+	tc.sendKeyPhaseBit = false
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.advanceToTimer()
+	tc.wantFrameType("conn ACKs packet in current phase",
+		packetType1RTT, debugFrameAck{})
+	tc.wantFrame("first packet after a key update is always ack-eliciting",
+		packetType1RTT, debugFramePing{})
+	if got, want := tc.lastPacket.keyNumber, 2; got != want {
+		t.Errorf("after peer key update, conn sent packet with key %v, want %v", got, want)
+	}
+	if tc.lastPacket.keyPhaseBit {
+		t.Errorf("after peer key update, keyPhaseBit is unset, want set")
+	}
+}

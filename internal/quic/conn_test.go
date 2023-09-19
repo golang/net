@@ -242,6 +242,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	}
 	tc.conn = conn
 
+	conn.keysAppData.updateAfter = maxPacketNumber // disable key updates
 	tc.keysInitial.r = conn.keysInitial.w
 	tc.keysInitial.w = conn.keysInitial.r
 
@@ -687,6 +688,7 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 					tc.wkeyAppData.pkt[p.keyNumber],
 				},
 			},
+			updateAfter: maxPacketNumber,
 		}
 		if p.keyPhaseBit {
 			k.phase |= keyPhaseBit

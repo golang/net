@@ -340,7 +340,17 @@ type updatingKeyPair struct {
 	updating    bool
 	minSent     packetNumber // min packet number sent since entering the updating state
 	minReceived packetNumber // min packet number received in the next phase
+	updateAfter packetNumber // packet number after which to initiate key update
 	r, w        updatingKeys
+}
+
+func (k *updatingKeyPair) init() {
+	// 1-RTT packets until the first key update.
+	//
+	// We perform the first key update early in the connection so a peer
+	// which does not support key updates will fail rapidly,
+	// rather than after the connection has been long established.
+	k.updateAfter = 1000
 }
 
 func (k *updatingKeyPair) canRead() bool {
@@ -371,8 +381,6 @@ func (k *updatingKeyPair) needAckEliciting() bool {
 // protect applies packet protection to a packet.
 // Parameters and returns are as for fixedKeyPair.protect.
 func (k *updatingKeyPair) protect(hdr, pay []byte, pnumOff int, pnum packetNumber) []byte {
-	// TODO: Initiate key updates as required to avoid the AEAD usage limit.
-	// https://www.rfc-editor.org/rfc/rfc9001#section-6.6
 	var pkt []byte
 	if k.updating {
 		hdr[0] |= k.phase ^ keyPhaseBit
@@ -381,6 +389,21 @@ func (k *updatingKeyPair) protect(hdr, pay []byte, pnumOff int, pnum packetNumbe
 	} else {
 		hdr[0] |= k.phase
 		pkt = k.w.pkt[0].protect(hdr, pay, pnum)
+		if pnum >= k.updateAfter {
+			// Initiate a key update, starting with the next packet we send.
+			//
+			// We do this after protecting the current packet
+			// to allow Conn.appendFrames to ensure that the first packet sent
+			// in the new phase is ack-eliciting.
+			k.updating = true
+			k.minSent = maxPacketNumber
+			k.minReceived = maxPacketNumber
+			// The lowest confidentiality limit for a supported AEAD is 2^23 packets.
+			// https://www.rfc-editor.org/rfc/rfc9001#section-6.6-5
+			//
+			// Schedule our next update for half that.
+			k.updateAfter += (1 << 22)
+		}
 	}
 	k.w.hdr.protect(pkt, pnumOff)
 	return pkt
