@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// QUIC versions.
+// We only support v1 at this time.
+const (
+	quicVersion1 = 1
+	quicVersion2 = 0x6b3343cf // https://www.rfc-editor.org/rfc/rfc9369
+)
+
 // connIDLen is the length in bytes of connection IDs chosen by this package.
 // Since 1-RTT packets don't include a connection ID length field,
 // we use a consistent length for all our IDs.

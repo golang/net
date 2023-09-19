@@ -64,7 +64,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			pnum := c.loss.nextNumber(initialSpace)
 			p := longPacket{
 				ptype:     packetTypeInitial,
-				version:   1,
+				version:   quicVersion1,
 				num:       pnum,
 				dstConnID: dstConnID,
 				srcConnID: c.connIDState.srcConnID(),
@@ -91,7 +91,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			pnum := c.loss.nextNumber(handshakeSpace)
 			p := longPacket{
 				ptype:     packetTypeHandshake,
-				version:   1,
+				version:   quicVersion1,
 				num:       pnum,
 				dstConnID: dstConnID,
 				srcConnID: c.connIDState.srcConnID(),

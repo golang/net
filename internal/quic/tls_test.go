@@ -97,7 +97,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       0,
-			version:   1,
+			version:   quicVersion1,
 			srcConnID: clientConnIDs[0],
 			dstConnID: transientConnID,
 			frames: []debugFrame{
@@ -110,7 +110,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       0,
-			version:   1,
+			version:   quicVersion1,
 			srcConnID: serverConnIDs[0],
 			dstConnID: clientConnIDs[0],
 			frames: []debugFrame{
@@ -122,7 +122,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		}, {
 			ptype:     packetTypeHandshake,
 			num:       0,
-			version:   1,
+			version:   quicVersion1,
 			srcConnID: serverConnIDs[0],
 			dstConnID: clientConnIDs[0],
 			frames: []debugFrame{
@@ -144,7 +144,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
-			version:   1,
+			version:   quicVersion1,
 			srcConnID: clientConnIDs[0],
 			dstConnID: serverConnIDs[0],
 			frames: []debugFrame{
@@ -155,7 +155,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		}, {
 			ptype:     packetTypeHandshake,
 			num:       0,
-			version:   1,
+			version:   quicVersion1,
 			srcConnID: clientConnIDs[0],
 			dstConnID: serverConnIDs[0],
 			frames: []debugFrame{
@@ -568,7 +568,7 @@ func TestConnAEADLimitReached(t *testing.T) {
 		ptype:     packetType1RTT,
 		num:       1000,
 		frames:    []debugFrame{debugFramePing{}},
-		version:   1,
+		version:   quicVersion1,
 		dstConnID: dstConnID,
 		srcConnID: tc.peerConnID,
 	}, 0)

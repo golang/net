@@ -409,7 +409,7 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 			keyNumber:   tc.sendKeyNumber,
 			keyPhaseBit: tc.sendKeyPhaseBit,
 			frames:      frames,
-			version:     1,
+			version:     quicVersion1,
 			dstConnID:   dstConnID,
 			srcConnID:   tc.peerConnID,
 		}},

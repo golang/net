@@ -6,7 +6,10 @@
 
 package quic
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 // packetType is a QUIC packet type.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17
@@ -157,6 +160,33 @@ func dstConnIDForDatagram(pkt []byte) (id []byte, ok bool) {
 	return b[:n], true
 }
 
+// parseVersionNegotiation parses a Version Negotiation packet.
+// The returned versions is a slice of big-endian uint32s.
+// It returns (nil, nil, nil) for an invalid packet.
+func parseVersionNegotiation(pkt []byte) (dstConnID, srcConnID, versions []byte) {
+	p, ok := parseGenericLongHeaderPacket(pkt)
+	if !ok {
+		return nil, nil, nil
+	}
+	if len(p.data)%4 != 0 {
+		return nil, nil, nil
+	}
+	return p.dstConnID, p.srcConnID, p.data
+}
+
+// appendVersionNegotiation appends a Version Negotiation packet to pkt,
+// returning the result.
+func appendVersionNegotiation(pkt, dstConnID, srcConnID []byte, versions ...uint32) []byte {
+	pkt = append(pkt, headerFormLong|fixedBit) // header byte
+	pkt = append(pkt, 0, 0, 0, 0)              // Version (0 for Version Negotiation)
+	pkt = appendUint8Bytes(pkt, dstConnID)     // Destination Connection ID
+	pkt = appendUint8Bytes(pkt, srcConnID)     // Source Connection ID
+	for _, v := range versions {
+		pkt = binary.BigEndian.AppendUint32(pkt, v) // Supported Version
+	}
+	return pkt
+}
+
 // A longPacket is a long header packet.
 type longPacket struct {
 	ptype     packetType
@@ -176,4 +206,43 @@ type longPacket struct {
 type shortPacket struct {
 	num     packetNumber
 	payload []byte
+}
+
+// A genericLongPacket is a long header packet of an arbitrary QUIC version.
+// https://www.rfc-editor.org/rfc/rfc8999#section-5.1
+type genericLongPacket struct {
+	version   uint32
+	dstConnID []byte
+	srcConnID []byte
+	data      []byte
+}
+
+func parseGenericLongHeaderPacket(b []byte) (p genericLongPacket, ok bool) {
+	if len(b) < 5 || !isLongHeader(b[0]) {
+		return genericLongPacket{}, false
+	}
+	b = b[1:]
+	// Version (32),
+	var n int
+	p.version, n = consumeUint32(b)
+	if n < 0 {
+		return genericLongPacket{}, false
+	}
+	b = b[n:]
+	// Destination Connection ID Length (8),
+	// Destination Connection ID (0..2048),
+	p.dstConnID, n = consumeUint8Bytes(b)
+	if n < 0 || len(p.dstConnID) > 2048/8 {
+		return genericLongPacket{}, false
+	}
+	b = b[n:]
+	// Source Connection ID Length (8),
+	// Source Connection ID (0..2048),
+	p.srcConnID, n = consumeUint8Bytes(b)
+	if n < 0 || len(p.dstConnID) > 2048/8 {
+		return genericLongPacket{}, false
+	}
+	b = b[n:]
+	p.data = b
+	return p, true
 }

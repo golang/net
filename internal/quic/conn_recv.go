@@ -7,6 +7,9 @@
 package quic
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"time"
 )
 
@@ -31,6 +34,9 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			n = c.handleLongHeader(now, ptype, handshakeSpace, c.keysHandshake.r, buf)
 		case packetType1RTT:
 			n = c.handle1RTT(now, buf)
+		case packetTypeVersionNegotiation:
+			c.handleVersionNegotiation(now, buf)
+			return
 		default:
 			return
 		}
@@ -56,6 +62,11 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if buf[0]&reservedLongBits != 0 {
 		// Reserved header bits must be 0.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
+		c.abort(now, localTransportError(errProtocolViolation))
+		return -1
+	}
+	if p.version != quicVersion1 {
+		// The peer has changed versions on us mid-handshake?
 		c.abort(now, localTransportError(errProtocolViolation))
 		return -1
 	}
@@ -115,6 +126,42 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	ackEliciting := c.handleFrames(now, packetType1RTT, appDataSpace, p.payload)
 	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting)
 	return len(buf)
+}
+
+var errVersionNegotiation = errors.New("server does not support QUIC version 1")
+
+func (c *Conn) handleVersionNegotiation(now time.Time, pkt []byte) {
+	if c.side != clientSide {
+		return // servers don't handle Version Negotiation packets
+	}
+	// "A client MUST discard any Version Negotiation packet if it has
+	// received and successfully processed any other packet [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000#section-6.2-2
+	if !c.keysInitial.canRead() {
+		return // discarded Initial keys, connection is already established
+	}
+	if c.acks[initialSpace].seen.numRanges() != 0 {
+		return // processed at least one packet
+	}
+	_, srcConnID, versions := parseVersionNegotiation(pkt)
+	if len(c.connIDState.remote) < 1 || !bytes.Equal(c.connIDState.remote[0].cid, srcConnID) {
+		return // Source Connection ID doesn't match what we sent
+	}
+	for len(versions) >= 4 {
+		ver := binary.BigEndian.Uint32(versions)
+		if ver == 1 {
+			// "A client MUST discard a Version Negotiation packet that lists
+			// the QUIC version selected by the client."
+			// https://www.rfc-editor.org/rfc/rfc9000#section-6.2-2
+			return
+		}
+		versions = versions[4:]
+	}
+	// "A client that supports only this version of QUIC MUST
+	// abandon the current connection attempt if it receives
+	// a Version Negotiation packet, [with the two exceptions handled above]."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-6.2-2
+	c.abortImmediately(now, errVersionNegotiation)
 }
 
 func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, payload []byte) (ackEliciting bool) {

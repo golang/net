@@ -8,7 +8,9 @@ package quic
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -107,6 +109,124 @@ func TestPacketHeader(t *testing.T) {
 			wantConnID, wantOK := test.dstConnID, test.dstConnID != nil
 			if !bytes.Equal(gotConnID, wantConnID) || gotOK != wantOK {
 				t.Errorf("packet %x:\ndstConnIDForDatagram(packet) = {%x}, %v; want {%x}, %v", test.packet, gotConnID, gotOK, wantConnID, wantOK)
+			}
+		})
+	}
+}
+
+func TestEncodeDecodeVersionNegotiation(t *testing.T) {
+	dstConnID := []byte("this is a very long destination connection id")
+	srcConnID := []byte("this is a very long source connection id")
+	versions := []uint32{1, 0xffffffff}
+	got := appendVersionNegotiation([]byte{}, dstConnID, srcConnID, versions...)
+	want := bytes.Join([][]byte{{
+		0b1100_0000, // header byte
+		0, 0, 0, 0,  // Version
+		byte(len(dstConnID)),
+	}, dstConnID, {
+		byte(len(srcConnID)),
+	}, srcConnID, {
+		0x00, 0x00, 0x00, 0x01,
+		0xff, 0xff, 0xff, 0xff,
+	}}, nil)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("appendVersionNegotiation(nil, %x, %x, %v):\ngot  %x\nwant %x",
+			dstConnID, srcConnID, versions, got, want)
+	}
+	gotDst, gotSrc, gotVersionBytes := parseVersionNegotiation(got)
+	if got, want := gotDst, dstConnID; !bytes.Equal(got, want) {
+		t.Errorf("parseVersionNegotiation: got dstConnID = %x, want %x", got, want)
+	}
+	if got, want := gotSrc, srcConnID; !bytes.Equal(got, want) {
+		t.Errorf("parseVersionNegotiation: got srcConnID = %x, want %x", got, want)
+	}
+	var gotVersions []uint32
+	for len(gotVersionBytes) >= 4 {
+		gotVersions = append(gotVersions, binary.BigEndian.Uint32(gotVersionBytes))
+		gotVersionBytes = gotVersionBytes[4:]
+	}
+	if got, want := gotVersions, versions; !reflect.DeepEqual(got, want) {
+		t.Errorf("parseVersionNegotiation: got versions = %v, want %v", got, want)
+	}
+}
+
+func TestParseGenericLongHeaderPacket(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		packet    []byte
+		version   uint32
+		dstConnID []byte
+		srcConnID []byte
+		data      []byte
+	}{{
+		name: "long header packet",
+		packet: unhex(`
+			80 01020304 04a1a2a3a4 05b1b2b3b4b5 c1
+		`),
+		version:   0x01020304,
+		dstConnID: unhex(`a1a2a3a4`),
+		srcConnID: unhex(`b1b2b3b4b5`),
+		data:      unhex(`c1`),
+	}, {
+		name: "zero everything",
+		packet: unhex(`
+			80 00000000 00 00
+		`),
+		version:   0,
+		dstConnID: []byte{},
+		srcConnID: []byte{},
+		data:      []byte{},
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			p, ok := parseGenericLongHeaderPacket(test.packet)
+			if !ok {
+				t.Fatalf("parseGenericLongHeaderPacket() = _, false; want true")
+			}
+			if got, want := p.version, test.version; got != want {
+				t.Errorf("version = %v, want %v", got, want)
+			}
+			if got, want := p.dstConnID, test.dstConnID; !bytes.Equal(got, want) {
+				t.Errorf("Destination Connection ID = {%x}, want {%x}", got, want)
+			}
+			if got, want := p.srcConnID, test.srcConnID; !bytes.Equal(got, want) {
+				t.Errorf("Source Connection ID = {%x}, want {%x}", got, want)
+			}
+			if got, want := p.data, test.data; !bytes.Equal(got, want) {
+				t.Errorf("Data = {%x}, want {%x}", got, want)
+			}
+		})
+	}
+}
+
+func TestParseGenericLongHeaderPacketErrors(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		packet []byte
+	}{{
+		name: "short header packet",
+		packet: unhex(`
+			00 01020304 04a1a2a3a4 05b1b2b3b4b5 c1
+		`),
+	}, {
+		name: "packet too short",
+		packet: unhex(`
+			80 000000
+		`),
+	}, {
+		name: "destination id too long",
+		packet: unhex(`
+			80 00000000 02 00
+		`),
+	}, {
+		name: "source id too long",
+		packet: unhex(`
+			80 00000000 00 01
+		`),
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			_, ok := parseGenericLongHeaderPacket(test.packet)
+			if ok {
+				t.Fatalf("parseGenericLongHeaderPacket() = _, true; want false")
 			}
 		})
 	}

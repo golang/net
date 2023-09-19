@@ -239,37 +239,81 @@ func (l *Listener) listen() {
 func (l *Listener) handleDatagram(m *datagram, conns map[string]*Conn) {
 	dstConnID, ok := dstConnIDForDatagram(m.b)
 	if !ok {
+		m.recycle()
 		return
 	}
 	c := conns[string(dstConnID)]
 	if c == nil {
-		if getPacketType(m.b) != packetTypeInitial {
-			// This packet isn't trying to create a new connection.
-			// It might be associated with some connection we've lost state for.
-			// TODO: Send a stateless reset when appropriate.
-			// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3
-			return
-		}
-		var now time.Time
-		if l.testHooks != nil {
-			now = l.testHooks.timeNow()
-		} else {
-			now = time.Now()
-		}
-		var err error
-		c, err = l.newConn(now, serverSide, dstConnID, m.addr)
-		if err != nil {
-			// The accept queue is probably full.
-			// We could send a CONNECTION_CLOSE to the peer to reject the connection.
-			// Currently, we just drop the datagram.
-			// https://www.rfc-editor.org/rfc/rfc9000.html#section-5.2.2-5
-			return
-		}
+		// TODO: Move this branch into a separate goroutine to avoid blocking
+		// the listener while processing packets.
+		l.handleUnknownDestinationDatagram(m)
+		return
 	}
 
 	// TODO: This can block the listener while waiting for the conn to accept the dgram.
 	// Think about buffering between the receive loop and the conn.
 	c.sendMsg(m)
+}
+
+func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
+	defer func() {
+		if m != nil {
+			m.recycle()
+		}
+	}()
+	if len(m.b) < minimumClientInitialDatagramSize {
+		return
+	}
+	p, ok := parseGenericLongHeaderPacket(m.b)
+	if !ok {
+		// Not a long header packet, or not parseable.
+		// Short header (1-RTT) packets don't contain enough information
+		// to do anything useful with if we don't recognize the
+		// connection ID.
+		return
+	}
+
+	switch p.version {
+	case quicVersion1:
+	case 0:
+		// Version Negotiation for an unknown connection.
+		return
+	default:
+		// Unknown version.
+		l.sendVersionNegotiation(p, m.addr)
+		return
+	}
+	if getPacketType(m.b) != packetTypeInitial {
+		// This packet isn't trying to create a new connection.
+		// It might be associated with some connection we've lost state for.
+		// TODO: Send a stateless reset when appropriate.
+		// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3
+		return
+	}
+	var now time.Time
+	if l.testHooks != nil {
+		now = l.testHooks.timeNow()
+	} else {
+		now = time.Now()
+	}
+	var err error
+	c, err := l.newConn(now, serverSide, p.dstConnID, m.addr)
+	if err != nil {
+		// The accept queue is probably full.
+		// We could send a CONNECTION_CLOSE to the peer to reject the connection.
+		// Currently, we just drop the datagram.
+		// https://www.rfc-editor.org/rfc/rfc9000.html#section-5.2.2-5
+		return
+	}
+	c.sendMsg(m)
+	m = nil // don't recycle, sendMsg takes ownership
+}
+
+func (l *Listener) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPort) {
+	m := newDatagram()
+	m.b = appendVersionNegotiation(m.b[:0], p.srcConnID, p.dstConnID, quicVersion1)
+	l.sendDatagram(m.b, addr)
+	m.recycle()
 }
 
 func (l *Listener) sendDatagram(p []byte, addr netip.AddrPort) error {
