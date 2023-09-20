@@ -54,7 +54,10 @@ func (c *Conn) handleStreamBytesReadOffLoop(n int64) {
 		// We should send a MAX_DATA update to the peer.
 		// Record this on the Conn's main loop.
 		c.sendMsg(func(now time.Time, c *Conn) {
-			c.sendMaxDataUpdate()
+			// A MAX_DATA update may have already happened, so check again.
+			if c.shouldUpdateFlowControl(c.streams.inflow.credit.Load()) {
+				c.sendMaxDataUpdate()
+			}
 		})
 	}
 }

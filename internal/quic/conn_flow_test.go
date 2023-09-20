@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"context"
 	"testing"
 )
 
@@ -34,6 +35,56 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 		packetType1RTT, debugFrameMaxData{
 			max: 128,
 		})
+}
+
+func TestConnInflowReturnOnRacingReads(t *testing.T) {
+	// Perform two reads at the same time,
+	// one for half of MaxConnReadBufferSize
+	// and one for one byte.
+	//
+	// We should observe a single MAX_DATA update.
+	// Depending on the ordering of events,
+	// this may include the credit from just the larger read
+	// or the credit from both.
+	ctx := canceledContext()
+	tc := newTestConn(t, serverSide, func(c *Config) {
+		c.MaxConnReadBufferSize = 64
+	})
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   newStreamID(clientSide, uniStream, 0),
+		data: make([]byte, 32),
+	})
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   newStreamID(clientSide, uniStream, 1),
+		data: make([]byte, 32),
+	})
+	s1, err := tc.conn.AcceptStream(ctx)
+	if err != nil {
+		t.Fatalf("conn.AcceptStream() = %v", err)
+	}
+	s2, err := tc.conn.AcceptStream(ctx)
+	if err != nil {
+		t.Fatalf("conn.AcceptStream() = %v", err)
+	}
+	read1 := runAsync(tc, func(ctx context.Context) (int, error) {
+		return s1.ReadContext(ctx, make([]byte, 16))
+	})
+	read2 := runAsync(tc, func(ctx context.Context) (int, error) {
+		return s2.ReadContext(ctx, make([]byte, 1))
+	})
+	// This MAX_DATA might extend the window by 16 or 17, depending on
+	// whether the second write occurs before the update happens.
+	tc.wantFrameType("MAX_DATA update is sent",
+		packetType1RTT, debugFrameMaxData{})
+	tc.wantIdle("redundant MAX_DATA is not sent")
+	if _, err := read1.result(); err != nil {
+		t.Errorf("ReadContext #1 = %v", err)
+	}
+	if _, err := read2.result(); err != nil {
+		t.Errorf("ReadContext #2 = %v", err)
+	}
 }
 
 func TestConnInflowReturnOnClose(t *testing.T) {
