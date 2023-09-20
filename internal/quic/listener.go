@@ -104,7 +104,7 @@ func (l *Listener) Close(ctx context.Context) error {
 	if !l.closing {
 		l.closing = true
 		for c := range l.conns {
-			c.Close()
+			c.Abort(errors.New("listener closed"))
 		}
 		if len(l.conns) == 0 {
 			l.udpConn.Close()

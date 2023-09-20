@@ -173,6 +173,13 @@ func (c *Conn) waitReady(ctx context.Context) error {
 		return nil
 	case <-c.lifetime.drainingc:
 		return c.lifetime.finalErr
+	default:
+	}
+	select {
+	case <-c.lifetime.readyc:
+		return nil
+	case <-c.lifetime.drainingc:
+		return c.lifetime.finalErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -215,7 +222,7 @@ func (c *Conn) Abort(err error) {
 	if err == nil {
 		err = localTransportError(errNo)
 	}
-	c.runOnLoop(func(now time.Time, c *Conn) {
+	c.sendMsg(func(now time.Time, c *Conn) {
 		c.abort(now, err)
 	})
 }
@@ -228,11 +235,18 @@ func (c *Conn) abort(now time.Time, err error) {
 	c.lifetime.localErr = err
 }
 
+// abortImmediately terminates a connection.
+// The connection does not send a CONNECTION_CLOSE, and skips the draining period.
+func (c *Conn) abortImmediately(now time.Time, err error) {
+	c.abort(now, err)
+	c.enterDraining(err)
+	c.exited = true
+}
+
 // exit fully terminates a connection immediately.
 func (c *Conn) exit() {
-	c.runOnLoop(func(now time.Time, c *Conn) {
+	c.sendMsg(func(now time.Time, c *Conn) {
 		c.enterDraining(errors.New("connection closed"))
 		c.exited = true
 	})
-	<-c.donec
 }

@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
+	"net/netip"
 	"testing"
 )
 
@@ -85,4 +87,77 @@ func newLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
 		l.Close(context.Background())
 	})
 	return l
+}
+
+type testListener struct {
+	t             *testing.T
+	l             *Listener
+	recvc         chan *datagram
+	idlec         chan struct{}
+	sentDatagrams [][]byte
+}
+
+func newTestListener(t *testing.T, config *Config, testHooks connTestHooks) *testListener {
+	tl := &testListener{
+		t:     t,
+		recvc: make(chan *datagram),
+		idlec: make(chan struct{}),
+	}
+	tl.l = newListener((*testListenerUDPConn)(tl), config, testHooks)
+	t.Cleanup(tl.cleanup)
+	return tl
+}
+
+func (tl *testListener) cleanup() {
+	tl.l.Close(canceledContext())
+}
+
+func (tl *testListener) wait() {
+	tl.idlec <- struct{}{}
+}
+
+func (tl *testListener) write(d *datagram) {
+	tl.recvc <- d
+	tl.wait()
+}
+
+func (tl *testListener) read() []byte {
+	tl.wait()
+	if len(tl.sentDatagrams) == 0 {
+		return nil
+	}
+	d := tl.sentDatagrams[0]
+	tl.sentDatagrams = tl.sentDatagrams[1:]
+	return d
+}
+
+// testListenerUDPConn implements UDPConn.
+type testListenerUDPConn testListener
+
+func (tl *testListenerUDPConn) Close() error {
+	close(tl.recvc)
+	return nil
+}
+
+func (tl *testListenerUDPConn) LocalAddr() net.Addr {
+	return net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:443"))
+}
+
+func (tl *testListenerUDPConn) ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error) {
+	for {
+		select {
+		case d, ok := <-tl.recvc:
+			if !ok {
+				return 0, 0, 0, netip.AddrPort{}, io.EOF
+			}
+			n = copy(b, d.b)
+			return n, 0, 0, d.addr, nil
+		case <-tl.idlec:
+		}
+	}
+}
+
+func (tl *testListenerUDPConn) WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error) {
+	tl.sentDatagrams = append(tl.sentDatagrams, append([]byte(nil), b...))
+	return len(b), nil
 }

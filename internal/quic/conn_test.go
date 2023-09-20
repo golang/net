@@ -13,9 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math"
-	"net"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -112,7 +110,7 @@ const maxTestKeyPhases = 3
 type testConn struct {
 	t              *testing.T
 	conn           *Conn
-	listener       *Listener
+	listener       *testListener
 	now            time.Time
 	timer          time.Time
 	timerLastFired time.Time
@@ -231,8 +229,8 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	tc.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
 	tc.peerTLSConn.Start(context.Background())
 
-	tc.listener = newListener((*testConnUDPConn)(tc), config, (*testConnHooks)(tc))
-	conn, err := tc.listener.newConn(
+	tc.listener = newTestListener(t, config, (*testConnHooks)(tc))
+	conn, err := tc.listener.l.newConn(
 		tc.now,
 		side,
 		initialConnID,
@@ -335,7 +333,7 @@ func (tc *testConn) cleanup() {
 		return
 	}
 	tc.conn.exit()
-	tc.listener.Close(context.Background())
+	<-tc.conn.donec
 }
 
 func (tc *testConn) logDatagram(text string, d *testDatagram) {
@@ -388,6 +386,7 @@ func (tc *testConn) write(d *testDatagram) {
 	for len(buf) < d.paddedSize {
 		buf = append(buf, 0)
 	}
+	// TODO: This should use tc.listener.write.
 	tc.conn.sendMsg(&datagram{
 		b: buf,
 	})
@@ -457,11 +456,10 @@ func (tc *testConn) readDatagram() *testDatagram {
 	tc.wait()
 	tc.sentPackets = nil
 	tc.sentFrames = nil
-	if len(tc.sentDatagrams) == 0 {
+	buf := tc.listener.read()
+	if buf == nil {
 		return nil
 	}
-	buf := tc.sentDatagrams[0]
-	tc.sentDatagrams = tc.sentDatagrams[1:]
 	d := tc.parseTestDatagram(buf)
 	// Log the datagram before removing ignored frames.
 	// When things go wrong, it's useful to see all the frames.
@@ -980,31 +978,6 @@ func testPeerConnID(seq int64) []byte {
 	// Use a different length than we choose for our own conn ids,
 	// to help catch any bad assumptions.
 	return []byte{0xbe, 0xee, 0xff, byte(seq)}
-}
-
-// testConnUDPConn implements UDPConn.
-type testConnUDPConn testConn
-
-func (tc *testConnUDPConn) Close() error {
-	close(tc.recvDatagram)
-	return nil
-}
-
-func (tc *testConnUDPConn) LocalAddr() net.Addr {
-	return net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:443"))
-}
-
-func (tc *testConnUDPConn) ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error) {
-	for d := range tc.recvDatagram {
-		n = copy(b, d.b)
-		return n, 0, 0, d.addr, nil
-	}
-	return 0, 0, 0, netip.AddrPort{}, io.EOF
-}
-
-func (tc *testConnUDPConn) WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error) {
-	tc.sentDatagrams = append(tc.sentDatagrams, append([]byte(nil), b...))
-	return len(b), nil
 }
 
 // canceledContext returns a canceled Context.
