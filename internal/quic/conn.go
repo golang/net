@@ -106,7 +106,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.lifetimeInit()
 
 	// TODO: initial_source_connection_id, retry_source_connection_id
-	c.startTLS(now, initialConnID, transportParameters{
+	if err := c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),
 		ackDelayExponent:               ackDelayExponent,
 		maxUDPPayloadSize:              maxUDPPayloadSize,
@@ -119,7 +119,9 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		initialMaxStreamsBidi:          c.streams.remoteLimit[bidiStream].max,
 		initialMaxStreamsUni:           c.streams.remoteLimit[uniStream].max,
 		activeConnIDLimit:              activeConnIDLimit,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	go c.loop(now)
 	return c, nil
