@@ -48,6 +48,9 @@ func TestConnIDClientHandshake(t *testing.T) {
 		t.Errorf("local ids: %v, want %v", fmtConnIDList(got), fmtConnIDList(wantLocal))
 	}
 	wantRemote := []connID{{
+		cid: testLocalConnID(-1),
+		seq: -1,
+	}, {
 		cid: testPeerConnID(0),
 		seq: 0,
 	}}
@@ -261,10 +264,12 @@ func TestConnIDPeerRetiresConnID(t *testing.T) {
 }
 
 func TestConnIDPeerWithZeroLengthConnIDSendsNewConnectionID(t *testing.T) {
-	// An endpoint that selects a zero-length connection ID during the handshake
+	// "An endpoint that selects a zero-length connection ID during the handshake
 	// cannot issue a new connection ID."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-5.1.1-8
-	tc := newTestConn(t, clientSide)
+	tc := newTestConn(t, clientSide, func(p *transportParameters) {
+		p.initialSrcConnID = []byte{}
+	})
 	tc.peerConnID = []byte{}
 	tc.ignoreFrame(frameTypeAck)
 	tc.uncheckedHandshake()
@@ -536,6 +541,7 @@ func TestConnIDPeerWithZeroLengthIDProvidesPreferredAddr(t *testing.T) {
 	// Peer gives us more conn ids than our advertised limit,
 	// including a conn id in the preferred address transport parameter.
 	tc := newTestConn(t, serverSide, func(p *transportParameters) {
+		p.initialSrcConnID = []byte{}
 		p.preferredAddrV4 = netip.MustParseAddrPort("0.0.0.0:0")
 		p.preferredAddrV6 = netip.MustParseAddrPort("[::0]:0")
 		p.preferredAddrConnID = testPeerConnID(1)
@@ -551,4 +557,32 @@ func TestConnIDPeerWithZeroLengthIDProvidesPreferredAddr(t *testing.T) {
 		packetTypeInitial, debugFrameConnectionCloseTransport{
 			code: errProtocolViolation,
 		})
+}
+
+func TestConnIDInitialSrcConnIDMismatch(t *testing.T) {
+	// "Endpoints MUST validate that received [initial_source_connection_id]
+	// parameters match received connection ID values."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-7.3-3
+	testSides(t, "", func(t *testing.T, side connSide) {
+		tc := newTestConn(t, side, func(p *transportParameters) {
+			p.initialSrcConnID = []byte("invalid")
+		})
+		tc.ignoreFrame(frameTypeAck)
+		tc.ignoreFrame(frameTypeCrypto)
+		tc.writeFrames(packetTypeInitial,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+			})
+		if side == clientSide {
+			// Server transport parameters are carried in the Handshake packet.
+			tc.writeFrames(packetTypeHandshake,
+				debugFrameCrypto{
+					data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+				})
+		}
+		tc.wantFrame("initial_source_connection_id transport parameter mismatch",
+			packetTypeInitial, debugFrameConnectionCloseTransport{
+				code: errTransportParameter,
+			})
+	})
 }

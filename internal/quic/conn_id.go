@@ -161,6 +161,39 @@ func (s *connIDState) issueLocalIDs(c *Conn) error {
 	return nil
 }
 
+// validateTransportParameters verifies the original_destination_connection_id and
+// initial_source_connection_id transport parameters match the expected values.
+func (s *connIDState) validateTransportParameters(side connSide, p transportParameters) error {
+	// TODO: Consider returning more detailed errors, for debugging.
+	switch side {
+	case clientSide:
+		// Verify original_destination_connection_id matches
+		// the transient remote connection ID we chose.
+		if len(s.remote) == 0 || s.remote[0].seq != -1 {
+			return localTransportError(errInternal)
+		}
+		if !bytes.Equal(s.remote[0].cid, p.originalDstConnID) {
+			return localTransportError(errTransportParameter)
+		}
+		// Remove the transient remote connection ID.
+		// We have no further need for it.
+		s.remote = append(s.remote[:0], s.remote[1:]...)
+	case serverSide:
+		if p.originalDstConnID != nil {
+			// Clients do not send original_destination_connection_id.
+			return localTransportError(errTransportParameter)
+		}
+	}
+	// Verify initial_source_connection_id matches the first remote connection ID.
+	if len(s.remote) == 0 || s.remote[0].seq != 0 {
+		return localTransportError(errInternal)
+	}
+	if !bytes.Equal(p.initialSrcConnID, s.remote[0].cid) {
+		return localTransportError(errTransportParameter)
+	}
+	return nil
+}
+
 // handlePacket updates the connection ID state during the handshake
 // (Initial and Handshake packets).
 func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) {
@@ -170,10 +203,13 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			// We're a client connection processing the first Initial packet
 			// from the server. Replace the transient remote connection ID
 			// with the Source Connection ID from the packet.
-			s.remote[0] = connID{
+			// Leave the transient ID the list for now, since we'll need it when
+			// processing the transport parameters.
+			s.remote[0].retired = true
+			s.remote = append(s.remote, connID{
 				seq: 0,
 				cid: cloneBytes(srcConnID),
-			}
+			})
 		}
 	case ptype == packetTypeInitial && c.side == serverSide:
 		if len(s.remote) == 0 {
@@ -185,7 +221,7 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			})
 		}
 	case ptype == packetTypeHandshake && c.side == serverSide:
-		if len(s.local) > 0 && s.local[0].seq == -1 {
+		if len(s.local) > 0 && s.local[0].seq == -1 && !s.local[0].retired {
 			// We're a server connection processing the first Handshake packet from
 			// the client. Discard the transient, client-chosen connection ID used
 			// for Initial packets; the client will never send it again.
@@ -213,7 +249,7 @@ func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken 
 	active := 0
 	for i := range s.remote {
 		rcid := &s.remote[i]
-		if !rcid.retired && rcid.seq < s.retireRemotePriorTo {
+		if !rcid.retired && rcid.seq >= 0 && rcid.seq < s.retireRemotePriorTo {
 			s.retireRemote(rcid)
 		}
 		if !rcid.retired {

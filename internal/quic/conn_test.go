@@ -201,6 +201,10 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		TLSConfig: newTestTLSConfig(side),
 	}
 	peerProvidedParams := defaultTransportParameters()
+	peerProvidedParams.initialSrcConnID = testPeerConnID(0)
+	if side == clientSide {
+		peerProvidedParams.originalDstConnID = testLocalConnID(-1)
+	}
 	for _, o := range opts {
 		switch o := o.(type) {
 		case func(*Config):

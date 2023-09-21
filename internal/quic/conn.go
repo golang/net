@@ -86,6 +86,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	// non-blocking operation.
 	c.msgc = make(chan any, 1)
 
+	var originalDstConnID []byte
 	if c.side == clientSide {
 		if err := c.connIDState.initClient(c); err != nil {
 			return nil, err
@@ -95,6 +96,7 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		if err := c.connIDState.initServer(c, initialConnID); err != nil {
 			return nil, err
 		}
+		originalDstConnID = initialConnID
 	}
 
 	// The smallest allowed maximum QUIC datagram size is 1200 bytes.
@@ -105,9 +107,10 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.streamsInit()
 	c.lifetimeInit()
 
-	// TODO: initial_source_connection_id, retry_source_connection_id
+	// TODO: retry_source_connection_id
 	if err := c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),
+		originalDstConnID:              originalDstConnID,
 		ackDelayExponent:               ackDelayExponent,
 		maxUDPPayloadSize:              maxUDPPayloadSize,
 		maxAckDelay:                    maxAckDelay,
@@ -171,6 +174,9 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 
 // receiveTransportParameters applies transport parameters sent by the peer.
 func (c *Conn) receiveTransportParameters(p transportParameters) error {
+	if err := c.connIDState.validateTransportParameters(c.side, p); err != nil {
+		return err
+	}
 	c.streams.outflow.setMaxData(p.initialMaxData)
 	c.streams.localLimit[bidiStream].setMax(p.initialMaxStreamsBidi)
 	c.streams.localLimit[uniStream].setMax(p.initialMaxStreamsUni)
