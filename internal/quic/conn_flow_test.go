@@ -35,6 +35,16 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 		packetType1RTT, debugFrameMaxData{
 			max: 128,
 		})
+	// Peer can write up to the new limit.
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   s.id,
+		off:  64,
+		data: make([]byte, 64),
+	})
+	tc.wantIdle("connection is idle")
+	if n, err := s.ReadContext(ctx, make([]byte, 64)); n != 64 || err != nil {
+		t.Fatalf("offset 64: s.Read() = %v, %v; want %v, nil", n, err, 64)
+	}
 }
 
 func TestConnInflowReturnOnRacingReads(t *testing.T) {
