@@ -39,6 +39,7 @@ type Stream struct {
 	outgate      gate
 	out          pipe            // buffered data to send
 	outwin       int64           // maximum MAX_STREAM_DATA received from the peer
+	outmaxsent   int64           // maximum data offset we've sent to the peer
 	outmaxbuf    int64           // maximum amount of data we will buffer
 	outunsent    rangeset[int64] // ranges buffered but not yet sent
 	outacked     rangeset[int64] // ranges sent and acknowledged
@@ -494,8 +495,12 @@ func (s *Stream) outUnlockNoQueue() streamState {
 	case s.outblocked.shouldSend(): // STREAM_DATA_BLOCKED
 		state = streamOutSendMeta
 	case len(s.outunsent) > 0: // STREAM frame with data
-		state = streamOutSendData
-	case s.outclosed.shouldSend(): // STREAM frame with FIN bit, all data already sent
+		if s.outunsent.min() < s.outmaxsent {
+			state = streamOutSendMeta // resent data, will not consume flow control
+		} else {
+			state = streamOutSendData // new data, requires flow control
+		}
+	case s.outclosed.shouldSend() && s.out.end == s.outmaxsent: // empty STREAM frame with FIN bit
 		state = streamOutSendMeta
 	case s.outopened.shouldSend(): // STREAM frame with no data
 		state = streamOutSendMeta
@@ -725,7 +730,11 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 	for {
 		// STREAM
 		off, size := dataToSend(min(s.out.start, s.outwin), min(s.out.end, s.outwin), s.outunsent, s.outacked, pto)
-		size = min(size, s.conn.streams.outflow.avail())
+		if end := off + size; end > s.outmaxsent {
+			// This will require connection-level flow control to send.
+			end = min(end, s.outmaxsent+s.conn.streams.outflow.avail())
+			size = end - off
+		}
 		fin := s.outclosed.isSet() && off+size == s.out.end
 		shouldSend := size > 0 || // have data to send
 			s.outopened.shouldSendPTO(pto) || // should open the stream
@@ -738,8 +747,12 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 			return false
 		}
 		s.out.copy(off, b)
-		s.conn.streams.outflow.consume(int64(len(b)))
-		s.outunsent.sub(off, off+int64(len(b)))
+		end := off + int64(len(b))
+		if end > s.outmaxsent {
+			s.conn.streams.outflow.consume(end - s.outmaxsent)
+			s.outmaxsent = end
+		}
+		s.outunsent.sub(off, end)
 		s.frameOpensStream(pnum)
 		if fin {
 			s.outclosed.setSent(pnum)

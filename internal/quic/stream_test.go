@@ -1094,6 +1094,44 @@ func TestStreamCloseUnblocked(t *testing.T) {
 	}
 }
 
+func TestStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
+	ctx := canceledContext()
+	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters,
+		func(p *transportParameters) {
+			//p.initialMaxData = 0
+			p.initialMaxStreamDataUni = 0
+		})
+	tc.ignoreFrame(frameTypeStreamDataBlocked)
+	if _, err := s.WriteContext(ctx, []byte{0, 1}); err != nil {
+		t.Fatalf("s.Write = %v", err)
+	}
+	s.CloseWrite()
+	tc.wantIdle("stream write is blocked by flow control")
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
+		id:  s.id,
+		max: 1,
+	})
+	tc.wantFrame("send data up to flow control limit",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: []byte{0},
+		})
+	tc.wantIdle("stream write is again blocked by flow control")
+
+	tc.writeFrames(packetType1RTT, debugFrameMaxStreamData{
+		id:  s.id,
+		max: 2,
+	})
+	tc.wantFrame("send remaining data and FIN",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  1,
+			data: []byte{1},
+			fin:  true,
+		})
+}
+
 func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()

@@ -394,3 +394,37 @@ func TestConnOutflowMetaAndData(t *testing.T) {
 			data: data,
 		})
 }
+
+func TestConnOutflowResentData(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters,
+		func(p *transportParameters) {
+			p.initialMaxData = 10
+		})
+	tc.ignoreFrame(frameTypeAck)
+
+	data := makeTestData(15)
+	s.Write(data[:8])
+	tc.wantFrame("data is under MAX_DATA limit, all sent",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data[:8],
+		})
+
+	// Lose the last STREAM packet.
+	const pto = false
+	tc.triggerLossOrPTO(packetType1RTT, false)
+	tc.wantFrame("lost STREAM data is retransmitted",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: data[:8],
+		})
+
+	s.Write(data[8:])
+	tc.wantFrame("new data is sent up to the MAX_DATA limit",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  8,
+			data: data[8:10],
+		})
+}
