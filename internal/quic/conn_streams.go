@@ -372,7 +372,9 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 		state = s.state.set(0, streamQueueData)
 		c.queueStreamForSendLocked(s, state)
 	}
-	c.streams.needSend.Store(c.streams.queueData.head != nil)
+	if c.streams.queueMeta.head == nil && c.streams.queueData.head == nil {
+		c.streams.needSend.Store(false)
+	}
 	return true
 }
 
