@@ -1217,6 +1217,23 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 	})
 }
 
+func TestStreamReceiveDataBlocked(t *testing.T) {
+	tc := newTestConn(t, serverSide, permissiveTransportParameters)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	// We don't do anything with these frames,
+	// but should accept them if the peer sends one.
+	tc.writeFrames(packetType1RTT, debugFrameStreamDataBlocked{
+		id:  newStreamID(clientSide, bidiStream, 0),
+		max: 100,
+	})
+	tc.writeFrames(packetType1RTT, debugFrameDataBlocked{
+		max: 100,
+	})
+	tc.wantIdle("no response to STREAM_DATA_BLOCKED and DATA_BLOCKED")
+}
+
 type streamSide string
 
 const (

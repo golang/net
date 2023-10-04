@@ -254,6 +254,11 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 				return
 			}
 			n = c.handleMaxStreamsFrame(now, payload)
+		case frameTypeDataBlocked:
+			if !frameOK(c, ptype, __01) {
+				return
+			}
+			_, n = consumeDataBlockedFrame(payload)
 		case frameTypeStreamsBlockedBidi, frameTypeStreamsBlockedUni:
 			if !frameOK(c, ptype, __01) {
 				return
