@@ -33,12 +33,12 @@ func TestConnTestConn(t *testing.T) {
 	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
 		ranAt = now
 	})
-	if !ranAt.Equal(tc.now) {
-		t.Errorf("func ran on loop at %v, want %v", ranAt, tc.now)
+	if !ranAt.Equal(tc.listener.now) {
+		t.Errorf("func ran on loop at %v, want %v", ranAt, tc.listener.now)
 	}
 	tc.wait()
 
-	nextTime := tc.now.Add(defaultMaxIdleTimeout / 2)
+	nextTime := tc.listener.now.Add(defaultMaxIdleTimeout / 2)
 	tc.advanceTo(nextTime)
 	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
 		ranAt = now
@@ -57,6 +57,7 @@ func TestConnTestConn(t *testing.T) {
 type testDatagram struct {
 	packets    []*testPacket
 	paddedSize int
+	addr       netip.AddrPort
 }
 
 func (d testDatagram) String() string {
@@ -74,14 +75,16 @@ func (d testDatagram) String() string {
 }
 
 type testPacket struct {
-	ptype       packetType
-	version     uint32
-	num         packetNumber
-	keyPhaseBit bool
-	keyNumber   int
-	dstConnID   []byte
-	srcConnID   []byte
-	frames      []debugFrame
+	ptype             packetType
+	version           uint32
+	num               packetNumber
+	keyPhaseBit       bool
+	keyNumber         int
+	dstConnID         []byte
+	srcConnID         []byte
+	token             []byte
+	originalDstConnID []byte // used for encoding Retry packets
+	frames            []debugFrame
 }
 
 func (p testPacket) String() string {
@@ -95,6 +98,9 @@ func (p testPacket) String() string {
 	}
 	if p.dstConnID != nil {
 		fmt.Fprintf(&b, " dst={%x}", p.dstConnID)
+	}
+	if p.token != nil {
+		fmt.Fprintf(&b, " token={%x}", p.token)
 	}
 	for _, f := range p.frames {
 		fmt.Fprintf(&b, "\n    %v", f)
@@ -111,7 +117,6 @@ type testConn struct {
 	t              *testing.T
 	conn           *Conn
 	listener       *testListener
-	now            time.Time
 	timer          time.Time
 	timerLastFired time.Time
 	idlec          chan struct{} // only accessed on the conn's loop
@@ -184,27 +189,10 @@ type keySecret struct {
 // by first ensuring the loop goroutine is idle.
 func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	t.Helper()
-	tc := &testConn{
-		t:          t,
-		now:        time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-		peerConnID: testPeerConnID(0),
-		ignoreFrames: map[byte]bool{
-			frameTypePadding: true, // ignore PADDING by default
-		},
-		cryptoDataOut: make(map[tls.QUICEncryptionLevel][]byte),
-		cryptoDataIn:  make(map[tls.QUICEncryptionLevel][]byte),
-		recvDatagram:  make(chan *datagram),
-	}
-	t.Cleanup(tc.cleanup)
-
 	config := &Config{
 		TLSConfig: newTestTLSConfig(side),
 	}
-	peerProvidedParams := defaultTransportParameters()
-	peerProvidedParams.initialSrcConnID = testPeerConnID(0)
-	if side == clientSide {
-		peerProvidedParams.originalDstConnID = testLocalConnID(-1)
-	}
+	var configTransportParams []func(*transportParameters)
 	for _, o := range opts {
 		switch o := o.(type) {
 		case func(*Config):
@@ -212,7 +200,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		case func(*tls.Config):
 			o(config.TLSConfig)
 		case func(p *transportParameters):
-			o(&peerProvidedParams)
+			configTransportParams = append(configTransportParams, o)
 		default:
 			t.Fatalf("unknown newTestConn option %T", o)
 		}
@@ -224,8 +212,55 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		initialConnID = testPeerConnID(-1)
 	}
 
-	peerQUICConfig := &tls.QUICConfig{TLSConfig: newTestTLSConfig(side.peer())}
-	if side == clientSide {
+	listener := newTestListener(t, config)
+	listener.configTransportParams = configTransportParams
+	conn, err := listener.l.newConn(
+		listener.now,
+		side,
+		initialConnID,
+		netip.MustParseAddrPort("127.0.0.1:443"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := listener.conns[conn]
+	tc.wait()
+	return tc
+}
+
+func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testConn {
+	t.Helper()
+	tc := &testConn{
+		t:          t,
+		listener:   listener,
+		conn:       conn,
+		peerConnID: testPeerConnID(0),
+		ignoreFrames: map[byte]bool{
+			frameTypePadding: true, // ignore PADDING by default
+		},
+		cryptoDataOut: make(map[tls.QUICEncryptionLevel][]byte),
+		cryptoDataIn:  make(map[tls.QUICEncryptionLevel][]byte),
+		recvDatagram:  make(chan *datagram),
+	}
+	t.Cleanup(tc.cleanup)
+	conn.testHooks = (*testConnHooks)(tc)
+
+	if listener.peerTLSConn != nil {
+		tc.peerTLSConn = listener.peerTLSConn
+		listener.peerTLSConn = nil
+		return tc
+	}
+
+	peerProvidedParams := defaultTransportParameters()
+	peerProvidedParams.initialSrcConnID = testPeerConnID(0)
+	if conn.side == clientSide {
+		peerProvidedParams.originalDstConnID = testLocalConnID(-1)
+	}
+	for _, f := range listener.configTransportParams {
+		f(&peerProvidedParams)
+	}
+
+	peerQUICConfig := &tls.QUICConfig{TLSConfig: newTestTLSConfig(conn.side.peer())}
+	if conn.side == clientSide {
 		tc.peerTLSConn = tls.QUICServer(peerQUICConfig)
 	} else {
 		tc.peerTLSConn = tls.QUICClient(peerQUICConfig)
@@ -233,43 +268,19 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	tc.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
 	tc.peerTLSConn.Start(context.Background())
 
-	tc.listener = newTestListener(t, config, (*testConnHooks)(tc))
-	conn, err := tc.listener.l.newConn(
-		tc.now,
-		side,
-		initialConnID,
-		netip.MustParseAddrPort("127.0.0.1:443"))
-	if err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.conn = conn
-
-	conn.keysAppData.updateAfter = maxPacketNumber // disable key updates
-	tc.keysInitial.r = conn.keysInitial.w
-	tc.keysInitial.w = conn.keysInitial.r
-
-	tc.wait()
 	return tc
 }
 
 // advance causes time to pass.
 func (tc *testConn) advance(d time.Duration) {
 	tc.t.Helper()
-	tc.advanceTo(tc.now.Add(d))
+	tc.listener.advance(d)
 }
 
 // advanceTo sets the current time.
 func (tc *testConn) advanceTo(now time.Time) {
 	tc.t.Helper()
-	if tc.now.After(now) {
-		tc.t.Fatalf("time moved backwards: %v -> %v", tc.now, now)
-	}
-	tc.now = now
-	if tc.timer.After(tc.now) {
-		return
-	}
-	tc.conn.sendMsg(timerEvent{})
-	tc.wait()
+	tc.listener.advanceTo(now)
 }
 
 // advanceToTimer sets the current time to the time of the Conn's next timer event.
@@ -284,10 +295,10 @@ func (tc *testConn) timerDelay() time.Duration {
 	if tc.timer.IsZero() {
 		return math.MaxInt64 // infinite
 	}
-	if tc.timer.Before(tc.now) {
+	if tc.timer.Before(tc.listener.now) {
 		return 0
 	}
-	return tc.timer.Sub(tc.now)
+	return tc.timer.Sub(tc.listener.now)
 }
 
 const infiniteDuration = time.Duration(math.MaxInt64)
@@ -297,10 +308,10 @@ func (tc *testConn) timeUntilEvent() time.Duration {
 	if tc.timer.IsZero() {
 		return infiniteDuration
 	}
-	if tc.timer.Before(tc.now) {
+	if tc.timer.Before(tc.listener.now) {
 		return 0
 	}
-	return tc.timer.Sub(tc.now)
+	return tc.timer.Sub(tc.listener.now)
 }
 
 // wait blocks until the conn becomes idle.
@@ -340,8 +351,8 @@ func (tc *testConn) cleanup() {
 	<-tc.conn.donec
 }
 
-func (tc *testConn) logDatagram(text string, d *testDatagram) {
-	tc.t.Helper()
+func logDatagram(t *testing.T, text string, d *testDatagram) {
+	t.Helper()
 	if !*testVV {
 		return
 	}
@@ -349,7 +360,7 @@ func (tc *testConn) logDatagram(text string, d *testDatagram) {
 	if d.paddedSize > 0 {
 		pad = fmt.Sprintf(" (padded to %v)", d.paddedSize)
 	}
-	tc.t.Logf("%v datagram%v", text, pad)
+	t.Logf("%v datagram%v", text, pad)
 	for _, p := range d.packets {
 		var s string
 		switch p.ptype {
@@ -358,15 +369,18 @@ func (tc *testConn) logDatagram(text string, d *testDatagram) {
 		default:
 			s = fmt.Sprintf("  %v pnum=%v ver=%v dst={%x} src={%x}", p.ptype, p.num, p.version, p.dstConnID, p.srcConnID)
 		}
+		if p.token != nil {
+			s += fmt.Sprintf(" token={%x}", p.token)
+		}
 		if p.keyPhaseBit {
 			s += fmt.Sprintf(" KeyPhase")
 		}
 		if p.keyNumber != 0 {
 			s += fmt.Sprintf(" keynum=%v", p.keyNumber)
 		}
-		tc.t.Log(s)
+		t.Log(s)
 		for _, f := range p.frames {
-			tc.t.Logf("    %v", f)
+			t.Logf("    %v", f)
 		}
 	}
 }
@@ -374,27 +388,7 @@ func (tc *testConn) logDatagram(text string, d *testDatagram) {
 // write sends the Conn a datagram.
 func (tc *testConn) write(d *testDatagram) {
 	tc.t.Helper()
-	var buf []byte
-	tc.logDatagram("<- conn under test receives", d)
-	for _, p := range d.packets {
-		space := spaceForPacketType(p.ptype)
-		if p.num >= tc.peerNextPacketNum[space] {
-			tc.peerNextPacketNum[space] = p.num + 1
-		}
-		pad := 0
-		if p.ptype == packetType1RTT {
-			pad = d.paddedSize
-		}
-		buf = append(buf, tc.encodeTestPacket(p, pad)...)
-	}
-	for len(buf) < d.paddedSize {
-		buf = append(buf, 0)
-	}
-	// TODO: This should use tc.listener.write.
-	tc.conn.sendMsg(&datagram{
-		b: buf,
-	})
-	tc.wait()
+	tc.listener.writeDatagram(d)
 }
 
 // writeFrame sends the Conn a datagram containing the given frames.
@@ -464,10 +458,10 @@ func (tc *testConn) readDatagram() *testDatagram {
 	if buf == nil {
 		return nil
 	}
-	d := tc.parseTestDatagram(buf)
+	d := parseTestDatagram(tc.t, tc.listener, tc, buf)
 	// Log the datagram before removing ignored frames.
 	// When things go wrong, it's useful to see all the frames.
-	tc.logDatagram("-> conn under test sends", d)
+	logDatagram(tc.t, "-> conn under test sends", d)
 	typeForFrame := func(f debugFrame) byte {
 		// This is very clunky, and points at a problem
 		// in how we specify what frames to ignore in tests.
@@ -638,21 +632,23 @@ func (tc *testConn) wantIdle(expectation string) {
 	}
 }
 
-func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
-	tc.t.Helper()
+func encodeTestPacket(t *testing.T, tc *testConn, p *testPacket, pad int) []byte {
+	t.Helper()
 	var w packetWriter
 	w.reset(1200)
 	var pnumMaxAcked packetNumber
-	if p.ptype != packetType1RTT {
+	switch p.ptype {
+	case packetType1RTT:
+		w.start1RTTPacket(p.num, pnumMaxAcked, p.dstConnID)
+	default:
 		w.startProtectedLongHeaderPacket(pnumMaxAcked, longPacket{
 			ptype:     p.ptype,
 			version:   p.version,
 			num:       p.num,
 			dstConnID: p.dstConnID,
 			srcConnID: p.srcConnID,
+			extra:     p.token,
 		})
-	} else {
-		w.start1RTTPacket(p.num, pnumMaxAcked, p.dstConnID)
 	}
 	for _, f := range p.frames {
 		f.write(&w)
@@ -660,14 +656,22 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 	w.appendPaddingTo(pad)
 	if p.ptype != packetType1RTT {
 		var k fixedKeys
-		switch p.ptype {
-		case packetTypeInitial:
-			k = tc.keysInitial.w
-		case packetTypeHandshake:
-			k = tc.keysHandshake.w
+		if tc == nil {
+			if p.ptype == packetTypeInitial {
+				k = initialKeys(p.dstConnID, serverSide).r
+			} else {
+				t.Fatalf("sending %v packet with no conn", p.ptype)
+			}
+		} else {
+			switch p.ptype {
+			case packetTypeInitial:
+				k = tc.keysInitial.w
+			case packetTypeHandshake:
+				k = tc.keysHandshake.w
+			}
 		}
 		if !k.isSet() {
-			tc.t.Fatalf("sending %v packet with no write key", p.ptype)
+			t.Fatalf("sending %v packet with no write key", p.ptype)
 		}
 		w.finishProtectedLongHeaderPacket(pnumMaxAcked, k, longPacket{
 			ptype:     p.ptype,
@@ -675,10 +679,11 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 			num:       p.num,
 			dstConnID: p.dstConnID,
 			srcConnID: p.srcConnID,
+			extra:     p.token,
 		})
 	} else {
-		if !tc.wkeyAppData.hdr.isSet() {
-			tc.t.Fatalf("sending 1-RTT packet with no write key")
+		if tc == nil || !tc.wkeyAppData.hdr.isSet() {
+			t.Fatalf("sending 1-RTT packet with no write key")
 		}
 		// Somewhat hackish: Generate a temporary updatingKeyPair that will
 		// always use our desired key phase.
@@ -700,8 +705,8 @@ func (tc *testConn) encodeTestPacket(p *testPacket, pad int) []byte {
 	return w.datagram()
 }
 
-func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
-	tc.t.Helper()
+func parseTestDatagram(t *testing.T, tl *testListener, tc *testConn, buf []byte) *testDatagram {
+	t.Helper()
 	bufSize := len(buf)
 	d := &testDatagram{}
 	size := len(buf)
@@ -711,25 +716,39 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 			break
 		}
 		ptype := getPacketType(buf)
-		if isLongHeader(buf[0]) {
-			var k fixedKeyPair
-			switch ptype {
-			case packetTypeInitial:
-				k = tc.keysInitial
-			case packetTypeHandshake:
-				k = tc.keysHandshake
+		switch ptype {
+		case packetTypeInitial, packetTypeHandshake:
+			var k fixedKeys
+			if tc == nil {
+				if ptype == packetTypeInitial {
+					p, _ := parseGenericLongHeaderPacket(buf)
+					k = initialKeys(p.srcConnID, serverSide).w
+				} else {
+					t.Fatalf("reading %v packet with no conn", ptype)
+				}
+			} else {
+				switch ptype {
+				case packetTypeInitial:
+					k = tc.keysInitial.r
+				case packetTypeHandshake:
+					k = tc.keysHandshake.r
+				}
 			}
-			if !k.canRead() {
-				tc.t.Fatalf("reading %v packet with no read key", ptype)
+			if !k.isSet() {
+				t.Fatalf("reading %v packet with no read key", ptype)
 			}
 			var pnumMax packetNumber // TODO: Track packet numbers.
-			p, n := parseLongHeaderPacket(buf, k.r, pnumMax)
+			p, n := parseLongHeaderPacket(buf, k, pnumMax)
 			if n < 0 {
-				tc.t.Fatalf("packet parse error")
+				t.Fatalf("packet parse error")
 			}
-			frames, err := tc.parseTestFrames(p.payload)
+			frames, err := parseTestFrames(t, p.payload)
 			if err != nil {
-				tc.t.Fatal(err)
+				t.Fatal(err)
+			}
+			var token []byte
+			if ptype == packetTypeInitial && len(p.extra) > 0 {
+				token = p.extra
 			}
 			d.packets = append(d.packets, &testPacket{
 				ptype:     p.ptype,
@@ -737,12 +756,13 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 				num:       p.num,
 				dstConnID: p.dstConnID,
 				srcConnID: p.srcConnID,
+				token:     token,
 				frames:    frames,
 			})
 			buf = buf[n:]
-		} else {
-			if !tc.rkeyAppData.hdr.isSet() {
-				tc.t.Fatalf("reading 1-RTT packet with no read key")
+		case packetType1RTT:
+			if tc == nil || !tc.rkeyAppData.hdr.isSet() {
+				t.Fatalf("reading 1-RTT packet with no read key")
 			}
 			var pnumMax packetNumber // TODO: Track packet numbers.
 			pnumOff := 1 + len(tc.peerConnID)
@@ -756,7 +776,7 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 				b := append([]byte{}, buf...)
 				hdr, pay, pnum, err = tc.rkeyAppData.hdr.unprotect(b, pnumOff, pnumMax)
 				if err != nil {
-					tc.t.Fatalf("1-RTT packet header parse error")
+					t.Fatalf("1-RTT packet header parse error")
 				}
 				k := tc.rkeyAppData.pkt[phase]
 				pay, err = k.unprotect(hdr, pay, pnum)
@@ -765,11 +785,11 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 				}
 			}
 			if err != nil {
-				tc.t.Fatalf("1-RTT packet payload parse error")
+				t.Fatalf("1-RTT packet payload parse error")
 			}
-			frames, err := tc.parseTestFrames(pay)
+			frames, err := parseTestFrames(t, pay)
 			if err != nil {
-				tc.t.Fatal(err)
+				t.Fatal(err)
 			}
 			d.packets = append(d.packets, &testPacket{
 				ptype:       packetType1RTT,
@@ -780,6 +800,8 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 				frames:      frames,
 			})
 			buf = buf[len(buf):]
+		default:
+			t.Fatalf("unhandled packet type %v", ptype)
 		}
 	}
 	// This is rather hackish: If the last frame in the last packet
@@ -799,8 +821,8 @@ func (tc *testConn) parseTestDatagram(buf []byte) *testDatagram {
 	return d
 }
 
-func (tc *testConn) parseTestFrames(payload []byte) ([]debugFrame, error) {
-	tc.t.Helper()
+func parseTestFrames(t *testing.T, payload []byte) ([]debugFrame, error) {
+	t.Helper()
 	var frames []debugFrame
 	for len(payload) > 0 {
 		f, n := parseDebugFrame(payload)
@@ -822,7 +844,7 @@ func spaceForPacketType(ptype packetType) numberSpace {
 	case packetTypeHandshake:
 		return handshakeSpace
 	case packetTypeRetry:
-		panic("TODO: packetTypeRetry")
+		panic("retry packets have no number space")
 	case packetType1RTT:
 		return appDataSpace
 	}
@@ -831,6 +853,15 @@ func spaceForPacketType(ptype packetType) numberSpace {
 
 // testConnHooks implements connTestHooks.
 type testConnHooks testConn
+
+func (tc *testConnHooks) init() {
+	tc.conn.keysAppData.updateAfter = maxPacketNumber // disable key updates
+	tc.keysInitial.r = tc.conn.keysInitial.w
+	tc.keysInitial.w = tc.conn.keysInitial.r
+	if tc.conn.side == serverSide {
+		tc.listener.acceptQueue = append(tc.listener.acceptQueue, (*testConn)(tc))
+	}
+}
 
 // handleTLSEvent processes TLS events generated by
 // the connection under test's tls.QUICConn.
@@ -929,20 +960,20 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.Time, m any) {
 	tc.timer = timer
 	for {
-		if !timer.IsZero() && !timer.After(tc.now) {
+		if !timer.IsZero() && !timer.After(tc.listener.now) {
 			if timer.Equal(tc.timerLastFired) {
 				// If the connection timer fires at time T, the Conn should take some
 				// action to advance the timer into the future. If the Conn reschedules
 				// the timer for the same time, it isn't making progress and we have a bug.
-				tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.now, timer)
+				tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.listener.now, timer)
 			} else {
 				tc.timerLastFired = timer
-				return tc.now, timerEvent{}
+				return tc.listener.now, timerEvent{}
 			}
 		}
 		select {
 		case m := <-msgc:
-			return tc.now, m
+			return tc.listener.now, m
 		default:
 		}
 		if !tc.wakeAsync() {
@@ -956,7 +987,7 @@ func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.T
 		close(idlec)
 	}
 	m = <-msgc
-	return tc.now, m
+	return tc.listener.now, m
 }
 
 func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
@@ -964,7 +995,7 @@ func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
 }
 
 func (tc *testConnHooks) timeNow() time.Time {
-	return tc.now
+	return tc.listener.now
 }
 
 // testLocalConnID returns the connection ID with a given sequence number

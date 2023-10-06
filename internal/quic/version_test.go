@@ -17,7 +17,7 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 	config := &Config{
 		TLSConfig: newTestTLSConfig(serverSide),
 	}
-	tl := newTestListener(t, config, nil)
+	tl := newTestListener(t, config)
 
 	// Packet of unknown contents for some unrecognized QUIC version.
 	dstConnID := []byte{1, 2, 3, 4}

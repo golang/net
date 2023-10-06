@@ -61,14 +61,29 @@ type Conn struct {
 
 // connTestHooks override conn behavior in tests.
 type connTestHooks interface {
+	// init is called after a conn is created.
+	init()
+
+	// nextMessage is called to request the next event from msgc.
+	// Used to give tests control of the connection event loop.
 	nextMessage(msgc chan any, nextTimeout time.Time) (now time.Time, message any)
+
+	// handleTLSEvent is called with each TLS event.
 	handleTLSEvent(tls.QUICEvent)
+
+	// newConnID is called to generate a new connection ID.
+	// Permits tests to generate consistent connection IDs rather than random ones.
 	newConnID(seq int64) ([]byte, error)
+
+	// waitUntil blocks until the until func returns true or the context is done.
+	// Used to synchronize asynchronous blocking operations in tests.
 	waitUntil(ctx context.Context, until func() bool) error
+
+	// timeNow returns the current time.
 	timeNow() time.Time
 }
 
-func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener, hooks connTestHooks) (*Conn, error) {
+func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
@@ -76,7 +91,6 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
-		testHooks:            hooks,
 		maxIdleTimeout:       defaultMaxIdleTimeout,
 		idleTimeout:          now.Add(defaultMaxIdleTimeout),
 		peerAckDelayExponent: -1,
@@ -85,6 +99,10 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	// A one-element buffer allows us to wake a Conn's event loop as a
 	// non-blocking operation.
 	c.msgc = make(chan any, 1)
+
+	if l.testHooks != nil {
+		l.testHooks.newConn(c)
+	}
 
 	var originalDstConnID []byte
 	if c.side == clientSide {
@@ -126,6 +144,9 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		return nil, err
 	}
 
+	if c.testHooks != nil {
+		c.testHooks.init()
+	}
 	go c.loop(now)
 	return c, nil
 }

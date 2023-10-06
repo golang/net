@@ -36,7 +36,7 @@ func (tc *testConn) handshake() {
 	for {
 		if i == len(dgrams)-1 {
 			if tc.conn.side == clientSide {
-				want := tc.now.Add(maxAckDelay - timerGranularity)
+				want := tc.listener.now.Add(maxAckDelay - timerGranularity)
 				if !tc.timer.Equal(want) {
 					t.Fatalf("want timer = %v (max_ack_delay), got %v", want, tc.timer)
 				}
@@ -90,7 +90,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 	} else {
 		clientConnIDs = peerConnIDs
 		serverConnIDs = localConnIDs
-		transientConnID = []byte{0xde, 0xad, 0xbe, 0xef}
+		transientConnID = testPeerConnID(-1)
 	}
 	return []*testDatagram{{
 		// Client Initial
@@ -564,7 +564,7 @@ func TestConnAEADLimitReached(t *testing.T) {
 		// Only use the transient connection ID in Initial packets.
 		dstConnID = tc.conn.connIDState.local[1].cid
 	}
-	invalid := tc.encodeTestPacket(&testPacket{
+	invalid := encodeTestPacket(t, tc, &testPacket{
 		ptype:     packetType1RTT,
 		num:       1000,
 		frames:    []debugFrame{debugFramePing{}},

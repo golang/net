@@ -23,7 +23,7 @@ import (
 type Listener struct {
 	config    *Config
 	udpConn   udpConn
-	testHooks connTestHooks
+	testHooks listenerTestHooks
 
 	acceptQueue queue[*Conn] // new inbound connections
 
@@ -38,6 +38,11 @@ type Listener struct {
 	connIDUpdateMu     sync.Mutex
 	connIDUpdateNeeded atomic.Bool
 	connIDUpdates      []connIDUpdate
+}
+
+type listenerTestHooks interface {
+	timeNow() time.Time
+	newConn(c *Conn)
 }
 
 // A udpConn is a UDP connection.
@@ -72,7 +77,7 @@ func Listen(network, address string, config *Config) (*Listener, error) {
 	return newListener(udpConn, config, nil), nil
 }
 
-func newListener(udpConn udpConn, config *Config, hooks connTestHooks) *Listener {
+func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) *Listener {
 	l := &Listener{
 		config:      config,
 		udpConn:     udpConn,
@@ -154,11 +159,10 @@ func (l *Listener) newConn(now time.Time, side connSide, initialConnID []byte, p
 	if l.closing {
 		return nil, errors.New("listener closed")
 	}
-	c, err := newConn(now, side, initialConnID, peerAddr, l.config, l, l.testHooks)
+	c, err := newConn(now, side, initialConnID, peerAddr, l.config, l)
 	if err != nil {
 		return nil, err
 	}
-	l.conns[c] = struct{}{}
 	return c, nil
 }
 

@@ -9,10 +9,13 @@ package quic
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/netip"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestConnect(t *testing.T) {
@@ -90,20 +93,28 @@ func newLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
 }
 
 type testListener struct {
-	t             *testing.T
-	l             *Listener
-	recvc         chan *datagram
-	idlec         chan struct{}
-	sentDatagrams [][]byte
+	t                     *testing.T
+	l                     *Listener
+	now                   time.Time
+	recvc                 chan *datagram
+	idlec                 chan struct{}
+	conns                 map[*Conn]*testConn
+	acceptQueue           []*testConn
+	configTransportParams []func(*transportParameters)
+	sentDatagrams         [][]byte
+	peerTLSConn           *tls.QUICConn
+	lastInitialDstConnID  []byte // for parsing Retry packets
 }
 
-func newTestListener(t *testing.T, config *Config, testHooks connTestHooks) *testListener {
+func newTestListener(t *testing.T, config *Config) *testListener {
 	tl := &testListener{
 		t:     t,
+		now:   time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 		recvc: make(chan *datagram),
 		idlec: make(chan struct{}),
+		conns: make(map[*Conn]*testConn),
 	}
-	tl.l = newListener((*testListenerUDPConn)(tl), config, testHooks)
+	tl.l = newListener((*testListenerUDPConn)(tl), config, (*testListenerHooks)(tl))
 	t.Cleanup(tl.cleanup)
 	return tl
 }
@@ -114,6 +125,20 @@ func (tl *testListener) cleanup() {
 
 func (tl *testListener) wait() {
 	tl.idlec <- struct{}{}
+	for _, tc := range tl.conns {
+		tc.wait()
+	}
+}
+
+// accept returns a server connection from the listener.
+// Unlike Listener.Accept, connections are available as soon as they are created.
+func (tl *testListener) accept() *testConn {
+	if len(tl.acceptQueue) == 0 {
+		tl.t.Fatalf("accept: expected available conn, but found none")
+	}
+	tc := tl.acceptQueue[0]
+	tl.acceptQueue = tl.acceptQueue[1:]
+	return tc
 }
 
 func (tl *testListener) write(d *datagram) {
@@ -121,7 +146,66 @@ func (tl *testListener) write(d *datagram) {
 	tl.wait()
 }
 
+var testClientAddr = netip.MustParseAddrPort("10.0.0.1:8000")
+
+func (tl *testListener) writeDatagram(d *testDatagram) {
+	tl.t.Helper()
+	logDatagram(tl.t, "<- listener under test receives", d)
+	var buf []byte
+	for _, p := range d.packets {
+		tc := tl.connForDestination(p.dstConnID)
+		if p.ptype != packetTypeRetry && tc != nil {
+			space := spaceForPacketType(p.ptype)
+			if p.num >= tc.peerNextPacketNum[space] {
+				tc.peerNextPacketNum[space] = p.num + 1
+			}
+		}
+		if p.ptype == packetTypeInitial {
+			tl.lastInitialDstConnID = p.dstConnID
+		}
+		pad := 0
+		if p.ptype == packetType1RTT {
+			pad = d.paddedSize
+		}
+		buf = append(buf, encodeTestPacket(tl.t, tc, p, pad)...)
+	}
+	for len(buf) < d.paddedSize {
+		buf = append(buf, 0)
+	}
+	addr := d.addr
+	if !addr.IsValid() {
+		addr = testClientAddr
+	}
+	tl.write(&datagram{
+		b:    buf,
+		addr: addr,
+	})
+}
+
+func (tl *testListener) connForDestination(dstConnID []byte) *testConn {
+	for _, tc := range tl.conns {
+		for _, loc := range tc.conn.connIDState.local {
+			if bytes.Equal(loc.cid, dstConnID) {
+				return tc
+			}
+		}
+	}
+	return nil
+}
+
+func (tl *testListener) connForSource(srcConnID []byte) *testConn {
+	for _, tc := range tl.conns {
+		for _, loc := range tc.conn.connIDState.remote {
+			if bytes.Equal(loc.cid, srcConnID) {
+				return tc
+			}
+		}
+	}
+	return nil
+}
+
 func (tl *testListener) read() []byte {
+	tl.t.Helper()
 	tl.wait()
 	if len(tl.sentDatagrams) == 0 {
 		return nil
@@ -129,6 +213,88 @@ func (tl *testListener) read() []byte {
 	d := tl.sentDatagrams[0]
 	tl.sentDatagrams = tl.sentDatagrams[1:]
 	return d
+}
+
+func (tl *testListener) readDatagram() *testDatagram {
+	tl.t.Helper()
+	buf := tl.read()
+	if buf == nil {
+		return nil
+	}
+	p, _ := parseGenericLongHeaderPacket(buf)
+	tc := tl.connForSource(p.dstConnID)
+	d := parseTestDatagram(tl.t, tl, tc, buf)
+	logDatagram(tl.t, "-> listener under test sends", d)
+	return d
+}
+
+// wantDatagram indicates that we expect the Listener to send a datagram.
+func (tl *testListener) wantDatagram(expectation string, want *testDatagram) {
+	tl.t.Helper()
+	got := tl.readDatagram()
+	if !reflect.DeepEqual(got, want) {
+		tl.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
+	}
+}
+
+func (tl *testListener) newClientTLS(srcConnID, dstConnID []byte) []byte {
+	peerProvidedParams := defaultTransportParameters()
+	peerProvidedParams.initialSrcConnID = srcConnID
+	peerProvidedParams.originalDstConnID = dstConnID
+	for _, f := range tl.configTransportParams {
+		f(&peerProvidedParams)
+	}
+
+	config := &tls.QUICConfig{TLSConfig: newTestTLSConfig(clientSide)}
+	tl.peerTLSConn = tls.QUICClient(config)
+	tl.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
+	tl.peerTLSConn.Start(context.Background())
+	var data []byte
+	for {
+		e := tl.peerTLSConn.NextEvent()
+		switch e.Kind {
+		case tls.QUICNoEvent:
+			return data
+		case tls.QUICWriteData:
+			if e.Level != tls.QUICEncryptionLevelInitial {
+				tl.t.Fatal("initial data at unexpected level")
+			}
+			data = append(data, e.Data...)
+		}
+	}
+}
+
+// advance causes time to pass.
+func (tl *testListener) advance(d time.Duration) {
+	tl.t.Helper()
+	tl.advanceTo(tl.now.Add(d))
+}
+
+// advanceTo sets the current time.
+func (tl *testListener) advanceTo(now time.Time) {
+	tl.t.Helper()
+	if tl.now.After(now) {
+		tl.t.Fatalf("time moved backwards: %v -> %v", tl.now, now)
+	}
+	tl.now = now
+	for _, tc := range tl.conns {
+		if !tc.timer.After(tl.now) {
+			tc.conn.sendMsg(timerEvent{})
+			tc.wait()
+		}
+	}
+}
+
+// testListenerHooks implements listenerTestHooks.
+type testListenerHooks testListener
+
+func (tl *testListenerHooks) timeNow() time.Time {
+	return tl.now
+}
+
+func (tl *testListenerHooks) newConn(c *Conn) {
+	tc := newTestConnForConn(tl.t, (*testListener)(tl), c)
+	tl.conns[c] = tc
 }
 
 // testListenerUDPConn implements UDPConn.
