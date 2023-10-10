@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // +godefs map struct_in_addr [4]byte /* in_addr */
 
