@@ -68,6 +68,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				num:       pnum,
 				dstConnID: dstConnID,
 				srcConnID: c.connIDState.srcConnID(),
+				extra:     c.retryToken,
 			}
 			c.w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
 			c.appendFrames(now, initialSpace, pnum, limit)

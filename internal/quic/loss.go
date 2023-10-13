@@ -281,6 +281,19 @@ func (c *lossState) receiveAckEnd(now time.Time, space numberSpace, ackDelay tim
 	c.cc.packetBatchEnd(now, space, &c.rtt, c.maxAckDelay)
 }
 
+// discardPackets declares that packets within a number space will not be delivered
+// and that data contained in them should be resent.
+// For example, after receiving a Retry packet we discard already-sent Initial packets.
+func (c *lossState) discardPackets(space numberSpace, lossf func(numberSpace, *sentPacket, packetFate)) {
+	for i := 0; i < c.spaces[space].size; i++ {
+		sent := c.spaces[space].nth(i)
+		sent.lost = true
+		c.cc.packetDiscarded(sent)
+		lossf(numberSpace(space), sent, packetLost)
+	}
+	c.spaces[space].clean()
+}
+
 // discardKeys is called when dropping packet protection keys for a number space.
 func (c *lossState) discardKeys(now time.Time, space numberSpace) {
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.4

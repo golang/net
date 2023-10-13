@@ -48,9 +48,6 @@ func TestConnIDClientHandshake(t *testing.T) {
 		t.Errorf("local ids: %v, want %v", fmtConnIDList(got), fmtConnIDList(wantLocal))
 	}
 	wantRemote := []connID{{
-		cid: testLocalConnID(-1),
-		seq: -1,
-	}, {
 		cid: testPeerConnID(0),
 		seq: 0,
 	}}

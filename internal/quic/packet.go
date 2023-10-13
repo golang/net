@@ -97,6 +97,9 @@ const (
 	streamFinBit = 0x01
 )
 
+// Maximum length of a connection ID.
+const maxConnIDLen = 20
+
 // isLongHeader returns true if b is the first byte of a long header.
 func isLongHeader(b byte) bool {
 	return b&headerFormLong == headerFormLong

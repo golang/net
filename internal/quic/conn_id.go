@@ -28,6 +28,9 @@ type connIDState struct {
 	retireRemotePriorTo   int64 // largest Retire Prior To value sent by the peer
 	peerActiveConnIDLimit int64 // peer's active_connection_id_limit transport parameter
 
+	originalDstConnID []byte // expected original_destination_connection_id param
+	retrySrcConnID    []byte // expected retry_source_connection_id param
+
 	needSend bool
 }
 
@@ -78,6 +81,7 @@ func (s *connIDState) initClient(c *Conn) error {
 		seq: -1,
 		cid: remid,
 	})
+	s.originalDstConnID = remid
 	const retired = false
 	c.listener.connIDsChanged(c, retired, s.local[:])
 	return nil
@@ -163,27 +167,21 @@ func (s *connIDState) issueLocalIDs(c *Conn) error {
 
 // validateTransportParameters verifies the original_destination_connection_id and
 // initial_source_connection_id transport parameters match the expected values.
-func (s *connIDState) validateTransportParameters(side connSide, p transportParameters) error {
+func (s *connIDState) validateTransportParameters(side connSide, isRetry bool, p transportParameters) error {
 	// TODO: Consider returning more detailed errors, for debugging.
-	switch side {
-	case clientSide:
-		// Verify original_destination_connection_id matches
-		// the transient remote connection ID we chose.
-		if len(s.remote) == 0 || s.remote[0].seq != -1 {
-			return localTransportError(errInternal)
-		}
-		if !bytes.Equal(s.remote[0].cid, p.originalDstConnID) {
-			return localTransportError(errTransportParameter)
-		}
-		// Remove the transient remote connection ID.
-		// We have no further need for it.
-		s.remote = append(s.remote[:0], s.remote[1:]...)
-	case serverSide:
-		if p.originalDstConnID != nil {
-			// Clients do not send original_destination_connection_id.
-			return localTransportError(errTransportParameter)
-		}
+	// Verify original_destination_connection_id matches
+	// the transient remote connection ID we chose (client)
+	// or is empty (server).
+	if !bytes.Equal(s.originalDstConnID, p.originalDstConnID) {
+		return localTransportError(errTransportParameter)
 	}
+	s.originalDstConnID = nil // we have no further need for this
+	// Verify retry_source_connection_id matches the value from
+	// the server's Retry packet (when one was sent), or is empty.
+	if !bytes.Equal(p.retrySrcConnID, s.retrySrcConnID) {
+		return localTransportError(errTransportParameter)
+	}
+	s.retrySrcConnID = nil // we have no further need for this
 	// Verify initial_source_connection_id matches the first remote connection ID.
 	if len(s.remote) == 0 || s.remote[0].seq != 0 {
 		return localTransportError(errInternal)
@@ -203,13 +201,10 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			// We're a client connection processing the first Initial packet
 			// from the server. Replace the transient remote connection ID
 			// with the Source Connection ID from the packet.
-			// Leave the transient ID the list for now, since we'll need it when
-			// processing the transport parameters.
-			s.remote[0].retired = true
-			s.remote = append(s.remote, connID{
+			s.remote[0] = connID{
 				seq: 0,
 				cid: cloneBytes(srcConnID),
-			})
+			}
 		}
 	case ptype == packetTypeInitial && c.side == serverSide:
 		if len(s.remote) == 0 {
@@ -230,6 +225,14 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			s.local = append(s.local[:0], s.local[1:]...)
 		}
 	}
+}
+
+func (s *connIDState) handleRetryPacket(srcConnID []byte) {
+	if len(s.remote) != 1 || s.remote[0].seq != -1 {
+		panic("BUG: handling retry with non-transient remote conn id")
+	}
+	s.retrySrcConnID = cloneBytes(srcConnID)
+	s.remote[0].cid = s.retrySrcConnID
 }
 
 func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken [16]byte) error {

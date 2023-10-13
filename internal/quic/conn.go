@@ -48,6 +48,9 @@ type Conn struct {
 	crypto        [numberSpaceCount]cryptoStream
 	tls           *tls.QUICConn
 
+	// retryToken is the token provided by the peer in a Retry packet.
+	retryToken []byte
+
 	// handshakeConfirmed is set when the handshake is confirmed.
 	// For server connections, it tracks sending HANDSHAKE_DONE.
 	handshakeConfirmed sentVal
@@ -83,7 +86,7 @@ type connTestHooks interface {
 	timeNow() time.Time
 }
 
-func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
+func newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
@@ -104,17 +107,21 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 		l.testHooks.newConn(c)
 	}
 
-	var originalDstConnID []byte
+	// initialConnID is the connection ID used to generate Initial packet protection keys.
+	var initialConnID []byte
 	if c.side == clientSide {
 		if err := c.connIDState.initClient(c); err != nil {
 			return nil, err
 		}
 		initialConnID, _ = c.connIDState.dstConnID()
 	} else {
+		initialConnID = originalDstConnID
+		if retrySrcConnID != nil {
+			initialConnID = retrySrcConnID
+		}
 		if err := c.connIDState.initServer(c, initialConnID); err != nil {
 			return nil, err
 		}
-		originalDstConnID = initialConnID
 	}
 
 	// The smallest allowed maximum QUIC datagram size is 1200 bytes.
@@ -125,10 +132,10 @@ func newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.
 	c.streamsInit()
 	c.lifetimeInit()
 
-	// TODO: retry_source_connection_id
 	if err := c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),
 		originalDstConnID:              originalDstConnID,
+		retrySrcConnID:                 retrySrcConnID,
 		ackDelayExponent:               ackDelayExponent,
 		maxUDPPayloadSize:              maxUDPPayloadSize,
 		maxAckDelay:                    maxAckDelay,
@@ -195,7 +202,8 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 
 // receiveTransportParameters applies transport parameters sent by the peer.
 func (c *Conn) receiveTransportParameters(p transportParameters) error {
-	if err := c.connIDState.validateTransportParameters(c.side, p); err != nil {
+	isRetry := c.retryToken != nil
+	if err := c.connIDState.validateTransportParameters(c.side, isRetry, p); err != nil {
 		return err
 	}
 	c.streams.outflow.setMaxData(p.initialMaxData)
@@ -220,9 +228,11 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 			return err
 		}
 	}
-
-	// TODO: Many more transport parameters to come.
-
+	// TODO: max_idle_timeout
+	// TODO: stateless_reset_token
+	// TODO: max_udp_payload_size
+	// TODO: disable_active_migration
+	// TODO: preferred_address
 	return nil
 }
 

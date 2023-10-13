@@ -47,7 +47,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 	// Destination Connection ID Length (8),
 	// Destination Connection ID (0..160),
 	p.dstConnID, n = consumeUint8Bytes(b)
-	if n < 0 || len(p.dstConnID) > 20 {
+	if n < 0 || len(p.dstConnID) > maxConnIDLen {
 		return longPacket{}, -1
 	}
 	b = b[n:]
@@ -55,7 +55,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 	// Source Connection ID Length (8),
 	// Source Connection ID (0..160),
 	p.srcConnID, n = consumeUint8Bytes(b)
-	if n < 0 || len(p.dstConnID) > 20 {
+	if n < 0 || len(p.dstConnID) > maxConnIDLen {
 		return longPacket{}, -1
 	}
 	b = b[n:]

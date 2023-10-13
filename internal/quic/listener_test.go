@@ -114,7 +114,11 @@ func newTestListener(t *testing.T, config *Config) *testListener {
 		idlec: make(chan struct{}),
 		conns: make(map[*Conn]*testConn),
 	}
-	tl.l = newListener((*testListenerUDPConn)(tl), config, (*testListenerHooks)(tl))
+	var err error
+	tl.l, err = newListener((*testListenerUDPConn)(tl), config, (*testListenerHooks)(tl))
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(tl.cleanup)
 	return tl
 }
@@ -234,6 +238,13 @@ func (tl *testListener) wantDatagram(expectation string, want *testDatagram) {
 	got := tl.readDatagram()
 	if !reflect.DeepEqual(got, want) {
 		tl.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
+	}
+}
+
+// wantIdle indicates that we expect the Listener to not send any more datagrams.
+func (tl *testListener) wantIdle(expectation string) {
+	if got := tl.readDatagram(); got != nil {
+		tl.t.Fatalf("expect: %v\nunexpectedly got: %v", expectation, got)
 	}
 }
 

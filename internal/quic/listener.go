@@ -24,6 +24,7 @@ type Listener struct {
 	config    *Config
 	udpConn   udpConn
 	testHooks listenerTestHooks
+	retry     retryState
 
 	acceptQueue queue[*Conn] // new inbound connections
 
@@ -74,10 +75,10 @@ func Listen(network, address string, config *Config) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newListener(udpConn, config, nil), nil
+	return newListener(udpConn, config, nil)
 }
 
-func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) *Listener {
+func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) (*Listener, error) {
 	l := &Listener{
 		config:      config,
 		udpConn:     udpConn,
@@ -86,8 +87,13 @@ func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) *List
 		acceptQueue: newQueue[*Conn](),
 		closec:      make(chan struct{}),
 	}
+	if config.RequireAddressValidation {
+		if err := l.retry.init(); err != nil {
+			return nil, err
+		}
+	}
 	go l.listen()
-	return l
+	return l, nil
 }
 
 // LocalAddr returns the local network address.
@@ -142,7 +148,7 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	}
 	addr := u.AddrPort()
 	addr = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
-	c, err := l.newConn(time.Now(), clientSide, nil, addr)
+	c, err := l.newConn(time.Now(), clientSide, nil, nil, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -153,13 +159,13 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	return c, nil
 }
 
-func (l *Listener) newConn(now time.Time, side connSide, initialConnID []byte, peerAddr netip.AddrPort) (*Conn, error) {
+func (l *Listener) newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []byte, peerAddr netip.AddrPort) (*Conn, error) {
 	l.connsMu.Lock()
 	defer l.connsMu.Unlock()
 	if l.closing {
 		return nil, errors.New("listener closed")
 	}
-	c, err := newConn(now, side, initialConnID, peerAddr, l.config, l)
+	c, err := newConn(now, side, originalDstConnID, retrySrcConnID, peerAddr, l.config, l)
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +306,19 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	} else {
 		now = time.Now()
 	}
+	var originalDstConnID, retrySrcConnID []byte
+	if l.config.RequireAddressValidation {
+		var ok bool
+		retrySrcConnID = p.dstConnID
+		originalDstConnID, ok = l.validateInitialAddress(now, p, m.addr)
+		if !ok {
+			return
+		}
+	} else {
+		originalDstConnID = p.dstConnID
+	}
 	var err error
-	c, err := l.newConn(now, serverSide, p.dstConnID, m.addr)
+	c, err := l.newConn(now, serverSide, originalDstConnID, retrySrcConnID, m.addr)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.
@@ -318,6 +335,28 @@ func (l *Listener) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPo
 	m.b = appendVersionNegotiation(m.b[:0], p.srcConnID, p.dstConnID, quicVersion1)
 	l.sendDatagram(m.b, addr)
 	m.recycle()
+}
+
+func (l *Listener) sendConnectionClose(in genericLongPacket, addr netip.AddrPort, code transportError) {
+	keys := initialKeys(in.dstConnID, serverSide)
+	var w packetWriter
+	p := longPacket{
+		ptype:     packetTypeInitial,
+		version:   quicVersion1,
+		num:       0,
+		dstConnID: in.srcConnID,
+		srcConnID: in.dstConnID,
+	}
+	const pnumMaxAcked = 0
+	w.reset(minimumClientInitialDatagramSize)
+	w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
+	w.appendConnectionCloseTransportFrame(code, 0, "")
+	w.finishProtectedLongHeaderPacket(pnumMaxAcked, keys.w, p)
+	buf := w.datagram()
+	if len(buf) == 0 {
+		return
+	}
+	l.sendDatagram(buf, addr)
 }
 
 func (l *Listener) sendDatagram(p []byte, addr netip.AddrPort) error {

@@ -34,6 +34,9 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			n = c.handleLongHeader(now, ptype, handshakeSpace, c.keysHandshake.r, buf)
 		case packetType1RTT:
 			n = c.handle1RTT(now, buf)
+		case packetTypeRetry:
+			c.handleRetry(now, buf)
+			return
 		case packetTypeVersionNegotiation:
 			c.handleVersionNegotiation(now, buf)
 			return
@@ -126,6 +129,42 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	ackEliciting := c.handleFrames(now, packetType1RTT, appDataSpace, p.payload)
 	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting)
 	return len(buf)
+}
+
+func (c *Conn) handleRetry(now time.Time, pkt []byte) {
+	if c.side != clientSide {
+		return // clients don't send Retry packets
+	}
+	// "After the client has received and processed an Initial or Retry packet
+	// from the server, it MUST discard any subsequent Retry packets that it receives."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-1
+	if !c.keysInitial.canRead() {
+		return // discarded Initial keys, connection is already established
+	}
+	if c.acks[initialSpace].seen.numRanges() != 0 {
+		return // processed at least one packet
+	}
+	if c.retryToken != nil {
+		return // received a Retry already
+	}
+	// "Clients MUST discard Retry packets that have a Retry Integrity Tag
+	// that cannot be validated."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-2
+	p, ok := parseRetryPacket(pkt, c.connIDState.originalDstConnID)
+	if !ok {
+		return
+	}
+	// "A client MUST discard a Retry packet with a zero-length Retry Token field."
+	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-2
+	if len(p.token) == 0 {
+		return
+	}
+	c.retryToken = cloneBytes(p.token)
+	c.connIDState.handleRetryPacket(p.srcConnID)
+	// We need to resend any data we've already sent in Initial packets.
+	// We must not reuse already sent packet numbers.
+	c.loss.discardPackets(initialSpace, c.handleAckOrLoss)
+	// TODO: Discard 0-RTT packets as well, once we support 0-RTT.
 }
 
 var errVersionNegotiation = errors.New("server does not support QUIC version 1")

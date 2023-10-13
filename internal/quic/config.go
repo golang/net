@@ -47,6 +47,14 @@ type Config struct {
 	// If zero, the default value of 1MiB is used.
 	// If negative, the limit is zero.
 	MaxConnReadBufferSize int64
+
+	// RequireAddressValidation may be set to true to enable address validation
+	// of client connections prior to starting the handshake.
+	//
+	// Enabling this setting reduces the amount of work packets with spoofed
+	// source address information can cause a server to perform,
+	// at the cost of increased handshake latency.
+	RequireAddressValidation bool
 }
 
 func configDefault(v, def, limit int64) int64 {

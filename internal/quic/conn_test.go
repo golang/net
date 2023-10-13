@@ -218,6 +218,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		listener.now,
 		side,
 		initialConnID,
+		nil,
 		netip.MustParseAddrPort("127.0.0.1:443"))
 	if err != nil {
 		t.Fatal(err)
@@ -545,7 +546,13 @@ func (tc *testConn) readPacket() *testPacket {
 		if d == nil {
 			return nil
 		}
-		tc.sentPackets = d.packets
+		for _, p := range d.packets {
+			if len(p.frames) == 0 {
+				tc.lastPacket = p
+				continue
+			}
+			tc.sentPackets = append(tc.sentPackets, p)
+		}
 	}
 	p := tc.sentPackets[0]
 	tc.sentPackets = tc.sentPackets[1:]
@@ -638,6 +645,12 @@ func encodeTestPacket(t *testing.T, tc *testConn, p *testPacket, pad int) []byte
 	w.reset(1200)
 	var pnumMaxAcked packetNumber
 	switch p.ptype {
+	case packetTypeRetry:
+		return encodeRetryPacket(p.originalDstConnID, retryPacket{
+			srcConnID: p.srcConnID,
+			dstConnID: p.dstConnID,
+			token:     p.token,
+		})
 	case packetType1RTT:
 		w.start1RTTPacket(p.num, pnumMaxAcked, p.dstConnID)
 	default:
@@ -717,6 +730,19 @@ func parseTestDatagram(t *testing.T, tl *testListener, tc *testConn, buf []byte)
 		}
 		ptype := getPacketType(buf)
 		switch ptype {
+		case packetTypeRetry:
+			retry, ok := parseRetryPacket(buf, tl.lastInitialDstConnID)
+			if !ok {
+				t.Fatalf("could not parse %v packet", ptype)
+			}
+			return &testDatagram{
+				packets: []*testPacket{{
+					ptype:     packetTypeRetry,
+					dstConnID: retry.dstConnID,
+					srcConnID: retry.srcConnID,
+					token:     retry.token,
+				}},
+			}
 		case packetTypeInitial, packetTypeHandshake:
 			var k fixedKeys
 			if tc == nil {
