@@ -71,9 +71,11 @@ func (tc *testConn) handshake() {
 
 func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 	var (
-		clientConnIDs   [][]byte
-		serverConnIDs   [][]byte
-		transientConnID []byte
+		clientConnIDs    [][]byte
+		serverConnIDs    [][]byte
+		clientResetToken statelessResetToken
+		serverResetToken statelessResetToken
+		transientConnID  []byte
 	)
 	localConnIDs := [][]byte{
 		testLocalConnID(0),
@@ -83,13 +85,19 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		testPeerConnID(0),
 		testPeerConnID(1),
 	}
+	localResetToken := tc.listener.l.resetGen.tokenForConnID(localConnIDs[1])
+	peerResetToken := testPeerStatelessResetToken(1)
 	if tc.conn.side == clientSide {
 		clientConnIDs = localConnIDs
 		serverConnIDs = peerConnIDs
+		clientResetToken = localResetToken
+		serverResetToken = peerResetToken
 		transientConnID = testLocalConnID(-1)
 	} else {
 		clientConnIDs = peerConnIDs
 		serverConnIDs = localConnIDs
+		clientResetToken = peerResetToken
+		serverResetToken = localResetToken
 		transientConnID = testPeerConnID(-1)
 	}
 	return []*testDatagram{{
@@ -136,6 +144,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 				debugFrameNewConnectionID{
 					seq:    1,
 					connID: serverConnIDs[1],
+					token:  serverResetToken,
 				},
 			},
 		}},
@@ -175,6 +184,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 				debugFrameNewConnectionID{
 					seq:    1,
 					connID: clientConnIDs[1],
+					token:  clientResetToken,
 				},
 			},
 		}},
@@ -337,6 +347,7 @@ func TestConnKeysDiscardedClient(t *testing.T) {
 		packetType1RTT, debugFrameNewConnectionID{
 			seq:    1,
 			connID: testLocalConnID(1),
+			token:  testLocalStatelessResetToken(1),
 		})
 
 	// The client discards Initial keys after sending a Handshake packet.
@@ -390,6 +401,7 @@ func TestConnKeysDiscardedServer(t *testing.T) {
 		packetType1RTT, debugFrameNewConnectionID{
 			seq:    1,
 			connID: testLocalConnID(1),
+			token:  testLocalStatelessResetToken(1),
 		})
 	tc.wantIdle("server has discarded Initial keys, cannot read CONNECTION_CLOSE")
 
@@ -546,7 +558,9 @@ func TestConnAEADLimitReached(t *testing.T) {
 	// exceeds the integrity limit for the selected AEAD,
 	// the endpoint MUST immediately close the connection [...]"
 	// https://www.rfc-editor.org/rfc/rfc9001#section-6.6-6
-	tc := newTestConn(t, clientSide)
+	tc := newTestConn(t, clientSide, func(c *Config) {
+		clear(c.StatelessResetKey[:])
+	})
 	tc.handshake()
 
 	var limit int64

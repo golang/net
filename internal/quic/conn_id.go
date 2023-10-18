@@ -22,7 +22,7 @@ type connIDState struct {
 	//
 	// These are []connID rather than []*connID to minimize allocations.
 	local  []connID
-	remote []connID
+	remote []remoteConnID
 
 	nextLocalSeq          int64
 	retireRemotePriorTo   int64 // largest Retire Prior To value sent by the peer
@@ -58,6 +58,12 @@ type connID struct {
 	send sentVal
 }
 
+// A remoteConnID is a connection ID and stateless reset token.
+type remoteConnID struct {
+	connID
+	resetToken statelessResetToken
+}
+
 func (s *connIDState) initClient(c *Conn) error {
 	// Client chooses its initial connection ID, and sends it
 	// in the Source Connection ID field of the first Initial packet.
@@ -70,6 +76,9 @@ func (s *connIDState) initClient(c *Conn) error {
 		cid: locid,
 	})
 	s.nextLocalSeq = 1
+	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+		conns.addConnID(c, locid)
+	})
 
 	// Client chooses an initial, transient connection ID for the server,
 	// and sends it in the Destination Connection ID field of the first Initial packet.
@@ -77,13 +86,13 @@ func (s *connIDState) initClient(c *Conn) error {
 	if err != nil {
 		return err
 	}
-	s.remote = append(s.remote, connID{
-		seq: -1,
-		cid: remid,
+	s.remote = append(s.remote, remoteConnID{
+		connID: connID{
+			seq: -1,
+			cid: remid,
+		},
 	})
 	s.originalDstConnID = remid
-	const retired = false
-	c.listener.connIDsChanged(c, retired, s.local[:])
 	return nil
 }
 
@@ -107,8 +116,10 @@ func (s *connIDState) initServer(c *Conn, dstConnID []byte) error {
 		cid: locid,
 	})
 	s.nextLocalSeq = 1
-	const retired = false
-	c.listener.connIDsChanged(c, retired, s.local[:])
+	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+		conns.addConnID(c, dstConnID)
+		conns.addConnID(c, locid)
+	})
 	return nil
 }
 
@@ -131,6 +142,19 @@ func (s *connIDState) dstConnID() (cid []byte, ok bool) {
 	return nil, false
 }
 
+// isValidStatelessResetToken reports whether the given reset token is
+// associated with a non-retired connection ID which we have used.
+func (s *connIDState) isValidStatelessResetToken(resetToken statelessResetToken) bool {
+	for i := range s.remote {
+		// We currently only use the first available remote connection ID,
+		// so any other reset token is not valid.
+		if !s.remote[i].retired {
+			return s.remote[i].resetToken == resetToken
+		}
+	}
+	return false
+}
+
 // setPeerActiveConnIDLimit sets the active_connection_id_limit
 // transport parameter received from the peer.
 func (s *connIDState) setPeerActiveConnIDLimit(c *Conn, lim int64) error {
@@ -145,12 +169,13 @@ func (s *connIDState) issueLocalIDs(c *Conn) error {
 			toIssue--
 		}
 	}
-	prev := len(s.local)
+	var newIDs [][]byte
 	for toIssue > 0 {
 		cid, err := c.newConnID(s.nextLocalSeq)
 		if err != nil {
 			return err
 		}
+		newIDs = append(newIDs, cid)
 		s.local = append(s.local, connID{
 			seq: s.nextLocalSeq,
 			cid: cid,
@@ -160,14 +185,17 @@ func (s *connIDState) issueLocalIDs(c *Conn) error {
 		s.needSend = true
 		toIssue--
 	}
-	const retired = false
-	c.listener.connIDsChanged(c, retired, s.local[prev:])
+	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+		for _, cid := range newIDs {
+			conns.addConnID(c, cid)
+		}
+	})
 	return nil
 }
 
 // validateTransportParameters verifies the original_destination_connection_id and
 // initial_source_connection_id transport parameters match the expected values.
-func (s *connIDState) validateTransportParameters(side connSide, isRetry bool, p transportParameters) error {
+func (s *connIDState) validateTransportParameters(c *Conn, isRetry bool, p transportParameters) error {
 	// TODO: Consider returning more detailed errors, for debugging.
 	// Verify original_destination_connection_id matches
 	// the transient remote connection ID we chose (client)
@@ -189,6 +217,16 @@ func (s *connIDState) validateTransportParameters(side connSide, isRetry bool, p
 	if !bytes.Equal(p.initialSrcConnID, s.remote[0].cid) {
 		return localTransportError(errTransportParameter)
 	}
+	if len(p.statelessResetToken) > 0 {
+		if c.side == serverSide {
+			return localTransportError(errTransportParameter)
+		}
+		token := statelessResetToken(p.statelessResetToken)
+		s.remote[0].resetToken = token
+		c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+			conns.addResetToken(c, token)
+		})
+	}
 	return nil
 }
 
@@ -201,18 +239,22 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			// We're a client connection processing the first Initial packet
 			// from the server. Replace the transient remote connection ID
 			// with the Source Connection ID from the packet.
-			s.remote[0] = connID{
-				seq: 0,
-				cid: cloneBytes(srcConnID),
+			s.remote[0] = remoteConnID{
+				connID: connID{
+					seq: 0,
+					cid: cloneBytes(srcConnID),
+				},
 			}
 		}
 	case ptype == packetTypeInitial && c.side == serverSide:
 		if len(s.remote) == 0 {
 			// We're a server connection processing the first Initial packet
 			// from the client. Set the client's connection ID.
-			s.remote = append(s.remote, connID{
-				seq: 0,
-				cid: cloneBytes(srcConnID),
+			s.remote = append(s.remote, remoteConnID{
+				connID: connID{
+					seq: 0,
+					cid: cloneBytes(srcConnID),
+				},
 			})
 		}
 	case ptype == packetTypeHandshake && c.side == serverSide:
@@ -220,8 +262,10 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			// We're a server connection processing the first Handshake packet from
 			// the client. Discard the transient, client-chosen connection ID used
 			// for Initial packets; the client will never send it again.
-			const retired = true
-			c.listener.connIDsChanged(c, retired, s.local[0:1])
+			cid := s.local[0].cid
+			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+				conns.retireConnID(c, cid)
+			})
 			s.local = append(s.local[:0], s.local[1:]...)
 		}
 	}
@@ -235,7 +279,7 @@ func (s *connIDState) handleRetryPacket(srcConnID []byte) {
 	s.remote[0].cid = s.retrySrcConnID
 }
 
-func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken [16]byte) error {
+func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, resetToken statelessResetToken) error {
 	if len(s.remote[0].cid) == 0 {
 		// "An endpoint that is sending packets with a zero-length
 		// Destination Connection ID MUST treat receipt of a NEW_CONNECTION_ID
@@ -254,6 +298,9 @@ func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken 
 		rcid := &s.remote[i]
 		if !rcid.retired && rcid.seq >= 0 && rcid.seq < s.retireRemotePriorTo {
 			s.retireRemote(rcid)
+			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+				conns.retireResetToken(c, rcid.resetToken)
+			})
 		}
 		if !rcid.retired {
 			active++
@@ -272,15 +319,21 @@ func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken 
 		// We could take steps to keep the list of remote connection IDs
 		// sorted by sequence number, but there's no particular need
 		// so we don't bother.
-		s.remote = append(s.remote, connID{
-			seq: seq,
-			cid: cloneBytes(cid),
+		s.remote = append(s.remote, remoteConnID{
+			connID: connID{
+				seq: seq,
+				cid: cloneBytes(cid),
+			},
+			resetToken: resetToken,
 		})
 		if seq < s.retireRemotePriorTo {
 			// This ID was already retired by a previous NEW_CONNECTION_ID frame.
 			s.retireRemote(&s.remote[len(s.remote)-1])
 		} else {
 			active++
+			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+				conns.addResetToken(c, resetToken)
+			})
 		}
 	}
 
@@ -305,7 +358,7 @@ func (s *connIDState) handleNewConnID(seq, retire int64, cid []byte, resetToken 
 }
 
 // retireRemote marks a remote connection ID as retired.
-func (s *connIDState) retireRemote(rcid *connID) {
+func (s *connIDState) retireRemote(rcid *remoteConnID) {
 	rcid.retired = true
 	rcid.send.setUnsent()
 	s.needSend = true
@@ -317,8 +370,10 @@ func (s *connIDState) handleRetireConnID(c *Conn, seq int64) error {
 	}
 	for i := range s.local {
 		if s.local[i].seq == seq {
-			const retired = true
-			c.listener.connIDsChanged(c, retired, s.local[i:i+1])
+			cid := s.local[i].cid
+			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+				conns.retireConnID(c, cid)
+			})
 			s.local = append(s.local[:i], s.local[i+1:]...)
 			break
 		}
@@ -363,7 +418,7 @@ func (s *connIDState) ackOrLossRetireConnectionID(pnum packetNumber, seq int64, 
 //
 // It returns true if no more frames need appending,
 // false if not everything fit in the current packet.
-func (s *connIDState) appendFrames(w *packetWriter, pnum packetNumber, pto bool) bool {
+func (s *connIDState) appendFrames(c *Conn, pnum packetNumber, pto bool) bool {
 	if !s.needSend && !pto {
 		// Fast path: We don't need to send anything.
 		return true
@@ -376,11 +431,11 @@ func (s *connIDState) appendFrames(w *packetWriter, pnum packetNumber, pto bool)
 		if !s.local[i].send.shouldSendPTO(pto) {
 			continue
 		}
-		if !w.appendNewConnectionIDFrame(
+		if !c.w.appendNewConnectionIDFrame(
 			s.local[i].seq,
 			retireBefore,
 			s.local[i].cid,
-			[16]byte{}, // TODO: stateless reset token
+			c.listener.resetGen.tokenForConnID(s.local[i].cid),
 		) {
 			return false
 		}
@@ -390,7 +445,7 @@ func (s *connIDState) appendFrames(w *packetWriter, pnum packetNumber, pto bool)
 		if !s.remote[i].send.shouldSendPTO(pto) {
 			continue
 		}
-		if !w.appendRetireConnectionIDFrame(s.remote[i].seq) {
+		if !c.w.appendRetireConnectionIDFrame(s.remote[i].seq) {
 			return false
 		}
 		s.remote[i].send.setSent(pnum)

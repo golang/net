@@ -203,7 +203,7 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 // receiveTransportParameters applies transport parameters sent by the peer.
 func (c *Conn) receiveTransportParameters(p transportParameters) error {
 	isRetry := c.retryToken != nil
-	if err := c.connIDState.validateTransportParameters(c.side, isRetry, p); err != nil {
+	if err := c.connIDState.validateTransportParameters(c, isRetry, p); err != nil {
 		return err
 	}
 	c.streams.outflow.setMaxData(p.initialMaxData)
@@ -224,7 +224,7 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 			resetToken    [16]byte
 		)
 		copy(resetToken[:], p.preferredAddrResetToken)
-		if err := c.connIDState.handleNewConnID(seq, retirePriorTo, p.preferredAddrConnID, resetToken); err != nil {
+		if err := c.connIDState.handleNewConnID(c, seq, retirePriorTo, p.preferredAddrConnID, resetToken); err != nil {
 			return err
 		}
 	}

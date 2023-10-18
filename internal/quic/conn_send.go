@@ -250,7 +250,7 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 		}
 
 		// NEW_CONNECTION_ID, RETIRE_CONNECTION_ID
-		if !c.connIDState.appendFrames(&c.w, pnum, pto) {
+		if !c.connIDState.appendFrames(c, pnum, pto) {
 			return
 		}
 

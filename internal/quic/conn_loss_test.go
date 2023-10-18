@@ -160,6 +160,7 @@ func TestLostCryptoFrame(t *testing.T) {
 			packetType1RTT, debugFrameNewConnectionID{
 				seq:    1,
 				connID: testLocalConnID(1),
+				token:  testLocalStatelessResetToken(1),
 			})
 		tc.triggerLossOrPTO(packetTypeHandshake, pto)
 		tc.wantFrame("client resends Handshake CRYPTO frame",
@@ -607,6 +608,7 @@ func TestLostNewConnectionIDFrame(t *testing.T) {
 			packetType1RTT, debugFrameNewConnectionID{
 				seq:    2,
 				connID: testLocalConnID(2),
+				token:  testLocalStatelessResetToken(2),
 			})
 
 		tc.triggerLossOrPTO(packetType1RTT, pto)
@@ -614,6 +616,7 @@ func TestLostNewConnectionIDFrame(t *testing.T) {
 			packetType1RTT, debugFrameNewConnectionID{
 				seq:    2,
 				connID: testLocalConnID(2),
+				token:  testLocalStatelessResetToken(2),
 			})
 	})
 }
@@ -669,6 +672,7 @@ func TestLostHandshakeDoneFrame(t *testing.T) {
 			packetType1RTT, debugFrameNewConnectionID{
 				seq:    1,
 				connID: testLocalConnID(1),
+				token:  testLocalStatelessResetToken(1),
 			})
 		tc.writeFrames(packetTypeHandshake,
 			debugFrameCrypto{

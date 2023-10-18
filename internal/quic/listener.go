@@ -8,6 +8,7 @@ package quic
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"net"
 	"net/netip"
@@ -24,21 +25,16 @@ type Listener struct {
 	config    *Config
 	udpConn   udpConn
 	testHooks listenerTestHooks
+	resetGen  statelessResetTokenGenerator
 	retry     retryState
 
 	acceptQueue queue[*Conn] // new inbound connections
+	connsMap    connsMap     // only accessed by the listen loop
 
 	connsMu sync.Mutex
 	conns   map[*Conn]struct{}
 	closing bool          // set when Close is called
 	closec  chan struct{} // closed when the listen loop exits
-
-	// The datagram receive loop keeps a mapping of connection IDs to conns.
-	// When a conn's connection IDs change, we add it to connIDUpdates and set
-	// connIDUpdateNeeded, and the receive loop updates its map.
-	connIDUpdateMu     sync.Mutex
-	connIDUpdateNeeded atomic.Bool
-	connIDUpdates      []connIDUpdate
 }
 
 type listenerTestHooks interface {
@@ -53,12 +49,6 @@ type udpConn interface {
 	LocalAddr() net.Addr
 	ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error)
 	WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error)
-}
-
-type connIDUpdate struct {
-	conn    *Conn
-	retired bool
-	cid     []byte
 }
 
 // Listen listens on a local network address.
@@ -87,6 +77,8 @@ func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) (*Lis
 		acceptQueue: newQueue[*Conn](),
 		closec:      make(chan struct{}),
 	}
+	l.resetGen.init(config.StatelessResetKey)
+	l.connsMap.init()
 	if config.RequireAddressValidation {
 		if err := l.retry.init(); err != nil {
 			return nil, err
@@ -181,6 +173,22 @@ func (l *Listener) serverConnEstablished(c *Conn) {
 // connDrained is called by a conn when it leaves the draining state,
 // either when the peer acknowledges connection closure or the drain timeout expires.
 func (l *Listener) connDrained(c *Conn) {
+	var cids [][]byte
+	for i := range c.connIDState.local {
+		cids = append(cids, c.connIDState.local[i].cid)
+	}
+	var tokens []statelessResetToken
+	for i := range c.connIDState.remote {
+		tokens = append(tokens, c.connIDState.remote[i].resetToken)
+	}
+	l.connsMap.updateConnIDs(func(conns *connsMap) {
+		for _, cid := range cids {
+			conns.retireConnID(c, cid)
+		}
+		for _, token := range tokens {
+			conns.retireResetToken(c, token)
+		}
+	})
 	l.connsMu.Lock()
 	defer l.connsMu.Unlock()
 	delete(l.conns, c)
@@ -189,39 +197,8 @@ func (l *Listener) connDrained(c *Conn) {
 	}
 }
 
-// connIDsChanged is called by a conn when its connection IDs change.
-func (l *Listener) connIDsChanged(c *Conn, retired bool, cids []connID) {
-	l.connIDUpdateMu.Lock()
-	defer l.connIDUpdateMu.Unlock()
-	for _, cid := range cids {
-		l.connIDUpdates = append(l.connIDUpdates, connIDUpdate{
-			conn:    c,
-			retired: retired,
-			cid:     cid.cid,
-		})
-	}
-	l.connIDUpdateNeeded.Store(true)
-}
-
-// updateConnIDs is called by the datagram receive loop to update its connection ID map.
-func (l *Listener) updateConnIDs(conns map[string]*Conn) {
-	l.connIDUpdateMu.Lock()
-	defer l.connIDUpdateMu.Unlock()
-	for i, u := range l.connIDUpdates {
-		if u.retired {
-			delete(conns, string(u.cid))
-		} else {
-			conns[string(u.cid)] = u.conn
-		}
-		l.connIDUpdates[i] = connIDUpdate{} // drop refs
-	}
-	l.connIDUpdates = l.connIDUpdates[:0]
-	l.connIDUpdateNeeded.Store(false)
-}
-
 func (l *Listener) listen() {
 	defer close(l.closec)
-	conns := map[string]*Conn{}
 	for {
 		m := newDatagram()
 		// TODO: Read and process the ECN (explicit congestion notification) field.
@@ -237,22 +214,22 @@ func (l *Listener) listen() {
 		if n == 0 {
 			continue
 		}
-		if l.connIDUpdateNeeded.Load() {
-			l.updateConnIDs(conns)
+		if l.connsMap.updateNeeded.Load() {
+			l.connsMap.applyUpdates()
 		}
 		m.addr = addr
 		m.b = m.b[:n]
-		l.handleDatagram(m, conns)
+		l.handleDatagram(m)
 	}
 }
 
-func (l *Listener) handleDatagram(m *datagram, conns map[string]*Conn) {
+func (l *Listener) handleDatagram(m *datagram) {
 	dstConnID, ok := dstConnIDForDatagram(m.b)
 	if !ok {
 		m.recycle()
 		return
 	}
-	c := conns[string(dstConnID)]
+	c := l.connsMap.byConnID[string(dstConnID)]
 	if c == nil {
 		// TODO: Move this branch into a separate goroutine to avoid blocking
 		// the listener while processing packets.
@@ -271,18 +248,29 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 			m.recycle()
 		}
 	}()
-	if len(m.b) < minimumClientInitialDatagramSize {
+	const minimumValidPacketSize = 21
+	if len(m.b) < minimumValidPacketSize {
+		return
+	}
+	// Check to see if this is a stateless reset.
+	var token statelessResetToken
+	copy(token[:], m.b[len(m.b)-len(token):])
+	if c := l.connsMap.byResetToken[token]; c != nil {
+		c.sendMsg(func(now time.Time, c *Conn) {
+			c.handleStatelessReset(token)
+		})
+		return
+	}
+	// If this is a 1-RTT packet, there's nothing productive we can do with it.
+	// Send a stateless reset if possible.
+	if !isLongHeader(m.b[0]) {
+		l.maybeSendStatelessReset(m.b, m.addr)
 		return
 	}
 	p, ok := parseGenericLongHeaderPacket(m.b)
-	if !ok {
-		// Not a long header packet, or not parseable.
-		// Short header (1-RTT) packets don't contain enough information
-		// to do anything useful with if we don't recognize the
-		// connection ID.
+	if !ok || len(m.b) < minimumClientInitialDatagramSize {
 		return
 	}
-
 	switch p.version {
 	case quicVersion1:
 	case 0:
@@ -296,8 +284,9 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	if getPacketType(m.b) != packetTypeInitial {
 		// This packet isn't trying to create a new connection.
 		// It might be associated with some connection we've lost state for.
-		// TODO: Send a stateless reset when appropriate.
-		// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3
+		// We are technically permitted to send a stateless reset for
+		// a long-header packet, but this isn't generally useful. See:
+		// https://www.rfc-editor.org/rfc/rfc9000#section-10.3-16
 		return
 	}
 	var now time.Time
@@ -328,6 +317,50 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	}
 	c.sendMsg(m)
 	m = nil // don't recycle, sendMsg takes ownership
+}
+
+func (l *Listener) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
+	if !l.resetGen.canReset {
+		// Config.StatelessResetKey isn't set, so we don't send stateless resets.
+		return
+	}
+	// The smallest possible valid packet a peer can send us is:
+	//   1 byte of header
+	//   connIDLen bytes of destination connection ID
+	//   1 byte of packet number
+	//   1 byte of payload
+	//   16 bytes AEAD expansion
+	if len(b) < 1+connIDLen+1+1+16 {
+		return
+	}
+	// TODO: Rate limit stateless resets.
+	cid := b[1:][:connIDLen]
+	token := l.resetGen.tokenForConnID(cid)
+	// We want to generate a stateless reset that is as short as possible,
+	// but long enough to be difficult to distinguish from a 1-RTT packet.
+	//
+	// The minimal 1-RTT packet is:
+	//   1 byte of header
+	//   0-20 bytes of destination connection ID
+	//   1-4 bytes of packet number
+	//   1 byte of payload
+	//   16 bytes AEAD expansion
+	//
+	// Assuming the maximum possible connection ID and packet number size,
+	// this gives 1 + 20 + 4 + 1 + 16 = 42 bytes.
+	//
+	// We also must generate a stateless reset that is shorter than the datagram
+	// we are responding to, in order to ensure that reset loops terminate.
+	//
+	// See: https://www.rfc-editor.org/rfc/rfc9000#section-10.3
+	size := min(len(b)-1, 42)
+	// Reuse the input buffer for generating the stateless reset.
+	b = b[:size]
+	rand.Read(b[:len(b)-statelessResetTokenLen])
+	b[0] &^= headerFormLong // clear long header bit
+	b[0] |= fixedBit        // set fixed bit
+	copy(b[len(b)-statelessResetTokenLen:], token[:])
+	l.sendDatagram(b, addr)
 }
 
 func (l *Listener) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPort) {
@@ -362,4 +395,54 @@ func (l *Listener) sendConnectionClose(in genericLongPacket, addr netip.AddrPort
 func (l *Listener) sendDatagram(p []byte, addr netip.AddrPort) error {
 	_, err := l.udpConn.WriteToUDPAddrPort(p, addr)
 	return err
+}
+
+// A connsMap is a listener's mapping of conn ids and reset tokens to conns.
+type connsMap struct {
+	byConnID     map[string]*Conn
+	byResetToken map[statelessResetToken]*Conn
+
+	updateMu     sync.Mutex
+	updateNeeded atomic.Bool
+	updates      []func(*connsMap)
+}
+
+func (m *connsMap) init() {
+	m.byConnID = map[string]*Conn{}
+	m.byResetToken = map[statelessResetToken]*Conn{}
+}
+
+func (m *connsMap) addConnID(c *Conn, cid []byte) {
+	m.byConnID[string(cid)] = c
+}
+
+func (m *connsMap) retireConnID(c *Conn, cid []byte) {
+	delete(m.byConnID, string(cid))
+}
+
+func (m *connsMap) addResetToken(c *Conn, token statelessResetToken) {
+	m.byResetToken[token] = c
+}
+
+func (m *connsMap) retireResetToken(c *Conn, token statelessResetToken) {
+	delete(m.byResetToken, token)
+}
+
+func (m *connsMap) updateConnIDs(f func(*connsMap)) {
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.updates = append(m.updates, f)
+	m.updateNeeded.Store(true)
+}
+
+// applyConnIDUpdates is called by the datagram receive loop to update its connection ID map.
+func (m *connsMap) applyUpdates() {
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	for _, f := range m.updates {
+		f(m)
+	}
+	clear(m.updates)
+	m.updates = m.updates[:0]
+	m.updateNeeded.Store(false)
 }

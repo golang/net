@@ -55,6 +55,23 @@ type Config struct {
 	// source address information can cause a server to perform,
 	// at the cost of increased handshake latency.
 	RequireAddressValidation bool
+
+	// StatelessResetKey is used to provide stateless reset of connections.
+	// A restart may leave an endpoint without access to the state of
+	// existing connections. Stateless reset permits an endpoint to respond
+	// to a packet for a connection it does not recognize.
+	//
+	// This field should be filled with random bytes.
+	// The contents should remain stable across restarts,
+	// to permit an endpoint to send a reset for
+	// connections created before a restart.
+	//
+	// The contents of the StatelessResetKey should not be exposed.
+	// An attacker can use knowledge of this field's value to
+	// reset existing connections.
+	//
+	// If this field is left as zero, stateless reset is disabled.
+	StatelessResetKey [32]byte
 }
 
 func configDefault(v, def, limit int64) int64 {

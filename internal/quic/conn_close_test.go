@@ -15,7 +15,9 @@ import (
 )
 
 func TestConnCloseResponseBackoff(t *testing.T) {
-	tc := newTestConn(t, clientSide)
+	tc := newTestConn(t, clientSide, func(c *Config) {
+		clear(c.StatelessResetKey[:])
+	})
 	tc.handshake()
 
 	tc.conn.Abort(nil)

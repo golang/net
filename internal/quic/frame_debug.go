@@ -368,7 +368,7 @@ type debugFrameNewConnectionID struct {
 	seq           int64
 	retirePriorTo int64
 	connID        []byte
-	token         [16]byte
+	token         statelessResetToken
 }
 
 func parseDebugFrameNewConnectionID(b []byte) (f debugFrameNewConnectionID, n int) {

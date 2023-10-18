@@ -190,7 +190,8 @@ type keySecret struct {
 func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	t.Helper()
 	config := &Config{
-		TLSConfig: newTestTLSConfig(side),
+		TLSConfig:         newTestTLSConfig(side),
+		StatelessResetKey: testStatelessResetKey,
 	}
 	var configTransportParams []func(*transportParameters)
 	for _, o := range opts {
@@ -1039,6 +1040,13 @@ func testPeerConnID(seq int64) []byte {
 	// Use a different length than we choose for our own conn ids,
 	// to help catch any bad assumptions.
 	return []byte{0xbe, 0xee, 0xff, byte(seq)}
+}
+
+func testPeerStatelessResetToken(seq int64) statelessResetToken {
+	return statelessResetToken{
+		0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
+		0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, byte(seq),
+	}
 }
 
 // canceledContext returns a canceled Context.

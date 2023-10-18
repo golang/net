@@ -420,32 +420,32 @@ func consumeStreamsBlockedFrame(b []byte) (typ streamType, max int64, n int) {
 	return typ, max, n
 }
 
-func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, resetToken [16]byte, n int) {
+func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, resetToken statelessResetToken, n int) {
 	n = 1
 	var nn int
 	seq, nn = consumeVarintInt64(b[n:])
 	if nn < 0 {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	n += nn
 	retire, nn = consumeVarintInt64(b[n:])
 	if nn < 0 {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	n += nn
 	if seq < retire {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	connID, nn = consumeVarintBytes(b[n:])
 	if nn < 0 {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	if len(connID) < 1 || len(connID) > 20 {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	n += nn
 	if len(b[n:]) < len(resetToken) {
-		return 0, 0, nil, [16]byte{}, -1
+		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	copy(resetToken[:], b[n:])
 	n += len(resetToken)

@@ -41,9 +41,23 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			c.handleVersionNegotiation(now, buf)
 			return
 		default:
-			return
+			n = -1
 		}
 		if n <= 0 {
+			// We don't expect to get a stateless reset with a valid
+			// destination connection ID, since the sender of a stateless
+			// reset doesn't know what the connection ID is.
+			//
+			// We're required to perform this check anyway.
+			//
+			// "[...] the comparison MUST be performed when the first packet
+			// in an incoming datagram [...] cannot be decrypted."
+			// https://www.rfc-editor.org/rfc/rfc9000#section-10.3.1-2
+			if len(buf) == len(dgram.b) && len(buf) > statelessResetTokenLen {
+				var token statelessResetToken
+				copy(token[:], buf[len(buf)-len(token):])
+				c.handleStatelessReset(token)
+			}
 			// Invalid data at the end of a datagram is ignored.
 			break
 		}
@@ -468,7 +482,7 @@ func (c *Conn) handleNewConnectionIDFrame(now time.Time, space numberSpace, payl
 	if n < 0 {
 		return -1
 	}
-	if err := c.connIDState.handleNewConnID(seq, retire, connID, resetToken); err != nil {
+	if err := c.connIDState.handleNewConnID(c, seq, retire, connID, resetToken); err != nil {
 		c.abort(now, err)
 	}
 	return n
@@ -514,4 +528,13 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 		c.confirmHandshake(now)
 	}
 	return 1
+}
+
+var errStatelessReset = errors.New("received stateless reset")
+
+func (c *Conn) handleStatelessReset(resetToken statelessResetToken) {
+	if !c.connIDState.isValidStatelessResetToken(resetToken) {
+		return
+	}
+	c.enterDraining(errStatelessReset)
 }
