@@ -601,6 +601,21 @@ var tokenTests = []tokenTest{
 		`<p  =asd>`,
 		`<p =asd="">`,
 	},
+	{
+		"forward slash before attribute name",
+		`<p/=">`,
+		`<p ="="">`,
+	},
+	{
+		"forward slash before attribute name with spaces around",
+		`<p / =">`,
+		`<p ="="">`,
+	},
+	{
+		"forward slash after attribute name followed by a character",
+		`<p a/ ="">`,
+		`<p a="" =""="">`,
+	},
 }
 
 func TestTokenizer(t *testing.T) {
