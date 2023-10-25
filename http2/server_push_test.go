@@ -517,3 +517,55 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestServer_Push_Underflow(t *testing.T) {
+	// Test for #63511: Send several requests which generate PUSH_PROMISE responses,
+	// verify they all complete successfully.
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RequestURI() {
+		case "/":
+			opt := &http.PushOptions{
+				Header: http.Header{"User-Agent": {"testagent"}},
+			}
+			if err := w.(http.Pusher).Push("/pushed", opt); err != nil {
+				t.Errorf("error pushing: %v", err)
+			}
+			w.WriteHeader(200)
+		case "/pushed":
+			r.Header.Set("User-Agent", "newagent")
+			r.Header.Set("Cookie", "cookie")
+			w.WriteHeader(200)
+		default:
+			t.Errorf("unknown RequestURL %q", r.URL.RequestURI())
+		}
+	})
+	// Send several requests.
+	st.greet()
+	const numRequests = 4
+	for i := 0; i < numRequests; i++ {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      uint32(1 + i*2), // clients send odd numbers
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	// Each request should result in one PUSH_PROMISE and two responses.
+	numPushPromises := 0
+	numHeaders := 0
+	for numHeaders < numRequests*2 || numPushPromises < numRequests {
+		f, err := st.readFrame()
+		if err != nil {
+			st.t.Fatal(err)
+		}
+		switch f := f.(type) {
+		case *HeadersFrame:
+			if !f.Flags.Has(FlagHeadersEndStream) {
+				t.Fatalf("got HEADERS frame with no END_STREAM, expected END_STREAM: %v", f)
+			}
+			numHeaders++
+		case *PushPromiseFrame:
+			numPushPromises++
+		}
+	}
+}
