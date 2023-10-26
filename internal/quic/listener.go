@@ -107,7 +107,7 @@ func (l *Listener) Close(ctx context.Context) error {
 	if !l.closing {
 		l.closing = true
 		for c := range l.conns {
-			c.Abort(errors.New("listener closed"))
+			c.Abort(localTransportError(errNo))
 		}
 		if len(l.conns) == 0 {
 			l.udpConn.Close()
@@ -161,6 +161,7 @@ func (l *Listener) newConn(now time.Time, side connSide, originalDstConnID, retr
 	if err != nil {
 		return nil, err
 	}
+	l.conns[c] = struct{}{}
 	return c, nil
 }
 

@@ -128,7 +128,10 @@ func (tl *testListener) cleanup() {
 }
 
 func (tl *testListener) wait() {
-	tl.idlec <- struct{}{}
+	select {
+	case tl.idlec <- struct{}{}:
+	case <-tl.l.closec:
+	}
 	for _, tc := range tl.conns {
 		tc.wait()
 	}
