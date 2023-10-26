@@ -70,7 +70,8 @@ func TestConnCloseResponseBackoff(t *testing.T) {
 }
 
 func TestConnCloseWithPeerResponse(t *testing.T) {
-	tc := newTestConn(t, clientSide)
+	qr := &qlogRecord{}
+	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
 
 	tc.conn.Abort(nil)
@@ -99,10 +100,19 @@ func TestConnCloseWithPeerResponse(t *testing.T) {
 	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, wantErr) {
 		t.Errorf("non-blocking conn.Wait() = %v, want %v", err, wantErr)
 	}
+
+	tc.advance(1 * time.Second) // long enough to exit the draining state
+	qr.wantEvents(t, jsonEvent{
+		"name": "connectivity:connection_closed",
+		"data": map[string]any{
+			"trigger": "application",
+		},
+	})
 }
 
 func TestConnClosePeerCloses(t *testing.T) {
-	tc := newTestConn(t, clientSide)
+	qr := &qlogRecord{}
+	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
 
 	wantErr := &ApplicationError{
@@ -128,6 +138,14 @@ func TestConnClosePeerCloses(t *testing.T) {
 			code:   9,
 			reason: "because",
 		})
+
+	tc.advance(1 * time.Second) // long enough to exit the draining state
+	qr.wantEvents(t, jsonEvent{
+		"name": "connectivity:connection_closed",
+		"data": map[string]any{
+			"trigger": "application",
+		},
+	})
 }
 
 func TestConnCloseReceiveInInitial(t *testing.T) {

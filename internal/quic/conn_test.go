@@ -198,6 +198,7 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		// The initial connection ID for the server is chosen by the client.
 		cids.srcConnID = testPeerConnID(0)
 		cids.dstConnID = testPeerConnID(-1)
+		cids.originalDstConnID = cids.dstConnID
 	}
 	var configTransportParams []func(*transportParameters)
 	var configTestConn []func(*testConn)

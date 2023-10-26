@@ -130,7 +130,8 @@ func TestStatelessResetSentSizes(t *testing.T) {
 func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 	// "[...] Stateless Reset Token field values from [...] NEW_CONNECTION_ID frames [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.3.1-1
-	tc := newTestConn(t, clientSide)
+	qr := &qlogRecord{}
+	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
 
@@ -158,6 +159,13 @@ func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 	tc.wantIdle("closed connection is idle in draining")
 	tc.advance(1 * time.Second) // long enough to exit the draining state
 	tc.wantIdle("closed connection is idle after draining")
+
+	qr.wantEvents(t, jsonEvent{
+		"name": "connectivity:connection_closed",
+		"data": map[string]any{
+			"trigger": "stateless_reset",
+		},
+	})
 }
 
 func TestStatelessResetSuccessfulTransportParameter(t *testing.T) {

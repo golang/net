@@ -11,7 +11,7 @@
 if [ "$ROLE" == "client" ]; then
         # Wait for the simulator to start up.
         /wait-for-it.sh sim:57832 -s -t 30
-        ./interop -output=/downloads $CLIENT_PARAMS $REQUESTS
+        ./interop -output=/downloads -qlog=$QLOGDIR $CLIENT_PARAMS $REQUESTS
 elif [ "$ROLE" == "server" ]; then
-        ./interop -cert=/certs/cert.pem -key=/certs/priv.key -listen=:443 -root=/www "$@" $SERVER_PARAMS
+        ./interop -cert=/certs/cert.pem -key=/certs/priv.key -qlog=$QLOGDIR -listen=:443 -root=/www "$@" $SERVER_PARAMS
 fi

@@ -8,6 +8,7 @@ package quic
 
 import (
 	"crypto/tls"
+	"log/slog"
 )
 
 // A Config structure configures a QUIC endpoint.
@@ -72,6 +73,16 @@ type Config struct {
 	//
 	// If this field is left as zero, stateless reset is disabled.
 	StatelessResetKey [32]byte
+
+	// QLogLogger receives qlog events.
+	//
+	// Events currently correspond to the definitions in draft-ietf-qlog-quic-events-03.
+	// This is not the latest version of the draft, but is the latest version supported
+	// by common event log viewers as of the time this paragraph was written.
+	//
+	// The qlog package contains a slog.Handler which serializes qlog events
+	// to a standard JSON representation.
+	QLogLogger *slog.Logger
 }
 
 func configDefault(v, def, limit int64) int64 {

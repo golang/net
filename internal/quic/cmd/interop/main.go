@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -25,14 +26,16 @@ import (
 	"sync"
 
 	"golang.org/x/net/internal/quic"
+	"golang.org/x/net/internal/quic/qlog"
 )
 
 var (
-	listen = flag.String("listen", "", "listen address")
-	cert   = flag.String("cert", "", "certificate")
-	pkey   = flag.String("key", "", "private key")
-	root   = flag.String("root", "", "serve files from this root")
-	output = flag.String("output", "", "directory to write files to")
+	listen  = flag.String("listen", "", "listen address")
+	cert    = flag.String("cert", "", "certificate")
+	pkey    = flag.String("key", "", "private key")
+	root    = flag.String("root", "", "serve files from this root")
+	output  = flag.String("output", "", "directory to write files to")
+	qlogdir = flag.String("qlog", "", "directory to write qlog output to")
 )
 
 func main() {
@@ -48,6 +51,10 @@ func main() {
 		},
 		MaxBidiRemoteStreams: -1,
 		MaxUniRemoteStreams:  -1,
+		QLogLogger: slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
+			Level: quic.QLogLevelFrame,
+			Dir:   *qlogdir,
+		})),
 	}
 	if *cert != "" {
 		c, err := tls.LoadX509KeyPair(*cert, *pkey)

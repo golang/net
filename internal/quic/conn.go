@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 )
@@ -60,6 +61,8 @@ type Conn struct {
 	// Tests only: Send a PING in a specific number space.
 	testSendPingSpace numberSpace
 	testSendPing      sentVal
+
+	log *slog.Logger
 }
 
 // connTestHooks override conn behavior in tests.
@@ -94,7 +97,7 @@ type newServerConnIDs struct {
 	retrySrcConnID    []byte // source from server's Retry
 }
 
-func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
+func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort, config *Config, l *Listener) (conn *Conn, _ error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
@@ -106,6 +109,14 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 		idleTimeout:          now.Add(defaultMaxIdleTimeout),
 		peerAckDelayExponent: -1,
 	}
+	defer func() {
+		// If we hit an error in newConn, close donec so tests don't get stuck waiting for it.
+		// This is only relevant if we've got a bug, but it makes tracking that bug down
+		// much easier.
+		if conn == nil {
+			close(c.donec)
+		}
+	}()
 
 	// A one-element buffer allows us to wake a Conn's event loop as a
 	// non-blocking operation.
@@ -135,6 +146,7 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 	// The smallest allowed maximum QUIC datagram size is 1200 bytes.
 	// TODO: PMTU discovery.
 	const maxDatagramSize = 1200
+	c.logConnectionStarted(cids.originalDstConnID, peerAddr)
 	c.keysAppData.init()
 	c.loss.init(c.side, maxDatagramSize, now)
 	c.streamsInit()
@@ -259,6 +271,7 @@ func (c *Conn) loop(now time.Time) {
 	defer close(c.donec)
 	defer c.tls.Close()
 	defer c.listener.connDrained(c)
+	defer c.logConnectionClosed()
 
 	// The connection timer sends a message to the connection loop on expiry.
 	// We need to give it an expiry when creating it, so set the initial timeout to
