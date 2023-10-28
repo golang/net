@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"log"
 	"net/http"
 	"sync"
 )
@@ -42,7 +43,7 @@ var (
 type clientConnPool struct {
 	t *Transport
 
-	mu sync.Mutex // TODO: maybe switch to RWMutex
+	mu sync.RWMutex
 	// TODO: add support for sharing conns based on cert names
 	// (e.g. share conn for googleapis.com and appspot.com)
 	conns        map[string][]*ClientConn // key is host:port
@@ -73,7 +74,13 @@ func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMis
 		return cc, nil
 	}
 	for {
-		p.mu.Lock()
+		locked := p.mu.TryRLock()
+		if locked {
+			log.Printf("getClientConn locked")
+		} else {
+			log.Printf("getClientConn contention, waiting")
+			p.mu.RLock()
+		}
 		for _, cc := range p.conns[addr] {
 			if cc.ReserveNewRequest() {
 				// When a connection is presented to us by the net/http package,
@@ -83,17 +90,17 @@ func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMis
 					traceGetConn(req, addr)
 				}
 				cc.getConnCalled = false
-				p.mu.Unlock()
+				p.mu.RUnlock()
 				return cc, nil
 			}
 		}
 		if !dialOnMiss {
-			p.mu.Unlock()
+			p.mu.RUnlock()
 			return nil, ErrNoCachedConn
 		}
 		traceGetConn(req, addr)
 		call := p.getStartDialLocked(req.Context(), addr)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		<-call.done
 		if shouldRetryDial(call, req) {
 			continue
@@ -140,12 +147,15 @@ func (c *dialCall) dial(ctx context.Context, addr string) {
 	const singleUse = false // shared conn
 	c.res, c.err = c.p.t.dialClientConn(ctx, addr, singleUse)
 
-	c.p.mu.Lock()
+	c.p.mu.RLock()
 	delete(c.p.dialing, addr)
+	c.p.mu.RUnlock()
 	if c.err == nil {
+		log.Printf("dial upgrading to write lock")
+		c.p.mu.Lock()
 		c.p.addConnLocked(addr, c.res)
+		c.p.mu.Unlock()
 	}
-	c.p.mu.Unlock()
 
 	close(c.done)
 }
@@ -198,7 +208,7 @@ func (c *addConnCall) run(t *Transport, key string, tc *tls.Conn) {
 	cc, err := t.NewClientConn(tc)
 
 	p := c.p
-	p.mu.Lock()
+	p.mu.Lock()  // TODO consider xxx
 	if err != nil {
 		c.err = err
 	} else {
