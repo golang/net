@@ -77,6 +77,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysInitial.w, p)
 			if sentInitial != nil {
+				c.idleHandlePacketSent(now, sentInitial)
 				// Client initial packets and ack-eliciting server initial packaets
 				// need to be sent in a datagram padded to at least 1200 bytes.
 				// We can't add the padding yet, however, since we may want to
@@ -104,6 +105,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				logSentPacket(c, packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.payload())
 			}
 			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysHandshake.w, p); sent != nil {
+				c.idleHandlePacketSent(now, sent)
 				c.loss.packetSent(now, handshakeSpace, sent)
 				if c.side == clientSide {
 					// "[...] a client MUST discard Initial keys when it first
@@ -131,6 +133,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				logSentPacket(c, packetType1RTT, pnum, nil, dstConnID, c.w.payload())
 			}
 			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, &c.keysAppData); sent != nil {
+				c.idleHandlePacketSent(now, sent)
 				c.loss.packetSent(now, appDataSpace, sent)
 			}
 		}
@@ -261,6 +264,10 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 		if !c.appendStreamFrames(&c.w, pnum, pto) {
 			return
 		}
+
+		if !c.appendKeepAlive(now) {
+			return
+		}
 	}
 
 	// If this is a PTO probe and we haven't added an ack-eliciting frame yet,
@@ -325,7 +332,7 @@ func (c *Conn) appendAckFrame(now time.Time, space numberSpace) bool {
 }
 
 func (c *Conn) appendConnectionCloseFrame(now time.Time, space numberSpace, err error) {
-	c.lifetime.connCloseSentTime = now
+	c.sentConnectionClose(now)
 	switch e := err.(type) {
 	case localTransportError:
 		c.w.appendConnectionCloseTransportFrame(e.code, 0, e.reason)
@@ -342,11 +349,12 @@ func (c *Conn) appendConnectionCloseFrame(now time.Time, space numberSpace, err 
 		// TLS alerts are sent using error codes [0x0100,0x01ff).
 		// https://www.rfc-editor.org/rfc/rfc9000#section-20.1-2.36.1
 		var alert tls.AlertError
-		if errors.As(err, &alert) {
+		switch {
+		case errors.As(err, &alert):
 			// tls.AlertError is a uint8, so this can't exceed 0x01ff.
 			code := errTLSBase + transportError(alert)
 			c.w.appendConnectionCloseTransportFrame(code, 0, "")
-		} else {
+		default:
 			c.w.appendConnectionCloseTransportFrame(errInternal, 0, "")
 		}
 	}

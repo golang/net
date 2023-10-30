@@ -431,10 +431,13 @@ func (c *lossState) scheduleTimer(now time.Time) {
 		c.timer = time.Time{}
 		return
 	}
-	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.2.1
-	pto := c.ptoBasePeriod() << c.ptoBackoffCount
-	c.timer = last.Add(pto)
+	c.timer = last.Add(c.ptoPeriod())
 	c.ptoTimerArmed = true
+}
+
+func (c *lossState) ptoPeriod() time.Duration {
+	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.2.1
+	return c.ptoBasePeriod() << c.ptoBackoffCount
 }
 
 func (c *lossState) ptoBasePeriod() time.Duration {

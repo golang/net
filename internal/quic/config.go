@@ -9,6 +9,8 @@ package quic
 import (
 	"crypto/tls"
 	"log/slog"
+	"math"
+	"time"
 )
 
 // A Config structure configures a QUIC endpoint.
@@ -74,6 +76,26 @@ type Config struct {
 	// If this field is left as zero, stateless reset is disabled.
 	StatelessResetKey [32]byte
 
+	// HandshakeTimeout is the maximum time in which a connection handshake must complete.
+	// If zero, the default of 10 seconds is used.
+	// If negative, there is no handshake timeout.
+	HandshakeTimeout time.Duration
+
+	// MaxIdleTimeout is the maximum time after which an idle connection will be closed.
+	// If zero, the default of 30 seconds is used.
+	// If negative, idle connections are never closed.
+	//
+	// The idle timeout for a connection is the minimum of the maximum idle timeouts
+	// of the endpoints.
+	MaxIdleTimeout time.Duration
+
+	// KeepAlivePeriod is the time after which a packet will be sent to keep
+	// an idle connection alive.
+	// If zero, keep alive packets are not sent.
+	// If greater than zero, the keep alive period is the smaller of KeepAlivePeriod and
+	// half the connection idle timeout.
+	KeepAlivePeriod time.Duration
+
 	// QLogLogger receives qlog events.
 	//
 	// Events currently correspond to the definitions in draft-ietf-qlog-quic-events-03.
@@ -85,7 +107,7 @@ type Config struct {
 	QLogLogger *slog.Logger
 }
 
-func configDefault(v, def, limit int64) int64 {
+func configDefault[T ~int64](v, def, limit T) T {
 	switch {
 	case v == 0:
 		return def
@@ -114,4 +136,16 @@ func (c *Config) maxStreamWriteBufferSize() int64 {
 
 func (c *Config) maxConnReadBufferSize() int64 {
 	return configDefault(c.MaxConnReadBufferSize, 1<<20, maxVarint)
+}
+
+func (c *Config) handshakeTimeout() time.Duration {
+	return configDefault(c.HandshakeTimeout, defaultHandshakeTimeout, math.MaxInt64)
+}
+
+func (c *Config) maxIdleTimeout() time.Duration {
+	return configDefault(c.MaxIdleTimeout, defaultMaxIdleTimeout, math.MaxInt64)
+}
+
+func (c *Config) keepAlivePeriod() time.Duration {
+	return configDefault(c.KeepAlivePeriod, defaultKeepAlivePeriod, math.MaxInt64)
 }

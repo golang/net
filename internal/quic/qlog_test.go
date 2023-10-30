@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"reflect"
 	"testing"
+	"time"
 
 	"golang.org/x/net/internal/quic/qlog"
 )
@@ -52,6 +53,75 @@ func TestQLogHandshake(t *testing.T) {
 			},
 		})
 	})
+}
+
+func TestQLogConnectionClosedTrigger(t *testing.T) {
+	for _, test := range []struct {
+		trigger  string
+		connOpts []any
+		f        func(*testConn)
+	}{{
+		trigger: "clean",
+		f: func(tc *testConn) {
+			tc.handshake()
+			tc.conn.Abort(nil)
+		},
+	}, {
+		trigger: "handshake_timeout",
+		connOpts: []any{
+			func(c *Config) {
+				c.HandshakeTimeout = 5 * time.Second
+			},
+		},
+		f: func(tc *testConn) {
+			tc.ignoreFrame(frameTypeCrypto)
+			tc.ignoreFrame(frameTypeAck)
+			tc.ignoreFrame(frameTypePing)
+			tc.advance(5 * time.Second)
+		},
+	}, {
+		trigger: "idle_timeout",
+		connOpts: []any{
+			func(c *Config) {
+				c.MaxIdleTimeout = 5 * time.Second
+			},
+		},
+		f: func(tc *testConn) {
+			tc.handshake()
+			tc.advance(5 * time.Second)
+		},
+	}, {
+		trigger: "error",
+		f: func(tc *testConn) {
+			tc.handshake()
+			tc.writeFrames(packetType1RTT, debugFrameConnectionCloseTransport{
+				code: errProtocolViolation,
+			})
+			tc.conn.Abort(nil)
+		},
+	}} {
+		t.Run(test.trigger, func(t *testing.T) {
+			qr := &qlogRecord{}
+			tc := newTestConn(t, clientSide, append(test.connOpts, qr.config)...)
+			test.f(tc)
+			fr, ptype := tc.readFrame()
+			switch fr := fr.(type) {
+			case debugFrameConnectionCloseTransport:
+				tc.writeFrames(ptype, fr)
+			case nil:
+			default:
+				t.Fatalf("unexpected frame: %v", fr)
+			}
+			tc.wantIdle("connection should be idle while closing")
+			tc.advance(5 * time.Second) // long enough for the drain timer to expire
+			qr.wantEvents(t, jsonEvent{
+				"name": "connectivity:connection_closed",
+				"data": map[string]any{
+					"trigger": test.trigger,
+				},
+			})
+		})
+	}
 }
 
 type nopCloseWriter struct {

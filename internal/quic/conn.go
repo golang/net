@@ -26,21 +26,16 @@ type Conn struct {
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
 
-	msgc   chan any
-	donec  chan struct{} // closed when conn loop exits
-	exited bool          // set to make the conn loop exit immediately
+	msgc  chan any
+	donec chan struct{} // closed when conn loop exits
 
 	w           packetWriter
 	acks        [numberSpaceCount]ackState // indexed by number space
 	lifetime    lifetimeState
+	idle        idleState
 	connIDState connIDState
 	loss        lossState
 	streams     streamsState
-
-	// idleTimeout is the time at which the connection will be closed due to inactivity.
-	// https://www.rfc-editor.org/rfc/rfc9000#section-10.1
-	maxIdleTimeout time.Duration
-	idleTimeout    time.Time
 
 	// Packet protection keys, CRYPTO streams, and TLS state.
 	keysInitial   fixedKeyPair
@@ -105,8 +100,6 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
-		maxIdleTimeout:       defaultMaxIdleTimeout,
-		idleTimeout:          now.Add(defaultMaxIdleTimeout),
 		peerAckDelayExponent: -1,
 	}
 	defer func() {
@@ -151,6 +144,7 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 	c.loss.init(c.side, maxDatagramSize, now)
 	c.streamsInit()
 	c.lifetimeInit()
+	c.restartIdleTimer(now)
 
 	if err := c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),
@@ -202,6 +196,7 @@ func (c *Conn) confirmHandshake(now time.Time) {
 		// don't need to send anything.
 		c.handshakeConfirmed.setReceived()
 	}
+	c.restartIdleTimer(now)
 	c.loss.confirmHandshake()
 	// "An endpoint MUST discard its Handshake keys when the TLS handshake is confirmed"
 	// https://www.rfc-editor.org/rfc/rfc9001#section-4.9.2-1
@@ -232,6 +227,7 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 	c.streams.peerInitialMaxStreamDataBidiLocal = p.initialMaxStreamDataBidiLocal
 	c.streams.peerInitialMaxStreamDataRemote[bidiStream] = p.initialMaxStreamDataBidiRemote
 	c.streams.peerInitialMaxStreamDataRemote[uniStream] = p.initialMaxStreamDataUni
+	c.receivePeerMaxIdleTimeout(p.maxIdleTimeout)
 	c.peerAckDelayExponent = p.ackDelayExponent
 	c.loss.setMaxAckDelay(p.maxAckDelay)
 	if err := c.connIDState.setPeerActiveConnIDLimit(c, p.activeConnIDLimit); err != nil {
@@ -248,7 +244,6 @@ func (c *Conn) receiveTransportParameters(p transportParameters) error {
 			return err
 		}
 	}
-	// TODO: max_idle_timeout
 	// TODO: stateless_reset_token
 	// TODO: max_udp_payload_size
 	// TODO: disable_active_migration
@@ -260,6 +255,8 @@ type (
 	timerEvent struct{}
 	wakeEvent  struct{}
 )
+
+var errIdleTimeout = errors.New("idle timeout")
 
 // loop is the connection main loop.
 //
@@ -288,14 +285,14 @@ func (c *Conn) loop(now time.Time) {
 		defer timer.Stop()
 	}
 
-	for !c.exited {
+	for c.lifetime.state != connStateDone {
 		sendTimeout := c.maybeSend(now) // try sending
 
 		// Note that we only need to consider the ack timer for the App Data space,
 		// since the Initial and Handshake spaces always ack immediately.
 		nextTimeout := sendTimeout
-		nextTimeout = firstTime(nextTimeout, c.idleTimeout)
-		if !c.isClosingOrDraining() {
+		nextTimeout = firstTime(nextTimeout, c.idle.nextTimeout)
+		if c.isAlive() {
 			nextTimeout = firstTime(nextTimeout, c.loss.timer)
 			nextTimeout = firstTime(nextTimeout, c.acks[appDataSpace].nextAck)
 		} else {
@@ -329,11 +326,9 @@ func (c *Conn) loop(now time.Time) {
 			m.recycle()
 		case timerEvent:
 			// A connection timer has expired.
-			if !now.Before(c.idleTimeout) {
-				// "[...] the connection is silently closed and
-				// its state is discarded [...]"
-				// https://www.rfc-editor.org/rfc/rfc9000#section-10.1-1
-				c.exited = true
+			if c.idleAdvance(now) {
+				// The connection idle timer has expired.
+				c.abortImmediately(now, errIdleTimeout)
 				return
 			}
 			c.loss.advance(now, c.handleAckOrLoss)

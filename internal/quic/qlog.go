@@ -119,8 +119,13 @@ func (c *Conn) logConnectionClosed() {
 		// TODO: Distinguish between peer and locally-initiated close.
 		trigger = "application"
 	case localTransportError:
-		if e.code == errNo {
-			trigger = "clean"
+		switch err {
+		case errHandshakeTimeout:
+			trigger = "handshake_timeout"
+		default:
+			if e.code == errNo {
+				trigger = "clean"
+			}
 		}
 	case peerTransportError:
 		if e.code == errNo {
@@ -128,10 +133,11 @@ func (c *Conn) logConnectionClosed() {
 		}
 	default:
 		switch err {
+		case errIdleTimeout:
+			trigger = "idle_timeout"
 		case errStatelessReset:
 			trigger = "stateless_reset"
 		}
-		// TODO: idle_timeout, handshake_timeout
 	}
 	// https://www.ietf.org/archive/id/draft-ietf-quic-qlog-quic-events-03.html#section-4.3
 	c.log.LogAttrs(context.Background(), QLogLevelEndpoint,

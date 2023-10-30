@@ -61,7 +61,7 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			// Invalid data at the end of a datagram is ignored.
 			break
 		}
-		c.idleTimeout = now.Add(c.maxIdleTimeout)
+		c.idleHandlePacketReceived(now)
 		buf = buf[n:]
 	}
 }
@@ -525,7 +525,7 @@ func (c *Conn) handleConnectionCloseTransportFrame(now time.Time, payload []byte
 	if n < 0 {
 		return -1
 	}
-	c.enterDraining(now, peerTransportError{code: code, reason: reason})
+	c.handlePeerConnectionClose(now, peerTransportError{code: code, reason: reason})
 	return n
 }
 
@@ -534,7 +534,7 @@ func (c *Conn) handleConnectionCloseApplicationFrame(now time.Time, payload []by
 	if n < 0 {
 		return -1
 	}
-	c.enterDraining(now, &ApplicationError{Code: code, Reason: reason})
+	c.handlePeerConnectionClose(now, &ApplicationError{Code: code, Reason: reason})
 	return n
 }
 
@@ -548,7 +548,7 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 		})
 		return -1
 	}
-	if !c.isClosingOrDraining() {
+	if c.isAlive() {
 		c.confirmHandshake(now)
 	}
 	return 1
@@ -560,5 +560,6 @@ func (c *Conn) handleStatelessReset(now time.Time, resetToken statelessResetToke
 	if !c.connIDState.isValidStatelessResetToken(resetToken) {
 		return
 	}
-	c.enterDraining(now, errStatelessReset)
+	c.setFinalError(errStatelessReset)
+	c.enterDraining(now)
 }

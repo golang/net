@@ -54,6 +54,12 @@ const (
 	maxPeerActiveConnIDLimit = 4
 )
 
+// Time limit for completing the handshake.
+const defaultHandshakeTimeout = 10 * time.Second
+
+// Keep-alive ping frequency.
+const defaultKeepAlivePeriod = 0
+
 // Local timer granularity.
 // https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
 const timerGranularity = 1 * time.Millisecond

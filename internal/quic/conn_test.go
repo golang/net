@@ -25,6 +25,7 @@ var testVV = flag.Bool("vv", false, "even more verbose test output")
 
 func TestConnTestConn(t *testing.T) {
 	tc := newTestConn(t, serverSide)
+	tc.handshake()
 	if got, want := tc.timeUntilEvent(), defaultMaxIdleTimeout; got != want {
 		t.Errorf("new conn timeout=%v, want %v (max_idle_timeout)", got, want)
 	}
@@ -49,8 +50,8 @@ func TestConnTestConn(t *testing.T) {
 	tc.wait()
 
 	tc.advanceToTimer()
-	if !tc.conn.exited {
-		t.Errorf("after advancing to idle timeout, exited = false, want true")
+	if got := tc.conn.lifetime.state; got != connStateDone {
+		t.Errorf("after advancing to idle timeout, conn state = %v, want done", got)
 	}
 }
 
