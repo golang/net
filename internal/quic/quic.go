@@ -64,10 +64,14 @@ const defaultKeepAlivePeriod = 0
 // https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
 const timerGranularity = 1 * time.Millisecond
 
+// The smallest allowed maximum datagram size.
+// https://www.rfc-editor.org/rfc/rfc9000#section-14
+const smallestMaxDatagramSize = 1200
+
 // Minimum size of a UDP datagram sent by a client carrying an Initial packet,
 // or a server containing an ack-eliciting Initial packet.
 // https://www.rfc-editor.org/rfc/rfc9000#section-14.1
-const paddedInitialDatagramSize = 1200
+const paddedInitialDatagramSize = smallestMaxDatagramSize
 
 // Maximum number of streams of a given type which may be created.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-4.6-2

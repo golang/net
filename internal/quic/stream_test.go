@@ -38,6 +38,7 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 		if n != writeBufferSize || err != context.Canceled {
 			t.Fatalf("s.WriteContext() = %v, %v; want %v, context.Canceled", n, err, writeBufferSize)
 		}
+		s.Flush()
 		tc.wantFrame("first write buffer of data sent",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -47,7 +48,9 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 
 		// Blocking write, which must wait for buffer space.
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.WriteContext(ctx, want[writeBufferSize:])
+			n, err := s.WriteContext(ctx, want[writeBufferSize:])
+			s.Flush()
+			return n, err
 		})
 		tc.wantIdle("write buffer is full, no more data can be sent")
 
@@ -170,6 +173,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 			t.Fatal(err)
 		}
 		s.WriteContext(ctx, want[:1])
+		s.Flush()
 		tc.wantFrame("sent data (1 byte) fits within flow control limit",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -723,7 +727,7 @@ func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFra
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.Write(nil) // open the stream
+		s.Flush() // open the stream
 		tc.wantFrame("new stream is opened",
 			packetType1RTT, debugFrameStream{
 				id:   sid,
@@ -968,7 +972,9 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 	want := make([]byte, 4096)
 	rand.Read(want) // doesn't need to be crypto/rand, but non-deprecated and harmless
 	w := runAsync(tc, func(ctx context.Context) (int, error) {
-		return s.WriteContext(ctx, want)
+		n, err := s.WriteContext(ctx, want)
+		s.Flush()
+		return n, err
 	})
 	got := make([]byte, 0, len(want))
 	for {
@@ -998,6 +1004,7 @@ func TestStreamCloseWaitsForAcks(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	data := make([]byte, 100)
 	s.WriteContext(ctx, data)
+	s.Flush()
 	tc.wantFrame("conn sends data for the stream",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,
@@ -1064,6 +1071,7 @@ func TestStreamCloseUnblocked(t *testing.T) {
 			tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 			data := make([]byte, 100)
 			s.WriteContext(ctx, data)
+			s.Flush()
 			tc.wantFrame("conn sends data for the stream",
 				packetType1RTT, debugFrameStream{
 					id:   s.id,
@@ -1228,6 +1236,7 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 		tc, s := newTestConnAndLocalStream(t, serverSide, styp, permissiveTransportParameters)
 		for i := 0; i < 4; i++ {
 			s.Write([]byte{byte(i)})
+			s.Flush()
 			tc.wantFrame("write sends a STREAM frame to peer",
 				packetType1RTT, debugFrameStream{
 					id:   s.id,
@@ -1269,6 +1278,99 @@ func TestStreamReceiveDataBlocked(t *testing.T) {
 		max: 100,
 	})
 	tc.wantIdle("no response to STREAM_DATA_BLOCKED and DATA_BLOCKED")
+}
+
+func TestStreamFlushExplicit(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndLocalStream(t, clientSide, styp, permissiveTransportParameters)
+		want := []byte{0, 1, 2, 3}
+		n, err := s.Write(want)
+		if n != len(want) || err != nil {
+			t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(want))
+		}
+		tc.wantIdle("unflushed data is not sent")
+		s.Flush()
+		tc.wantFrame("data is sent after flush",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				data: want,
+			})
+	})
+}
+
+func TestStreamFlushImplicitExact(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		const writeBufferSize = 4
+		tc, s := newTestConnAndLocalStream(t, clientSide, styp,
+			permissiveTransportParameters,
+			func(c *Config) {
+				c.MaxStreamWriteBufferSize = writeBufferSize
+			})
+		want := []byte{0, 1, 2, 3, 4, 5, 6}
+
+		// This write doesn't quite fill the output buffer.
+		n, err := s.Write(want[:3])
+		if n != 3 || err != nil {
+			t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(want))
+		}
+		tc.wantIdle("unflushed data is not sent")
+
+		// This write fills the output buffer exactly.
+		n, err = s.Write(want[3:4])
+		if n != 1 || err != nil {
+			t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(want))
+		}
+		tc.wantFrame("data is sent after write buffer fills",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				data: want[0:4],
+			})
+
+	})
+}
+
+func TestStreamFlushImplicitLargerThanBuffer(t *testing.T) {
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		const writeBufferSize = 4
+		tc, s := newTestConnAndLocalStream(t, clientSide, styp,
+			permissiveTransportParameters,
+			func(c *Config) {
+				c.MaxStreamWriteBufferSize = writeBufferSize
+			})
+		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+		w := runAsync(tc, func(ctx context.Context) (int, error) {
+			n, err := s.WriteContext(ctx, want)
+			return n, err
+		})
+
+		tc.wantFrame("data is sent after write buffer fills",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				data: want[0:4],
+			})
+		tc.writeAckForAll()
+		tc.wantFrame("ack permits sending more data",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				off:  4,
+				data: want[4:8],
+			})
+		tc.writeAckForAll()
+
+		tc.wantIdle("write buffer is not full")
+		if n, err := w.result(); n != len(want) || err != nil {
+			t.Fatalf("Write() = %v, %v; want %v, nil", n, err, len(want))
+		}
+
+		s.Flush()
+		tc.wantFrame("flush sends last buffer of data",
+			packetType1RTT, debugFrameStream{
+				id:   s.id,
+				off:  8,
+				data: want[8:],
+			})
+	})
 }
 
 type streamSide string

@@ -19,33 +19,33 @@ func TestStreamsCreate(t *testing.T) {
 	tc := newTestConn(t, clientSide, permissiveTransportParameters)
 	tc.handshake()
 
-	c, err := tc.conn.NewStream(ctx)
+	s, err := tc.conn.NewStream(ctx)
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}
-	c.Write(nil) // open the stream
+	s.Flush() // open the stream
 	tc.wantFrame("created bidirectional stream 0",
 		packetType1RTT, debugFrameStream{
 			id:   0, // client-initiated, bidi, number 0
 			data: []byte{},
 		})
 
-	c, err = tc.conn.NewSendOnlyStream(ctx)
+	s, err = tc.conn.NewSendOnlyStream(ctx)
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}
-	c.Write(nil) // open the stream
+	s.Flush() // open the stream
 	tc.wantFrame("created unidirectional stream 0",
 		packetType1RTT, debugFrameStream{
 			id:   2, // client-initiated, uni, number 0
 			data: []byte{},
 		})
 
-	c, err = tc.conn.NewStream(ctx)
+	s, err = tc.conn.NewStream(ctx)
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}
-	c.Write(nil) // open the stream
+	s.Flush() // open the stream
 	tc.wantFrame("created bidirectional stream 1",
 		packetType1RTT, debugFrameStream{
 			id:   4, // client-initiated, uni, number 4
@@ -177,11 +177,11 @@ func TestStreamsStreamSendOnly(t *testing.T) {
 	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.handshake()
 
-	c, err := tc.conn.NewSendOnlyStream(ctx)
+	s, err := tc.conn.NewSendOnlyStream(ctx)
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}
-	c.Write(nil) // open the stream
+	s.Flush() // open the stream
 	tc.wantFrame("created unidirectional stream 0",
 		packetType1RTT, debugFrameStream{
 			id:   3, // server-initiated, uni, number 0

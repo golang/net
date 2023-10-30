@@ -183,7 +183,7 @@ func TestLostStreamFrameEmpty(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewStream: %v", err)
 		}
-		c.Write(nil) // open the stream
+		c.Flush() // open the stream
 		tc.wantFrame("created bidirectional stream 0",
 			packetType1RTT, debugFrameStream{
 				id:   newStreamID(clientSide, bidiStream, 0),
@@ -213,6 +213,7 @@ func TestLostStreamWithData(t *testing.T) {
 			p.initialMaxStreamDataUni = 1 << 20
 		})
 		s.Write(data[:4])
+		s.Flush()
 		tc.wantFrame("send [0,4)",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -220,6 +221,7 @@ func TestLostStreamWithData(t *testing.T) {
 				data: data[:4],
 			})
 		s.Write(data[4:8])
+		s.Flush()
 		tc.wantFrame("send [4,8)",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -263,6 +265,7 @@ func TestLostStreamPartialLoss(t *testing.T) {
 	})
 	for i := range data {
 		s.Write(data[i : i+1])
+		s.Flush()
 		tc.wantFrame(fmt.Sprintf("send STREAM frame with byte %v", i),
 			packetType1RTT, debugFrameStream{
 				id:   s.id,

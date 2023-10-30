@@ -262,6 +262,7 @@ func TestConnOutflowBlocked(t *testing.T) {
 	if n != len(data) || err != nil {
 		t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(data))
 	}
+	s.Flush()
 
 	tc.wantFrame("stream writes data up to MAX_DATA limit",
 		packetType1RTT, debugFrameStream{
@@ -310,6 +311,7 @@ func TestConnOutflowMaxDataDecreases(t *testing.T) {
 	if n != len(data) || err != nil {
 		t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(data))
 	}
+	s.Flush()
 
 	tc.wantFrame("stream writes data up to MAX_DATA limit",
 		packetType1RTT, debugFrameStream{
@@ -337,7 +339,9 @@ func TestConnOutflowMaxDataRoundRobin(t *testing.T) {
 	}
 
 	s1.Write(make([]byte, 10))
+	s1.Flush()
 	s2.Write(make([]byte, 10))
+	s2.Flush()
 
 	tc.writeFrames(packetType1RTT, debugFrameMaxData{
 		max: 1,
@@ -378,6 +382,7 @@ func TestConnOutflowMetaAndData(t *testing.T) {
 
 	data := makeTestData(32)
 	s.Write(data)
+	s.Flush()
 
 	s.CloseRead()
 	tc.wantFrame("CloseRead sends a STOP_SENDING, not flow controlled",
@@ -405,6 +410,7 @@ func TestConnOutflowResentData(t *testing.T) {
 
 	data := makeTestData(15)
 	s.Write(data[:8])
+	s.Flush()
 	tc.wantFrame("data is under MAX_DATA limit, all sent",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,
@@ -421,6 +427,7 @@ func TestConnOutflowResentData(t *testing.T) {
 		})
 
 	s.Write(data[8:])
+	s.Flush()
 	tc.wantFrame("new data is sent up to the MAX_DATA limit",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,

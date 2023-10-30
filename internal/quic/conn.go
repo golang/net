@@ -136,12 +136,10 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 		}
 	}
 
-	// The smallest allowed maximum QUIC datagram size is 1200 bytes.
 	// TODO: PMTU discovery.
-	const maxDatagramSize = 1200
 	c.logConnectionStarted(cids.originalDstConnID, peerAddr)
 	c.keysAppData.init()
-	c.loss.init(c.side, maxDatagramSize, now)
+	c.loss.init(c.side, smallestMaxDatagramSize, now)
 	c.streamsInit()
 	c.lifetimeInit()
 	c.restartIdleTimer(now)

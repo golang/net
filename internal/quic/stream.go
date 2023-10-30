@@ -38,10 +38,11 @@ type Stream struct {
 	// the write will fail.
 	outgate      gate
 	out          pipe            // buffered data to send
+	outflushed   int64           // offset of last flush call
 	outwin       int64           // maximum MAX_STREAM_DATA received from the peer
 	outmaxsent   int64           // maximum data offset we've sent to the peer
 	outmaxbuf    int64           // maximum amount of data we will buffer
-	outunsent    rangeset[int64] // ranges buffered but not yet sent
+	outunsent    rangeset[int64] // ranges buffered but not yet sent (only flushed data)
 	outacked     rangeset[int64] // ranges sent and acknowledged
 	outopened    sentVal         // set if we should open the stream
 	outclosed    sentVal         // set by CloseWrite
@@ -240,8 +241,6 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 // WriteContext writes data to the stream write buffer.
 // Buffered data is only sent when the buffer is sufficiently full.
 // Call the Flush method to ensure buffered data is sent.
-//
-// TODO: Implement Flush.
 func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) {
 	if s.IsReadOnly() {
 		return 0, errors.New("write to read-only stream")
@@ -269,10 +268,6 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 			s.outUnlock()
 			return n, errors.New("write to closed stream")
 		}
-		// We set outopened here rather than below,
-		// so if this is a zero-length write we still
-		// open the stream despite not writing any data to it.
-		s.outopened.set()
 		if len(b) == 0 {
 			break
 		}
@@ -282,13 +277,26 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 		// Amount to write is min(the full buffer, data up to the write limit).
 		// This is a number of bytes.
 		nn := min(int64(len(b)), lim-s.out.end)
-		// Copy the data into the output buffer and mark it as unsent.
-		if s.out.end <= s.outwin {
-			s.outunsent.add(s.out.end, min(s.out.end+nn, s.outwin))
-		}
+		// Copy the data into the output buffer.
 		s.out.writeAt(b[:nn], s.out.end)
 		b = b[nn:]
 		n += int(nn)
+		// Possibly flush the output buffer.
+		// We automatically flush if:
+		//   - We have enough data to consume the send window.
+		//     Sending this data may cause the peer to extend the window.
+		//   - We have buffered as much data as we're willing do.
+		//     We need to send data to clear out buffer space.
+		//   - We have enough data to fill a 1-RTT packet using the smallest
+		//     possible maximum datagram size (1200 bytes, less header byte,
+		//     connection ID, packet number, and AEAD overhead).
+		const autoFlushSize = smallestMaxDatagramSize - 1 - connIDLen - 1 - aeadOverhead
+		shouldFlush := s.out.end >= s.outwin || // peer send window is full
+			s.out.end >= lim || // local send buffer is full
+			(s.out.end-s.outflushed) >= autoFlushSize // enough data buffered
+		if shouldFlush {
+			s.flushLocked()
+		}
 		if s.out.end > s.outwin {
 			// We're blocked by flow control.
 			// Send a STREAM_DATA_BLOCKED frame to let the peer know.
@@ -299,6 +307,23 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 	}
 	s.outUnlock()
 	return n, nil
+}
+
+// Flush flushes data written to the stream.
+// It does not wait for the peer to acknowledge receipt of the data.
+// Use CloseContext to wait for the peer's acknowledgement.
+func (s *Stream) Flush() {
+	s.outgate.lock()
+	defer s.outUnlock()
+	s.flushLocked()
+}
+
+func (s *Stream) flushLocked() {
+	s.outopened.set()
+	if s.outflushed < s.outwin {
+		s.outunsent.add(s.outflushed, min(s.outwin, s.out.end))
+	}
+	s.outflushed = s.out.end
 }
 
 // Close closes the stream.
@@ -363,6 +388,7 @@ func (s *Stream) CloseWrite() {
 	s.outgate.lock()
 	defer s.outUnlock()
 	s.outclosed.set()
+	s.flushLocked()
 }
 
 // Reset aborts writes on the stream and notifies the peer
@@ -612,8 +638,8 @@ func (s *Stream) handleMaxStreamData(maxStreamData int64) error {
 	if maxStreamData <= s.outwin {
 		return nil
 	}
-	if s.out.end > s.outwin {
-		s.outunsent.add(s.outwin, min(maxStreamData, s.out.end))
+	if s.outflushed > s.outwin {
+		s.outunsent.add(s.outwin, min(maxStreamData, s.outflushed))
 	}
 	s.outwin = maxStreamData
 	if s.out.end > s.outwin {
@@ -741,10 +767,11 @@ func (s *Stream) appendOutFramesLocked(w *packetWriter, pnum packetNumber, pto b
 	}
 	for {
 		// STREAM
-		off, size := dataToSend(min(s.out.start, s.outwin), min(s.out.end, s.outwin), s.outunsent, s.outacked, pto)
+		off, size := dataToSend(min(s.out.start, s.outwin), min(s.outflushed, s.outwin), s.outunsent, s.outacked, pto)
 		if end := off + size; end > s.outmaxsent {
 			// This will require connection-level flow control to send.
 			end = min(end, s.outmaxsent+s.conn.streams.outflow.avail())
+			end = max(end, off)
 			size = end - off
 		}
 		fin := s.outclosed.isSet() && off+size == s.out.end
