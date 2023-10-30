@@ -97,12 +97,13 @@ func (s *connIDState) initClient(c *Conn) error {
 }
 
 func (s *connIDState) initServer(c *Conn, dstConnID []byte) error {
+	dstConnID = cloneBytes(dstConnID)
 	// Client-chosen, transient connection ID received in the first Initial packet.
 	// The server will not use this as the Source Connection ID of packets it sends,
 	// but remembers it because it may receive packets sent to this destination.
 	s.local = append(s.local, connID{
 		seq: -1,
-		cid: cloneBytes(dstConnID),
+		cid: dstConnID,
 	})
 
 	// Server chooses a connection ID, and sends it in the Source Connection ID of
