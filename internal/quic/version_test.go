@@ -17,7 +17,7 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 	config := &Config{
 		TLSConfig: newTestTLSConfig(serverSide),
 	}
-	tl := newTestListener(t, config)
+	te := newTestEndpoint(t, config)
 
 	// Packet of unknown contents for some unrecognized QUIC version.
 	dstConnID := []byte{1, 2, 3, 4}
@@ -34,10 +34,10 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 		pkt = append(pkt, 0)
 	}
 
-	tl.write(&datagram{
+	te.write(&datagram{
 		b: pkt,
 	})
-	gotPkt := tl.read()
+	gotPkt := te.read()
 	if gotPkt == nil {
 		t.Fatalf("got no response; want Version Negotiaion")
 	}
@@ -59,7 +59,7 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 func TestVersionNegotiationClientAborts(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	p := tc.readPacket() // client Initial packet
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: appendVersionNegotiation(nil, p.srcConnID, p.dstConnID, 10),
 	})
 	tc.wantIdle("connection does not send a CONNECTION_CLOSE")
@@ -76,7 +76,7 @@ func TestVersionNegotiationClientIgnoresAfterProcessingPacket(t *testing.T) {
 		debugFrameCrypto{
 			data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
 		})
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: appendVersionNegotiation(nil, p.srcConnID, p.dstConnID, 10),
 	})
 	if err := tc.conn.waitReady(canceledContext()); err != context.Canceled {
@@ -94,7 +94,7 @@ func TestVersionNegotiationClientIgnoresMismatchingSourceConnID(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.ignoreFrame(frameTypeAck)
 	p := tc.readPacket() // client Initial packet
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: appendVersionNegotiation(nil, p.srcConnID, []byte("mismatch"), 10),
 	})
 	tc.writeFrames(packetTypeInitial,

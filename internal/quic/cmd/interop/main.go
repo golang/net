@@ -157,7 +157,7 @@ func basicTest(ctx context.Context, config *quic.Config, urls []string) {
 	}
 }
 
-func serve(ctx context.Context, l *quic.Listener) error {
+func serve(ctx context.Context, l *quic.Endpoint) error {
 	for {
 		c, err := l.Accept(ctx)
 		if err != nil {
@@ -221,7 +221,7 @@ func parseURL(s string) (u *url.URL, authority string, err error) {
 	return u, authority, nil
 }
 
-func fetchFrom(ctx context.Context, l *quic.Listener, addr string, urls []*url.URL) {
+func fetchFrom(ctx context.Context, l *quic.Endpoint, addr string, urls []*url.URL) {
 	conn, err := l.Dial(ctx, "udp", addr)
 	if err != nil {
 		log.Printf("%v: %v", addr, err)

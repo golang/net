@@ -36,7 +36,7 @@ func (tc *testConn) handshake() {
 	for {
 		if i == len(dgrams)-1 {
 			if tc.conn.side == clientSide {
-				want := tc.listener.now.Add(maxAckDelay - timerGranularity)
+				want := tc.endpoint.now.Add(maxAckDelay - timerGranularity)
 				if !tc.timer.Equal(want) {
 					t.Fatalf("want timer = %v (max_ack_delay), got %v", want, tc.timer)
 				}
@@ -85,7 +85,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 		testPeerConnID(0),
 		testPeerConnID(1),
 	}
-	localResetToken := tc.listener.l.resetGen.tokenForConnID(localConnIDs[1])
+	localResetToken := tc.endpoint.e.resetGen.tokenForConnID(localConnIDs[1])
 	peerResetToken := testPeerStatelessResetToken(1)
 	if tc.conn.side == clientSide {
 		clientConnIDs = localConnIDs

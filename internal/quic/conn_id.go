@@ -76,7 +76,7 @@ func (s *connIDState) initClient(c *Conn) error {
 		cid: locid,
 	})
 	s.nextLocalSeq = 1
-	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+	c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 		conns.addConnID(c, locid)
 	})
 
@@ -117,7 +117,7 @@ func (s *connIDState) initServer(c *Conn, cids newServerConnIDs) error {
 		cid: locid,
 	})
 	s.nextLocalSeq = 1
-	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+	c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 		conns.addConnID(c, dstConnID)
 		conns.addConnID(c, locid)
 	})
@@ -194,7 +194,7 @@ func (s *connIDState) issueLocalIDs(c *Conn) error {
 		s.needSend = true
 		toIssue--
 	}
-	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+	c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 		for _, cid := range newIDs {
 			conns.addConnID(c, cid)
 		}
@@ -247,7 +247,7 @@ func (s *connIDState) validateTransportParameters(c *Conn, isRetry bool, p trans
 		}
 		token := statelessResetToken(p.statelessResetToken)
 		s.remote[0].resetToken = token
-		c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+		c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 			conns.addResetToken(c, token)
 		})
 	}
@@ -276,7 +276,7 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 			// the client. Discard the transient, client-chosen connection ID used
 			// for Initial packets; the client will never send it again.
 			cid := s.local[0].cid
-			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+			c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 				conns.retireConnID(c, cid)
 			})
 			s.local = append(s.local[:0], s.local[1:]...)
@@ -314,7 +314,7 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 		rcid := &s.remote[i]
 		if !rcid.retired && rcid.seq >= 0 && rcid.seq < s.retireRemotePriorTo {
 			s.retireRemote(rcid)
-			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+			c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 				conns.retireResetToken(c, rcid.resetToken)
 			})
 		}
@@ -350,7 +350,7 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 			s.retireRemote(&s.remote[len(s.remote)-1])
 		} else {
 			active++
-			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+			c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 				conns.addResetToken(c, resetToken)
 			})
 		}
@@ -399,7 +399,7 @@ func (s *connIDState) handleRetireConnID(c *Conn, seq int64) error {
 	for i := range s.local {
 		if s.local[i].seq == seq {
 			cid := s.local[i].cid
-			c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
+			c.endpoint.connsMap.updateConnIDs(func(conns *connsMap) {
 				conns.retireConnID(c, cid)
 			})
 			s.local = append(s.local[:i], s.local[i+1:]...)
@@ -463,7 +463,7 @@ func (s *connIDState) appendFrames(c *Conn, pnum packetNumber, pto bool) bool {
 			s.local[i].seq,
 			retireBefore,
 			s.local[i].cid,
-			c.listener.resetGen.tokenForConnID(s.local[i].cid),
+			c.endpoint.resetGen.tokenForConnID(s.local[i].cid),
 		) {
 			return false
 		}

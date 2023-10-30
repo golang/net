@@ -34,12 +34,12 @@ func TestConnTestConn(t *testing.T) {
 	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
 		ranAt = now
 	})
-	if !ranAt.Equal(tc.listener.now) {
-		t.Errorf("func ran on loop at %v, want %v", ranAt, tc.listener.now)
+	if !ranAt.Equal(tc.endpoint.now) {
+		t.Errorf("func ran on loop at %v, want %v", ranAt, tc.endpoint.now)
 	}
 	tc.wait()
 
-	nextTime := tc.listener.now.Add(defaultMaxIdleTimeout / 2)
+	nextTime := tc.endpoint.now.Add(defaultMaxIdleTimeout / 2)
 	tc.advanceTo(nextTime)
 	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
 		ranAt = now
@@ -117,7 +117,7 @@ const maxTestKeyPhases = 3
 type testConn struct {
 	t              *testing.T
 	conn           *Conn
-	listener       *testListener
+	endpoint       *testEndpoint
 	timer          time.Time
 	timerLastFired time.Time
 	idlec          chan struct{} // only accessed on the conn's loop
@@ -220,27 +220,27 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		}
 	}
 
-	listener := newTestListener(t, config)
-	listener.configTransportParams = configTransportParams
-	listener.configTestConn = configTestConn
-	conn, err := listener.l.newConn(
-		listener.now,
+	endpoint := newTestEndpoint(t, config)
+	endpoint.configTransportParams = configTransportParams
+	endpoint.configTestConn = configTestConn
+	conn, err := endpoint.e.newConn(
+		endpoint.now,
 		side,
 		cids,
 		netip.MustParseAddrPort("127.0.0.1:443"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	tc := listener.conns[conn]
+	tc := endpoint.conns[conn]
 	tc.wait()
 	return tc
 }
 
-func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testConn {
+func newTestConnForConn(t *testing.T, endpoint *testEndpoint, conn *Conn) *testConn {
 	t.Helper()
 	tc := &testConn{
 		t:          t,
-		listener:   listener,
+		endpoint:   endpoint,
 		conn:       conn,
 		peerConnID: testPeerConnID(0),
 		ignoreFrames: map[byte]bool{
@@ -251,14 +251,14 @@ func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testC
 		recvDatagram:  make(chan *datagram),
 	}
 	t.Cleanup(tc.cleanup)
-	for _, f := range listener.configTestConn {
+	for _, f := range endpoint.configTestConn {
 		f(tc)
 	}
 	conn.testHooks = (*testConnHooks)(tc)
 
-	if listener.peerTLSConn != nil {
-		tc.peerTLSConn = listener.peerTLSConn
-		listener.peerTLSConn = nil
+	if endpoint.peerTLSConn != nil {
+		tc.peerTLSConn = endpoint.peerTLSConn
+		endpoint.peerTLSConn = nil
 		return tc
 	}
 
@@ -267,7 +267,7 @@ func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testC
 	if conn.side == clientSide {
 		peerProvidedParams.originalDstConnID = testLocalConnID(-1)
 	}
-	for _, f := range listener.configTransportParams {
+	for _, f := range endpoint.configTransportParams {
 		f(&peerProvidedParams)
 	}
 
@@ -286,13 +286,13 @@ func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testC
 // advance causes time to pass.
 func (tc *testConn) advance(d time.Duration) {
 	tc.t.Helper()
-	tc.listener.advance(d)
+	tc.endpoint.advance(d)
 }
 
 // advanceTo sets the current time.
 func (tc *testConn) advanceTo(now time.Time) {
 	tc.t.Helper()
-	tc.listener.advanceTo(now)
+	tc.endpoint.advanceTo(now)
 }
 
 // advanceToTimer sets the current time to the time of the Conn's next timer event.
@@ -307,10 +307,10 @@ func (tc *testConn) timerDelay() time.Duration {
 	if tc.timer.IsZero() {
 		return math.MaxInt64 // infinite
 	}
-	if tc.timer.Before(tc.listener.now) {
+	if tc.timer.Before(tc.endpoint.now) {
 		return 0
 	}
-	return tc.timer.Sub(tc.listener.now)
+	return tc.timer.Sub(tc.endpoint.now)
 }
 
 const infiniteDuration = time.Duration(math.MaxInt64)
@@ -320,10 +320,10 @@ func (tc *testConn) timeUntilEvent() time.Duration {
 	if tc.timer.IsZero() {
 		return infiniteDuration
 	}
-	if tc.timer.Before(tc.listener.now) {
+	if tc.timer.Before(tc.endpoint.now) {
 		return 0
 	}
-	return tc.timer.Sub(tc.listener.now)
+	return tc.timer.Sub(tc.endpoint.now)
 }
 
 // wait blocks until the conn becomes idle.
@@ -400,7 +400,7 @@ func logDatagram(t *testing.T, text string, d *testDatagram) {
 // write sends the Conn a datagram.
 func (tc *testConn) write(d *testDatagram) {
 	tc.t.Helper()
-	tc.listener.writeDatagram(d)
+	tc.endpoint.writeDatagram(d)
 }
 
 // writeFrame sends the Conn a datagram containing the given frames.
@@ -466,11 +466,11 @@ func (tc *testConn) readDatagram() *testDatagram {
 	tc.wait()
 	tc.sentPackets = nil
 	tc.sentFrames = nil
-	buf := tc.listener.read()
+	buf := tc.endpoint.read()
 	if buf == nil {
 		return nil
 	}
-	d := parseTestDatagram(tc.t, tc.listener, tc, buf)
+	d := parseTestDatagram(tc.t, tc.endpoint, tc, buf)
 	// Log the datagram before removing ignored frames.
 	// When things go wrong, it's useful to see all the frames.
 	logDatagram(tc.t, "-> conn under test sends", d)
@@ -771,7 +771,7 @@ func encodeTestPacket(t *testing.T, tc *testConn, p *testPacket, pad int) []byte
 	return w.datagram()
 }
 
-func parseTestDatagram(t *testing.T, tl *testListener, tc *testConn, buf []byte) *testDatagram {
+func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte) *testDatagram {
 	t.Helper()
 	bufSize := len(buf)
 	d := &testDatagram{}
@@ -784,7 +784,7 @@ func parseTestDatagram(t *testing.T, tl *testListener, tc *testConn, buf []byte)
 		ptype := getPacketType(buf)
 		switch ptype {
 		case packetTypeRetry:
-			retry, ok := parseRetryPacket(buf, tl.lastInitialDstConnID)
+			retry, ok := parseRetryPacket(buf, te.lastInitialDstConnID)
 			if !ok {
 				t.Fatalf("could not parse %v packet", ptype)
 			}
@@ -938,7 +938,7 @@ func (tc *testConnHooks) init() {
 	tc.keysInitial.r = tc.conn.keysInitial.w
 	tc.keysInitial.w = tc.conn.keysInitial.r
 	if tc.conn.side == serverSide {
-		tc.listener.acceptQueue = append(tc.listener.acceptQueue, (*testConn)(tc))
+		tc.endpoint.acceptQueue = append(tc.endpoint.acceptQueue, (*testConn)(tc))
 	}
 }
 
@@ -1039,20 +1039,20 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.Time, m any) {
 	tc.timer = timer
 	for {
-		if !timer.IsZero() && !timer.After(tc.listener.now) {
+		if !timer.IsZero() && !timer.After(tc.endpoint.now) {
 			if timer.Equal(tc.timerLastFired) {
 				// If the connection timer fires at time T, the Conn should take some
 				// action to advance the timer into the future. If the Conn reschedules
 				// the timer for the same time, it isn't making progress and we have a bug.
-				tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.listener.now, timer)
+				tc.t.Errorf("connection timer spinning; now=%v timer=%v", tc.endpoint.now, timer)
 			} else {
 				tc.timerLastFired = timer
-				return tc.listener.now, timerEvent{}
+				return tc.endpoint.now, timerEvent{}
 			}
 		}
 		select {
 		case m := <-msgc:
-			return tc.listener.now, m
+			return tc.endpoint.now, m
 		default:
 		}
 		if !tc.wakeAsync() {
@@ -1066,7 +1066,7 @@ func (tc *testConnHooks) nextMessage(msgc chan any, timer time.Time) (now time.T
 		close(idlec)
 	}
 	m = <-msgc
-	return tc.listener.now, m
+	return tc.endpoint.now, m
 }
 
 func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
@@ -1074,7 +1074,7 @@ func (tc *testConnHooks) newConnID(seq int64) ([]byte, error) {
 }
 
 func (tc *testConnHooks) timeNow() time.Time {
-	return tc.listener.now
+	return tc.endpoint.now
 }
 
 // testLocalConnID returns the connection ID with a given sequence number

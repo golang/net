@@ -16,7 +16,7 @@ import (
 )
 
 type retryServerTest struct {
-	tl                *testListener
+	te                *testEndpoint
 	originalSrcConnID []byte
 	originalDstConnID []byte
 	retry             retryPacket
@@ -32,16 +32,16 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 		TLSConfig:                newTestTLSConfig(serverSide),
 		RequireAddressValidation: true,
 	}
-	tl := newTestListener(t, config)
+	te := newTestEndpoint(t, config)
 	srcID := testPeerConnID(0)
 	dstID := testLocalConnID(-1)
 	params := defaultTransportParameters()
 	params.initialSrcConnID = srcID
-	initialCrypto := initialClientCrypto(t, tl, params)
+	initialCrypto := initialClientCrypto(t, te, params)
 
 	// Initial packet with no Token.
 	// Server responds with a Retry containing a token.
-	tl.writeDatagram(&testDatagram{
+	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       0,
@@ -56,7 +56,7 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 		}},
 		paddedSize: 1200,
 	})
-	got := tl.readDatagram()
+	got := te.readDatagram()
 	if len(got.packets) != 1 || got.packets[0].ptype != packetTypeRetry {
 		t.Fatalf("got datagram: %v\nwant Retry", got)
 	}
@@ -66,7 +66,7 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 	}
 
 	return &retryServerTest{
-		tl:                tl,
+		te:                te,
 		originalSrcConnID: srcID,
 		originalDstConnID: dstID,
 		retry: retryPacket{
@@ -80,9 +80,9 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 
 func TestRetryServerSucceeds(t *testing.T) {
 	rt := newRetryServerTest(t)
-	tl := rt.tl
-	tl.advance(retryTokenValidityPeriod)
-	tl.writeDatagram(&testDatagram{
+	te := rt.te
+	te.advance(retryTokenValidityPeriod)
+	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
@@ -98,7 +98,7 @@ func TestRetryServerSucceeds(t *testing.T) {
 		}},
 		paddedSize: 1200,
 	})
-	tc := tl.accept()
+	tc := te.accept()
 	initial := tc.readPacket()
 	if initial == nil || initial.ptype != packetTypeInitial {
 		t.Fatalf("got packet:\n%v\nwant: Initial", initial)
@@ -124,8 +124,8 @@ func TestRetryServerTokenInvalid(t *testing.T) {
 	// INVALID_TOKEN error."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.2-5
 	rt := newRetryServerTest(t)
-	tl := rt.tl
-	tl.writeDatagram(&testDatagram{
+	te := rt.te
+	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
@@ -141,7 +141,7 @@ func TestRetryServerTokenInvalid(t *testing.T) {
 		}},
 		paddedSize: 1200,
 	})
-	tl.wantDatagram("server closes connection after Initial with invalid Retry token",
+	te.wantDatagram("server closes connection after Initial with invalid Retry token",
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
@@ -152,9 +152,9 @@ func TestRetryServerTokenTooOld(t *testing.T) {
 	// "[...] a token SHOULD have an expiration time [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.3-3
 	rt := newRetryServerTest(t)
-	tl := rt.tl
-	tl.advance(retryTokenValidityPeriod + time.Second)
-	tl.writeDatagram(&testDatagram{
+	te := rt.te
+	te.advance(retryTokenValidityPeriod + time.Second)
+	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
@@ -170,7 +170,7 @@ func TestRetryServerTokenTooOld(t *testing.T) {
 		}},
 		paddedSize: 1200,
 	})
-	tl.wantDatagram("server closes connection after Initial with expired token",
+	te.wantDatagram("server closes connection after Initial with expired token",
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
@@ -182,8 +182,8 @@ func TestRetryServerTokenWrongIP(t *testing.T) {
 	// to verify that the source IP address and port in client packets remain constant."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.4-3
 	rt := newRetryServerTest(t)
-	tl := rt.tl
-	tl.writeDatagram(&testDatagram{
+	te := rt.te
+	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
 			num:       1,
@@ -200,7 +200,7 @@ func TestRetryServerTokenWrongIP(t *testing.T) {
 		paddedSize: 1200,
 		addr:       netip.MustParseAddrPort("10.0.0.2:8000"),
 	})
-	tl.wantDatagram("server closes connection after Initial from wrong address",
+	te.wantDatagram("server closes connection after Initial from wrong address",
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
@@ -435,7 +435,7 @@ func TestRetryClientIgnoresRetryWithInvalidIntegrityTag(t *testing.T) {
 		token:     []byte{1, 2, 3, 4},
 	})
 	pkt[len(pkt)-1] ^= 1 // invalidate the integrity tag
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b:    pkt,
 		addr: testClientAddr,
 	})
@@ -527,14 +527,14 @@ func TestParseInvalidRetryPackets(t *testing.T) {
 	}
 }
 
-func initialClientCrypto(t *testing.T, l *testListener, p transportParameters) []byte {
+func initialClientCrypto(t *testing.T, e *testEndpoint, p transportParameters) []byte {
 	t.Helper()
 	config := &tls.QUICConfig{TLSConfig: newTestTLSConfig(clientSide)}
 	tlsClient := tls.QUICClient(config)
 	tlsClient.SetTransportParameters(marshalTransportParameters(p))
 	tlsClient.Start(context.Background())
 	//defer tlsClient.Close()
-	l.peerTLSConn = tlsClient
+	e.peerTLSConn = tlsClient
 	var data []byte
 	for {
 		e := tlsClient.NextEvent()

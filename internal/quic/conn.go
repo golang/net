@@ -21,7 +21,7 @@ import (
 // Multiple goroutines may invoke methods on a Conn simultaneously.
 type Conn struct {
 	side      connSide
-	listener  *Listener
+	endpoint  *Endpoint
 	config    *Config
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
@@ -92,10 +92,10 @@ type newServerConnIDs struct {
 	retrySrcConnID    []byte // source from server's Retry
 }
 
-func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort, config *Config, l *Listener) (conn *Conn, _ error) {
+func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort, config *Config, e *Endpoint) (conn *Conn, _ error) {
 	c := &Conn{
 		side:                 side,
-		listener:             l,
+		endpoint:             e,
 		config:               config,
 		peerAddr:             peerAddr,
 		msgc:                 make(chan any, 1),
@@ -115,8 +115,8 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 	// non-blocking operation.
 	c.msgc = make(chan any, 1)
 
-	if l.testHooks != nil {
-		l.testHooks.newConn(c)
+	if e.testHooks != nil {
+		e.testHooks.newConn(c)
 	}
 
 	// initialConnID is the connection ID used to generate Initial packet protection keys.
@@ -187,7 +187,7 @@ func (c *Conn) confirmHandshake(now time.Time) {
 	if c.side == serverSide {
 		// When the server confirms the handshake, it sends a HANDSHAKE_DONE.
 		c.handshakeConfirmed.setUnsent()
-		c.listener.serverConnEstablished(c)
+		c.endpoint.serverConnEstablished(c)
 	} else {
 		// The client never sends a HANDSHAKE_DONE, so we set handshakeConfirmed
 		// to the received state, indicating that the handshake is confirmed and we
@@ -265,7 +265,7 @@ var errIdleTimeout = errors.New("idle timeout")
 func (c *Conn) loop(now time.Time) {
 	defer close(c.donec)
 	defer c.tls.Close()
-	defer c.listener.connDrained(c)
+	defer c.endpoint.connDrained(c)
 	defer c.logConnectionClosed()
 
 	// The connection timer sends a message to the connection loop on expiry.

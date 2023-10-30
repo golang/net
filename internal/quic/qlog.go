@@ -95,7 +95,7 @@ func (c *Conn) logConnectionStarted(originalDstConnID []byte, peerAddr netip.Add
 			slog.String("type", vantage),
 		),
 	)
-	localAddr := c.listener.LocalAddr()
+	localAddr := c.endpoint.LocalAddr()
 	// https://www.ietf.org/archive/id/draft-ietf-quic-qlog-quic-events-03.html#section-4.2
 	c.log.LogAttrs(context.Background(), QLogLevelEndpoint,
 		"connectivity:connection_started",

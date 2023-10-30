@@ -68,7 +68,7 @@ func TestStatelessResetSentSizes(t *testing.T) {
 		StatelessResetKey: testStatelessResetKey,
 	}
 	addr := netip.MustParseAddr("127.0.0.1")
-	tl := newTestListener(t, config)
+	te := newTestEndpoint(t, config)
 	for i, test := range []struct {
 		reqSize  int
 		wantSize int
@@ -105,9 +105,9 @@ func TestStatelessResetSentSizes(t *testing.T) {
 		cid := testLocalConnID(int64(i))
 		token := testStatelessResetToken(cid)
 		addrport := netip.AddrPortFrom(addr, uint16(8000+i))
-		tl.write(newDatagramForReset(cid, test.reqSize, addrport))
+		te.write(newDatagramForReset(cid, test.reqSize, addrport))
 
-		got := tl.read()
+		got := te.read()
 		if len(got) != test.wantSize {
 			t.Errorf("got %v-byte response to %v-byte req, want %v",
 				len(got), test.reqSize, test.wantSize)
@@ -149,7 +149,7 @@ func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 
 	resetToken := testPeerStatelessResetToken(1) // provided during handshake
 	dgram := append(make([]byte, 100), resetToken[:]...)
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: dgram,
 	})
 
@@ -179,7 +179,7 @@ func TestStatelessResetSuccessfulTransportParameter(t *testing.T) {
 	tc.handshake()
 
 	dgram := append(make([]byte, 100), resetToken[:]...)
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: dgram,
 	})
 
@@ -243,7 +243,7 @@ func TestStatelessResetSuccessfulPrefix(t *testing.T) {
 				dgram = append(dgram, byte(len(dgram))) // semi-random junk
 			}
 			dgram = append(dgram, resetToken[:]...)
-			tc.listener.write(&datagram{
+			tc.endpoint.write(&datagram{
 				b: dgram,
 			})
 			if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
@@ -278,7 +278,7 @@ func TestStatelessResetRetiredConnID(t *testing.T) {
 
 	// Receive a stateless reset for connection ID 0.
 	dgram := append(make([]byte, 100), resetToken[:]...)
-	tc.listener.write(&datagram{
+	tc.endpoint.write(&datagram{
 		b: dgram,
 	})
 

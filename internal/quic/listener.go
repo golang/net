@@ -17,14 +17,14 @@ import (
 	"time"
 )
 
-// A Listener listens for QUIC traffic on a network address.
+// An Endpoint handles QUIC traffic on a network address.
 // It can accept inbound connections or create outbound ones.
 //
-// Multiple goroutines may invoke methods on a Listener simultaneously.
-type Listener struct {
+// Multiple goroutines may invoke methods on an Endpoint simultaneously.
+type Endpoint struct {
 	config    *Config
 	udpConn   udpConn
-	testHooks listenerTestHooks
+	testHooks endpointTestHooks
 	resetGen  statelessResetTokenGenerator
 	retry     retryState
 
@@ -37,7 +37,7 @@ type Listener struct {
 	closec  chan struct{} // closed when the listen loop exits
 }
 
-type listenerTestHooks interface {
+type endpointTestHooks interface {
 	timeNow() time.Time
 	newConn(c *Conn)
 }
@@ -53,7 +53,7 @@ type udpConn interface {
 
 // Listen listens on a local network address.
 // The configuration config must be non-nil.
-func Listen(network, address string, config *Config) (*Listener, error) {
+func Listen(network, address string, config *Config) (*Endpoint, error) {
 	if config.TLSConfig == nil {
 		return nil, errors.New("TLSConfig is not set")
 	}
@@ -65,11 +65,11 @@ func Listen(network, address string, config *Config) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newListener(udpConn, config, nil)
+	return newEndpoint(udpConn, config, nil)
 }
 
-func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) (*Listener, error) {
-	l := &Listener{
+func newEndpoint(udpConn udpConn, config *Config, hooks endpointTestHooks) (*Endpoint, error) {
+	e := &Endpoint{
 		config:      config,
 		udpConn:     udpConn,
 		testHooks:   hooks,
@@ -77,70 +77,70 @@ func newListener(udpConn udpConn, config *Config, hooks listenerTestHooks) (*Lis
 		acceptQueue: newQueue[*Conn](),
 		closec:      make(chan struct{}),
 	}
-	l.resetGen.init(config.StatelessResetKey)
-	l.connsMap.init()
+	e.resetGen.init(config.StatelessResetKey)
+	e.connsMap.init()
 	if config.RequireAddressValidation {
-		if err := l.retry.init(); err != nil {
+		if err := e.retry.init(); err != nil {
 			return nil, err
 		}
 	}
-	go l.listen()
-	return l, nil
+	go e.listen()
+	return e, nil
 }
 
 // LocalAddr returns the local network address.
-func (l *Listener) LocalAddr() netip.AddrPort {
-	a, _ := l.udpConn.LocalAddr().(*net.UDPAddr)
+func (e *Endpoint) LocalAddr() netip.AddrPort {
+	a, _ := e.udpConn.LocalAddr().(*net.UDPAddr)
 	return a.AddrPort()
 }
 
-// Close closes the listener.
-// Any blocked operations on the Listener or associated Conns and Stream will be unblocked
+// Close closes the Endpoint.
+// Any blocked operations on the Endpoint or associated Conns and Stream will be unblocked
 // and return errors.
 //
 // Close aborts every open connection.
 // Data in stream read and write buffers is discarded.
 // It waits for the peers of any open connection to acknowledge the connection has been closed.
-func (l *Listener) Close(ctx context.Context) error {
-	l.acceptQueue.close(errors.New("listener closed"))
-	l.connsMu.Lock()
-	if !l.closing {
-		l.closing = true
-		for c := range l.conns {
+func (e *Endpoint) Close(ctx context.Context) error {
+	e.acceptQueue.close(errors.New("endpoint closed"))
+	e.connsMu.Lock()
+	if !e.closing {
+		e.closing = true
+		for c := range e.conns {
 			c.Abort(localTransportError{code: errNo})
 		}
-		if len(l.conns) == 0 {
-			l.udpConn.Close()
+		if len(e.conns) == 0 {
+			e.udpConn.Close()
 		}
 	}
-	l.connsMu.Unlock()
+	e.connsMu.Unlock()
 	select {
-	case <-l.closec:
+	case <-e.closec:
 	case <-ctx.Done():
-		l.connsMu.Lock()
-		for c := range l.conns {
+		e.connsMu.Lock()
+		for c := range e.conns {
 			c.exit()
 		}
-		l.connsMu.Unlock()
+		e.connsMu.Unlock()
 		return ctx.Err()
 	}
 	return nil
 }
 
-// Accept waits for and returns the next connection to the listener.
-func (l *Listener) Accept(ctx context.Context) (*Conn, error) {
-	return l.acceptQueue.get(ctx, nil)
+// Accept waits for and returns the next connection.
+func (e *Endpoint) Accept(ctx context.Context) (*Conn, error) {
+	return e.acceptQueue.get(ctx, nil)
 }
 
 // Dial creates and returns a connection to a network address.
-func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, error) {
+func (e *Endpoint) Dial(ctx context.Context, network, address string) (*Conn, error) {
 	u, err := net.ResolveUDPAddr(network, address)
 	if err != nil {
 		return nil, err
 	}
 	addr := u.AddrPort()
 	addr = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
-	c, err := l.newConn(time.Now(), clientSide, newServerConnIDs{}, addr)
+	c, err := e.newConn(time.Now(), clientSide, newServerConnIDs{}, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -151,29 +151,29 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	return c, nil
 }
 
-func (l *Listener) newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort) (*Conn, error) {
-	l.connsMu.Lock()
-	defer l.connsMu.Unlock()
-	if l.closing {
-		return nil, errors.New("listener closed")
+func (e *Endpoint) newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort) (*Conn, error) {
+	e.connsMu.Lock()
+	defer e.connsMu.Unlock()
+	if e.closing {
+		return nil, errors.New("endpoint closed")
 	}
-	c, err := newConn(now, side, cids, peerAddr, l.config, l)
+	c, err := newConn(now, side, cids, peerAddr, e.config, e)
 	if err != nil {
 		return nil, err
 	}
-	l.conns[c] = struct{}{}
+	e.conns[c] = struct{}{}
 	return c, nil
 }
 
 // serverConnEstablished is called by a conn when the handshake completes
 // for an inbound (serverSide) connection.
-func (l *Listener) serverConnEstablished(c *Conn) {
-	l.acceptQueue.put(c)
+func (e *Endpoint) serverConnEstablished(c *Conn) {
+	e.acceptQueue.put(c)
 }
 
 // connDrained is called by a conn when it leaves the draining state,
 // either when the peer acknowledges connection closure or the drain timeout expires.
-func (l *Listener) connDrained(c *Conn) {
+func (e *Endpoint) connDrained(c *Conn) {
 	var cids [][]byte
 	for i := range c.connIDState.local {
 		cids = append(cids, c.connIDState.local[i].cid)
@@ -182,7 +182,7 @@ func (l *Listener) connDrained(c *Conn) {
 	for i := range c.connIDState.remote {
 		tokens = append(tokens, c.connIDState.remote[i].resetToken)
 	}
-	l.connsMap.updateConnIDs(func(conns *connsMap) {
+	e.connsMap.updateConnIDs(func(conns *connsMap) {
 		for _, cid := range cids {
 			conns.retireConnID(c, cid)
 		}
@@ -190,60 +190,60 @@ func (l *Listener) connDrained(c *Conn) {
 			conns.retireResetToken(c, token)
 		}
 	})
-	l.connsMu.Lock()
-	defer l.connsMu.Unlock()
-	delete(l.conns, c)
-	if l.closing && len(l.conns) == 0 {
-		l.udpConn.Close()
+	e.connsMu.Lock()
+	defer e.connsMu.Unlock()
+	delete(e.conns, c)
+	if e.closing && len(e.conns) == 0 {
+		e.udpConn.Close()
 	}
 }
 
-func (l *Listener) listen() {
-	defer close(l.closec)
+func (e *Endpoint) listen() {
+	defer close(e.closec)
 	for {
 		m := newDatagram()
 		// TODO: Read and process the ECN (explicit congestion notification) field.
 		// https://tools.ietf.org/html/draft-ietf-quic-transport-32#section-13.4
-		n, _, _, addr, err := l.udpConn.ReadMsgUDPAddrPort(m.b, nil)
+		n, _, _, addr, err := e.udpConn.ReadMsgUDPAddrPort(m.b, nil)
 		if err != nil {
-			// The user has probably closed the listener.
+			// The user has probably closed the endpoint.
 			// We currently don't surface errors from other causes;
-			// we could check to see if the listener has been closed and
+			// we could check to see if the endpoint has been closed and
 			// record the unexpected error if it has not.
 			return
 		}
 		if n == 0 {
 			continue
 		}
-		if l.connsMap.updateNeeded.Load() {
-			l.connsMap.applyUpdates()
+		if e.connsMap.updateNeeded.Load() {
+			e.connsMap.applyUpdates()
 		}
 		m.addr = addr
 		m.b = m.b[:n]
-		l.handleDatagram(m)
+		e.handleDatagram(m)
 	}
 }
 
-func (l *Listener) handleDatagram(m *datagram) {
+func (e *Endpoint) handleDatagram(m *datagram) {
 	dstConnID, ok := dstConnIDForDatagram(m.b)
 	if !ok {
 		m.recycle()
 		return
 	}
-	c := l.connsMap.byConnID[string(dstConnID)]
+	c := e.connsMap.byConnID[string(dstConnID)]
 	if c == nil {
 		// TODO: Move this branch into a separate goroutine to avoid blocking
-		// the listener while processing packets.
-		l.handleUnknownDestinationDatagram(m)
+		// the endpoint while processing packets.
+		e.handleUnknownDestinationDatagram(m)
 		return
 	}
 
-	// TODO: This can block the listener while waiting for the conn to accept the dgram.
+	// TODO: This can block the endpoint while waiting for the conn to accept the dgram.
 	// Think about buffering between the receive loop and the conn.
 	c.sendMsg(m)
 }
 
-func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
+func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	defer func() {
 		if m != nil {
 			m.recycle()
@@ -254,15 +254,15 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		return
 	}
 	var now time.Time
-	if l.testHooks != nil {
-		now = l.testHooks.timeNow()
+	if e.testHooks != nil {
+		now = e.testHooks.timeNow()
 	} else {
 		now = time.Now()
 	}
 	// Check to see if this is a stateless reset.
 	var token statelessResetToken
 	copy(token[:], m.b[len(m.b)-len(token):])
-	if c := l.connsMap.byResetToken[token]; c != nil {
+	if c := e.connsMap.byResetToken[token]; c != nil {
 		c.sendMsg(func(now time.Time, c *Conn) {
 			c.handleStatelessReset(now, token)
 		})
@@ -271,7 +271,7 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	// If this is a 1-RTT packet, there's nothing productive we can do with it.
 	// Send a stateless reset if possible.
 	if !isLongHeader(m.b[0]) {
-		l.maybeSendStatelessReset(m.b, m.addr)
+		e.maybeSendStatelessReset(m.b, m.addr)
 		return
 	}
 	p, ok := parseGenericLongHeaderPacket(m.b)
@@ -285,7 +285,7 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		return
 	default:
 		// Unknown version.
-		l.sendVersionNegotiation(p, m.addr)
+		e.sendVersionNegotiation(p, m.addr)
 		return
 	}
 	if getPacketType(m.b) != packetTypeInitial {
@@ -300,10 +300,10 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		srcConnID: p.srcConnID,
 		dstConnID: p.dstConnID,
 	}
-	if l.config.RequireAddressValidation {
+	if e.config.RequireAddressValidation {
 		var ok bool
 		cids.retrySrcConnID = p.dstConnID
-		cids.originalDstConnID, ok = l.validateInitialAddress(now, p, m.addr)
+		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.addr)
 		if !ok {
 			return
 		}
@@ -311,7 +311,7 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		cids.originalDstConnID = p.dstConnID
 	}
 	var err error
-	c, err := l.newConn(now, serverSide, cids, m.addr)
+	c, err := e.newConn(now, serverSide, cids, m.addr)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.
@@ -323,8 +323,8 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	m = nil // don't recycle, sendMsg takes ownership
 }
 
-func (l *Listener) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
-	if !l.resetGen.canReset {
+func (e *Endpoint) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
+	if !e.resetGen.canReset {
 		// Config.StatelessResetKey isn't set, so we don't send stateless resets.
 		return
 	}
@@ -339,7 +339,7 @@ func (l *Listener) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
 	}
 	// TODO: Rate limit stateless resets.
 	cid := b[1:][:connIDLen]
-	token := l.resetGen.tokenForConnID(cid)
+	token := e.resetGen.tokenForConnID(cid)
 	// We want to generate a stateless reset that is as short as possible,
 	// but long enough to be difficult to distinguish from a 1-RTT packet.
 	//
@@ -364,17 +364,17 @@ func (l *Listener) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
 	b[0] &^= headerFormLong // clear long header bit
 	b[0] |= fixedBit        // set fixed bit
 	copy(b[len(b)-statelessResetTokenLen:], token[:])
-	l.sendDatagram(b, addr)
+	e.sendDatagram(b, addr)
 }
 
-func (l *Listener) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPort) {
+func (e *Endpoint) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPort) {
 	m := newDatagram()
 	m.b = appendVersionNegotiation(m.b[:0], p.srcConnID, p.dstConnID, quicVersion1)
-	l.sendDatagram(m.b, addr)
+	e.sendDatagram(m.b, addr)
 	m.recycle()
 }
 
-func (l *Listener) sendConnectionClose(in genericLongPacket, addr netip.AddrPort, code transportError) {
+func (e *Endpoint) sendConnectionClose(in genericLongPacket, addr netip.AddrPort, code transportError) {
 	keys := initialKeys(in.dstConnID, serverSide)
 	var w packetWriter
 	p := longPacket{
@@ -393,15 +393,15 @@ func (l *Listener) sendConnectionClose(in genericLongPacket, addr netip.AddrPort
 	if len(buf) == 0 {
 		return
 	}
-	l.sendDatagram(buf, addr)
+	e.sendDatagram(buf, addr)
 }
 
-func (l *Listener) sendDatagram(p []byte, addr netip.AddrPort) error {
-	_, err := l.udpConn.WriteToUDPAddrPort(p, addr)
+func (e *Endpoint) sendDatagram(p []byte, addr netip.AddrPort) error {
+	_, err := e.udpConn.WriteToUDPAddrPort(p, addr)
 	return err
 }
 
-// A connsMap is a listener's mapping of conn ids and reset tokens to conns.
+// A connsMap is an endpoint's mapping of conn ids and reset tokens to conns.
 type connsMap struct {
 	byConnID     map[string]*Conn
 	byResetToken map[statelessResetToken]*Conn

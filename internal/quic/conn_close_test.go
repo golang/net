@@ -205,13 +205,13 @@ func TestConnCloseReceiveInHandshake(t *testing.T) {
 	tc.wantIdle("no more frames to send")
 }
 
-func TestConnCloseClosedByListener(t *testing.T) {
+func TestConnCloseClosedByEndpoint(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, clientSide)
 	tc.handshake()
 
-	tc.listener.l.Close(ctx)
-	tc.wantFrame("listener closes connection before exiting",
+	tc.endpoint.e.Close(ctx)
+	tc.wantFrame("endpoint closes connection before exiting",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errNo,
 		})

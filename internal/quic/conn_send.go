@@ -170,7 +170,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 		}
 
-		c.listener.sendDatagram(buf, c.peerAddr)
+		c.endpoint.sendDatagram(buf, c.peerAddr)
 	}
 }
 

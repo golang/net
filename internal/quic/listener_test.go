@@ -64,39 +64,39 @@ func TestStreamTransfer(t *testing.T) {
 func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
 	t.Helper()
 	ctx := context.Background()
-	l1 := newLocalListener(t, serverSide, conf1)
-	l2 := newLocalListener(t, clientSide, conf2)
-	c2, err := l2.Dial(ctx, "udp", l1.LocalAddr().String())
+	e1 := newLocalEndpoint(t, serverSide, conf1)
+	e2 := newLocalEndpoint(t, clientSide, conf2)
+	c2, err := e2.Dial(ctx, "udp", e1.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	c1, err := l1.Accept(ctx)
+	c1, err := e1.Accept(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return c2, c1
 }
 
-func newLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
+func newLocalEndpoint(t *testing.T, side connSide, conf *Config) *Endpoint {
 	t.Helper()
 	if conf.TLSConfig == nil {
 		newConf := *conf
 		conf = &newConf
 		conf.TLSConfig = newTestTLSConfig(side)
 	}
-	l, err := Listen("udp", "127.0.0.1:0", conf)
+	e, err := Listen("udp", "127.0.0.1:0", conf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		l.Close(context.Background())
+		e.Close(context.Background())
 	})
-	return l
+	return e
 }
 
-type testListener struct {
+type testEndpoint struct {
 	t                     *testing.T
-	l                     *Listener
+	e                     *Endpoint
 	now                   time.Time
 	recvc                 chan *datagram
 	idlec                 chan struct{}
@@ -109,8 +109,8 @@ type testListener struct {
 	lastInitialDstConnID  []byte // for parsing Retry packets
 }
 
-func newTestListener(t *testing.T, config *Config) *testListener {
-	tl := &testListener{
+func newTestEndpoint(t *testing.T, config *Config) *testEndpoint {
+	te := &testEndpoint{
 		t:     t,
 		now:   time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 		recvc: make(chan *datagram),
@@ -118,52 +118,52 @@ func newTestListener(t *testing.T, config *Config) *testListener {
 		conns: make(map[*Conn]*testConn),
 	}
 	var err error
-	tl.l, err = newListener((*testListenerUDPConn)(tl), config, (*testListenerHooks)(tl))
+	te.e, err = newEndpoint((*testEndpointUDPConn)(te), config, (*testEndpointHooks)(te))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(tl.cleanup)
-	return tl
+	t.Cleanup(te.cleanup)
+	return te
 }
 
-func (tl *testListener) cleanup() {
-	tl.l.Close(canceledContext())
+func (te *testEndpoint) cleanup() {
+	te.e.Close(canceledContext())
 }
 
-func (tl *testListener) wait() {
+func (te *testEndpoint) wait() {
 	select {
-	case tl.idlec <- struct{}{}:
-	case <-tl.l.closec:
+	case te.idlec <- struct{}{}:
+	case <-te.e.closec:
 	}
-	for _, tc := range tl.conns {
+	for _, tc := range te.conns {
 		tc.wait()
 	}
 }
 
-// accept returns a server connection from the listener.
-// Unlike Listener.Accept, connections are available as soon as they are created.
-func (tl *testListener) accept() *testConn {
-	if len(tl.acceptQueue) == 0 {
-		tl.t.Fatalf("accept: expected available conn, but found none")
+// accept returns a server connection from the endpoint.
+// Unlike Endpoint.Accept, connections are available as soon as they are created.
+func (te *testEndpoint) accept() *testConn {
+	if len(te.acceptQueue) == 0 {
+		te.t.Fatalf("accept: expected available conn, but found none")
 	}
-	tc := tl.acceptQueue[0]
-	tl.acceptQueue = tl.acceptQueue[1:]
+	tc := te.acceptQueue[0]
+	te.acceptQueue = te.acceptQueue[1:]
 	return tc
 }
 
-func (tl *testListener) write(d *datagram) {
-	tl.recvc <- d
-	tl.wait()
+func (te *testEndpoint) write(d *datagram) {
+	te.recvc <- d
+	te.wait()
 }
 
 var testClientAddr = netip.MustParseAddrPort("10.0.0.1:8000")
 
-func (tl *testListener) writeDatagram(d *testDatagram) {
-	tl.t.Helper()
-	logDatagram(tl.t, "<- listener under test receives", d)
+func (te *testEndpoint) writeDatagram(d *testDatagram) {
+	te.t.Helper()
+	logDatagram(te.t, "<- endpoint under test receives", d)
 	var buf []byte
 	for _, p := range d.packets {
-		tc := tl.connForDestination(p.dstConnID)
+		tc := te.connForDestination(p.dstConnID)
 		if p.ptype != packetTypeRetry && tc != nil {
 			space := spaceForPacketType(p.ptype)
 			if p.num >= tc.peerNextPacketNum[space] {
@@ -171,13 +171,13 @@ func (tl *testListener) writeDatagram(d *testDatagram) {
 			}
 		}
 		if p.ptype == packetTypeInitial {
-			tl.lastInitialDstConnID = p.dstConnID
+			te.lastInitialDstConnID = p.dstConnID
 		}
 		pad := 0
 		if p.ptype == packetType1RTT {
 			pad = d.paddedSize - len(buf)
 		}
-		buf = append(buf, encodeTestPacket(tl.t, tc, p, pad)...)
+		buf = append(buf, encodeTestPacket(te.t, tc, p, pad)...)
 	}
 	for len(buf) < d.paddedSize {
 		buf = append(buf, 0)
@@ -186,14 +186,14 @@ func (tl *testListener) writeDatagram(d *testDatagram) {
 	if !addr.IsValid() {
 		addr = testClientAddr
 	}
-	tl.write(&datagram{
+	te.write(&datagram{
 		b:    buf,
 		addr: addr,
 	})
 }
 
-func (tl *testListener) connForDestination(dstConnID []byte) *testConn {
-	for _, tc := range tl.conns {
+func (te *testEndpoint) connForDestination(dstConnID []byte) *testConn {
+	for _, tc := range te.conns {
 		for _, loc := range tc.conn.connIDState.local {
 			if bytes.Equal(loc.cid, dstConnID) {
 				return tc
@@ -203,8 +203,8 @@ func (tl *testListener) connForDestination(dstConnID []byte) *testConn {
 	return nil
 }
 
-func (tl *testListener) connForSource(srcConnID []byte) *testConn {
-	for _, tc := range tl.conns {
+func (te *testEndpoint) connForSource(srcConnID []byte) *testConn {
+	for _, tc := range te.conns {
 		for _, loc := range tc.conn.connIDState.remote {
 			if bytes.Equal(loc.cid, srcConnID) {
 				return tc
@@ -214,106 +214,106 @@ func (tl *testListener) connForSource(srcConnID []byte) *testConn {
 	return nil
 }
 
-func (tl *testListener) read() []byte {
-	tl.t.Helper()
-	tl.wait()
-	if len(tl.sentDatagrams) == 0 {
+func (te *testEndpoint) read() []byte {
+	te.t.Helper()
+	te.wait()
+	if len(te.sentDatagrams) == 0 {
 		return nil
 	}
-	d := tl.sentDatagrams[0]
-	tl.sentDatagrams = tl.sentDatagrams[1:]
+	d := te.sentDatagrams[0]
+	te.sentDatagrams = te.sentDatagrams[1:]
 	return d
 }
 
-func (tl *testListener) readDatagram() *testDatagram {
-	tl.t.Helper()
-	buf := tl.read()
+func (te *testEndpoint) readDatagram() *testDatagram {
+	te.t.Helper()
+	buf := te.read()
 	if buf == nil {
 		return nil
 	}
 	p, _ := parseGenericLongHeaderPacket(buf)
-	tc := tl.connForSource(p.dstConnID)
-	d := parseTestDatagram(tl.t, tl, tc, buf)
-	logDatagram(tl.t, "-> listener under test sends", d)
+	tc := te.connForSource(p.dstConnID)
+	d := parseTestDatagram(te.t, te, tc, buf)
+	logDatagram(te.t, "-> endpoint under test sends", d)
 	return d
 }
 
-// wantDatagram indicates that we expect the Listener to send a datagram.
-func (tl *testListener) wantDatagram(expectation string, want *testDatagram) {
-	tl.t.Helper()
-	got := tl.readDatagram()
+// wantDatagram indicates that we expect the Endpoint to send a datagram.
+func (te *testEndpoint) wantDatagram(expectation string, want *testDatagram) {
+	te.t.Helper()
+	got := te.readDatagram()
 	if !reflect.DeepEqual(got, want) {
-		tl.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
+		te.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
 	}
 }
 
-// wantIdle indicates that we expect the Listener to not send any more datagrams.
-func (tl *testListener) wantIdle(expectation string) {
-	if got := tl.readDatagram(); got != nil {
-		tl.t.Fatalf("expect: %v\nunexpectedly got: %v", expectation, got)
+// wantIdle indicates that we expect the Endpoint to not send any more datagrams.
+func (te *testEndpoint) wantIdle(expectation string) {
+	if got := te.readDatagram(); got != nil {
+		te.t.Fatalf("expect: %v\nunexpectedly got: %v", expectation, got)
 	}
 }
 
 // advance causes time to pass.
-func (tl *testListener) advance(d time.Duration) {
-	tl.t.Helper()
-	tl.advanceTo(tl.now.Add(d))
+func (te *testEndpoint) advance(d time.Duration) {
+	te.t.Helper()
+	te.advanceTo(te.now.Add(d))
 }
 
 // advanceTo sets the current time.
-func (tl *testListener) advanceTo(now time.Time) {
-	tl.t.Helper()
-	if tl.now.After(now) {
-		tl.t.Fatalf("time moved backwards: %v -> %v", tl.now, now)
+func (te *testEndpoint) advanceTo(now time.Time) {
+	te.t.Helper()
+	if te.now.After(now) {
+		te.t.Fatalf("time moved backwards: %v -> %v", te.now, now)
 	}
-	tl.now = now
-	for _, tc := range tl.conns {
-		if !tc.timer.After(tl.now) {
+	te.now = now
+	for _, tc := range te.conns {
+		if !tc.timer.After(te.now) {
 			tc.conn.sendMsg(timerEvent{})
 			tc.wait()
 		}
 	}
 }
 
-// testListenerHooks implements listenerTestHooks.
-type testListenerHooks testListener
+// testEndpointHooks implements endpointTestHooks.
+type testEndpointHooks testEndpoint
 
-func (tl *testListenerHooks) timeNow() time.Time {
-	return tl.now
+func (te *testEndpointHooks) timeNow() time.Time {
+	return te.now
 }
 
-func (tl *testListenerHooks) newConn(c *Conn) {
-	tc := newTestConnForConn(tl.t, (*testListener)(tl), c)
-	tl.conns[c] = tc
+func (te *testEndpointHooks) newConn(c *Conn) {
+	tc := newTestConnForConn(te.t, (*testEndpoint)(te), c)
+	te.conns[c] = tc
 }
 
-// testListenerUDPConn implements UDPConn.
-type testListenerUDPConn testListener
+// testEndpointUDPConn implements UDPConn.
+type testEndpointUDPConn testEndpoint
 
-func (tl *testListenerUDPConn) Close() error {
-	close(tl.recvc)
+func (te *testEndpointUDPConn) Close() error {
+	close(te.recvc)
 	return nil
 }
 
-func (tl *testListenerUDPConn) LocalAddr() net.Addr {
+func (te *testEndpointUDPConn) LocalAddr() net.Addr {
 	return net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:443"))
 }
 
-func (tl *testListenerUDPConn) ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error) {
+func (te *testEndpointUDPConn) ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error) {
 	for {
 		select {
-		case d, ok := <-tl.recvc:
+		case d, ok := <-te.recvc:
 			if !ok {
 				return 0, 0, 0, netip.AddrPort{}, io.EOF
 			}
 			n = copy(b, d.b)
 			return n, 0, 0, d.addr, nil
-		case <-tl.idlec:
+		case <-te.idlec:
 		}
 	}
 }
 
-func (tl *testListenerUDPConn) WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error) {
-	tl.sentDatagrams = append(tl.sentDatagrams, append([]byte(nil), b...))
+func (te *testEndpointUDPConn) WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error) {
+	te.sentDatagrams = append(te.sentDatagrams, append([]byte(nil), b...))
 	return len(b), nil
 }

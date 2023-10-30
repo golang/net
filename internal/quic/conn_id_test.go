@@ -651,16 +651,16 @@ func TestConnIDsCleanedUpAfterClose(t *testing.T) {
 		// Wait for the conn to drain.
 		// Then wait for the conn loop to exit,
 		// and force an immediate sync of the connsMap updates
-		// (normally only done by the listener read loop).
+		// (normally only done by the endpoint read loop).
 		tc.advanceToTimer()
 		<-tc.conn.donec
-		tc.listener.l.connsMap.applyUpdates()
+		tc.endpoint.e.connsMap.applyUpdates()
 
-		if got := len(tc.listener.l.connsMap.byConnID); got != 0 {
-			t.Errorf("%v conn ids in listener map after closing, want 0", got)
+		if got := len(tc.endpoint.e.connsMap.byConnID); got != 0 {
+			t.Errorf("%v conn ids in endpoint map after closing, want 0", got)
 		}
-		if got := len(tc.listener.l.connsMap.byResetToken); got != 0 {
-			t.Errorf("%v reset tokens in listener map after closing, want 0", got)
+		if got := len(tc.endpoint.e.connsMap.byResetToken); got != 0 {
+			t.Errorf("%v reset tokens in endpoint map after closing, want 0", got)
 		}
 	})
 }

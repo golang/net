@@ -39,7 +39,7 @@ var (
 // retryTokenValidityPeriod is how long we accept a Retry packet token after sending it.
 const retryTokenValidityPeriod = 5 * time.Second
 
-// retryState generates and validates a listener's retry tokens.
+// retryState generates and validates an endpoint's retry tokens.
 type retryState struct {
 	aead cipher.AEAD
 }
@@ -139,7 +139,7 @@ func (rs *retryState) additionalData(srcConnID []byte, addr netip.AddrPort) []by
 	return additional
 }
 
-func (l *Listener) validateInitialAddress(now time.Time, p genericLongPacket, addr netip.AddrPort) (origDstConnID []byte, ok bool) {
+func (e *Endpoint) validateInitialAddress(now time.Time, p genericLongPacket, addr netip.AddrPort) (origDstConnID []byte, ok bool) {
 	// The retry token is at the start of an Initial packet's data.
 	token, n := consumeUint8Bytes(p.data)
 	if n < 0 {
@@ -151,22 +151,22 @@ func (l *Listener) validateInitialAddress(now time.Time, p genericLongPacket, ad
 	if len(token) == 0 {
 		// The sender has not provided a token.
 		// Send a Retry packet to them with one.
-		l.sendRetry(now, p, addr)
+		e.sendRetry(now, p, addr)
 		return nil, false
 	}
-	origDstConnID, ok = l.retry.validateToken(now, token, p.srcConnID, p.dstConnID, addr)
+	origDstConnID, ok = e.retry.validateToken(now, token, p.srcConnID, p.dstConnID, addr)
 	if !ok {
 		// This does not seem to be a valid token.
 		// Close the connection with an INVALID_TOKEN error.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.2-5
-		l.sendConnectionClose(p, addr, errInvalidToken)
+		e.sendConnectionClose(p, addr, errInvalidToken)
 		return nil, false
 	}
 	return origDstConnID, true
 }
 
-func (l *Listener) sendRetry(now time.Time, p genericLongPacket, addr netip.AddrPort) {
-	token, srcConnID, err := l.retry.makeToken(now, p.srcConnID, p.dstConnID, addr)
+func (e *Endpoint) sendRetry(now time.Time, p genericLongPacket, addr netip.AddrPort) {
+	token, srcConnID, err := e.retry.makeToken(now, p.srcConnID, p.dstConnID, addr)
 	if err != nil {
 		return
 	}
@@ -175,7 +175,7 @@ func (l *Listener) sendRetry(now time.Time, p genericLongPacket, addr netip.Addr
 		srcConnID: srcConnID,
 		token:     token,
 	})
-	l.sendDatagram(b, addr)
+	e.sendDatagram(b, addr)
 }
 
 type retryPacket struct {
