@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 	"testing"
 )
 
@@ -70,6 +71,76 @@ func throughput(b *testing.B, totalBytes int64) {
 		<-closec
 		cconn.Close()
 	}
+}
+
+func BenchmarkReadByte(b *testing.B) {
+	cli, srv := newLocalConnPair(b, &Config{}, &Config{})
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 1<<20)
+		sconn, err := srv.AcceptStream(context.Background())
+		if err != nil {
+			panic(fmt.Errorf("AcceptStream: %v", err))
+		}
+		for {
+			if _, err := sconn.Write(buf); err != nil {
+				break
+			}
+			sconn.Flush()
+		}
+	}()
+
+	b.SetBytes(1)
+	cconn, err := cli.NewStream(context.Background())
+	if err != nil {
+		b.Fatalf("NewStream: %v", err)
+	}
+	cconn.Flush()
+	for i := 0; i < b.N; i++ {
+		_, err := cconn.ReadByte()
+		if err != nil {
+			b.Fatalf("ReadByte: %v", err)
+		}
+	}
+	cconn.Close()
+}
+
+func BenchmarkWriteByte(b *testing.B) {
+	cli, srv := newLocalConnPair(b, &Config{}, &Config{})
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sconn, err := srv.AcceptStream(context.Background())
+		if err != nil {
+			panic(fmt.Errorf("AcceptStream: %v", err))
+		}
+		n, err := io.Copy(io.Discard, sconn)
+		if n != int64(b.N) || err != nil {
+			b.Errorf("server io.Copy() = %v, %v; want %v, nil", n, err, b.N)
+		}
+	}()
+
+	b.SetBytes(1)
+	cconn, err := cli.NewStream(context.Background())
+	if err != nil {
+		b.Fatalf("NewStream: %v", err)
+	}
+	cconn.Flush()
+	for i := 0; i < b.N; i++ {
+		if err := cconn.WriteByte(0); err != nil {
+			b.Fatalf("WriteByte: %v", err)
+		}
+	}
+	cconn.Close()
 }
 
 func BenchmarkStreamCreation(b *testing.B) {

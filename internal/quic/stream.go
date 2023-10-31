@@ -245,6 +245,13 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
+// ReadByte reads and returns a single byte from the stream.
+func (s *Stream) ReadByte() (byte, error) {
+	var b [1]byte
+	_, err := s.Read(b[:])
+	return b[0], err
+}
+
 // shouldUpdateFlowControl determines whether to send a flow control window update.
 //
 // We want to balance keeping the peer well-supplied with flow control with not sending
@@ -324,6 +331,13 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	}
 	s.outUnlock()
 	return n, nil
+}
+
+// WriteBytes writes a single byte to the stream.
+func (s *Stream) WriteByte(c byte) error {
+	b := [1]byte{c}
+	_, err := s.Write(b[:])
+	return err
 }
 
 // Flush flushes data written to the stream.
