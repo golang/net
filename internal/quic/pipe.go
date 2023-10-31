@@ -146,4 +146,5 @@ func (p *pipe) discardBefore(off int64) {
 		p.tail = nil
 	}
 	p.start = off
+	p.end = max(p.end, off)
 }

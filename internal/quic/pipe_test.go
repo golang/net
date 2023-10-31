@@ -61,6 +61,12 @@ func TestPipeWrites(t *testing.T) {
 			discardBeforeOp{10000},
 			writeOp{10000, 20000},
 		},
+	}, {
+		desc: "discard before writing",
+		ops: []op{
+			discardBeforeOp{1000},
+			writeOp{0, 1},
+		},
 	}} {
 		var p pipe
 		var wantset rangeset[int64]
@@ -78,6 +84,9 @@ func TestPipeWrites(t *testing.T) {
 				p.discardBefore(o.off)
 				wantset.sub(0, o.off)
 				wantStart = o.off
+				if o.off > wantEnd {
+					wantEnd = o.off
+				}
 			}
 			if p.start != wantStart || p.end != wantEnd {
 				t.Errorf("%v: after %#v p contains [%v,%v), want [%v,%v)", test.desc, test.ops[:i+1], p.start, p.end, wantStart, wantEnd)

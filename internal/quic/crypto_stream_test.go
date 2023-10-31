@@ -94,6 +94,21 @@ func TestCryptoStreamReceive(t *testing.T) {
 			end:   3000,
 			want:  4000,
 		}},
+	}, {
+		name: "resent consumed data",
+		frames: []frame{{
+			start: 0,
+			end:   1000,
+			want:  1000,
+		}, {
+			start: 1000,
+			end:   2000,
+			want:  2000,
+		}, {
+			start: 0,
+			end:   1000,
+			want:  2000,
+		}},
 	}} {
 		t.Run(test.name, func(t *testing.T) {
 			var s cryptoStream
