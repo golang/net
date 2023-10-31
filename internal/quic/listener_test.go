@@ -172,7 +172,7 @@ func (tl *testListener) writeDatagram(d *testDatagram) {
 		}
 		pad := 0
 		if p.ptype == packetType1RTT {
-			pad = d.paddedSize
+			pad = d.paddedSize - len(buf)
 		}
 		buf = append(buf, encodeTestPacket(tl.t, tc, p, pad)...)
 	}

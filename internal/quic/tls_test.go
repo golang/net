@@ -148,6 +148,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 				},
 			},
 		}},
+		paddedSize: 1200,
 	}, {
 		// Client Initial + Handshake + 1-RTT
 		packets: []*testPacket{{

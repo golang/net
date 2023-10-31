@@ -30,7 +30,7 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 	pkt = append(pkt, dstConnID...)
 	pkt = append(pkt, byte(len(srcConnID)))
 	pkt = append(pkt, srcConnID...)
-	for len(pkt) < minimumClientInitialDatagramSize {
+	for len(pkt) < paddedInitialDatagramSize {
 		pkt = append(pkt, 0)
 	}
 

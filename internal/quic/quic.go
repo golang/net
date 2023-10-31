@@ -58,9 +58,10 @@ const (
 // https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2-6
 const timerGranularity = 1 * time.Millisecond
 
-// Minimum size of a UDP datagram sent by a client carrying an Initial packet.
+// Minimum size of a UDP datagram sent by a client carrying an Initial packet,
+// or a server containing an ack-eliciting Initial packet.
 // https://www.rfc-editor.org/rfc/rfc9000#section-14.1
-const minimumClientInitialDatagramSize = 1200
+const paddedInitialDatagramSize = 1200
 
 // Maximum number of streams of a given type which may be created.
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-4.6-2

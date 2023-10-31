@@ -24,7 +24,7 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 		ptype := getPacketType(buf)
 		switch ptype {
 		case packetTypeInitial:
-			if c.side == serverSide && len(dgram.b) < minimumClientInitialDatagramSize {
+			if c.side == serverSide && len(dgram.b) < paddedInitialDatagramSize {
 				// Discard client-sent Initial packets in too-short datagrams.
 				// https://www.rfc-editor.org/rfc/rfc9000#section-14.1-4
 				return

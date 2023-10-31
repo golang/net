@@ -269,7 +269,7 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		return
 	}
 	p, ok := parseGenericLongHeaderPacket(m.b)
-	if !ok || len(m.b) < minimumClientInitialDatagramSize {
+	if !ok || len(m.b) < paddedInitialDatagramSize {
 		return
 	}
 	switch p.version {
@@ -382,7 +382,7 @@ func (l *Listener) sendConnectionClose(in genericLongPacket, addr netip.AddrPort
 		srcConnID: in.dstConnID,
 	}
 	const pnumMaxAcked = 0
-	w.reset(minimumClientInitialDatagramSize)
+	w.reset(paddedInitialDatagramSize)
 	w.startProtectedLongHeaderPacket(pnumMaxAcked, p)
 	w.appendConnectionCloseTransportFrame(code, 0, "")
 	w.finishProtectedLongHeaderPacket(pnumMaxAcked, keys.w, p)

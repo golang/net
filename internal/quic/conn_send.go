@@ -77,10 +77,11 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysInitial.w, p)
 			if sentInitial != nil {
-				// Client initial packets need to be sent in a datagram padded to
-				// at least 1200 bytes. We can't add the padding yet, however,
-				// since we may want to coalesce additional packets with this one.
-				if c.side == clientSide {
+				// Client initial packets and ack-eliciting server initial packaets
+				// need to be sent in a datagram padded to at least 1200 bytes.
+				// We can't add the padding yet, however, since we may want to
+				// coalesce additional packets with this one.
+				if c.side == clientSide || sentInitial.ackEliciting {
 					pad = true
 				}
 			}
@@ -123,7 +124,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				// 1-RTT packets have no length field and extend to the end
 				// of the datagram, so if we're sending a datagram that needs
 				// padding we need to add it inside the 1-RTT packet.
-				c.w.appendPaddingTo(minimumClientInitialDatagramSize)
+				c.w.appendPaddingTo(paddedInitialDatagramSize)
 				pad = false
 			}
 			if logPackets {
@@ -149,7 +150,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				// Pad out the datagram with zeros, coalescing the Initial
 				// packet with invalid packets that will be ignored by the peer.
 				// https://www.rfc-editor.org/rfc/rfc9000.html#section-14.1-1
-				for len(buf) < minimumClientInitialDatagramSize {
+				for len(buf) < paddedInitialDatagramSize {
 					buf = append(buf, 0)
 					// Technically this padding isn't in any packet, but
 					// account it to the Initial packet in this datagram
