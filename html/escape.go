@@ -266,7 +266,7 @@ func escapeComment(w writer, s string) error {
 
 // escapeCommentString is to EscapeString as escapeComment is to escape.
 func escapeCommentString(s string) string {
-	if strings.IndexAny(s, "&>") == -1 {
+	if !strings.ContainsAny(s, "&>") {
 		return s
 	}
 	var buf bytes.Buffer
@@ -316,7 +316,7 @@ func escape(w writer, s string) error {
 // UnescapeString(EscapeString(s)) == s always holds, but the converse isn't
 // always true.
 func EscapeString(s string) string {
-	if strings.IndexAny(s, escapedChars) == -1 {
+	if !strings.ContainsAny(s, escapedChars)  {
 		return s
 	}
 	var buf bytes.Buffer

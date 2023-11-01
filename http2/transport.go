@@ -698,9 +698,6 @@ func (t *Transport) dialTLS(ctx context.Context, network, addr string, tlsCfg *t
 	if p := state.NegotiatedProtocol; p != NextProtoTLS {
 		return nil, fmt.Errorf("http2: unexpected ALPN protocol %q; want %q", p, NextProtoTLS)
 	}
-	if !state.NegotiatedProtocolIsMutual {
-		return nil, errors.New("http2: could not negotiate protocol mutually")
-	}
 	return tlsCn, nil
 }
 

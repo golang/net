@@ -69,10 +69,7 @@ func (ss specPart) Less(oo specPart) bool {
 		}
 		return x < y
 	}
-	if len(b) > 0 {
-		return true
-	}
-	return false
+	return len(b) > 0
 }
 
 type bySpecSection []specPart
