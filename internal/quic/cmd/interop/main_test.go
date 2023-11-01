@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -26,6 +27,23 @@ func init() {
 	}
 }
 
+var (
+	tryExecOnce sync.Once
+	tryExecErr  error
+)
+
+// needsExec skips the test if we can't use exec.Command.
+func needsExec(t *testing.T) {
+	tryExecOnce.Do(func() {
+		cmd := exec.Command(os.Args[0], "-test.list=^$")
+		cmd.Env = []string{}
+		tryExecErr = cmd.Run()
+	})
+	if tryExecErr != nil {
+		t.Skipf("skipping test: cannot exec subprocess: %v", tryExecErr)
+	}
+}
+
 type interopTest struct {
 	donec chan struct{}
 	addr  string
@@ -33,6 +51,7 @@ type interopTest struct {
 }
 
 func run(ctx context.Context, t *testing.T, name, testcase string, args []string) *interopTest {
+	needsExec(t)
 	ctx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(ctx, os.Args[0], args...)
 	out, err := cmd.StderrPipe()
