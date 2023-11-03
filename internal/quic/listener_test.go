@@ -19,12 +19,12 @@ import (
 )
 
 func TestConnect(t *testing.T) {
-	newLocalConnPair(t, &Config{}, &Config{})
+	NewLocalConnPair(t, &Config{}, &Config{})
 }
 
 func TestStreamTransfer(t *testing.T) {
 	ctx := context.Background()
-	cli, srv := newLocalConnPair(t, &Config{}, &Config{})
+	cli, srv := NewLocalConnPair(t, &Config{}, &Config{})
 	data := makeTestData(1 << 20)
 
 	srvdone := make(chan struct{})
@@ -61,11 +61,11 @@ func TestStreamTransfer(t *testing.T) {
 	}
 }
 
-func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
+func NewLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
 	t.Helper()
 	ctx := context.Background()
-	l1 := newLocalListener(t, serverSide, conf1)
-	l2 := newLocalListener(t, clientSide, conf2)
+	l1 := NewLocalListener(t, serverSide, conf1)
+	l2 := NewLocalListener(t, clientSide, conf2)
 	c2, err := l2.Dial(ctx, "udp", l1.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -77,9 +77,11 @@ func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverCon
 	return c2, c1
 }
 
-func newLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
+func NewLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
 	t.Helper()
 	if conf.TLSConfig == nil {
+		newConf := *conf
+		conf = &newConf
 		conf.TLSConfig = newTestTLSConfig(side)
 	}
 	l, err := Listen("udp", "127.0.0.1:0", conf)
@@ -101,6 +103,7 @@ type testListener struct {
 	conns                 map[*Conn]*testConn
 	acceptQueue           []*testConn
 	configTransportParams []func(*transportParameters)
+	configTestConn        []func(*testConn)
 	sentDatagrams         [][]byte
 	peerTLSConn           *tls.QUICConn
 	lastInitialDstConnID  []byte // for parsing Retry packets
@@ -248,33 +251,6 @@ func (tl *testListener) wantDatagram(expectation string, want *testDatagram) {
 func (tl *testListener) wantIdle(expectation string) {
 	if got := tl.readDatagram(); got != nil {
 		tl.t.Fatalf("expect: %v\nunexpectedly got: %v", expectation, got)
-	}
-}
-
-func (tl *testListener) newClientTLS(srcConnID, dstConnID []byte) []byte {
-	peerProvidedParams := defaultTransportParameters()
-	peerProvidedParams.initialSrcConnID = srcConnID
-	peerProvidedParams.originalDstConnID = dstConnID
-	for _, f := range tl.configTransportParams {
-		f(&peerProvidedParams)
-	}
-
-	config := &tls.QUICConfig{TLSConfig: newTestTLSConfig(clientSide)}
-	tl.peerTLSConn = tls.QUICClient(config)
-	tl.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
-	tl.peerTLSConn.Start(context.Background())
-	var data []byte
-	for {
-		e := tl.peerTLSConn.NextEvent()
-		switch e.Kind {
-		case tls.QUICNoEvent:
-			return data
-		case tls.QUICWriteData:
-			if e.Level != tls.QUICEncryptionLevelInitial {
-				tl.t.Fatal("initial data at unexpected level")
-			}
-			data = append(data, e.Data...)
-		}
 	}
 }
 

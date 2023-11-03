@@ -193,33 +193,38 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 		TLSConfig:         newTestTLSConfig(side),
 		StatelessResetKey: testStatelessResetKey,
 	}
+	var cids newServerConnIDs
+	if side == serverSide {
+		// The initial connection ID for the server is chosen by the client.
+		cids.srcConnID = testPeerConnID(0)
+		cids.dstConnID = testPeerConnID(-1)
+	}
 	var configTransportParams []func(*transportParameters)
+	var configTestConn []func(*testConn)
 	for _, o := range opts {
 		switch o := o.(type) {
 		case func(*Config):
 			o(config)
 		case func(*tls.Config):
 			o(config.TLSConfig)
+		case func(cids *newServerConnIDs):
+			o(&cids)
 		case func(p *transportParameters):
 			configTransportParams = append(configTransportParams, o)
+		case func(p *testConn):
+			configTestConn = append(configTestConn, o)
 		default:
 			t.Fatalf("unknown newTestConn option %T", o)
 		}
 	}
 
-	var initialConnID []byte
-	if side == serverSide {
-		// The initial connection ID for the server is chosen by the client.
-		initialConnID = testPeerConnID(-1)
-	}
-
 	listener := newTestListener(t, config)
 	listener.configTransportParams = configTransportParams
+	listener.configTestConn = configTestConn
 	conn, err := listener.l.newConn(
 		listener.now,
 		side,
-		initialConnID,
-		nil,
+		cids,
 		netip.MustParseAddrPort("127.0.0.1:443"))
 	if err != nil {
 		t.Fatal(err)
@@ -244,6 +249,9 @@ func newTestConnForConn(t *testing.T, listener *testListener, conn *Conn) *testC
 		recvDatagram:  make(chan *datagram),
 	}
 	t.Cleanup(tc.cleanup)
+	for _, f := range listener.configTestConn {
+		f(tc)
+	}
 	conn.testHooks = (*testConnHooks)(tc)
 
 	if listener.peerTLSConn != nil {

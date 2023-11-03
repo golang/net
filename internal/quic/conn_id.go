@@ -96,8 +96,8 @@ func (s *connIDState) initClient(c *Conn) error {
 	return nil
 }
 
-func (s *connIDState) initServer(c *Conn, dstConnID []byte) error {
-	dstConnID = cloneBytes(dstConnID)
+func (s *connIDState) initServer(c *Conn, cids newServerConnIDs) error {
+	dstConnID := cloneBytes(cids.dstConnID)
 	// Client-chosen, transient connection ID received in the first Initial packet.
 	// The server will not use this as the Source Connection ID of packets it sends,
 	// but remembers it because it may receive packets sent to this destination.
@@ -120,6 +120,14 @@ func (s *connIDState) initServer(c *Conn, dstConnID []byte) error {
 	c.listener.connsMap.updateConnIDs(func(conns *connsMap) {
 		conns.addConnID(c, dstConnID)
 		conns.addConnID(c, locid)
+	})
+
+	// Client chose its own connection ID.
+	s.remote = append(s.remote, remoteConnID{
+		connID: connID{
+			seq: 0,
+			cid: cloneBytes(cids.srcConnID),
+		},
 	})
 	return nil
 }

@@ -140,7 +140,7 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	}
 	addr := u.AddrPort()
 	addr = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
-	c, err := l.newConn(time.Now(), clientSide, nil, nil, addr)
+	c, err := l.newConn(time.Now(), clientSide, newServerConnIDs{}, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -151,13 +151,13 @@ func (l *Listener) Dial(ctx context.Context, network, address string) (*Conn, er
 	return c, nil
 }
 
-func (l *Listener) newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []byte, peerAddr netip.AddrPort) (*Conn, error) {
+func (l *Listener) newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort) (*Conn, error) {
 	l.connsMu.Lock()
 	defer l.connsMu.Unlock()
 	if l.closing {
 		return nil, errors.New("listener closed")
 	}
-	c, err := newConn(now, side, originalDstConnID, retrySrcConnID, peerAddr, l.config, l)
+	c, err := newConn(now, side, cids, peerAddr, l.config, l)
 	if err != nil {
 		return nil, err
 	}
@@ -296,19 +296,22 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	} else {
 		now = time.Now()
 	}
-	var originalDstConnID, retrySrcConnID []byte
+	cids := newServerConnIDs{
+		srcConnID: p.srcConnID,
+		dstConnID: p.dstConnID,
+	}
 	if l.config.RequireAddressValidation {
 		var ok bool
-		retrySrcConnID = p.dstConnID
-		originalDstConnID, ok = l.validateInitialAddress(now, p, m.addr)
+		cids.retrySrcConnID = p.dstConnID
+		cids.originalDstConnID, ok = l.validateInitialAddress(now, p, m.addr)
 		if !ok {
 			return
 		}
 	} else {
-		originalDstConnID = p.dstConnID
+		cids.originalDstConnID = p.dstConnID
 	}
 	var err error
-	c, err := l.newConn(now, serverSide, originalDstConnID, retrySrcConnID, m.addr)
+	c, err := l.newConn(now, serverSide, cids, m.addr)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.

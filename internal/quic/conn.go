@@ -86,7 +86,15 @@ type connTestHooks interface {
 	timeNow() time.Time
 }
 
-func newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []byte, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
+// newServerConnIDs is connection IDs associated with a new server connection.
+type newServerConnIDs struct {
+	srcConnID         []byte // source from client's current Initial
+	dstConnID         []byte // destination from client's current Initial
+	originalDstConnID []byte // destination from client's first Initial
+	retrySrcConnID    []byte // source from server's Retry
+}
+
+func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort, config *Config, l *Listener) (*Conn, error) {
 	c := &Conn{
 		side:                 side,
 		listener:             l,
@@ -115,11 +123,11 @@ func newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []b
 		}
 		initialConnID, _ = c.connIDState.dstConnID()
 	} else {
-		initialConnID = originalDstConnID
-		if retrySrcConnID != nil {
-			initialConnID = retrySrcConnID
+		initialConnID = cids.originalDstConnID
+		if cids.retrySrcConnID != nil {
+			initialConnID = cids.retrySrcConnID
 		}
-		if err := c.connIDState.initServer(c, initialConnID); err != nil {
+		if err := c.connIDState.initServer(c, cids); err != nil {
 			return nil, err
 		}
 	}
@@ -134,8 +142,8 @@ func newConn(now time.Time, side connSide, originalDstConnID, retrySrcConnID []b
 
 	if err := c.startTLS(now, initialConnID, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),
-		originalDstConnID:              originalDstConnID,
-		retrySrcConnID:                 retrySrcConnID,
+		originalDstConnID:              cids.originalDstConnID,
+		retrySrcConnID:                 cids.retrySrcConnID,
 		ackDelayExponent:               ackDelayExponent,
 		maxUDPPayloadSize:              maxUDPPayloadSize,
 		maxAckDelay:                    maxAckDelay,

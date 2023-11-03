@@ -578,8 +578,11 @@ func TestConnIDPeerWithZeroLengthIDProvidesPreferredAddr(t *testing.T) {
 		p.preferredAddrV6 = netip.MustParseAddrPort("[::0]:0")
 		p.preferredAddrConnID = testPeerConnID(1)
 		p.preferredAddrResetToken = make([]byte, 16)
+	}, func(cids *newServerConnIDs) {
+		cids.srcConnID = []byte{}
+	}, func(tc *testConn) {
+		tc.peerConnID = []byte{}
 	})
-	tc.peerConnID = []byte{}
 
 	tc.writeFrames(packetTypeInitial,
 		debugFrameCrypto{
