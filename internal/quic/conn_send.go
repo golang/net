@@ -328,7 +328,7 @@ func (c *Conn) appendConnectionCloseFrame(now time.Time, space numberSpace, err 
 	c.lifetime.connCloseSentTime = now
 	switch e := err.(type) {
 	case localTransportError:
-		c.w.appendConnectionCloseTransportFrame(transportError(e), 0, "")
+		c.w.appendConnectionCloseTransportFrame(e.code, 0, e.reason)
 	case *ApplicationError:
 		if space != appDataSpace {
 			// "CONNECTION_CLOSE frames signaling application errors (type 0x1d)

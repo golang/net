@@ -169,12 +169,12 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 	for len(params) > 0 {
 		id, n := consumeVarint(params)
 		if n < 0 {
-			return p, localTransportError(errTransportParameter)
+			return p, localTransportError{code: errTransportParameter}
 		}
 		params = params[n:]
 		val, n := consumeVarintBytes(params)
 		if n < 0 {
-			return p, localTransportError(errTransportParameter)
+			return p, localTransportError{code: errTransportParameter}
 		}
 		params = params[n:]
 		n = 0
@@ -193,14 +193,14 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			p.maxIdleTimeout = time.Duration(v) * time.Millisecond
 		case paramStatelessResetToken:
 			if len(val) != 16 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			p.statelessResetToken = val
 			n = 16
 		case paramMaxUDPPayloadSize:
 			p.maxUDPPayloadSize, n = consumeVarintInt64(val)
 			if p.maxUDPPayloadSize < 1200 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramInitialMaxData:
 			p.initialMaxData, n = consumeVarintInt64(val)
@@ -213,32 +213,32 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 		case paramInitialMaxStreamsBidi:
 			p.initialMaxStreamsBidi, n = consumeVarintInt64(val)
 			if p.initialMaxStreamsBidi > maxStreamsLimit {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramInitialMaxStreamsUni:
 			p.initialMaxStreamsUni, n = consumeVarintInt64(val)
 			if p.initialMaxStreamsUni > maxStreamsLimit {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramAckDelayExponent:
 			var v uint64
 			v, n = consumeVarint(val)
 			if v > 20 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			p.ackDelayExponent = int8(v)
 		case paramMaxAckDelay:
 			var v uint64
 			v, n = consumeVarint(val)
 			if v >= 1<<14 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			p.maxAckDelay = time.Duration(v) * time.Millisecond
 		case paramDisableActiveMigration:
 			p.disableActiveMigration = true
 		case paramPreferredAddress:
 			if len(val) < 4+2+16+2+1 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			p.preferredAddrV4 = netip.AddrPortFrom(
 				netip.AddrFrom4(*(*[4]byte)(val[:4])),
@@ -253,18 +253,18 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			var nn int
 			p.preferredAddrConnID, nn = consumeUint8Bytes(val)
 			if nn < 0 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			val = val[nn:]
 			if len(val) != 16 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 			p.preferredAddrResetToken = val
 			val = nil
 		case paramActiveConnectionIDLimit:
 			p.activeConnIDLimit, n = consumeVarintInt64(val)
 			if p.activeConnIDLimit < 2 {
-				return p, localTransportError(errTransportParameter)
+				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramInitialSourceConnectionID:
 			p.initialSrcConnID = val
@@ -276,7 +276,7 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			n = len(val)
 		}
 		if n != len(val) {
-			return p, localTransportError(errTransportParameter)
+			return p, localTransportError{code: errTransportParameter}
 		}
 	}
 	return p, nil

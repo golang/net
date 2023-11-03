@@ -83,10 +83,16 @@ func (e transportError) String() string {
 }
 
 // A localTransportError is an error sent to the peer.
-type localTransportError transportError
+type localTransportError struct {
+	code   transportError
+	reason string
+}
 
 func (e localTransportError) Error() string {
-	return "closed connection: " + transportError(e).String()
+	if e.reason == "" {
+		return fmt.Sprintf("closed connection: %v", e.code)
+	}
+	return fmt.Sprintf("closed connection: %v: %q", e.code, e.reason)
 }
 
 // A peerTransportError is an error received from the peer.

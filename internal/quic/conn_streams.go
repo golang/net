@@ -127,7 +127,10 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 		if (id.initiator() == c.side) != (ftype == sendStream) {
 			// Received an invalid frame for unidirectional stream.
 			// For example, a RESET_STREAM frame for a send-only stream.
-			c.abort(now, localTransportError(errStreamState))
+			c.abort(now, localTransportError{
+				code:   errStreamState,
+				reason: "invalid frame for unidirectional stream",
+			})
 			return nil
 		}
 	}
@@ -148,7 +151,10 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 		}
 		// Received a frame for a stream that should be originated by us,
 		// but which we never created.
-		c.abort(now, localTransportError(errStreamState))
+		c.abort(now, localTransportError{
+			code:   errStreamState,
+			reason: "received frame for unknown stream",
+		})
 		return nil
 	} else {
 		// if isOpen, this is a stream that was implicitly opened by a

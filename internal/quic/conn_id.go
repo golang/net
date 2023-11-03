@@ -210,25 +210,40 @@ func (s *connIDState) validateTransportParameters(c *Conn, isRetry bool, p trans
 	// the transient remote connection ID we chose (client)
 	// or is empty (server).
 	if !bytes.Equal(s.originalDstConnID, p.originalDstConnID) {
-		return localTransportError(errTransportParameter)
+		return localTransportError{
+			code:   errTransportParameter,
+			reason: "original_destination_connection_id mismatch",
+		}
 	}
 	s.originalDstConnID = nil // we have no further need for this
 	// Verify retry_source_connection_id matches the value from
 	// the server's Retry packet (when one was sent), or is empty.
 	if !bytes.Equal(p.retrySrcConnID, s.retrySrcConnID) {
-		return localTransportError(errTransportParameter)
+		return localTransportError{
+			code:   errTransportParameter,
+			reason: "retry_source_connection_id mismatch",
+		}
 	}
 	s.retrySrcConnID = nil // we have no further need for this
 	// Verify initial_source_connection_id matches the first remote connection ID.
 	if len(s.remote) == 0 || s.remote[0].seq != 0 {
-		return localTransportError(errInternal)
+		return localTransportError{
+			code:   errInternal,
+			reason: "remote connection id missing",
+		}
 	}
 	if !bytes.Equal(p.initialSrcConnID, s.remote[0].cid) {
-		return localTransportError(errTransportParameter)
+		return localTransportError{
+			code:   errTransportParameter,
+			reason: "initial_source_connection_id mismatch",
+		}
 	}
 	if len(p.statelessResetToken) > 0 {
 		if c.side == serverSide {
-			return localTransportError(errTransportParameter)
+			return localTransportError{
+				code:   errTransportParameter,
+				reason: "client sent stateless_reset_token",
+			}
 		}
 		token := statelessResetToken(p.statelessResetToken)
 		s.remote[0].resetToken = token
@@ -254,17 +269,6 @@ func (s *connIDState) handlePacket(c *Conn, ptype packetType, srcConnID []byte) 
 					cid: cloneBytes(srcConnID),
 				},
 			}
-		}
-	case ptype == packetTypeInitial && c.side == serverSide:
-		if len(s.remote) == 0 {
-			// We're a server connection processing the first Initial packet
-			// from the client. Set the client's connection ID.
-			s.remote = append(s.remote, remoteConnID{
-				connID: connID{
-					seq: 0,
-					cid: cloneBytes(srcConnID),
-				},
-			})
 		}
 	case ptype == packetTypeHandshake && c.side == serverSide:
 		if len(s.local) > 0 && s.local[0].seq == -1 && !s.local[0].retired {
@@ -294,7 +298,10 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 		// Destination Connection ID MUST treat receipt of a NEW_CONNECTION_ID
 		// frame as a connection error of type PROTOCOL_VIOLATION."
 		// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.15-6
-		return localTransportError(errProtocolViolation)
+		return localTransportError{
+			code:   errProtocolViolation,
+			reason: "NEW_CONNECTION_ID from peer with zero-length DCID",
+		}
 	}
 
 	if retire > s.retireRemotePriorTo {
@@ -316,7 +323,10 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 		}
 		if rcid.seq == seq {
 			if !bytes.Equal(rcid.cid, cid) {
-				return localTransportError(errProtocolViolation)
+				return localTransportError{
+					code:   errProtocolViolation,
+					reason: "NEW_CONNECTION_ID does not match prior id",
+				}
 			}
 			have = true // yes, we've seen this sequence number
 		}
@@ -350,7 +360,10 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 		// Retired connection IDs (including newly-retired ones) do not count
 		// against the limit.
 		// https://www.rfc-editor.org/rfc/rfc9000.html#section-5.1.1-5
-		return localTransportError(errConnectionIDLimit)
+		return localTransportError{
+			code:   errConnectionIDLimit,
+			reason: "active_connection_id_limit exceeded",
+		}
 	}
 
 	// "An endpoint SHOULD limit the number of connection IDs it has retired locally
@@ -360,7 +373,10 @@ func (s *connIDState) handleNewConnID(c *Conn, seq, retire int64, cid []byte, re
 	// Set a limit of four times the active_connection_id_limit for
 	// the total number of remote connection IDs we keep state for locally.
 	if len(s.remote) > 4*activeConnIDLimit {
-		return localTransportError(errConnectionIDLimit)
+		return localTransportError{
+			code:   errConnectionIDLimit,
+			reason: "too many unacknowledged RETIRE_CONNECTION_ID frames",
+		}
 	}
 
 	return nil
@@ -375,7 +391,10 @@ func (s *connIDState) retireRemote(rcid *remoteConnID) {
 
 func (s *connIDState) handleRetireConnID(c *Conn, seq int64) error {
 	if seq >= s.nextLocalSeq {
-		return localTransportError(errProtocolViolation)
+		return localTransportError{
+			code:   errProtocolViolation,
+			reason: "RETIRE_CONNECTION_ID for unissued sequence number",
+		}
 	}
 	for i := range s.local {
 		if s.local[i].seq == seq {

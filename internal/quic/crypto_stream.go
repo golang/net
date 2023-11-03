@@ -30,7 +30,10 @@ type cryptoStream struct {
 func (s *cryptoStream) handleCrypto(off int64, b []byte, f func([]byte) error) error {
 	end := off + int64(len(b))
 	if end-s.inset.min() > cryptoBufferSize {
-		return localTransportError(errCryptoBufferExceeded)
+		return localTransportError{
+			code:   errCryptoBufferExceeded,
+			reason: "crypto buffer exceeded",
+		}
 	}
 	s.inset.add(off, end)
 	if off == s.in.start {

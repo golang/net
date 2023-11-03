@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -848,7 +847,7 @@ func TestStreamOffsetTooLarge(t *testing.T) {
 	got, _ := tc.readFrame()
 	want1 := debugFrameConnectionCloseTransport{code: errFrameEncoding}
 	want2 := debugFrameConnectionCloseTransport{code: errFlowControl}
-	if !reflect.DeepEqual(got, want1) && !reflect.DeepEqual(got, want2) {
+	if !frameEqual(got, want1) && !frameEqual(got, want2) {
 		t.Fatalf("STREAM offset exceeds 2^62-1\ngot:  %v\nwant: %v\n  or: %v", got, want1, want2)
 	}
 }

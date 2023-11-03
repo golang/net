@@ -567,19 +567,31 @@ func (s *Stream) handleReset(code uint64, finalSize int64) error {
 func (s *Stream) checkStreamBounds(end int64, fin bool) error {
 	if end > s.inwin {
 		// The peer sent us data past the maximum flow control window we gave them.
-		return localTransportError(errFlowControl)
+		return localTransportError{
+			code:   errFlowControl,
+			reason: "stream flow control window exceeded",
+		}
 	}
 	if s.insize != -1 && end > s.insize {
 		// The peer sent us data past the final size of the stream they previously gave us.
-		return localTransportError(errFinalSize)
+		return localTransportError{
+			code:   errFinalSize,
+			reason: "data received past end of stream",
+		}
 	}
 	if fin && s.insize != -1 && end != s.insize {
 		// The peer changed the final size of the stream.
-		return localTransportError(errFinalSize)
+		return localTransportError{
+			code:   errFinalSize,
+			reason: "final size of stream changed",
+		}
 	}
 	if fin && end < s.in.end {
 		// The peer has previously sent us data past the final size.
-		return localTransportError(errFinalSize)
+		return localTransportError{
+			code:   errFinalSize,
+			reason: "end of stream occurs before prior data",
+		}
 	}
 	return nil
 }

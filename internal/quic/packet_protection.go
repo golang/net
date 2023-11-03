@@ -441,7 +441,7 @@ func (k *updatingKeyPair) unprotect(pkt []byte, pnumOff int, pnumMax packetNumbe
 	if err != nil {
 		k.authFailures++
 		if k.authFailures >= aeadIntegrityLimit(k.r.suite) {
-			return nil, 0, localTransportError(errAEADLimitReached)
+			return nil, 0, localTransportError{code: errAEADLimitReached}
 		}
 		return nil, 0, err
 	}

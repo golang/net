@@ -79,12 +79,18 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if buf[0]&reservedLongBits != 0 {
 		// Reserved header bits must be 0.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-17.2-8.2.1
-		c.abort(now, localTransportError(errProtocolViolation))
+		c.abort(now, localTransportError{
+			code:   errProtocolViolation,
+			reason: "reserved header bits are not zero",
+		})
 		return -1
 	}
 	if p.version != quicVersion1 {
 		// The peer has changed versions on us mid-handshake?
-		c.abort(now, localTransportError(errProtocolViolation))
+		c.abort(now, localTransportError{
+			code:   errProtocolViolation,
+			reason: "protocol version changed during handshake",
+		})
 		return -1
 	}
 
@@ -129,7 +135,10 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	if buf[0]&reserved1RTTBits != 0 {
 		// Reserved header bits must be 0.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-17.3.1-4.8.1
-		c.abort(now, localTransportError(errProtocolViolation))
+		c.abort(now, localTransportError{
+			code:   errProtocolViolation,
+			reason: "reserved header bits are not zero",
+		})
 		return -1
 	}
 
@@ -222,7 +231,10 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 		// "An endpoint MUST treat receipt of a packet containing no frames
 		// as a connection error of type PROTOCOL_VIOLATION."
 		// https://www.rfc-editor.org/rfc/rfc9000#section-12.4-3
-		c.abort(now, localTransportError(errProtocolViolation))
+		c.abort(now, localTransportError{
+			code:   errProtocolViolation,
+			reason: "packet contains no frames",
+		})
 		return false
 	}
 	// frameOK verifies that ptype is one of the packets in mask.
@@ -232,7 +244,10 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			// that is not permitted as a connection error of type
 			// PROTOCOL_VIOLATION."
 			// https://www.rfc-editor.org/rfc/rfc9000#section-12.4-3
-			c.abort(now, localTransportError(errProtocolViolation))
+			c.abort(now, localTransportError{
+				code:   errProtocolViolation,
+				reason: "frame not allowed in packet",
+			})
 			return false
 		}
 		return true
@@ -347,7 +362,10 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 			n = c.handleHandshakeDoneFrame(now, space, payload)
 		}
 		if n < 0 {
-			c.abort(now, localTransportError(errFrameEncoding))
+			c.abort(now, localTransportError{
+				code:   errFrameEncoding,
+				reason: "frame encoding error",
+			})
 			return false
 		}
 		payload = payload[n:]
@@ -360,7 +378,10 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 	largest, ackDelay, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
 		if end > c.loss.nextNumber(space) {
 			// Acknowledgement of a packet we never sent.
-			c.abort(now, localTransportError(errProtocolViolation))
+			c.abort(now, localTransportError{
+				code:   errProtocolViolation,
+				reason: "acknowledgement for unsent packet",
+			})
 			return
 		}
 		c.loss.receiveAckRange(now, space, rangeIndex, start, end, c.handleAckOrLoss)
@@ -521,7 +542,10 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 	if c.side == serverSide {
 		// Clients should never send HANDSHAKE_DONE.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-19.20-4
-		c.abort(now, localTransportError(errProtocolViolation))
+		c.abort(now, localTransportError{
+			code:   errProtocolViolation,
+			reason: "client sent HANDSHAKE_DONE",
+		})
 		return -1
 	}
 	if !c.isClosingOrDraining() {

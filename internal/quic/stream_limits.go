@@ -66,7 +66,10 @@ func (lim *remoteStreamLimits) init(maxOpen int64) {
 func (lim *remoteStreamLimits) open(id streamID) error {
 	num := id.num()
 	if num >= lim.max {
-		return localTransportError(errStreamLimit)
+		return localTransportError{
+			code:   errStreamLimit,
+			reason: "stream limit exceeded",
+		}
 	}
 	if num >= lim.opened {
 		lim.opened = num + 1

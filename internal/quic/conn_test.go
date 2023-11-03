@@ -594,6 +594,20 @@ func (tc *testConn) wantDatagram(expectation string, want *testDatagram) {
 	}
 }
 
+func datagramEqual(a, b *testDatagram) bool {
+	if a.paddedSize != b.paddedSize ||
+		a.addr != b.addr ||
+		len(a.packets) != len(b.packets) {
+		return false
+	}
+	for i := range a.packets {
+		if !packetEqual(a.packets[i], b.packets[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // wantPacket indicates that we expect the Conn to send a packet.
 func (tc *testConn) wantPacket(expectation string, want *testPacket) {
 	tc.t.Helper()
@@ -601,6 +615,25 @@ func (tc *testConn) wantPacket(expectation string, want *testPacket) {
 	if !reflect.DeepEqual(got, want) {
 		tc.t.Fatalf("%v:\ngot packet:  %v\nwant packet: %v", expectation, got, want)
 	}
+}
+
+func packetEqual(a, b *testPacket) bool {
+	ac := *a
+	ac.frames = nil
+	bc := *b
+	bc.frames = nil
+	if !reflect.DeepEqual(ac, bc) {
+		return false
+	}
+	if len(a.frames) != len(b.frames) {
+		return false
+	}
+	for i := range a.frames {
+		if !frameEqual(a.frames[i], b.frames[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // wantFrame indicates that we expect the Conn to send a frame.
@@ -613,9 +646,18 @@ func (tc *testConn) wantFrame(expectation string, wantType packetType, want debu
 	if gotType != wantType {
 		tc.t.Fatalf("%v:\ngot %v packet, want %v\ngot frame:  %v", expectation, gotType, wantType, got)
 	}
-	if !reflect.DeepEqual(got, want) {
+	if !frameEqual(got, want) {
 		tc.t.Fatalf("%v:\ngot frame:  %v\nwant frame: %v", expectation, got, want)
 	}
+}
+
+func frameEqual(a, b debugFrame) bool {
+	switch af := a.(type) {
+	case debugFrameConnectionCloseTransport:
+		bf, ok := b.(debugFrameConnectionCloseTransport)
+		return ok && af.code == bf.code
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // wantFrameType indicates that we expect the Conn to send a frame,

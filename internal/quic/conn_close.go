@@ -156,7 +156,7 @@ func (c *Conn) enterDraining(err error) {
 	if c.isDraining() {
 		return
 	}
-	if e, ok := c.lifetime.localErr.(localTransportError); ok && transportError(e) != errNo {
+	if e, ok := c.lifetime.localErr.(localTransportError); ok && e.code != errNo {
 		// If we've terminated the connection due to a peer protocol violation,
 		// record the final error on the connection as our reason for termination.
 		c.lifetime.finalErr = c.lifetime.localErr
@@ -220,7 +220,7 @@ func (c *Conn) Wait(ctx context.Context) error {
 // Otherwise, Abort sends a transport error of APPLICATION_ERROR with the error's text.
 func (c *Conn) Abort(err error) {
 	if err == nil {
-		err = localTransportError(errNo)
+		err = localTransportError{code: errNo}
 	}
 	c.sendMsg(func(now time.Time, c *Conn) {
 		c.abort(now, err)

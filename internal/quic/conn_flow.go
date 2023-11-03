@@ -90,7 +90,10 @@ func (c *Conn) shouldUpdateFlowControl(credit int64) bool {
 func (c *Conn) handleStreamBytesReceived(n int64) error {
 	c.streams.inflow.usedLimit += n
 	if c.streams.inflow.usedLimit > c.streams.inflow.sentLimit {
-		return localTransportError(errFlowControl)
+		return localTransportError{
+			code:   errFlowControl,
+			reason: "stream exceeded flow control limit",
+		}
 	}
 	return nil
 }
