@@ -76,9 +76,9 @@ func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMis
 	for {
 		locked := p.mu.TryRLock()
 		if locked {
-			log.Printf("getClientConn locked")
+			log.Printf("xxx getClientConn locked, no contention")
 		} else {
-			log.Printf("getClientConn contention, waiting")
+			log.Printf("xxx getClientConn contention, waiting")
 			p.mu.RLock()
 		}
 		for _, cc := range p.conns[addr] {
@@ -151,7 +151,7 @@ func (c *dialCall) dial(ctx context.Context, addr string) {
 	delete(c.p.dialing, addr)
 	c.p.mu.RUnlock()
 	if c.err == nil {
-		log.Printf("dial upgrading to write lock")
+		log.Printf("xxx dial upgrading to write lock")
 		c.p.mu.Lock()
 		c.p.addConnLocked(addr, c.res)
 		c.p.mu.Unlock()
@@ -208,7 +208,7 @@ func (c *addConnCall) run(t *Transport, key string, tc *tls.Conn) {
 	cc, err := t.NewClientConn(tc)
 
 	p := c.p
-	p.mu.Lock()  // TODO consider xxx
+	p.mu.Lock() // TODO consider xxx
 	if err != nil {
 		c.err = err
 	} else {

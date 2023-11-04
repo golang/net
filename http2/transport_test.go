@@ -6369,3 +6369,19 @@ func TestTransportSlowClose(t *testing.T) {
 	}
 	res.Body.Close()
 }
+
+func BenchmarkTransportClientConnection(b *testing.B) {
+	b.Logf("BenchmarkTransportClientConnection %d", b.N)
+	for n := 0; n < b.N; n++ {
+		benchSimpleRoundTrip(b, 0, 0)
+	}
+}
+
+func BenchmarkTransportClientConnectionParallel(b *testing.B) {
+	b.Logf("BenchmarkTransportClientConnectionParallel %d", b.N)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			benchSimpleRoundTrip(b, 0, 0)
+		}
+	})
+}
