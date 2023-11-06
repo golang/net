@@ -14,6 +14,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestStatelessResetClientSendsStatelessResetTokenTransportParameter(t *testing.T) {
@@ -154,7 +155,9 @@ func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
 		t.Errorf("conn.Wait() = %v, want errStatelessReset", err)
 	}
-	tc.wantIdle("closed connection is idle")
+	tc.wantIdle("closed connection is idle in draining")
+	tc.advance(1 * time.Second) // long enough to exit the draining state
+	tc.wantIdle("closed connection is idle after draining")
 }
 
 func TestStatelessResetSuccessfulTransportParameter(t *testing.T) {

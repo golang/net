@@ -62,7 +62,7 @@ func (c *Conn) lifetimeAdvance(now time.Time) (done bool) {
 	c.lifetime.drainEndTime = time.Time{}
 	if c.lifetime.finalErr == nil {
 		// The peer never responded to our CONNECTION_CLOSE.
-		c.enterDraining(errNoPeerResponse)
+		c.enterDraining(now, errNoPeerResponse)
 	}
 	return true
 }
@@ -152,11 +152,17 @@ func (c *Conn) sendOK(now time.Time) bool {
 }
 
 // enterDraining enters the draining state.
-func (c *Conn) enterDraining(err error) {
+func (c *Conn) enterDraining(now time.Time, err error) {
 	if c.isDraining() {
 		return
 	}
-	if e, ok := c.lifetime.localErr.(localTransportError); ok && e.code != errNo {
+	if err == errStatelessReset {
+		// If we've received a stateless reset, then we must not send a CONNECTION_CLOSE.
+		// Setting connCloseSentTime here prevents us from doing so.
+		c.lifetime.finalErr = errStatelessReset
+		c.lifetime.localErr = errStatelessReset
+		c.lifetime.connCloseSentTime = now
+	} else if e, ok := c.lifetime.localErr.(localTransportError); ok && e.code != errNo {
 		// If we've terminated the connection due to a peer protocol violation,
 		// record the final error on the connection as our reason for termination.
 		c.lifetime.finalErr = c.lifetime.localErr
@@ -239,14 +245,14 @@ func (c *Conn) abort(now time.Time, err error) {
 // The connection does not send a CONNECTION_CLOSE, and skips the draining period.
 func (c *Conn) abortImmediately(now time.Time, err error) {
 	c.abort(now, err)
-	c.enterDraining(err)
+	c.enterDraining(now, err)
 	c.exited = true
 }
 
 // exit fully terminates a connection immediately.
 func (c *Conn) exit() {
 	c.sendMsg(func(now time.Time, c *Conn) {
-		c.enterDraining(errors.New("connection closed"))
+		c.enterDraining(now, errors.New("connection closed"))
 		c.exited = true
 	})
 }

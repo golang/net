@@ -253,12 +253,18 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 	if len(m.b) < minimumValidPacketSize {
 		return
 	}
+	var now time.Time
+	if l.testHooks != nil {
+		now = l.testHooks.timeNow()
+	} else {
+		now = time.Now()
+	}
 	// Check to see if this is a stateless reset.
 	var token statelessResetToken
 	copy(token[:], m.b[len(m.b)-len(token):])
 	if c := l.connsMap.byResetToken[token]; c != nil {
 		c.sendMsg(func(now time.Time, c *Conn) {
-			c.handleStatelessReset(token)
+			c.handleStatelessReset(now, token)
 		})
 		return
 	}
@@ -289,12 +295,6 @@ func (l *Listener) handleUnknownDestinationDatagram(m *datagram) {
 		// a long-header packet, but this isn't generally useful. See:
 		// https://www.rfc-editor.org/rfc/rfc9000#section-10.3-16
 		return
-	}
-	var now time.Time
-	if l.testHooks != nil {
-		now = l.testHooks.timeNow()
-	} else {
-		now = time.Now()
 	}
 	cids := newServerConnIDs{
 		srcConnID: p.srcConnID,

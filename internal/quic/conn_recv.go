@@ -56,7 +56,7 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			if len(buf) == len(dgram.b) && len(buf) > statelessResetTokenLen {
 				var token statelessResetToken
 				copy(token[:], buf[len(buf)-len(token):])
-				c.handleStatelessReset(token)
+				c.handleStatelessReset(now, token)
 			}
 			// Invalid data at the end of a datagram is ignored.
 			break
@@ -525,7 +525,7 @@ func (c *Conn) handleConnectionCloseTransportFrame(now time.Time, payload []byte
 	if n < 0 {
 		return -1
 	}
-	c.enterDraining(peerTransportError{code: code, reason: reason})
+	c.enterDraining(now, peerTransportError{code: code, reason: reason})
 	return n
 }
 
@@ -534,7 +534,7 @@ func (c *Conn) handleConnectionCloseApplicationFrame(now time.Time, payload []by
 	if n < 0 {
 		return -1
 	}
-	c.enterDraining(&ApplicationError{Code: code, Reason: reason})
+	c.enterDraining(now, &ApplicationError{Code: code, Reason: reason})
 	return n
 }
 
@@ -556,9 +556,9 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 
 var errStatelessReset = errors.New("received stateless reset")
 
-func (c *Conn) handleStatelessReset(resetToken statelessResetToken) {
+func (c *Conn) handleStatelessReset(now time.Time, resetToken statelessResetToken) {
 	if !c.connIDState.isValidStatelessResetToken(resetToken) {
 		return
 	}
-	c.enterDraining(errStatelessReset)
+	c.enterDraining(now, errStatelessReset)
 }
