@@ -72,9 +72,9 @@ func run(ctx context.Context, t *testing.T, name, testcase string, args []string
 	addrc := make(chan string, 1)
 	donec := make(chan struct{})
 	go func() {
-		defer t.Logf("%v done", name)
 		defer close(addrc)
 		defer close(donec)
+		defer t.Logf("%v done", name)
 		s := bufio.NewScanner(out)
 		for s.Scan() {
 			line := s.Text()
