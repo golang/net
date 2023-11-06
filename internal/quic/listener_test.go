@@ -19,12 +19,12 @@ import (
 )
 
 func TestConnect(t *testing.T) {
-	NewLocalConnPair(t, &Config{}, &Config{})
+	newLocalConnPair(t, &Config{}, &Config{})
 }
 
 func TestStreamTransfer(t *testing.T) {
 	ctx := context.Background()
-	cli, srv := NewLocalConnPair(t, &Config{}, &Config{})
+	cli, srv := newLocalConnPair(t, &Config{}, &Config{})
 	data := makeTestData(1 << 20)
 
 	srvdone := make(chan struct{})
@@ -61,11 +61,11 @@ func TestStreamTransfer(t *testing.T) {
 	}
 }
 
-func NewLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
+func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
 	t.Helper()
 	ctx := context.Background()
-	l1 := NewLocalListener(t, serverSide, conf1)
-	l2 := NewLocalListener(t, clientSide, conf2)
+	l1 := newLocalListener(t, serverSide, conf1)
+	l2 := newLocalListener(t, clientSide, conf2)
 	c2, err := l2.Dial(ctx, "udp", l1.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func NewLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverCon
 	return c2, c1
 }
 
-func NewLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
+func newLocalListener(t *testing.T, side connSide, conf *Config) *Listener {
 	t.Helper()
 	if conf.TLSConfig == nil {
 		newConf := *conf
