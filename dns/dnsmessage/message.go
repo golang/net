@@ -2027,10 +2027,6 @@ func (n *Name) pack(msg []byte, compression map[string]uint16, compressionOff in
 
 // unpack unpacks a domain name.
 func (n *Name) unpack(msg []byte, off int) (int, error) {
-	return n.unpackCompressed(msg, off)
-}
-
-func (n *Name) unpackCompressed(msg []byte, off int) (int, error) {
 	// currOff is the current working offset.
 	currOff := off
 
@@ -2545,7 +2541,7 @@ func unpackSRVResource(msg []byte, off int) (SRVResource, error) {
 		return SRVResource{}, &nestedError{"Port", err}
 	}
 	var target Name
-	if _, err := target.unpackCompressed(msg, off); err != nil {
+	if _, err := target.unpack(msg, off); err != nil {
 		return SRVResource{}, &nestedError{"Target", err}
 	}
 	return SRVResource{priority, weight, port, target}, nil
