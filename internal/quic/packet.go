@@ -41,6 +41,22 @@ func (p packetType) String() string {
 	return fmt.Sprintf("unknown packet type %v", byte(p))
 }
 
+func (p packetType) qlogString() string {
+	switch p {
+	case packetTypeInitial:
+		return "initial"
+	case packetType0RTT:
+		return "0RTT"
+	case packetTypeHandshake:
+		return "handshake"
+	case packetTypeRetry:
+		return "retry"
+	case packetType1RTT:
+		return "1RTT"
+	}
+	return "unknown"
+}
+
 // Bits set in the first byte of a packet.
 const (
 	headerFormLong   = 0x80 // https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2-3.2.1

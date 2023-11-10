@@ -42,38 +42,56 @@ func (w *jsonWriter) writeRecordEnd() {
 	w.mu.Unlock()
 }
 
-// writeAttrsField writes a []slog.Attr as an object field.
-func (w *jsonWriter) writeAttrsField(name string, attrs []slog.Attr) {
-	w.writeName(name)
+func (w *jsonWriter) writeAttrs(attrs []slog.Attr) {
 	w.buf.WriteByte('{')
 	for _, a := range attrs {
+		if a.Key == "" {
+			continue
+		}
 		w.writeAttr(a)
 	}
 	w.buf.WriteByte('}')
 }
 
-// writeAttr writes a slog.Attr as an object field.
 func (w *jsonWriter) writeAttr(a slog.Attr) {
-	v := a.Value.Resolve()
+	w.writeName(a.Key)
+	w.writeValue(a.Value)
+}
+
+// writeAttr writes a []slog.Attr as an object field.
+func (w *jsonWriter) writeAttrsField(name string, attrs []slog.Attr) {
+	w.writeName(name)
+	w.writeAttrs(attrs)
+}
+
+func (w *jsonWriter) writeValue(v slog.Value) {
+	v = v.Resolve()
 	switch v.Kind() {
 	case slog.KindAny:
-		w.writeStringField(a.Key, fmt.Sprint(v.Any()))
+		switch v := v.Any().(type) {
+		case []slog.Value:
+			w.writeArray(v)
+		case interface{ AppendJSON([]byte) []byte }:
+			w.buf.Write(v.AppendJSON(w.buf.AvailableBuffer()))
+		default:
+			w.writeString(fmt.Sprint(v))
+		}
 	case slog.KindBool:
-		w.writeBoolField(a.Key, v.Bool())
+		w.writeBool(v.Bool())
 	case slog.KindDuration:
-		w.writeDurationField(a.Key, v.Duration())
+		w.writeDuration(v.Duration())
 	case slog.KindFloat64:
-		w.writeFloat64Field(a.Key, v.Float64())
+		w.writeFloat64(v.Float64())
 	case slog.KindInt64:
-		w.writeInt64Field(a.Key, v.Int64())
+		w.writeInt64(v.Int64())
 	case slog.KindString:
-		w.writeStringField(a.Key, v.String())
+		w.writeString(v.String())
 	case slog.KindTime:
-		w.writeTimeField(a.Key, v.Time())
+		w.writeTime(v.Time())
 	case slog.KindUint64:
-		w.writeUint64Field(a.Key, v.Uint64())
+		w.writeUint64(v.Uint64())
 	case slog.KindGroup:
-		w.writeAttrsField(a.Key, v.Group())
+		w.writeAttrs(v.Group())
 	default:
 		w.writeString("unhandled kind")
 	}
@@ -89,24 +107,41 @@ func (w *jsonWriter) writeName(name string) {
 	w.buf.WriteByte(':')
 }
 
-// writeObject writes an object-valued object field.
-// The function f is called to write the contents.
-func (w *jsonWriter) writeObjectField(name string, f func()) {
-	w.writeName(name)
+func (w *jsonWriter) writeObject(f func()) {
 	w.buf.WriteByte('{')
 	f()
 	w.buf.WriteByte('}')
 }
 
-// writeRawField writes an field with a raw JSON value.
-func (w *jsonWriter) writeRawField(name, v string) {
+// writeObject writes an object-valued object field.
+// The function f is called to write the contents.
+func (w *jsonWriter) writeObjectField(name string, f func()) {
 	w.writeName(name)
+	w.writeObject(f)
+}
+
+func (w *jsonWriter) writeArray(vals []slog.Value) {
+	w.buf.WriteByte('[')
+	for i, v := range vals {
+		if i != 0 {
+			w.buf.WriteByte(',')
+		}
+		w.writeValue(v)
+	}
+	w.buf.WriteByte(']')
+}
+
+func (w *jsonWriter) writeRaw(v string) {
 	w.buf.WriteString(v)
 }
 
-// writeBoolField writes a bool-valued object field.
-func (w *jsonWriter) writeBoolField(name string, v bool) {
+// writeRawField writes a field with a raw JSON value.
+func (w *jsonWriter) writeRawField(name, v string) {
 	w.writeName(name)
+	w.writeRaw(v)
+}
+
+func (w *jsonWriter) writeBool(v bool) {
 	if v {
 		w.buf.WriteString("true")
 	} else {
@@ -114,40 +149,62 @@ func (w *jsonWriter) writeBoolField(name string, v bool) {
 	}
 }
 
+// writeBoolField writes a bool-valued object field.
+func (w *jsonWriter) writeBoolField(name string, v bool) {
+	w.writeName(name)
+	w.writeBool(v)
+}
+
+// writeDuration writes a duration as milliseconds.
+func (w *jsonWriter) writeDuration(v time.Duration) {
+	fmt.Fprintf(&w.buf, "%d.%06d", v.Milliseconds(), v%time.Millisecond)
+}
+
 // writeDurationField writes a millisecond duration-valued object field.
 func (w *jsonWriter) writeDurationField(name string, v time.Duration) {
 	w.writeName(name)
-	fmt.Fprintf(&w.buf, "%d.%06d", v.Milliseconds(), v%time.Millisecond)
+	w.writeDuration(v)
+}
+
+func (w *jsonWriter) writeFloat64(v float64) {
+	w.buf.Write(strconv.AppendFloat(w.buf.AvailableBuffer(), v, 'f', -1, 64))
 }
 
 // writeFloat64Field writes an float64-valued object field.
 func (w *jsonWriter) writeFloat64Field(name string, v float64) {
 	w.writeName(name)
-	w.buf.Write(strconv.AppendFloat(w.buf.AvailableBuffer(), v, 'f', -1, 64))
+	w.writeFloat64(v)
+}
+
+func (w *jsonWriter) writeInt64(v int64) {
+	w.buf.Write(strconv.AppendInt(w.buf.AvailableBuffer(), v, 10))
 }
 
 // writeInt64Field writes an int64-valued object field.
 func (w *jsonWriter) writeInt64Field(name string, v int64) {
 	w.writeName(name)
-	w.buf.Write(strconv.AppendInt(w.buf.AvailableBuffer(), v, 10))
+	w.writeInt64(v)
+}
+
+func (w *jsonWriter) writeUint64(v uint64) {
+	w.buf.Write(strconv.AppendUint(w.buf.AvailableBuffer(), v, 10))
 }
 
 // writeUint64Field writes a uint64-valued object field.
 func (w *jsonWriter) writeUint64Field(name string, v uint64) {
 	w.writeName(name)
-	w.buf.Write(strconv.AppendUint(w.buf.AvailableBuffer(), v, 10))
+	w.writeUint64(v)
 }
 
-// writeStringField writes a string-valued object field.
-func (w *jsonWriter) writeStringField(name, v string) {
-	w.writeName(name)
-	w.writeString(v)
+// writeTime writes a time as seconds since the Unix epoch.
+func (w *jsonWriter) writeTime(v time.Time) {
+	fmt.Fprintf(&w.buf, "%d.%06d", v.UnixMilli(), v.Nanosecond()%int(time.Millisecond))
 }
 
 // writeTimeField writes a time-valued object field.
 func (w *jsonWriter) writeTimeField(name string, v time.Time) {
 	w.writeName(name)
-	fmt.Fprintf(&w.buf, "%d.%06d", v.UnixMilli(), v.Nanosecond()%int(time.Millisecond))
+	w.writeTime(v)
 }
 
 func jsonSafeSet(c byte) bool {
@@ -191,4 +248,10 @@ func (w *jsonWriter) writeString(v string) {
 		}
 	}
 	w.buf.WriteByte('"')
+}
+
+// writeStringField writes a string-valued object field.
+func (w *jsonWriter) writeStringField(name, v string) {
+	w.writeName(name)
+	w.writeString(v)
 }

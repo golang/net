@@ -101,6 +101,9 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	if logPackets {
 		logInboundLongPacket(c, p)
 	}
+	if c.logEnabled(QLogLevelPacket) {
+		c.logLongPacketReceived(p, buf[:n])
+	}
 	c.connIDState.handlePacket(c, p.ptype, p.srcConnID)
 	ackEliciting := c.handleFrames(now, ptype, space, p.payload)
 	c.acks[space].receive(now, space, p.num, ackEliciting)
@@ -148,6 +151,9 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 
 	if logPackets {
 		logInboundShortPacket(c, p)
+	}
+	if c.logEnabled(QLogLevelPacket) {
+		c.log1RTTPacketReceived(p, buf)
 	}
 	ackEliciting := c.handleFrames(now, packetType1RTT, appDataSpace, p.payload)
 	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting)

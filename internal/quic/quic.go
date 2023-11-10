@@ -144,6 +144,17 @@ const (
 	streamTypeCount
 )
 
+func (s streamType) qlogString() string {
+	switch s {
+	case bidiStream:
+		return "bidirectional"
+	case uniStream:
+		return "unidirectional"
+	default:
+		return "BUG"
+	}
+}
+
 func (s streamType) String() string {
 	switch s {
 	case bidiStream:

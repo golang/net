@@ -9,8 +9,13 @@ package quic
 import (
 	"bytes"
 	"crypto/tls"
+	"io"
+	"log/slog"
 	"reflect"
 	"testing"
+	"time"
+
+	"golang.org/x/net/internal/quic/qlog"
 )
 
 func TestParseLongHeaderPacket(t *testing.T) {
@@ -207,11 +212,13 @@ func TestRoundtripEncodeShortPacket(t *testing.T) {
 func TestFrameEncodeDecode(t *testing.T) {
 	for _, test := range []struct {
 		s         string
+		j         string
 		f         debugFrame
 		b         []byte
 		truncated []byte
 	}{{
 		s: "PADDING*1",
+		j: `{"frame_type":"padding","length":1}`,
 		f: debugFramePadding{
 			size: 1,
 		},
@@ -221,12 +228,14 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "PING",
+		j: `{"frame_type":"ping"}`,
 		f: debugFramePing{},
 		b: []byte{
 			0x01, // TYPE(i) = 0x01
 		},
 	}, {
 		s: "ACK Delay=10 [0,16) [17,32) [48,64)",
+		j: `"error: debugFrameAck should not appear as a slog Value"`,
 		f: debugFrameAck{
 			ackDelay: 10,
 			ranges: []i64range[packetNumber]{
@@ -257,6 +266,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "RESET_STREAM ID=1 Code=2 FinalSize=3",
+		j: `{"frame_type":"reset_stream","stream_id":1,"final_size":3}`,
 		f: debugFrameResetStream{
 			id:        1,
 			code:      2,
@@ -270,6 +280,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STOP_SENDING ID=1 Code=2",
+		j: `{"frame_type":"stop_sending","stream_id":1,"error_code":2}`,
 		f: debugFrameStopSending{
 			id:   1,
 			code: 2,
@@ -281,6 +292,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "CRYPTO Offset=1 Length=2",
+		j: `{"frame_type":"crypto","offset":1,"length":2}`,
 		f: debugFrameCrypto{
 			off:  1,
 			data: []byte{3, 4},
@@ -299,6 +311,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "NEW_TOKEN Token=0304",
+		j: `{"frame_type":"new_token","token":"0304"}`,
 		f: debugFrameNewToken{
 			token: []byte{3, 4},
 		},
@@ -309,6 +322,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAM ID=1 Offset=0 Length=0",
+		j: `{"frame_type":"stream","stream_id":1,"offset":0,"length":0}`,
 		f: debugFrameStream{
 			id:   1,
 			fin:  false,
@@ -324,6 +338,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAM ID=100 Offset=4 Length=3",
+		j: `{"frame_type":"stream","stream_id":100,"offset":4,"length":3}`,
 		f: debugFrameStream{
 			id:   100,
 			fin:  false,
@@ -346,6 +361,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAM ID=100 FIN Offset=4 Length=3",
+		j: `{"frame_type":"stream","stream_id":100,"offset":4,"length":3,"fin":true}`,
 		f: debugFrameStream{
 			id:   100,
 			fin:  true,
@@ -368,6 +384,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAM ID=1 FIN Offset=100 Length=0",
+		j: `{"frame_type":"stream","stream_id":1,"offset":100,"length":0,"fin":true}`,
 		f: debugFrameStream{
 			id:   1,
 			fin:  true,
@@ -383,6 +400,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "MAX_DATA Max=10",
+		j: `{"frame_type":"max_data","maximum":10}`,
 		f: debugFrameMaxData{
 			max: 10,
 		},
@@ -392,6 +410,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "MAX_STREAM_DATA ID=1 Max=10",
+		j: `{"frame_type":"max_stream_data","stream_id":1,"maximum":10}`,
 		f: debugFrameMaxStreamData{
 			id:  1,
 			max: 10,
@@ -403,6 +422,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "MAX_STREAMS Type=bidi Max=1",
+		j: `{"frame_type":"max_streams","stream_type":"bidirectional","maximum":1}`,
 		f: debugFrameMaxStreams{
 			streamType: bidiStream,
 			max:        1,
@@ -413,6 +433,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "MAX_STREAMS Type=uni Max=1",
+		j: `{"frame_type":"max_streams","stream_type":"unidirectional","maximum":1}`,
 		f: debugFrameMaxStreams{
 			streamType: uniStream,
 			max:        1,
@@ -423,6 +444,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "DATA_BLOCKED Max=1",
+		j: `{"frame_type":"data_blocked","limit":1}`,
 		f: debugFrameDataBlocked{
 			max: 1,
 		},
@@ -432,6 +454,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAM_DATA_BLOCKED ID=1 Max=2",
+		j: `{"frame_type":"stream_data_blocked","stream_id":1,"limit":2}`,
 		f: debugFrameStreamDataBlocked{
 			id:  1,
 			max: 2,
@@ -443,6 +466,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAMS_BLOCKED Type=bidi Max=1",
+		j: `{"frame_type":"streams_blocked","stream_type":"bidirectional","limit":1}`,
 		f: debugFrameStreamsBlocked{
 			streamType: bidiStream,
 			max:        1,
@@ -453,6 +477,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "STREAMS_BLOCKED Type=uni Max=1",
+		j: `{"frame_type":"streams_blocked","stream_type":"unidirectional","limit":1}`,
 		f: debugFrameStreamsBlocked{
 			streamType: uniStream,
 			max:        1,
@@ -463,6 +488,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "NEW_CONNECTION_ID Seq=3 Retire=2 ID=a0a1a2a3 Token=0102030405060708090a0b0c0d0e0f10",
+		j: `{"frame_type":"new_connection_id","sequence_number":3,"retire_prior_to":2,"connection_id":"a0a1a2a3","stateless_reset_token":"0102030405060708090a0b0c0d0e0f10"}`,
 		f: debugFrameNewConnectionID{
 			seq:           3,
 			retirePriorTo: 2,
@@ -479,6 +505,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "RETIRE_CONNECTION_ID Seq=1",
+		j: `{"frame_type":"retire_connection_id","sequence_number":1}`,
 		f: debugFrameRetireConnectionID{
 			seq: 1,
 		},
@@ -488,6 +515,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "PATH_CHALLENGE Data=0123456789abcdef",
+		j: `{"frame_type":"path_challenge","data":"0123456789abcdef"}`,
 		f: debugFramePathChallenge{
 			data: 0x0123456789abcdef,
 		},
@@ -497,6 +525,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "PATH_RESPONSE Data=0123456789abcdef",
+		j: `{"frame_type":"path_response","data":"0123456789abcdef"}`,
 		f: debugFramePathResponse{
 			data: 0x0123456789abcdef,
 		},
@@ -506,6 +535,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: `CONNECTION_CLOSE Code=INTERNAL_ERROR FrameType=2 Reason="oops"`,
+		j: `{"frame_type":"connection_close","error_space":"transport","error_code_value":1,"reason":"oops"}`,
 		f: debugFrameConnectionCloseTransport{
 			code:      1,
 			frameType: 2,
@@ -520,6 +550,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: `CONNECTION_CLOSE AppCode=1 Reason="oops"`,
+		j: `{"frame_type":"connection_close","error_space":"application","error_code_value":1,"reason":"oops"}`,
 		f: debugFrameConnectionCloseApplication{
 			code:   1,
 			reason: "oops",
@@ -532,6 +563,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		},
 	}, {
 		s: "HANDSHAKE_DONE",
+		j: `{"frame_type":"handshake_done"}`,
 		f: debugFrameHandshakeDone{},
 		b: []byte{
 			0x1e, // Type (i) = 0x1e,
@@ -553,6 +585,9 @@ func TestFrameEncodeDecode(t *testing.T) {
 		}
 		if got, want := test.f.String(), test.s; got != want {
 			t.Errorf("frame.String():\ngot  %q\nwant %q", got, want)
+		}
+		if got, want := frameJSON(test.f), test.j; got != want {
+			t.Errorf("frame.LogValue():\ngot  %q\nwant %q", got, want)
 		}
 
 		// Try encoding the frame into too little space.
@@ -577,6 +612,42 @@ func TestFrameEncodeDecode(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestFrameScaledAck(t *testing.T) {
+	for _, test := range []struct {
+		j string
+		f debugFrameScaledAck
+	}{{
+		j: `{"frame_type":"ack","acked_ranges":[[0,15],[17],[48,63]],"ack_delay":10.000000}`,
+		f: debugFrameScaledAck{
+			ackDelay: 10 * time.Millisecond,
+			ranges: []i64range[packetNumber]{
+				{0x00, 0x10},
+				{0x11, 0x12},
+				{0x30, 0x40},
+			},
+		},
+	}} {
+		if got, want := frameJSON(test.f), test.j; got != want {
+			t.Errorf("frame.LogValue():\ngot  %q\nwant %q", got, want)
+		}
+	}
+}
+
+func frameJSON(f slog.LogValuer) string {
+	var buf bytes.Buffer
+	h := qlog.NewJSONHandler(qlog.HandlerOptions{
+		Level: QLogLevelFrame,
+		NewTrace: func(info qlog.TraceInfo) (io.WriteCloser, error) {
+			return nopCloseWriter{&buf}, nil
+		},
+	})
+	// Log the frame, and then trim out everything but the frame from the log.
+	slog.New(h).Info("message", slog.Any("frame", f))
+	_, b, _ := bytes.Cut(buf.Bytes(), []byte(`"frame":`))
+	b = bytes.TrimSuffix(b, []byte("}}\n"))
+	return string(b)
 }
 
 func TestFrameDecode(t *testing.T) {

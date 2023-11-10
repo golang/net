@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/netip"
+	"time"
 )
 
 // Log levels for qlog events.
@@ -144,4 +145,105 @@ func (c *Conn) logConnectionClosed() {
 		"connectivity:connection_closed",
 		slog.String("trigger", trigger),
 	)
+}
+
+func (c *Conn) logLongPacketReceived(p longPacket, pkt []byte) {
+	pnumLen := 1 + int(pkt[0]&0x03)
+	length := pnumLen + len(p.payload)
+	var frames slog.Attr
+	if c.logEnabled(QLogLevelFrame) {
+		frames = c.packetFramesAttr(p.payload)
+	}
+	c.log.LogAttrs(context.Background(), QLogLevelPacket,
+		"transport:packet_received",
+		slog.Group("header",
+			slog.String("packet_type", p.ptype.qlogString()),
+			slog.Uint64("packet_number", uint64(p.num)),
+			slog.Uint64("flags", uint64(pkt[0])),
+			slogHexstring("scid", p.srcConnID),
+			slogHexstring("dcid", p.dstConnID),
+			slog.Int("length", length),
+		),
+		frames,
+	)
+}
+
+func (c *Conn) log1RTTPacketReceived(p shortPacket, pkt []byte) {
+	var frames slog.Attr
+	if c.logEnabled(QLogLevelFrame) {
+		frames = c.packetFramesAttr(p.payload)
+	}
+	dstConnID, _ := dstConnIDForDatagram(pkt)
+	c.log.LogAttrs(context.Background(), QLogLevelPacket,
+		"transport:packet_received",
+		slog.Group("header",
+			slog.String("packet_type", packetType1RTT.qlogString()),
+			slog.Uint64("packet_number", uint64(p.num)),
+			slog.Uint64("flags", uint64(pkt[0])),
+			slog.String("scid", ""),
+			slogHexstring("dcid", dstConnID),
+		),
+		frames,
+	)
+}
+
+func (c *Conn) logPacketSent(ptype packetType, pnum packetNumber, src, dst, payload []byte) {
+	var frames slog.Attr
+	if c.logEnabled(QLogLevelFrame) {
+		frames = c.packetFramesAttr(payload)
+	}
+	var scid slog.Attr
+	if len(src) > 0 {
+		scid = slogHexstring("scid", src)
+	}
+	c.log.LogAttrs(context.Background(), QLogLevelPacket,
+		"transport:packet_sent",
+		slog.Group("header",
+			slog.String("packet_type", ptype.qlogString()),
+			slog.Uint64("packet_number", uint64(pnum)),
+			scid,
+			slogHexstring("dcid", dst),
+		),
+		frames,
+	)
+}
+
+// packetFramesAttr returns the "frames" attribute containing the frames in a packet.
+// We currently pass this as a slog Any containing a []slog.Value,
+// where each Value is a debugFrame that implements slog.LogValuer.
+//
+// This isn't tremendously efficient, but avoids the need to put a JSON encoder
+// in the quic package or a frame parser in the qlog package.
+func (c *Conn) packetFramesAttr(payload []byte) slog.Attr {
+	var frames []slog.Value
+	for len(payload) > 0 {
+		f, n := parseDebugFrame(payload)
+		if n < 0 {
+			break
+		}
+		payload = payload[n:]
+		switch f := f.(type) {
+		case debugFrameAck:
+			// The qlog ACK frame contains the ACK Delay field as a duration.
+			// Interpreting the contents of this field as a duration requires
+			// knowing the peer's ack_delay_exponent transport parameter,
+			// and it's possible for us to parse an ACK frame before we've
+			// received that parameter.
+			//
+			// We could plumb connection state down into the frame parser,
+			// but for now let's minimize the amount of code that needs to
+			// deal with this and convert the unscaled value into a scaled one here.
+			ackDelay := time.Duration(-1)
+			if c.peerAckDelayExponent >= 0 {
+				ackDelay = f.ackDelay.Duration(uint8(c.peerAckDelayExponent))
+			}
+			frames = append(frames, slog.AnyValue(debugFrameScaledAck{
+				ranges:   f.ranges,
+				ackDelay: ackDelay,
+			}))
+		default:
+			frames = append(frames, slog.AnyValue(f))
+		}
+	}
+	return slog.Any("frames", frames)
 }

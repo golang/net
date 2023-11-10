@@ -55,6 +55,41 @@ func TestQLogHandshake(t *testing.T) {
 	})
 }
 
+func TestQLogPacketFrames(t *testing.T) {
+	qr := &qlogRecord{}
+	tc := newTestConn(t, clientSide, qr.config)
+	tc.handshake()
+	tc.conn.Abort(nil)
+	tc.writeFrames(packetType1RTT, debugFrameConnectionCloseTransport{})
+	tc.advanceToTimer() // let the conn finish draining
+
+	qr.wantEvents(t, jsonEvent{
+		"name": "transport:packet_sent",
+		"data": map[string]any{
+			"header": map[string]any{
+				"packet_type":   "initial",
+				"packet_number": 0,
+				"dcid":          hex.EncodeToString(testLocalConnID(-1)),
+				"scid":          hex.EncodeToString(testLocalConnID(0)),
+			},
+			"frames": []any{
+				map[string]any{"frame_type": "crypto"},
+			},
+		},
+	}, jsonEvent{
+		"name": "transport:packet_received",
+		"data": map[string]any{
+			"header": map[string]any{
+				"packet_type":   "initial",
+				"packet_number": 0,
+				"dcid":          hex.EncodeToString(testLocalConnID(0)),
+				"scid":          hex.EncodeToString(testPeerConnID(0)),
+			},
+			"frames": []any{map[string]any{"frame_type": "crypto"}},
+		},
+	})
+}
+
 func TestQLogConnectionClosedTrigger(t *testing.T) {
 	for _, test := range []struct {
 		trigger  string
@@ -137,20 +172,59 @@ func (j jsonEvent) String() string {
 	return string(b)
 }
 
-// eventPartialEqual verifies that every field set in want matches the corresponding field in got.
-// It ignores additional fields in got.
-func eventPartialEqual(got, want jsonEvent) bool {
-	for k := range want {
-		ge, gok := got[k].(map[string]any)
-		we, wok := want[k].(map[string]any)
-		if gok && wok {
-			if !eventPartialEqual(ge, we) {
+// jsonPartialEqual compares two JSON structures.
+// It ignores fields not set in want (see below for specifics).
+func jsonPartialEqual(got, want any) (equal bool) {
+	cmpval := func(v any) any {
+		// Map certain types to a common representation.
+		switch v := v.(type) {
+		case int:
+			// JSON uses float64s rather than ints for numbers.
+			// Map int->float64 so we can use integers in expectations.
+			return float64(v)
+		case jsonEvent:
+			return (map[string]any)(v)
+		case []jsonEvent:
+			s := []any{}
+			for _, e := range v {
+				s = append(s, e)
+			}
+			return s
+		}
+		return v
+	}
+	got = cmpval(got)
+	want = cmpval(want)
+	if reflect.TypeOf(got) != reflect.TypeOf(want) {
+		return false
+	}
+	switch w := want.(type) {
+	case nil:
+		// Match anything.
+	case map[string]any:
+		// JSON object: Every field in want must match a field in got.
+		g := got.(map[string]any)
+		for k := range w {
+			if !jsonPartialEqual(g[k], w[k]) {
 				return false
 			}
-		} else {
-			if !reflect.DeepEqual(got[k], want[k]) {
-				return false
+		}
+	case []any:
+		// JSON slice: Every field in want must match a field in got, in order.
+		// So want=[2,4] matches got=[1,2,3,4] but not [4,2].
+		g := got.([]any)
+		for _, ge := range g {
+			if jsonPartialEqual(ge, w[0]) {
+				w = w[1:]
+				if len(w) == 0 {
+					return true
+				}
 			}
+		}
+		return false
+	default:
+		if !reflect.DeepEqual(got, want) {
+			return false
 		}
 	}
 	return true
@@ -179,6 +253,7 @@ func (q *qlogRecord) Close() error { return nil }
 // config may be passed to newTestConn to configure the conn to use this logger.
 func (q *qlogRecord) config(c *Config) {
 	c.QLogLogger = slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
+		Level: QLogLevelFrame,
 		NewTrace: func(info qlog.TraceInfo) (io.WriteCloser, error) {
 			return q, nil
 		},
@@ -189,14 +264,7 @@ func (q *qlogRecord) config(c *Config) {
 func (q *qlogRecord) wantEvents(t *testing.T, want ...jsonEvent) {
 	t.Helper()
 	got := q.ev
-	unseen := want
-	for _, g := range got {
-		if eventPartialEqual(g, unseen[0]) {
-			unseen = unseen[1:]
-			if len(unseen) == 0 {
-				return
-			}
-		}
+	if !jsonPartialEqual(got, want) {
+		t.Fatalf("got events:\n%v\n\nwant events:\n%v", got, want)
 	}
-	t.Fatalf("got events:\n%v\n\nwant events:\n%v", got, want)
 }
