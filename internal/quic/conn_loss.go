@@ -20,6 +20,10 @@ import "fmt"
 // See RFC 9000, Section 13.3 for a complete list of information which is retransmitted on loss.
 // https://www.rfc-editor.org/rfc/rfc9000#section-13.3
 func (c *Conn) handleAckOrLoss(space numberSpace, sent *sentPacket, fate packetFate) {
+	if fate == packetLost && c.logEnabled(QLogLevelPacket) {
+		c.logPacketLost(space, sent)
+	}
+
 	// The list of frames in a sent packet is marshaled into a buffer in the sentPacket
 	// by the packetWriter. Unmarshal that buffer here. This code must be kept in sync with
 	// packetWriter.append*.

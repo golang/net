@@ -22,7 +22,10 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 	// Assumption: The congestion window is not underutilized.
 	// If congestion control, pacing, and anti-amplification all permit sending,
 	// but we have no packet to send, then we will declare the window underutilized.
-	c.loss.cc.setUnderutilized(false)
+	underutilized := false
+	defer func() {
+		c.loss.cc.setUnderutilized(c.log, underutilized)
+	}()
 
 	// Send one datagram on each iteration of this loop,
 	// until we hit a limit or run out of data to send.
@@ -80,7 +83,6 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysInitial.w, p)
 			if sentInitial != nil {
-				c.idleHandlePacketSent(now, sentInitial)
 				// Client initial packets and ack-eliciting server initial packaets
 				// need to be sent in a datagram padded to at least 1200 bytes.
 				// We can't add the padding yet, however, since we may want to
@@ -111,8 +113,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				c.logPacketSent(packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.packetLen(), c.w.payload())
 			}
 			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysHandshake.w, p); sent != nil {
-				c.idleHandlePacketSent(now, sent)
-				c.loss.packetSent(now, handshakeSpace, sent)
+				c.packetSent(now, handshakeSpace, sent)
 				if c.side == clientSide {
 					// "[...] a client MUST discard Initial keys when it first
 					// sends a Handshake packet [...]"
@@ -142,8 +143,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				c.logPacketSent(packetType1RTT, pnum, nil, dstConnID, c.w.packetLen(), c.w.payload())
 			}
 			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, &c.keysAppData); sent != nil {
-				c.idleHandlePacketSent(now, sent)
-				c.loss.packetSent(now, appDataSpace, sent)
+				c.packetSent(now, appDataSpace, sent)
 			}
 		}
 
@@ -152,7 +152,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			if limit == ccOK {
 				// We have nothing to send, and congestion control does not
 				// block sending. The congestion window is underutilized.
-				c.loss.cc.setUnderutilized(true)
+				underutilized = true
 			}
 			return next
 		}
@@ -175,12 +175,17 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			// with a Handshake packet, then we've discarded Initial keys
 			// since constructing the packet and shouldn't record it as in-flight.
 			if c.keysInitial.canWrite() {
-				c.loss.packetSent(now, initialSpace, sentInitial)
+				c.packetSent(now, initialSpace, sentInitial)
 			}
 		}
 
 		c.endpoint.sendDatagram(buf, c.peerAddr)
 	}
+}
+
+func (c *Conn) packetSent(now time.Time, space numberSpace, sent *sentPacket) {
+	c.idleHandlePacketSent(now, sent)
+	c.loss.packetSent(now, c.log, space, sent)
 }
 
 func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber, limit ccLimit) {

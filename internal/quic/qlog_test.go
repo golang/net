@@ -159,6 +159,77 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 	}
 }
 
+func TestQLogRecovery(t *testing.T) {
+	qr := &qlogRecord{}
+	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
+		permissiveTransportParameters, qr.config)
+
+	// Ignore events from the handshake.
+	qr.ev = nil
+
+	data := make([]byte, 16)
+	s.Write(data)
+	s.CloseWrite()
+	tc.wantFrame("created stream 0",
+		packetType1RTT, debugFrameStream{
+			id:   newStreamID(clientSide, uniStream, 0),
+			fin:  true,
+			data: data,
+		})
+	tc.writeAckForAll()
+	tc.wantIdle("connection should be idle now")
+
+	// Don't check the contents of fields, but verify that recovery metrics are logged.
+	qr.wantEvents(t, jsonEvent{
+		"name": "recovery:metrics_updated",
+		"data": map[string]any{
+			"bytes_in_flight": nil,
+		},
+	}, jsonEvent{
+		"name": "recovery:metrics_updated",
+		"data": map[string]any{
+			"bytes_in_flight":   0,
+			"congestion_window": nil,
+			"latest_rtt":        nil,
+			"min_rtt":           nil,
+			"rtt_variance":      nil,
+			"smoothed_rtt":      nil,
+		},
+	})
+}
+
+func TestQLogLoss(t *testing.T) {
+	qr := &qlogRecord{}
+	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
+		permissiveTransportParameters, qr.config)
+
+	// Ignore events from the handshake.
+	qr.ev = nil
+
+	data := make([]byte, 16)
+	s.Write(data)
+	s.CloseWrite()
+	tc.wantFrame("created stream 0",
+		packetType1RTT, debugFrameStream{
+			id:   newStreamID(clientSide, uniStream, 0),
+			fin:  true,
+			data: data,
+		})
+
+	const pto = false
+	tc.triggerLossOrPTO(packetType1RTT, pto)
+
+	qr.wantEvents(t, jsonEvent{
+		"name": "recovery:packet_lost",
+		"data": map[string]any{
+			"header": map[string]any{
+				"packet_number": nil,
+				"packet_type":   "1RTT",
+			},
+		},
+	})
+}
+
 type nopCloseWriter struct {
 	io.Writer
 }
@@ -193,14 +264,15 @@ func jsonPartialEqual(got, want any) (equal bool) {
 		}
 		return v
 	}
+	if want == nil {
+		return true // match anything
+	}
 	got = cmpval(got)
 	want = cmpval(want)
 	if reflect.TypeOf(got) != reflect.TypeOf(want) {
 		return false
 	}
 	switch w := want.(type) {
-	case nil:
-		// Match anything.
 	case map[string]any:
 		// JSON object: Every field in want must match a field in got.
 		g := got.(map[string]any)

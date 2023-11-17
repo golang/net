@@ -7,6 +7,8 @@
 package quic
 
 import (
+	"context"
+	"log/slog"
 	"math"
 	"time"
 )
@@ -39,6 +41,9 @@ type ccReno struct {
 	// before reducing the congestion window. sendOnePacketInRecovery is
 	// true if we haven't sent that packet yet.
 	sendOnePacketInRecovery bool
+
+	// inRecovery is set when we are in the recovery state.
+	inRecovery bool
 
 	// underutilized is set if the congestion window is underutilized
 	// due to insufficient application data, flow control limits, or
@@ -100,12 +105,19 @@ func (c *ccReno) canSend() bool {
 // congestion controller permits sending data, but no data is sent.
 //
 // https://www.rfc-editor.org/rfc/rfc9002#section-7.8
-func (c *ccReno) setUnderutilized(v bool) {
+func (c *ccReno) setUnderutilized(log *slog.Logger, v bool) {
+	if c.underutilized == v {
+		return
+	}
+	oldState := c.state()
 	c.underutilized = v
+	if logEnabled(log, QLogLevelPacket) {
+		logCongestionStateUpdated(log, oldState, c.state())
+	}
 }
 
 // packetSent indicates that a packet has been sent.
-func (c *ccReno) packetSent(now time.Time, space numberSpace, sent *sentPacket) {
+func (c *ccReno) packetSent(now time.Time, log *slog.Logger, space numberSpace, sent *sentPacket) {
 	if !sent.inFlight {
 		return
 	}
@@ -185,7 +197,11 @@ func (c *ccReno) packetLost(now time.Time, space numberSpace, sent *sentPacket, 
 }
 
 // packetBatchEnd is called at the end of processing a batch of acked or lost packets.
-func (c *ccReno) packetBatchEnd(now time.Time, space numberSpace, rtt *rttState, maxAckDelay time.Duration) {
+func (c *ccReno) packetBatchEnd(now time.Time, log *slog.Logger, space numberSpace, rtt *rttState, maxAckDelay time.Duration) {
+	if logEnabled(log, QLogLevelPacket) {
+		oldState := c.state()
+		defer func() { logCongestionStateUpdated(log, oldState, c.state()) }()
+	}
 	if !c.ackLastLoss.IsZero() && !c.ackLastLoss.Before(c.recoveryStartTime) {
 		// Enter the recovery state.
 		// https://www.rfc-editor.org/rfc/rfc9002.html#section-7.3.2
@@ -196,8 +212,10 @@ func (c *ccReno) packetBatchEnd(now time.Time, space numberSpace, rtt *rttState,
 		// Clear congestionPendingAcks to avoid increasing the congestion
 		// window based on acks in a frame that sends us into recovery.
 		c.congestionPendingAcks = 0
+		c.inRecovery = true
 	} else if c.congestionPendingAcks > 0 {
 		// We are in slow start or congestion avoidance.
+		c.inRecovery = false
 		if c.congestionWindow < c.slowStartThreshold {
 			// When the congestion window is less than the slow start threshold,
 			// we are in slow start and increase the window by the number of
@@ -252,4 +270,39 @@ func (c *ccReno) packetDiscarded(sent *sentPacket) {
 func (c *ccReno) minimumCongestionWindow() int {
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-7.2-4
 	return 2 * c.maxDatagramSize
+}
+
+func logCongestionStateUpdated(log *slog.Logger, oldState, newState congestionState) {
+	if oldState == newState {
+		return
+	}
+	log.LogAttrs(context.Background(), QLogLevelPacket,
+		"recovery:congestion_state_updated",
+		slog.String("old", oldState.String()),
+		slog.String("new", newState.String()),
+	)
+}
+
+type congestionState string
+
+func (s congestionState) String() string { return string(s) }
+
+const (
+	congestionSlowStart           = congestionState("slow_start")
+	congestionCongestionAvoidance = congestionState("congestion_avoidance")
+	congestionApplicationLimited  = congestionState("application_limited")
+	congestionRecovery            = congestionState("recovery")
+)
+
+func (c *ccReno) state() congestionState {
+	switch {
+	case c.inRecovery:
+		return congestionRecovery
+	case c.underutilized:
+		return congestionApplicationLimited
+	case c.congestionWindow < c.slowStartThreshold:
+		return congestionSlowStart
+	default:
+		return congestionCongestionAvoidance
+	}
 }

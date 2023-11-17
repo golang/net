@@ -210,7 +210,7 @@ func (c *Conn) discardKeys(now time.Time, space numberSpace) {
 	case handshakeSpace:
 		c.keysHandshake.discard()
 	}
-	c.loss.discardKeys(now, space)
+	c.loss.discardKeys(now, c.log, space)
 }
 
 // receiveTransportParameters applies transport parameters sent by the peer.

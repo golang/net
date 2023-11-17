@@ -470,7 +470,7 @@ func (c *ccTest) setRTT(smoothedRTT, rttvar time.Duration) {
 func (c *ccTest) setUnderutilized(v bool) {
 	c.t.Helper()
 	c.t.Logf("set underutilized = %v", v)
-	c.cc.setUnderutilized(v)
+	c.cc.setUnderutilized(nil, v)
 }
 
 func (c *ccTest) packetSent(space numberSpace, size int, fns ...func(*sentPacket)) *sentPacket {
@@ -488,7 +488,7 @@ func (c *ccTest) packetSent(space numberSpace, size int, fns ...func(*sentPacket
 		f(sent)
 	}
 	c.t.Logf("packet sent:  num=%v.%v, size=%v", space, sent.num, sent.size)
-	c.cc.packetSent(c.now, space, sent)
+	c.cc.packetSent(c.now, nil, space, sent)
 	return sent
 }
 
@@ -519,7 +519,7 @@ func (c *ccTest) packetDiscarded(space numberSpace, sent *sentPacket) {
 func (c *ccTest) packetBatchEnd(space numberSpace) {
 	c.t.Helper()
 	c.t.Logf("(end of batch)")
-	c.cc.packetBatchEnd(c.now, space, &c.rtt, c.maxAckDelay)
+	c.cc.packetBatchEnd(c.now, nil, space, &c.rtt, c.maxAckDelay)
 }
 
 func (c *ccTest) wantCanSend(want bool) {

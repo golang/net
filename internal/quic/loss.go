@@ -7,6 +7,8 @@
 package quic
 
 import (
+	"context"
+	"log/slog"
 	"math"
 	"time"
 )
@@ -179,7 +181,7 @@ func (c *lossState) nextNumber(space numberSpace) packetNumber {
 }
 
 // packetSent records a sent packet.
-func (c *lossState) packetSent(now time.Time, space numberSpace, sent *sentPacket) {
+func (c *lossState) packetSent(now time.Time, log *slog.Logger, space numberSpace, sent *sentPacket) {
 	sent.time = now
 	c.spaces[space].add(sent)
 	size := sent.size
@@ -187,13 +189,16 @@ func (c *lossState) packetSent(now time.Time, space numberSpace, sent *sentPacke
 		c.antiAmplificationLimit = max(0, c.antiAmplificationLimit-size)
 	}
 	if sent.inFlight {
-		c.cc.packetSent(now, space, sent)
+		c.cc.packetSent(now, log, space, sent)
 		c.pacer.packetSent(now, size, c.cc.congestionWindow, c.rtt.smoothedRTT)
 		if sent.ackEliciting {
 			c.spaces[space].lastAckEliciting = sent.num
 			c.ptoExpired = false // reset expired PTO timer after sending probe
 		}
 		c.scheduleTimer(now)
+		if logEnabled(log, QLogLevelPacket) {
+			logBytesInFlight(log, c.cc.bytesInFlight)
+		}
 	}
 	if sent.ackEliciting {
 		c.consecutiveNonAckElicitingPackets = 0
@@ -267,7 +272,7 @@ func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex
 
 // receiveAckEnd finishes processing an ack frame.
 // The lossf function is called for each packet newly detected as lost.
-func (c *lossState) receiveAckEnd(now time.Time, space numberSpace, ackDelay time.Duration, lossf func(numberSpace, *sentPacket, packetFate)) {
+func (c *lossState) receiveAckEnd(now time.Time, log *slog.Logger, space numberSpace, ackDelay time.Duration, lossf func(numberSpace, *sentPacket, packetFate)) {
 	c.spaces[space].sentPacketList.clean()
 	// Update the RTT sample when the largest acknowledged packet in the ACK frame
 	// is newly acknowledged, and at least one newly acknowledged packet is ack-eliciting.
@@ -286,13 +291,30 @@ func (c *lossState) receiveAckEnd(now time.Time, space numberSpace, ackDelay tim
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.2.2.1-3
 	c.timer = time.Time{}
 	c.detectLoss(now, lossf)
-	c.cc.packetBatchEnd(now, space, &c.rtt, c.maxAckDelay)
+	c.cc.packetBatchEnd(now, log, space, &c.rtt, c.maxAckDelay)
+
+	if logEnabled(log, QLogLevelPacket) {
+		var ssthresh slog.Attr
+		if c.cc.slowStartThreshold != math.MaxInt {
+			ssthresh = slog.Int("ssthresh", c.cc.slowStartThreshold)
+		}
+		log.LogAttrs(context.Background(), QLogLevelPacket,
+			"recovery:metrics_updated",
+			slog.Duration("min_rtt", c.rtt.minRTT),
+			slog.Duration("smoothed_rtt", c.rtt.smoothedRTT),
+			slog.Duration("latest_rtt", c.rtt.latestRTT),
+			slog.Duration("rtt_variance", c.rtt.rttvar),
+			slog.Int("congestion_window", c.cc.congestionWindow),
+			slog.Int("bytes_in_flight", c.cc.bytesInFlight),
+			ssthresh,
+		)
+	}
 }
 
 // discardPackets declares that packets within a number space will not be delivered
 // and that data contained in them should be resent.
 // For example, after receiving a Retry packet we discard already-sent Initial packets.
-func (c *lossState) discardPackets(space numberSpace, lossf func(numberSpace, *sentPacket, packetFate)) {
+func (c *lossState) discardPackets(space numberSpace, log *slog.Logger, lossf func(numberSpace, *sentPacket, packetFate)) {
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
 		sent.lost = true
@@ -300,10 +322,13 @@ func (c *lossState) discardPackets(space numberSpace, lossf func(numberSpace, *s
 		lossf(numberSpace(space), sent, packetLost)
 	}
 	c.spaces[space].clean()
+	if logEnabled(log, QLogLevelPacket) {
+		logBytesInFlight(log, c.cc.bytesInFlight)
+	}
 }
 
 // discardKeys is called when dropping packet protection keys for a number space.
-func (c *lossState) discardKeys(now time.Time, space numberSpace) {
+func (c *lossState) discardKeys(now time.Time, log *slog.Logger, space numberSpace) {
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.4
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
@@ -313,6 +338,9 @@ func (c *lossState) discardKeys(now time.Time, space numberSpace) {
 	c.spaces[space].maxAcked = -1
 	c.spaces[space].lastAckEliciting = -1
 	c.scheduleTimer(now)
+	if logEnabled(log, QLogLevelPacket) {
+		logBytesInFlight(log, c.cc.bytesInFlight)
+	}
 }
 
 func (c *lossState) lossDuration() time.Duration {
@@ -458,4 +486,11 @@ func (c *lossState) ptoBasePeriod() time.Duration {
 		pto += c.maxAckDelay
 	}
 	return pto
+}
+
+func logBytesInFlight(log *slog.Logger, bytesInFlight int) {
+	log.LogAttrs(context.Background(), QLogLevelPacket,
+		"recovery:metrics_updated",
+		slog.Int("bytes_in_flight", bytesInFlight),
+	)
 }

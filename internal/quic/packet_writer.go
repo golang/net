@@ -141,7 +141,7 @@ func (w *packetWriter) finishProtectedLongHeaderPacket(pnumMaxAcked packetNumber
 	hdr = appendPacketNumber(hdr, p.num, pnumMaxAcked)
 
 	k.protect(hdr[w.pktOff:], w.b[len(hdr):], pnumOff-w.pktOff, p.num)
-	return w.finish(p.num)
+	return w.finish(p.ptype, p.num)
 }
 
 // start1RTTPacket starts writing a 1-RTT (short header) packet.
@@ -183,7 +183,7 @@ func (w *packetWriter) finish1RTTPacket(pnum, pnumMaxAcked packetNumber, dstConn
 	hdr = appendPacketNumber(hdr, pnum, pnumMaxAcked)
 	w.padPacketLength(pnumLen)
 	k.protect(hdr[w.pktOff:], w.b[len(hdr):], pnumOff-w.pktOff, pnum)
-	return w.finish(pnum)
+	return w.finish(packetType1RTT, pnum)
 }
 
 // padPacketLength pads out the payload of the current packet to the minimum size,
@@ -204,9 +204,10 @@ func (w *packetWriter) padPacketLength(pnumLen int) int {
 }
 
 // finish finishes the current packet after protection is applied.
-func (w *packetWriter) finish(pnum packetNumber) *sentPacket {
+func (w *packetWriter) finish(ptype packetType, pnum packetNumber) *sentPacket {
 	w.b = w.b[:len(w.b)+aeadOverhead]
 	w.sent.size = len(w.b) - w.pktOff
+	w.sent.ptype = ptype
 	w.sent.num = pnum
 	sent := w.sent
 	w.sent = nil

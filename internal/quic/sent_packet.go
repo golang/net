@@ -14,9 +14,10 @@ import (
 // A sentPacket tracks state related to an in-flight packet we sent,
 // to be committed when the peer acks it or resent if the packet is lost.
 type sentPacket struct {
-	num  packetNumber
-	size int       // size in bytes
-	time time.Time // time sent
+	num   packetNumber
+	size  int       // size in bytes
+	time  time.Time // time sent
+	ptype packetType
 
 	ackEliciting bool // https://www.rfc-editor.org/rfc/rfc9002.html#section-2-3.4.1
 	inFlight     bool // https://www.rfc-editor.org/rfc/rfc9002.html#section-2-3.6.1

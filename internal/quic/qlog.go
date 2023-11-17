@@ -39,7 +39,11 @@ const (
 )
 
 func (c *Conn) logEnabled(level slog.Level) bool {
-	return c.log != nil && c.log.Enabled(context.Background(), level)
+	return logEnabled(c.log, level)
+}
+
+func logEnabled(log *slog.Logger, level slog.Level) bool {
+	return log != nil && log.Enabled(context.Background(), level)
 }
 
 // slogHexstring returns a slog.Attr for a value of the hexstring type.
@@ -251,4 +255,14 @@ func (c *Conn) packetFramesAttr(payload []byte) slog.Attr {
 		}
 	}
 	return slog.Any("frames", frames)
+}
+
+func (c *Conn) logPacketLost(space numberSpace, sent *sentPacket) {
+	c.log.LogAttrs(context.Background(), QLogLevelPacket,
+		"recovery:packet_lost",
+		slog.Group("header",
+			slog.String("packet_type", sent.ptype.qlogString()),
+			slog.Uint64("packet_number", uint64(sent.num)),
+		),
+	)
 }

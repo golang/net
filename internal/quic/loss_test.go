@@ -1060,7 +1060,7 @@ func TestLossPersistentCongestion(t *testing.T) {
 		maxDatagramSize: 1200,
 	})
 	test.send(initialSpace, 0, testSentPacketSize(1200))
-	test.c.cc.setUnderutilized(true)
+	test.c.cc.setUnderutilized(nil, true)
 
 	test.advance(10 * time.Millisecond)
 	test.ack(initialSpace, 0*time.Millisecond, i64range[packetNumber]{0, 1})
@@ -1377,7 +1377,7 @@ func (c *lossTest) setRTTVar(d time.Duration) {
 
 func (c *lossTest) setUnderutilized(v bool) {
 	c.t.Logf("set congestion window underutilized: %v", v)
-	c.c.cc.setUnderutilized(v)
+	c.c.cc.setUnderutilized(nil, v)
 }
 
 func (c *lossTest) advance(d time.Duration) {
@@ -1438,7 +1438,7 @@ func (c *lossTest) send(spaceID numberSpace, opts ...any) {
 		sent := &sentPacket{}
 		*sent = prototype
 		sent.num = num
-		c.c.packetSent(c.now, spaceID, sent)
+		c.c.packetSent(c.now, nil, spaceID, sent)
 	}
 }
 
@@ -1462,7 +1462,7 @@ func (c *lossTest) ack(spaceID numberSpace, ackDelay time.Duration, rs ...i64ran
 		c.t.Logf("ack %v delay=%v [%v,%v)", spaceID, ackDelay, r.start, r.end)
 		c.c.receiveAckRange(c.now, spaceID, i, r.start, r.end, c.onAckOrLoss)
 	}
-	c.c.receiveAckEnd(c.now, spaceID, ackDelay, c.onAckOrLoss)
+	c.c.receiveAckEnd(c.now, nil, spaceID, ackDelay, c.onAckOrLoss)
 }
 
 func (c *lossTest) onAckOrLoss(space numberSpace, sent *sentPacket, fate packetFate) {
@@ -1491,7 +1491,7 @@ func (c *lossTest) discardKeys(spaceID numberSpace) {
 	c.t.Helper()
 	c.checkUnexpectedEvents()
 	c.t.Logf("discard %s keys", spaceID)
-	c.c.discardKeys(c.now, spaceID)
+	c.c.discardKeys(c.now, nil, spaceID)
 }
 
 func (c *lossTest) setMaxAckDelay(d time.Duration) {

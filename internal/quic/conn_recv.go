@@ -192,7 +192,7 @@ func (c *Conn) handleRetry(now time.Time, pkt []byte) {
 	c.connIDState.handleRetryPacket(p.srcConnID)
 	// We need to resend any data we've already sent in Initial packets.
 	// We must not reuse already sent packet numbers.
-	c.loss.discardPackets(initialSpace, c.handleAckOrLoss)
+	c.loss.discardPackets(initialSpace, c.log, c.handleAckOrLoss)
 	// TODO: Discard 0-RTT packets as well, once we support 0-RTT.
 }
 
@@ -416,7 +416,7 @@ func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) 
 	if c.peerAckDelayExponent >= 0 {
 		delay = ackDelay.Duration(uint8(c.peerAckDelayExponent))
 	}
-	c.loss.receiveAckEnd(now, space, delay, c.handleAckOrLoss)
+	c.loss.receiveAckEnd(now, c.log, space, delay, c.handleAckOrLoss)
 	if space == appDataSpace {
 		c.keysAppData.handleAckFor(largest)
 	}
