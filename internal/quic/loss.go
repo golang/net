@@ -50,6 +50,9 @@ type lossState struct {
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8-2
 	antiAmplificationLimit int
 
+	// Count of non-ack-eliciting packets (ACKs) sent since the last ack-eliciting one.
+	consecutiveNonAckElicitingPackets int
+
 	rtt   rttState
 	pacer pacerState
 	cc    *ccReno
@@ -191,6 +194,11 @@ func (c *lossState) packetSent(now time.Time, space numberSpace, sent *sentPacke
 			c.ptoExpired = false // reset expired PTO timer after sending probe
 		}
 		c.scheduleTimer(now)
+	}
+	if sent.ackEliciting {
+		c.consecutiveNonAckElicitingPackets = 0
+	} else {
+		c.consecutiveNonAckElicitingPackets++
 	}
 }
 

@@ -222,11 +222,7 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 			// Either we are willing to send an ACK-only packet,
 			// or we've added additional frames.
 			c.acks[space].sentAck()
-			if !c.w.sent.ackEliciting && c.keysAppData.needAckEliciting() {
-				// The peer has initiated a key update.
-				// We haven't sent them any packets yet in the new phase.
-				// Make this an ack-eliciting packet.
-				// Their ack of this packet will complete the key update.
+			if !c.w.sent.ackEliciting && c.shouldMakePacketAckEliciting() {
 				c.w.appendPingFrame()
 			}
 		}()
@@ -329,6 +325,30 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 	if pto && !c.w.sent.ackEliciting {
 		c.w.appendPingFrame()
 	}
+}
+
+// shouldMakePacketAckEliciting is called when sending a packet containing nothing but an ACK frame.
+// It reports whether we should add a PING frame to the packet to make it ack-eliciting.
+func (c *Conn) shouldMakePacketAckEliciting() bool {
+	if c.keysAppData.needAckEliciting() {
+		// The peer has initiated a key update.
+		// We haven't sent them any packets yet in the new phase.
+		// Make this an ack-eliciting packet.
+		// Their ack of this packet will complete the key update.
+		return true
+	}
+	if c.loss.consecutiveNonAckElicitingPackets >= 19 {
+		// We've sent a run of non-ack-eliciting packets.
+		// Add in an ack-eliciting one every once in a while so the peer
+		// lets us know which ones have arrived.
+		//
+		// Google QUICHE injects a PING after sending 19 packets. We do the same.
+		//
+		// https://www.rfc-editor.org/rfc/rfc9000#section-13.2.4-2
+		return true
+	}
+	// TODO: Consider making every packet sent when in PTO ack-eliciting to speed up recovery.
+	return false
 }
 
 func (c *Conn) appendAckFrame(now time.Time, space numberSpace) bool {
