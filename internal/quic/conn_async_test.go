@@ -125,6 +125,7 @@ func runAsync[T any](tc *testConn, f func(context.Context) (T, error)) *asyncOp[
 	})
 	// Wait for the operation to either finish or block.
 	<-as.notify
+	tc.wait()
 	return a
 }
 

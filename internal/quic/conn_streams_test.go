@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 	"testing"
 )
 
@@ -476,5 +477,48 @@ func TestStreamsCreateAndCloseRemote(t *testing.T) {
 	}
 	if tc.conn.streams.queueMeta.head != nil {
 		t.Fatalf("after test, stream send queue is not empty; should be")
+	}
+}
+
+func TestStreamsCreateConcurrency(t *testing.T) {
+	cli, srv := newLocalConnPair(t, &Config{}, &Config{})
+
+	srvdone := make(chan int)
+	go func() {
+		defer close(srvdone)
+		for streams := 0; ; streams++ {
+			s, err := srv.AcceptStream(context.Background())
+			if err != nil {
+				srvdone <- streams
+				return
+			}
+			s.Close()
+		}
+	}()
+
+	var wg sync.WaitGroup
+	const concurrency = 10
+	const streams = 10
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < streams; j++ {
+				s, err := cli.NewStream(context.Background())
+				if err != nil {
+					t.Errorf("NewStream: %v", err)
+					return
+				}
+				s.Flush()
+				s.Close()
+			}
+		}()
+	}
+	wg.Wait()
+
+	cli.Abort(nil)
+	srv.Abort(nil)
+	if got, want := <-srvdone, concurrency*streams; got != want {
+		t.Errorf("accepted %v streams, want %v", got, want)
 	}
 }

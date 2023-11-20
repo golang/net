@@ -369,12 +369,37 @@ func (c *Conn) wake() {
 }
 
 // runOnLoop executes a function within the conn's loop goroutine.
-func (c *Conn) runOnLoop(f func(now time.Time, c *Conn)) error {
+func (c *Conn) runOnLoop(ctx context.Context, f func(now time.Time, c *Conn)) error {
 	donec := make(chan struct{})
-	c.sendMsg(func(now time.Time, c *Conn) {
+	msg := func(now time.Time, c *Conn) {
 		defer close(donec)
 		f(now, c)
-	})
+	}
+	if c.testHooks != nil {
+		// In tests, we can't rely on being able to send a message immediately:
+		// c.msgc might be full, and testConnHooks.nextMessage might be waiting
+		// for us to block before it processes the next message.
+		// To avoid a deadlock, we send the message in waitUntil.
+		// If msgc is empty, the message is buffered.
+		// If msgc is full, we block and let nextMessage process the queue.
+		msgc := c.msgc
+		c.testHooks.waitUntil(ctx, func() bool {
+			for {
+				select {
+				case msgc <- msg:
+					msgc = nil // send msg only once
+				case <-donec:
+					return true
+				case <-c.donec:
+					return true
+				default:
+					return false
+				}
+			}
+		})
+	} else {
+		c.sendMsg(msg)
+	}
 	select {
 	case <-donec:
 	case <-c.donec:

@@ -30,10 +30,12 @@ func TestConnTestConn(t *testing.T) {
 		t.Errorf("new conn timeout=%v, want %v (max_idle_timeout)", got, want)
 	}
 
-	var ranAt time.Time
-	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
-		ranAt = now
-	})
+	ranAt, _ := runAsync(tc, func(ctx context.Context) (when time.Time, _ error) {
+		tc.conn.runOnLoop(ctx, func(now time.Time, c *Conn) {
+			when = now
+		})
+		return
+	}).result()
 	if !ranAt.Equal(tc.endpoint.now) {
 		t.Errorf("func ran on loop at %v, want %v", ranAt, tc.endpoint.now)
 	}
@@ -41,9 +43,12 @@ func TestConnTestConn(t *testing.T) {
 
 	nextTime := tc.endpoint.now.Add(defaultMaxIdleTimeout / 2)
 	tc.advanceTo(nextTime)
-	tc.conn.runOnLoop(func(now time.Time, c *Conn) {
-		ranAt = now
-	})
+	ranAt, _ = runAsync(tc, func(ctx context.Context) (when time.Time, _ error) {
+		tc.conn.runOnLoop(ctx, func(now time.Time, c *Conn) {
+			when = now
+		})
+		return
+	}).result()
 	if !ranAt.Equal(nextTime) {
 		t.Errorf("func ran on loop at %v, want %v", ranAt, nextTime)
 	}

@@ -14,10 +14,8 @@ import (
 )
 
 type streamsState struct {
-	queue queue[*Stream] // new, peer-created streams
-
-	streamsMu sync.Mutex
-	streams   map[streamID]*Stream
+	queue   queue[*Stream] // new, peer-created streams
+	streams map[streamID]*Stream
 
 	// Limits on the number of streams, indexed by streamType.
 	localLimit  [streamTypeCount]localStreamLimits
@@ -82,9 +80,6 @@ func (c *Conn) NewSendOnlyStream(ctx context.Context) (*Stream, error) {
 }
 
 func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, error) {
-	c.streams.streamsMu.Lock()
-	defer c.streams.streamsMu.Unlock()
-
 	num, err := c.streams.localLimit[styp].open(ctx, c)
 	if err != nil {
 		return nil, err
@@ -100,7 +95,12 @@ func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, er
 	s.inUnlock()
 	s.outUnlock()
 
-	c.streams.streams[s.id] = s
+	// Modify c.streams on the conn's loop.
+	if err := c.runOnLoop(ctx, func(now time.Time, c *Conn) {
+		c.streams.streams[s.id] = s
+	}); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -119,8 +119,6 @@ const (
 // streamForID returns the stream with the given id.
 // If the stream does not exist, it returns nil.
 func (c *Conn) streamForID(id streamID) *Stream {
-	c.streams.streamsMu.Lock()
-	defer c.streams.streamsMu.Unlock()
 	return c.streams.streams[id]
 }
 
@@ -146,8 +144,6 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 		}
 	}
 
-	c.streams.streamsMu.Lock()
-	defer c.streams.streamsMu.Unlock()
 	s, isOpen := c.streams.streams[id]
 	if s != nil {
 		return s
