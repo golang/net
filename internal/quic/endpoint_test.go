@@ -63,7 +63,7 @@ func TestStreamTransfer(t *testing.T) {
 	}
 }
 
-func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
+func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
 	t.Helper()
 	ctx := context.Background()
 	e1 := newLocalEndpoint(t, serverSide, conf1)
@@ -79,7 +79,7 @@ func newLocalConnPair(t *testing.T, conf1, conf2 *Config) (clientConn, serverCon
 	return c2, c1
 }
 
-func newLocalEndpoint(t *testing.T, side connSide, conf *Config) *Endpoint {
+func newLocalEndpoint(t testing.TB, side connSide, conf *Config) *Endpoint {
 	t.Helper()
 	if conf.TLSConfig == nil {
 		newConf := *conf
