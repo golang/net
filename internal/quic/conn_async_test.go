@@ -41,7 +41,7 @@ type asyncOp[T any] struct {
 	err error
 
 	caller     string
-	state      *asyncTestState
+	tc         *testConn
 	donec      chan struct{}
 	cancelFunc context.CancelFunc
 }
@@ -55,7 +55,7 @@ func (a *asyncOp[T]) cancel() {
 	default:
 	}
 	a.cancelFunc()
-	<-a.state.notify
+	<-a.tc.asyncTestState.notify
 	select {
 	case <-a.donec:
 	default:
@@ -73,6 +73,7 @@ var errNotDone = errors.New("async op is not done")
 // control over the progress of operations, an asyncOp can only
 // become done in reaction to the test taking some action.
 func (a *asyncOp[T]) result() (v T, err error) {
+	a.tc.wait()
 	select {
 	case <-a.donec:
 		return a.v, a.err
@@ -94,8 +95,8 @@ type asyncContextKey struct{}
 // The function f should call a blocking function such as
 // Stream.Write or Conn.AcceptStream and return its result.
 // It must use the provided context.
-func runAsync[T any](ts *testConn, f func(context.Context) (T, error)) *asyncOp[T] {
-	as := &ts.asyncTestState
+func runAsync[T any](tc *testConn, f func(context.Context) (T, error)) *asyncOp[T] {
+	as := &tc.asyncTestState
 	if as.notify == nil {
 		as.notify = make(chan struct{})
 		as.mu.Lock()
@@ -106,7 +107,7 @@ func runAsync[T any](ts *testConn, f func(context.Context) (T, error)) *asyncOp[
 	ctx := context.WithValue(context.Background(), asyncContextKey{}, true)
 	ctx, cancel := context.WithCancel(ctx)
 	a := &asyncOp[T]{
-		state:      as,
+		tc:         tc,
 		caller:     fmt.Sprintf("%v:%v", filepath.Base(file), line),
 		donec:      make(chan struct{}),
 		cancelFunc: cancel,
@@ -116,9 +117,9 @@ func runAsync[T any](ts *testConn, f func(context.Context) (T, error)) *asyncOp[
 		close(a.donec)
 		as.notify <- struct{}{}
 	}()
-	ts.t.Cleanup(func() {
+	tc.t.Cleanup(func() {
 		if _, err := a.result(); err == errNotDone {
-			ts.t.Errorf("%v: async operation is still executing at end of test", a.caller)
+			tc.t.Errorf("%v: async operation is still executing at end of test", a.caller)
 			a.cancel()
 		}
 	})

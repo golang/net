@@ -48,7 +48,7 @@ func TestStreamTransfer(t *testing.T) {
 		}
 	}()
 
-	s, err := cli.NewStream(ctx)
+	s, err := cli.NewSendOnlyStream(ctx)
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}

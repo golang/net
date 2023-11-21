@@ -71,7 +71,10 @@ func (c *Conn) lifetimeInit() {
 	c.lifetime.donec = make(chan struct{})
 }
 
-var errNoPeerResponse = errors.New("peer did not respond to CONNECTION_CLOSE")
+var (
+	errNoPeerResponse = errors.New("peer did not respond to CONNECTION_CLOSE")
+	errConnClosed     = errors.New("connection closed")
+)
 
 // advance is called when time passes.
 func (c *Conn) lifetimeAdvance(now time.Time) (done bool) {
@@ -91,13 +94,21 @@ func (c *Conn) lifetimeAdvance(now time.Time) (done bool) {
 
 // setState sets the conn state.
 func (c *Conn) setState(now time.Time, state connState) {
+	if c.lifetime.state == state {
+		return
+	}
+	c.lifetime.state = state
 	switch state {
 	case connStateClosing, connStateDraining:
 		if c.lifetime.drainEndTime.IsZero() {
 			c.lifetime.drainEndTime = now.Add(3 * c.loss.ptoBasePeriod())
 		}
+	case connStateDone:
+		c.setFinalError(nil)
 	}
-	c.lifetime.state = state
+	if state != connStateAlive {
+		c.streamsCleanup()
+	}
 }
 
 // confirmHandshake is called when the TLS handshake completes.

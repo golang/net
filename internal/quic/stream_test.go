@@ -1047,11 +1047,13 @@ func TestStreamCloseUnblocked(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		unblock func(tc *testConn, s *Stream)
+		success bool
 	}{{
 		name: "data received",
 		unblock: func(tc *testConn, s *Stream) {
 			tc.writeAckForAll()
 		},
+		success: true,
 	}, {
 		name: "stop sending received",
 		unblock: func(tc *testConn, s *Stream) {
@@ -1094,7 +1096,13 @@ func TestStreamCloseUnblocked(t *testing.T) {
 				t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
 			}
 			test.unblock(tc, s)
-			if _, err := closing.result(); err != nil {
+			_, err := closing.result()
+			switch {
+			case err == errNotDone:
+				t.Fatalf("s.CloseContext() still blocking; want it to have returned")
+			case err == nil && !test.success:
+				t.Fatalf("s.CloseContext() = nil, want error")
+			case err != nil && test.success:
 				t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
 			}
 		})
@@ -1390,31 +1398,41 @@ func newTestConnAndStream(t *testing.T, side connSide, sside streamSide, styp st
 
 func newTestConnAndLocalStream(t *testing.T, side connSide, styp streamType, opts ...any) (*testConn, *Stream) {
 	t.Helper()
-	ctx := canceledContext()
 	tc := newTestConn(t, side, opts...)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
+	return tc, newLocalStream(t, tc, styp)
+}
+
+func newLocalStream(t *testing.T, tc *testConn, styp streamType) *Stream {
+	t.Helper()
+	ctx := canceledContext()
 	s, err := tc.conn.newLocalStream(ctx, styp)
 	if err != nil {
 		t.Fatalf("conn.newLocalStream(%v) = %v", styp, err)
 	}
-	return tc, s
+	return s
 }
 
 func newTestConnAndRemoteStream(t *testing.T, side connSide, styp streamType, opts ...any) (*testConn, *Stream) {
 	t.Helper()
-	ctx := canceledContext()
 	tc := newTestConn(t, side, opts...)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
+	return tc, newRemoteStream(t, tc, styp)
+}
+
+func newRemoteStream(t *testing.T, tc *testConn, styp streamType) *Stream {
+	t.Helper()
+	ctx := canceledContext()
 	tc.writeFrames(packetType1RTT, debugFrameStream{
-		id: newStreamID(side.peer(), styp, 0),
+		id: newStreamID(tc.conn.side.peer(), styp, 0),
 	})
 	s, err := tc.conn.AcceptStream(ctx)
 	if err != nil {
 		t.Fatalf("conn.AcceptStream() = %v", err)
 	}
-	return tc, s
+	return s
 }
 
 // permissiveTransportParameters may be passed as an option to newTestConn.

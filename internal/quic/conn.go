@@ -263,10 +263,7 @@ var errIdleTimeout = errors.New("idle timeout")
 // The loop processes messages from c.msgc and timer events.
 // Other goroutines may examine or modify conn state by sending the loop funcs to execute.
 func (c *Conn) loop(now time.Time) {
-	defer close(c.donec)
-	defer c.tls.Close()
-	defer c.endpoint.connDrained(c)
-	defer c.logConnectionClosed()
+	defer c.cleanup()
 
 	// The connection timer sends a message to the connection loop on expiry.
 	// We need to give it an expiry when creating it, so set the initial timeout to
@@ -344,6 +341,13 @@ func (c *Conn) loop(now time.Time) {
 			panic(fmt.Sprintf("quic: unrecognized conn message %T", m))
 		}
 	}
+}
+
+func (c *Conn) cleanup() {
+	c.logConnectionClosed()
+	c.endpoint.connDrained(c)
+	c.tls.Close()
+	close(c.donec)
 }
 
 // sendMsg sends a message to the conn's loop.

@@ -49,6 +49,17 @@ func (c *Conn) streamsInit() {
 	c.inflowInit()
 }
 
+func (c *Conn) streamsCleanup() {
+	c.streams.queue.close(errConnClosed)
+	c.streams.localLimit[bidiStream].connHasClosed()
+	c.streams.localLimit[uniStream].connHasClosed()
+	for _, s := range c.streams.streams {
+		if s != nil {
+			s.connHasClosed()
+		}
+	}
+}
+
 // AcceptStream waits for and returns the next stream created by the peer.
 func (c *Conn) AcceptStream(ctx context.Context) (*Stream, error) {
 	return c.streams.queue.get(ctx, c.testHooks)

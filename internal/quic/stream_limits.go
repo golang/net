@@ -21,7 +21,7 @@ import (
 type localStreamLimits struct {
 	gate   gate
 	max    int64 // peer-provided MAX_STREAMS
-	opened int64 // number of streams opened by us
+	opened int64 // number of streams opened by us, -1 when conn is closed
 }
 
 func (lim *localStreamLimits) init() {
@@ -34,10 +34,21 @@ func (lim *localStreamLimits) open(ctx context.Context, c *Conn) (num int64, err
 	if err := lim.gate.waitAndLock(ctx, c.testHooks); err != nil {
 		return 0, err
 	}
-	n := lim.opened
+	if lim.opened < 0 {
+		lim.gate.unlock(true)
+		return 0, errConnClosed
+	}
+	num = lim.opened
 	lim.opened++
 	lim.gate.unlock(lim.opened < lim.max)
-	return n, nil
+	return num, nil
+}
+
+// connHasClosed indicates the connection has been closed, locally or by the peer.
+func (lim *localStreamLimits) connHasClosed() {
+	lim.gate.lock()
+	lim.opened = -1
+	lim.gate.unlock(true)
 }
 
 // setMax sets the MAX_STREAMS provided by the peer.

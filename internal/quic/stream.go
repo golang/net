@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 )
 
 type Stream struct {
@@ -104,6 +105,11 @@ const (
 	metaQueue // streamsState.queueMeta
 	dataQueue // streamsState.queueData
 )
+
+// streamResetByConnClose is assigned to Stream.inresetcode to indicate that a stream
+// was implicitly reset when the connection closed. It's out of the range of
+// possible reset codes the peer can send.
+const streamResetByConnClose = math.MaxInt64
 
 // wantQueue returns the send queue the stream should be on.
 func (s streamState) wantQueue() streamQueue {
@@ -347,7 +353,15 @@ func (s *Stream) CloseContext(ctx context.Context) error {
 	}
 	s.CloseWrite()
 	// TODO: Return code from peer's RESET_STREAM frame?
-	return s.conn.waitOnDone(ctx, s.outdone)
+	if err := s.conn.waitOnDone(ctx, s.outdone); err != nil {
+		return err
+	}
+	s.outgate.lock()
+	defer s.outUnlock()
+	if s.outclosed.isReceived() && s.outacked.isrange(0, s.out.end) {
+		return nil
+	}
+	return errors.New("stream reset")
 }
 
 // CloseRead aborts reads on the stream.
@@ -435,6 +449,31 @@ func (s *Stream) resetInternal(code uint64, userClosed bool) {
 	s.out.discardBefore(s.out.end)
 	s.outunsent = rangeset[int64]{}
 	s.outblocked.clear()
+}
+
+// connHasClosed indicates the stream's conn has closed.
+func (s *Stream) connHasClosed() {
+	// If we're in the closing state, the user closed the conn.
+	// Otherwise, we the peer initiated the close.
+	// This only matters for the error we're going to return from stream operations.
+	localClose := s.conn.lifetime.state == connStateClosing
+
+	s.ingate.lock()
+	if !s.inset.isrange(0, s.insize) && s.inresetcode == -1 {
+		if localClose {
+			s.inclosed.set()
+		} else {
+			s.inresetcode = streamResetByConnClose
+		}
+	}
+	s.inUnlock()
+
+	s.outgate.lock()
+	if localClose {
+		s.outclosed.set()
+	}
+	s.outreset.set()
+	s.outUnlock()
 }
 
 // inUnlock unlocks s.ingate.

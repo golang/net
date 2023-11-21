@@ -216,3 +216,64 @@ func TestConnCloseClosedByEndpoint(t *testing.T) {
 			code: errNo,
 		})
 }
+
+func testConnCloseUnblocks(t *testing.T, f func(context.Context, *testConn) error, opts ...any) {
+	tc := newTestConn(t, clientSide, opts...)
+	tc.handshake()
+	op := runAsync(tc, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, f(ctx, tc)
+	})
+	if _, err := op.result(); err != errNotDone {
+		t.Fatalf("before abort, op = %v, want errNotDone", err)
+	}
+	tc.conn.Abort(nil)
+	if _, err := op.result(); err == nil || err == errNotDone {
+		t.Fatalf("after abort, op = %v, want error", err)
+	}
+}
+
+func TestConnCloseUnblocksAcceptStream(t *testing.T) {
+	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
+		_, err := tc.conn.AcceptStream(ctx)
+		return err
+	}, permissiveTransportParameters)
+}
+
+func TestConnCloseUnblocksNewStream(t *testing.T) {
+	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
+		_, err := tc.conn.NewStream(ctx)
+		return err
+	})
+}
+
+func TestConnCloseUnblocksStreamRead(t *testing.T) {
+	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
+		s := newLocalStream(t, tc, bidiStream)
+		buf := make([]byte, 16)
+		_, err := s.ReadContext(ctx, buf)
+		return err
+	}, permissiveTransportParameters)
+}
+
+func TestConnCloseUnblocksStreamWrite(t *testing.T) {
+	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
+		s := newLocalStream(t, tc, bidiStream)
+		buf := make([]byte, 32)
+		_, err := s.WriteContext(ctx, buf)
+		return err
+	}, permissiveTransportParameters, func(c *Config) {
+		c.MaxStreamWriteBufferSize = 16
+	})
+}
+
+func TestConnCloseUnblocksStreamClose(t *testing.T) {
+	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
+		s := newLocalStream(t, tc, bidiStream)
+		buf := make([]byte, 16)
+		_, err := s.WriteContext(ctx, buf)
+		if err != nil {
+			return err
+		}
+		return s.CloseContext(ctx)
+	}, permissiveTransportParameters)
+}
