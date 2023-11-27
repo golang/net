@@ -17,33 +17,29 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 	})
 	tc.writeFrames(packetType1RTT, debugFrameStream{
 		id:   s.id,
-		data: make([]byte, 64),
+		data: make([]byte, 8),
 	})
-	const readSize = 8
-	if n, err := s.Read(make([]byte, readSize)); n != readSize || err != nil {
-		t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, readSize)
+	if n, err := s.Read(make([]byte, 8)); n != 8 || err != nil {
+		t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, 8)
 	}
 	tc.wantFrame("available window increases, send a MAX_DATA",
 		packetType1RTT, debugFrameMaxData{
-			max: 64 + readSize,
-		})
-	if n, err := s.Read(make([]byte, 64)); n != 64-readSize || err != nil {
-		t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, 64-readSize)
-	}
-	tc.wantFrame("available window increases, send a MAX_DATA",
-		packetType1RTT, debugFrameMaxData{
-			max: 128,
+			max: 64 + 8,
 		})
 	// Peer can write up to the new limit.
 	tc.writeFrames(packetType1RTT, debugFrameStream{
 		id:   s.id,
-		off:  64,
+		off:  8,
 		data: make([]byte, 64),
 	})
-	tc.wantIdle("connection is idle")
-	if n, err := s.Read(make([]byte, 64)); n != 64 || err != nil {
-		t.Fatalf("offset 64: s.Read() = %v, %v; want %v, nil", n, err, 64)
+	if n, err := s.Read(make([]byte, 64+1)); n != 64 {
+		t.Fatalf("s.Read() = %v, %v; want %v, anything", n, err, 64)
 	}
+	tc.wantFrame("available window increases, send a MAX_DATA",
+		packetType1RTT, debugFrameMaxData{
+			max: 64 + 8 + 64,
+		})
+	tc.wantIdle("connection is idle")
 }
 
 func TestConnInflowReturnOnRacingReads(t *testing.T) {
@@ -63,11 +59,11 @@ func TestConnInflowReturnOnRacingReads(t *testing.T) {
 	tc.ignoreFrame(frameTypeAck)
 	tc.writeFrames(packetType1RTT, debugFrameStream{
 		id:   newStreamID(clientSide, uniStream, 0),
-		data: make([]byte, 32),
+		data: make([]byte, 16),
 	})
 	tc.writeFrames(packetType1RTT, debugFrameStream{
 		id:   newStreamID(clientSide, uniStream, 1),
-		data: make([]byte, 32),
+		data: make([]byte, 1),
 	})
 	s1, err := tc.conn.AcceptStream(ctx)
 	if err != nil {
@@ -203,7 +199,6 @@ func TestConnInflowResetViolation(t *testing.T) {
 }
 
 func TestConnInflowMultipleStreams(t *testing.T) {
-	ctx := canceledContext()
 	tc := newTestConn(t, serverSide, func(c *Config) {
 		c.MaxConnReadBufferSize = 128
 	})
@@ -219,12 +214,9 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 	} {
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:   id,
-			data: make([]byte, 32),
+			data: make([]byte, 1),
 		})
-		s, err := tc.conn.AcceptStream(ctx)
-		if err != nil {
-			t.Fatalf("AcceptStream() = %v", err)
-		}
+		s := tc.acceptStream()
 		streams = append(streams, s)
 		if n, err := s.Read(make([]byte, 1)); err != nil || n != 1 {
 			t.Fatalf("s.Read() = %v, %v; want 1, nil", n, err)
@@ -232,8 +224,16 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 	}
 	tc.wantIdle("streams have read data, but not enough to update MAX_DATA")
 
-	if n, err := streams[0].Read(make([]byte, 32)); err != nil || n != 31 {
-		t.Fatalf("s.Read() = %v, %v; want 31, nil", n, err)
+	for _, s := range streams {
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  1,
+			data: make([]byte, 31),
+		})
+	}
+
+	if n, err := streams[0].Read(make([]byte, 32)); n != 31 {
+		t.Fatalf("s.Read() = %v, %v; want 31, anything", n, err)
 	}
 	tc.wantFrame("read enough data to trigger a MAX_DATA update",
 		packetType1RTT, debugFrameMaxData{

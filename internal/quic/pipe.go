@@ -17,14 +17,14 @@ import (
 // Writing past the end of the window extends it.
 // Data may be discarded from the start of the pipe, advancing the window.
 type pipe struct {
-	start int64
-	end   int64
-	head  *pipebuf
-	tail  *pipebuf
+	start int64    // stream position of first stored byte
+	end   int64    // stream position just past the last stored byte
+	head  *pipebuf // if non-nil, then head.off + len(head.b) > start
+	tail  *pipebuf // if non-nil, then tail.off + len(tail.b) == end
 }
 
 type pipebuf struct {
-	off  int64
+	off  int64 // stream position of b[0]
 	b    []byte
 	next *pipebuf
 }
@@ -111,6 +111,7 @@ func (p *pipe) copy(off int64, b []byte) {
 
 // read calls f with the data in [off, off+n)
 // The data may be provided sequentially across multiple calls to f.
+// Note that read (unlike an io.Reader) does not consume the read data.
 func (p *pipe) read(off int64, n int, f func([]byte) error) error {
 	if off < p.start {
 		panic("invalid read range")
@@ -133,6 +134,18 @@ func (p *pipe) read(off int64, n int, f func([]byte) error) error {
 		panic("invalid read range")
 	}
 	return nil
+}
+
+// peek returns a reference to up to n bytes of internal data buffer, starting at p.start.
+// The returned slice is valid until the next call to discardBefore.
+// The length of the returned slice will be in the range [0,n].
+func (p *pipe) peek(n int64) []byte {
+	pb := p.head
+	if pb == nil {
+		return nil
+	}
+	b := pb.b[p.start-pb.off:]
+	return b[:min(int64(len(b)), n)]
 }
 
 // discardBefore discards all data prior to off.

@@ -23,7 +23,7 @@ type Stream struct {
 	inctx  context.Context
 	outctx context.Context
 
-	// ingate's lock guards all receive-related state.
+	// ingate's lock guards receive-related state.
 	//
 	// The gate condition is set if a read from the stream will not block,
 	// either because the stream has available data or because the read will fail.
@@ -37,7 +37,7 @@ type Stream struct {
 	inclosed    sentVal         // set by CloseRead
 	inresetcode int64           // RESET_STREAM code received from the peer; -1 if not reset
 
-	// outgate's lock guards all send-related state.
+	// outgate's lock guards send-related state.
 	//
 	// The gate condition is set if a write to the stream will not block,
 	// either because the stream has available flow control or because
@@ -56,6 +56,10 @@ type Stream struct {
 	outreset     sentVal         // set by Reset
 	outresetcode uint64          // reset code to send in RESET_STREAM
 	outdone      chan struct{}   // closed when all data sent
+
+	// Unsynchronized buffers, used for lock-free fast path.
+	inbuf    []byte // received data
+	inbufoff int    // bytes of inbuf which have been consumed
 
 	// Atomic stream state bits.
 	//
@@ -202,16 +206,35 @@ func (s *Stream) IsWriteOnly() bool {
 // returning all data sent by the peer.
 // If the peer aborts reads on the stream, Read returns
 // an error wrapping StreamResetCode.
+//
+// It is not safe to call Read concurrently.
 func (s *Stream) Read(b []byte) (n int, err error) {
 	if s.IsWriteOnly() {
 		return 0, errors.New("read from write-only stream")
 	}
+	if len(s.inbuf) > s.inbufoff {
+		// Fast path: If s.inbuf contains unread bytes, return them immediately
+		// without taking a lock.
+		n = copy(b, s.inbuf[s.inbufoff:])
+		s.inbufoff += n
+		return n, nil
+	}
 	if err := s.ingate.waitAndLock(s.inctx, s.conn.testHooks); err != nil {
 		return 0, err
 	}
+	if s.inbufoff > 0 {
+		// Discard bytes consumed by the fast path above.
+		s.in.discardBefore(s.in.start + int64(s.inbufoff))
+		s.inbufoff = 0
+		s.inbuf = nil
+	}
+	// bytesRead contains the number of bytes of connection-level flow control to return.
+	// We return flow control for bytes read by this Read call, as well as bytes moved
+	// to the fast-path read buffer (s.inbuf).
+	var bytesRead int64
 	defer func() {
 		s.inUnlock()
-		s.conn.handleStreamBytesReadOffLoop(int64(n)) // must be done with ingate unlocked
+		s.conn.handleStreamBytesReadOffLoop(bytesRead) // must be done with ingate unlocked
 	}()
 	if s.inresetcode != -1 {
 		return 0, fmt.Errorf("stream reset by peer: %w", StreamErrorCode(s.inresetcode))
@@ -229,27 +252,48 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 	if size := int(s.inset[0].end - s.in.start); size < len(b) {
 		b = b[:size]
 	}
+	bytesRead = int64(len(b))
 	start := s.in.start
 	end := start + int64(len(b))
 	s.in.copy(start, b)
 	s.in.discardBefore(end)
+	if end == s.insize {
+		// We have read up to the end of the stream.
+		// No need to update stream flow control.
+		return len(b), io.EOF
+	}
+	if len(s.inset) > 0 && s.inset[0].start <= s.in.start && s.inset[0].end > s.in.start {
+		// If we have more readable bytes available, put the next chunk of data
+		// in s.inbuf for lock-free reads.
+		s.inbuf = s.in.peek(s.inset[0].end - s.in.start)
+		bytesRead += int64(len(s.inbuf))
+	}
 	if s.insize == -1 || s.insize > s.inwin {
-		if shouldUpdateFlowControl(s.inmaxbuf, s.in.start+s.inmaxbuf-s.inwin) {
+		newWindow := s.in.start + int64(len(s.inbuf)) + s.inmaxbuf
+		addedWindow := newWindow - s.inwin
+		if shouldUpdateFlowControl(s.inmaxbuf, addedWindow) {
 			// Update stream flow control with a STREAM_MAX_DATA frame.
 			s.insendmax.setUnsent()
 		}
-	}
-	if end == s.insize {
-		return len(b), io.EOF
 	}
 	return len(b), nil
 }
 
 // ReadByte reads and returns a single byte from the stream.
+//
+// It is not safe to call ReadByte concurrently.
 func (s *Stream) ReadByte() (byte, error) {
+	if len(s.inbuf) > s.inbufoff {
+		b := s.inbuf[s.inbufoff]
+		s.inbufoff++
+		return b, nil
+	}
 	var b [1]byte
-	_, err := s.Read(b[:])
-	return b[0], err
+	n, err := s.Read(b[:])
+	if n > 0 {
+		return b[0], err
+	}
+	return 0, err
 }
 
 // shouldUpdateFlowControl determines whether to send a flow control window update.
@@ -507,8 +551,9 @@ func (s *Stream) inUnlock() {
 // inUnlockNoQueue is inUnlock,
 // but reports whether s has frames to write rather than notifying the Conn.
 func (s *Stream) inUnlockNoQueue() streamState {
-	canRead := s.inset.contains(s.in.start) || // data available to read
-		s.insize == s.in.start || // at EOF
+	nextByte := s.in.start + int64(len(s.inbuf))
+	canRead := s.inset.contains(nextByte) || // data available to read
+		s.insize == s.in.start+int64(len(s.inbuf)) || // at EOF
 		s.inresetcode != -1 || // reset by peer
 		s.inclosed.isSet() // closed locally
 	defer s.ingate.unlock(canRead)

@@ -308,9 +308,9 @@ func TestLostMaxDataFrame(t *testing.T) {
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:   s.id,
 			off:  0,
-			data: make([]byte, maxWindowSize),
+			data: make([]byte, maxWindowSize-1),
 		})
-		if n, err := s.Read(buf[:maxWindowSize-1]); err != nil || n != maxWindowSize-1 {
+		if n, err := s.Read(buf[:maxWindowSize]); err != nil || n != maxWindowSize-1 {
 			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, maxWindowSize-1)
 		}
 		tc.wantFrame("conn window is extended after reading data",
@@ -319,7 +319,12 @@ func TestLostMaxDataFrame(t *testing.T) {
 			})
 
 		// MAX_DATA = 64, which is only one more byte, so we don't send the frame.
-		if n, err := s.Read(buf); err != nil || n != 1 {
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  maxWindowSize - 1,
+			data: make([]byte, 1),
+		})
+		if n, err := s.Read(buf[:1]); err != nil || n != 1 {
 			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, 1)
 		}
 		tc.wantIdle("read doesn't extend window enough to send another MAX_DATA")
@@ -348,9 +353,9 @@ func TestLostMaxStreamDataFrame(t *testing.T) {
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:   s.id,
 			off:  0,
-			data: make([]byte, maxWindowSize),
+			data: make([]byte, maxWindowSize-1),
 		})
-		if n, err := s.Read(buf[:maxWindowSize-1]); err != nil || n != maxWindowSize-1 {
+		if n, err := s.Read(buf[:maxWindowSize]); err != nil || n != maxWindowSize-1 {
 			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, maxWindowSize-1)
 		}
 		tc.wantFrame("stream window is extended after reading data",
@@ -360,6 +365,11 @@ func TestLostMaxStreamDataFrame(t *testing.T) {
 			})
 
 		// MAX_STREAM_DATA = 64, which is only one more byte, so we don't send the frame.
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  maxWindowSize - 1,
+			data: make([]byte, 1),
+		})
 		if n, err := s.Read(buf); err != nil || n != 1 {
 			t.Fatalf("Read() = %v, %v; want %v, nil", n, err, 1)
 		}

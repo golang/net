@@ -538,6 +538,32 @@ func TestStreamReceiveDuplicateDataDoesNotViolateLimits(t *testing.T) {
 	})
 }
 
+func TestStreamReceiveEmptyEOF(t *testing.T) {
+	// A stream receives some data, we read a byte of that data
+	// (causing the rest to be pulled into the s.inbuf buffer),
+	// and then we receive a FIN with no additional data.
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, styp, permissiveTransportParameters)
+		want := []byte{1, 2, 3}
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: want,
+		})
+		if got, err := s.ReadByte(); got != want[0] || err != nil {
+			t.Fatalf("s.ReadByte() = %v, %v; want %v, nil", got, err, want[0])
+		}
+
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:  s.id,
+			off: 3,
+			fin: true,
+		})
+		if got, err := io.ReadAll(s); !bytes.Equal(got, want[1:]) || err != nil {
+			t.Fatalf("io.ReadAll(s) = {%x}, %v; want {%x}, nil", got, err, want[1:])
+		}
+	})
+}
+
 func finalSizeTest(t *testing.T, wantErr transportError, f func(tc *testConn, sid streamID) (finalSize int64), opts ...any) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		for _, test := range []struct {
@@ -1156,8 +1182,8 @@ func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 			code:      sentCode,
 		})
 		wantErr := StreamErrorCode(sentCode)
-		if n, err := s.Read(got); n != 0 || !errors.Is(err, wantErr) {
-			t.Fatalf("Read reset stream: got %v, %v; want 0, %v", n, err, wantErr)
+		if _, err := io.ReadAll(s); !errors.Is(err, wantErr) {
+			t.Fatalf("Read reset stream: ReadAll got error %v; want %v", err, wantErr)
 		}
 	})
 }
