@@ -11,10 +11,13 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"testing"
 	"time"
+
+	"golang.org/x/net/internal/quic/qlog"
 )
 
 func TestConnect(t *testing.T) {
@@ -82,6 +85,12 @@ func newLocalEndpoint(t *testing.T, side connSide, conf *Config) *Endpoint {
 		newConf := *conf
 		conf = &newConf
 		conf.TLSConfig = newTestTLSConfig(side)
+	}
+	if conf.QLogLogger == nil {
+		conf.QLogLogger = slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
+			Level: QLogLevelFrame,
+			Dir:   *qlogdir,
+		}))
 	}
 	e, err := Listen("udp", "127.0.0.1:0", conf)
 	if err != nil {

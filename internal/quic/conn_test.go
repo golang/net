@@ -13,15 +13,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/internal/quic/qlog"
 )
 
-var testVV = flag.Bool("vv", false, "even more verbose test output")
+var (
+	testVV  = flag.Bool("vv", false, "even more verbose test output")
+	qlogdir = flag.String("qlog", "", "write qlog logs to directory")
+)
 
 func TestConnTestConn(t *testing.T) {
 	tc := newTestConn(t, serverSide)
@@ -199,6 +205,10 @@ func newTestConn(t *testing.T, side connSide, opts ...any) *testConn {
 	config := &Config{
 		TLSConfig:         newTestTLSConfig(side),
 		StatelessResetKey: testStatelessResetKey,
+		QLogLogger: slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
+			Level: QLogLevelFrame,
+			Dir:   *qlogdir,
+		})),
 	}
 	var cids newServerConnIDs
 	if side == serverSide {
