@@ -60,7 +60,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 		pad := false
 		var sentInitial *sentPacket
 		if c.keysInitial.canWrite() {
-			pnumMaxAcked := c.acks[initialSpace].largestSeen()
+			pnumMaxAcked := c.loss.spaces[initialSpace].maxAcked
 			pnum := c.loss.nextNumber(initialSpace)
 			p := longPacket{
 				ptype:     packetTypeInitial,
@@ -93,7 +93,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 
 		// Handshake packet.
 		if c.keysHandshake.canWrite() {
-			pnumMaxAcked := c.acks[handshakeSpace].largestSeen()
+			pnumMaxAcked := c.loss.spaces[handshakeSpace].maxAcked
 			pnum := c.loss.nextNumber(handshakeSpace)
 			p := longPacket{
 				ptype:     packetTypeHandshake,
@@ -124,7 +124,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 
 		// 1-RTT packet.
 		if c.keysAppData.canWrite() {
-			pnumMaxAcked := c.acks[appDataSpace].largestSeen()
+			pnumMaxAcked := c.loss.spaces[appDataSpace].maxAcked
 			pnum := c.loss.nextNumber(appDataSpace)
 			c.w.start1RTTPacket(pnum, pnumMaxAcked, dstConnID)
 			c.appendFrames(now, appDataSpace, pnum, limit)

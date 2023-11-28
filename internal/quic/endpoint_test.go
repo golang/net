@@ -13,7 +13,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -242,7 +241,7 @@ func (te *testEndpoint) readDatagram() *testDatagram {
 func (te *testEndpoint) wantDatagram(expectation string, want *testDatagram) {
 	te.t.Helper()
 	got := te.readDatagram()
-	if !reflect.DeepEqual(got, want) {
+	if !datagramEqual(got, want) {
 		te.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
 	}
 }

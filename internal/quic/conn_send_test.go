@@ -38,3 +38,46 @@ func TestAckElicitingAck(t *testing.T) {
 	}
 	t.Errorf("after sending %v PINGs, got no ack-eliciting response", count)
 }
+
+func TestSendPacketNumberSize(t *testing.T) {
+	tc := newTestConn(t, clientSide, permissiveTransportParameters)
+	tc.handshake()
+
+	recvPing := func() *testPacket {
+		t.Helper()
+		tc.conn.ping(appDataSpace)
+		p := tc.readPacket()
+		if p == nil {
+			t.Fatalf("want packet containing PING, got none")
+		}
+		return p
+	}
+
+	// Desynchronize the packet numbers the conn is sending and the ones it is receiving,
+	// by having the conn send a number of unacked packets.
+	for i := 0; i < 16; i++ {
+		recvPing()
+	}
+
+	// Establish the maximum packet number the conn has received an ACK for.
+	maxAcked := recvPing().num
+	tc.writeAckForAll()
+
+	// Make the conn send a sequence of packets.
+	// Check that the packet number is encoded with two bytes once the difference between the
+	// current packet and the max acked one is sufficiently large.
+	for want := maxAcked + 1; want < maxAcked+0x100; want++ {
+		p := recvPing()
+		if p.num != want {
+			t.Fatalf("received packet number %v, want %v", p.num, want)
+		}
+		gotPnumLen := int(p.header&0x03) + 1
+		wantPnumLen := 1
+		if p.num-maxAcked >= 0x80 {
+			wantPnumLen = 2
+		}
+		if gotPnumLen != wantPnumLen {
+			t.Fatalf("packet number 0x%x encoded with %v bytes, want %v (max acked = %v)", p.num, gotPnumLen, wantPnumLen, maxAcked)
+		}
+	}
+}

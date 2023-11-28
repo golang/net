@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -56,7 +55,7 @@ func (tc *testConn) handshake() {
 			fillCryptoFrames(want, tc.cryptoDataOut)
 			i++
 		}
-		if !reflect.DeepEqual(got, want) {
+		if !datagramEqual(got, want) {
 			t.Fatalf("dgram %v:\ngot %v\n\nwant %v", i, got, want)
 		}
 		if i >= len(dgrams) {

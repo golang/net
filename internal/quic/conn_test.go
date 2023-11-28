@@ -82,6 +82,7 @@ func (d testDatagram) String() string {
 
 type testPacket struct {
 	ptype             packetType
+	header            byte
 	version           uint32
 	num               packetNumber
 	keyPhaseBit       bool
@@ -599,12 +600,18 @@ func (tc *testConn) readFrame() (debugFrame, packetType) {
 func (tc *testConn) wantDatagram(expectation string, want *testDatagram) {
 	tc.t.Helper()
 	got := tc.readDatagram()
-	if !reflect.DeepEqual(got, want) {
+	if !datagramEqual(got, want) {
 		tc.t.Fatalf("%v:\ngot datagram:  %v\nwant datagram: %v", expectation, got, want)
 	}
 }
 
 func datagramEqual(a, b *testDatagram) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
 	if a.paddedSize != b.paddedSize ||
 		a.addr != b.addr ||
 		len(a.packets) != len(b.packets) {
@@ -622,7 +629,7 @@ func datagramEqual(a, b *testDatagram) bool {
 func (tc *testConn) wantPacket(expectation string, want *testPacket) {
 	tc.t.Helper()
 	got := tc.readPacket()
-	if !reflect.DeepEqual(got, want) {
+	if !packetEqual(got, want) {
 		tc.t.Fatalf("%v:\ngot packet:  %v\nwant packet: %v", expectation, got, want)
 	}
 }
@@ -630,8 +637,10 @@ func (tc *testConn) wantPacket(expectation string, want *testPacket) {
 func packetEqual(a, b *testPacket) bool {
 	ac := *a
 	ac.frames = nil
+	ac.header = 0
 	bc := *b
 	bc.frames = nil
+	bc.header = 0
 	if !reflect.DeepEqual(ac, bc) {
 		return false
 	}
@@ -839,6 +848,7 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			}
 			d.packets = append(d.packets, &testPacket{
 				ptype:     p.ptype,
+				header:    buf[0],
 				version:   p.version,
 				num:       p.num,
 				dstConnID: p.dstConnID,
@@ -880,6 +890,7 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			}
 			d.packets = append(d.packets, &testPacket{
 				ptype:       packetType1RTT,
+				header:      hdr[0],
 				num:         pnum,
 				dstConnID:   hdr[1:][:len(tc.peerConnID)],
 				keyPhaseBit: hdr[0]&keyPhaseBit != 0,
