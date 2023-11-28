@@ -59,6 +59,12 @@ func (sent *sentPacket) reset() {
 	}
 }
 
+// markAckEliciting marks the packet as containing an ack-eliciting frame.
+func (sent *sentPacket) markAckEliciting() {
+	sent.ackEliciting = true
+	sent.inFlight = true
+}
+
 // The append* methods record information about frames in the packet.
 
 func (sent *sentPacket) appendNonAckElicitingFrame(frameType byte) {

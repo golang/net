@@ -168,6 +168,7 @@ type testConn struct {
 	sentDatagrams [][]byte
 	sentPackets   []*testPacket
 	sentFrames    []debugFrame
+	lastDatagram  *testDatagram
 	lastPacket    *testPacket
 
 	recvDatagram chan *datagram
@@ -576,6 +577,7 @@ func (tc *testConn) readDatagram() *testDatagram {
 		}
 		p.frames = frames
 	}
+	tc.lastDatagram = d
 	return d
 }
 

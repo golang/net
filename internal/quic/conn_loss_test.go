@@ -663,6 +663,29 @@ func TestLostRetireConnectionIDFrame(t *testing.T) {
 	})
 }
 
+func TestLostPathResponseFrame(t *testing.T) {
+	// "Responses to path validation using PATH_RESPONSE frames are sent just once."
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.12
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		tc := newTestConn(t, clientSide)
+		tc.handshake()
+		tc.ignoreFrame(frameTypeAck)
+		tc.ignoreFrame(frameTypePing)
+
+		data := pathChallengeData{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+		tc.writeFrames(packetType1RTT, debugFramePathChallenge{
+			data: data,
+		})
+		tc.wantFrame("response to PATH_CHALLENGE",
+			packetType1RTT, debugFramePathResponse{
+				data: data,
+			})
+
+		tc.triggerLossOrPTO(packetType1RTT, pto)
+		tc.wantIdle("lost PATH_RESPONSE frame is not retransmitted")
+	})
+}
+
 func TestLostHandshakeDoneFrame(t *testing.T) {
 	// "The HANDSHAKE_DONE frame MUST be retransmitted until it is acknowledged."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.16

@@ -46,11 +46,11 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) (handled bool) {
 				// https://www.rfc-editor.org/rfc/rfc9000#section-14.1-4
 				return false
 			}
-			n = c.handleLongHeader(now, ptype, initialSpace, c.keysInitial.r, buf)
+			n = c.handleLongHeader(now, dgram, ptype, initialSpace, c.keysInitial.r, buf)
 		case packetTypeHandshake:
-			n = c.handleLongHeader(now, ptype, handshakeSpace, c.keysHandshake.r, buf)
+			n = c.handleLongHeader(now, dgram, ptype, handshakeSpace, c.keysHandshake.r, buf)
 		case packetType1RTT:
-			n = c.handle1RTT(now, buf)
+			n = c.handle1RTT(now, dgram, buf)
 		case packetTypeRetry:
 			c.handleRetry(now, buf)
 			return true
@@ -86,7 +86,7 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) (handled bool) {
 	return true
 }
 
-func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpace, k fixedKeys, buf []byte) int {
+func (c *Conn) handleLongHeader(now time.Time, dgram *datagram, ptype packetType, space numberSpace, k fixedKeys, buf []byte) int {
 	if !k.isSet() {
 		return skipLongHeaderPacket(buf)
 	}
@@ -125,7 +125,7 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 		c.logLongPacketReceived(p, buf[:n])
 	}
 	c.connIDState.handlePacket(c, p.ptype, p.srcConnID)
-	ackEliciting := c.handleFrames(now, ptype, space, p.payload)
+	ackEliciting := c.handleFrames(now, dgram, ptype, space, p.payload)
 	c.acks[space].receive(now, space, p.num, ackEliciting)
 	if p.ptype == packetTypeHandshake && c.side == serverSide {
 		c.loss.validateClientAddress()
@@ -138,7 +138,7 @@ func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpa
 	return n
 }
 
-func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
+func (c *Conn) handle1RTT(now time.Time, dgram *datagram, buf []byte) int {
 	if !c.keysAppData.canRead() {
 		// 1-RTT packets extend to the end of the datagram,
 		// so skip the remainder of the datagram if we can't parse this.
@@ -175,7 +175,7 @@ func (c *Conn) handle1RTT(now time.Time, buf []byte) int {
 	if c.logEnabled(QLogLevelPacket) {
 		c.log1RTTPacketReceived(p, buf)
 	}
-	ackEliciting := c.handleFrames(now, packetType1RTT, appDataSpace, p.payload)
+	ackEliciting := c.handleFrames(now, dgram, packetType1RTT, appDataSpace, p.payload)
 	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting)
 	return len(buf)
 }
@@ -252,7 +252,7 @@ func (c *Conn) handleVersionNegotiation(now time.Time, pkt []byte) {
 	c.abortImmediately(now, errVersionNegotiation)
 }
 
-func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, payload []byte) (ackEliciting bool) {
+func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, space numberSpace, payload []byte) (ackEliciting bool) {
 	if len(payload) == 0 {
 		// "An endpoint MUST treat receipt of a packet containing no frames
 		// as a connection error of type PROTOCOL_VIOLATION."
@@ -373,6 +373,16 @@ func (c *Conn) handleFrames(now time.Time, ptype packetType, space numberSpace, 
 				return
 			}
 			n = c.handleRetireConnectionIDFrame(now, space, payload)
+		case frameTypePathChallenge:
+			if !frameOK(c, ptype, __01) {
+				return
+			}
+			n = c.handlePathChallengeFrame(now, dgram, space, payload)
+		case frameTypePathResponse:
+			if !frameOK(c, ptype, ___1) {
+				return
+			}
+			n = c.handlePathResponseFrame(now, space, payload)
 		case frameTypeConnectionCloseTransport:
 			// Transport CONNECTION_CLOSE is OK in all spaces.
 			n = c.handleConnectionCloseTransportFrame(now, payload)
@@ -543,6 +553,24 @@ func (c *Conn) handleRetireConnectionIDFrame(now time.Time, space numberSpace, p
 	if err := c.connIDState.handleRetireConnID(c, seq); err != nil {
 		c.abort(now, err)
 	}
+	return n
+}
+
+func (c *Conn) handlePathChallengeFrame(now time.Time, dgram *datagram, space numberSpace, payload []byte) int {
+	data, n := consumePathChallengeFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.handlePathChallenge(now, dgram, data)
+	return n
+}
+
+func (c *Conn) handlePathResponseFrame(now time.Time, space numberSpace, payload []byte) int {
+	data, n := consumePathResponseFrame(payload)
+	if n < 0 {
+		return -1
+	}
+	c.handlePathResponse(now, data)
 	return n
 }
 

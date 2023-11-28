@@ -271,6 +271,13 @@ func (c *Conn) appendFrames(now time.Time, space numberSpace, pnum packetNumber,
 			return
 		}
 
+		// PATH_RESPONSE
+		if pad, ok := c.appendPathFrames(); !ok {
+			return
+		} else if pad {
+			defer c.w.appendPaddingTo(smallestMaxDatagramSize)
+		}
+
 		// All stream-related frames. This should come last in the packet,
 		// so large amounts of STREAM data don't crowd out other frames
 		// we may need to send.

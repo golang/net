@@ -517,7 +517,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		s: "PATH_CHALLENGE Data=0123456789abcdef",
 		j: `{"frame_type":"path_challenge","data":"0123456789abcdef"}`,
 		f: debugFramePathChallenge{
-			data: 0x0123456789abcdef,
+			data: pathChallengeData{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
 		},
 		b: []byte{
 			0x1a,                                           // Type (i) = 0x1a,
@@ -527,7 +527,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		s: "PATH_RESPONSE Data=0123456789abcdef",
 		j: `{"frame_type":"path_response","data":"0123456789abcdef"}`,
 		f: debugFramePathResponse{
-			data: 0x0123456789abcdef,
+			data: pathChallengeData{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
 		},
 		b: []byte{
 			0x1b,                                           // Type (i) = 0x1b,

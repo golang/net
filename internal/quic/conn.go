@@ -37,6 +37,7 @@ type Conn struct {
 	connIDState connIDState
 	loss        lossState
 	streams     streamsState
+	path        pathState
 
 	// Packet protection keys, CRYPTO streams, and TLS state.
 	keysInitial   fixedKeyPair

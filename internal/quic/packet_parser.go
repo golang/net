@@ -463,18 +463,17 @@ func consumeRetireConnectionIDFrame(b []byte) (seq int64, n int) {
 	return seq, n
 }
 
-func consumePathChallengeFrame(b []byte) (data uint64, n int) {
+func consumePathChallengeFrame(b []byte) (data pathChallengeData, n int) {
 	n = 1
-	var nn int
-	data, nn = consumeUint64(b[n:])
-	if nn < 0 {
-		return 0, -1
+	nn := copy(data[:], b[n:])
+	if nn != len(data) {
+		return data, -1
 	}
 	n += nn
 	return data, n
 }
 
-func consumePathResponseFrame(b []byte) (data uint64, n int) {
+func consumePathResponseFrame(b []byte) (data pathChallengeData, n int) {
 	return consumePathChallengeFrame(b) // identical frame format
 }
 

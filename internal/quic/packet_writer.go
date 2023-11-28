@@ -243,10 +243,7 @@ func (w *packetWriter) appendPingFrame() (added bool) {
 		return false
 	}
 	w.b = append(w.b, frameTypePing)
-	// Mark this packet as ack-eliciting and in-flight,
-	// but there's no need to record the presence of a PING frame in it.
-	w.sent.ackEliciting = true
-	w.sent.inFlight = true
+	w.sent.markAckEliciting() // no need to record the frame itself
 	return true
 }
 
@@ -495,23 +492,23 @@ func (w *packetWriter) appendRetireConnectionIDFrame(seq int64) (added bool) {
 	return true
 }
 
-func (w *packetWriter) appendPathChallengeFrame(data uint64) (added bool) {
+func (w *packetWriter) appendPathChallengeFrame(data pathChallengeData) (added bool) {
 	if w.avail() < 1+8 {
 		return false
 	}
 	w.b = append(w.b, frameTypePathChallenge)
-	w.b = binary.BigEndian.AppendUint64(w.b, data)
-	w.sent.appendAckElicitingFrame(frameTypePathChallenge)
+	w.b = append(w.b, data[:]...)
+	w.sent.markAckEliciting() // no need to record the frame itself
 	return true
 }
 
-func (w *packetWriter) appendPathResponseFrame(data uint64) (added bool) {
+func (w *packetWriter) appendPathResponseFrame(data pathChallengeData) (added bool) {
 	if w.avail() < 1+8 {
 		return false
 	}
 	w.b = append(w.b, frameTypePathResponse)
-	w.b = binary.BigEndian.AppendUint64(w.b, data)
-	w.sent.appendAckElicitingFrame(frameTypePathResponse)
+	w.b = append(w.b, data[:]...)
+	w.sent.markAckEliciting() // no need to record the frame itself
 	return true
 }
 

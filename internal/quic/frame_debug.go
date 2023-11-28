@@ -77,6 +77,7 @@ func parseDebugFrame(b []byte) (f debugFrame, n int) {
 // debugFramePadding is a sequence of PADDING frames.
 type debugFramePadding struct {
 	size int
+	to   int // alternate for writing packets: pad to
 }
 
 func parseDebugFramePadding(b []byte) (f debugFramePadding, n int) {
@@ -94,6 +95,10 @@ func (f debugFramePadding) String() string {
 func (f debugFramePadding) write(w *packetWriter) bool {
 	if w.avail() == 0 {
 		return false
+	}
+	if f.to > 0 {
+		w.appendPaddingTo(f.to)
+		return true
 	}
 	for i := 0; i < f.size && w.avail() > 0; i++ {
 		w.b = append(w.b, frameTypePadding)
@@ -584,7 +589,7 @@ func (f debugFrameRetireConnectionID) LogValue() slog.Value {
 
 // debugFramePathChallenge is a PATH_CHALLENGE frame.
 type debugFramePathChallenge struct {
-	data uint64
+	data pathChallengeData
 }
 
 func parseDebugFramePathChallenge(b []byte) (f debugFramePathChallenge, n int) {
@@ -593,7 +598,7 @@ func parseDebugFramePathChallenge(b []byte) (f debugFramePathChallenge, n int) {
 }
 
 func (f debugFramePathChallenge) String() string {
-	return fmt.Sprintf("PATH_CHALLENGE Data=%016x", f.data)
+	return fmt.Sprintf("PATH_CHALLENGE Data=%x", f.data)
 }
 
 func (f debugFramePathChallenge) write(w *packetWriter) bool {
@@ -603,13 +608,13 @@ func (f debugFramePathChallenge) write(w *packetWriter) bool {
 func (f debugFramePathChallenge) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("frame_type", "path_challenge"),
-		slog.String("data", fmt.Sprintf("%016x", f.data)),
+		slog.String("data", fmt.Sprintf("%x", f.data)),
 	)
 }
 
 // debugFramePathResponse is a PATH_RESPONSE frame.
 type debugFramePathResponse struct {
-	data uint64
+	data pathChallengeData
 }
 
 func parseDebugFramePathResponse(b []byte) (f debugFramePathResponse, n int) {
@@ -618,7 +623,7 @@ func parseDebugFramePathResponse(b []byte) (f debugFramePathResponse, n int) {
 }
 
 func (f debugFramePathResponse) String() string {
-	return fmt.Sprintf("PATH_RESPONSE Data=%016x", f.data)
+	return fmt.Sprintf("PATH_RESPONSE Data=%x", f.data)
 }
 
 func (f debugFramePathResponse) write(w *packetWriter) bool {
@@ -628,7 +633,7 @@ func (f debugFramePathResponse) write(w *packetWriter) bool {
 func (f debugFramePathResponse) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("frame_type", "path_response"),
-		slog.String("data", fmt.Sprintf("%016x", f.data)),
+		slog.String("data", fmt.Sprintf("%x", f.data)),
 	)
 }
 
