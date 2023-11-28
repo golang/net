@@ -180,7 +180,7 @@ func newTraceWriter(opts HandlerOptions, info TraceInfo) (io.WriteCloser, error)
 		if !filepath.IsLocal(filename) {
 			return nil, errors.New("invalid trace filename")
 		}
-		w, err = os.Create(filepath.Join(opts.Dir, filename))
+		w, err = os.OpenFile(filepath.Join(opts.Dir, filename), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
 	} else {
 		err = errors.New("no log destination")
 	}
