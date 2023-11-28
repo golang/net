@@ -8,6 +8,7 @@ package quic
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"time"
@@ -56,9 +57,16 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			if len(buf) == len(dgram.b) && len(buf) > statelessResetTokenLen {
 				var token statelessResetToken
 				copy(token[:], buf[len(buf)-len(token):])
-				c.handleStatelessReset(now, token)
+				if c.handleStatelessReset(now, token) {
+					return
+				}
 			}
 			// Invalid data at the end of a datagram is ignored.
+			if c.logEnabled(QLogLevelPacket) {
+				c.log.LogAttrs(context.Background(), QLogLevelPacket,
+					"connectivity:packet_dropped",
+				)
+			}
 			break
 		}
 		c.idleHandlePacketReceived(now)
@@ -562,10 +570,11 @@ func (c *Conn) handleHandshakeDoneFrame(now time.Time, space numberSpace, payloa
 
 var errStatelessReset = errors.New("received stateless reset")
 
-func (c *Conn) handleStatelessReset(now time.Time, resetToken statelessResetToken) {
+func (c *Conn) handleStatelessReset(now time.Time, resetToken statelessResetToken) (valid bool) {
 	if !c.connIDState.isValidStatelessResetToken(resetToken) {
-		return
+		return false
 	}
 	c.setFinalError(errStatelessReset)
 	c.enterDraining(now)
+	return true
 }

@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -227,6 +228,27 @@ func TestQLogLoss(t *testing.T) {
 				"packet_type":   "1RTT",
 			},
 		},
+	})
+}
+
+func TestQLogPacketDropped(t *testing.T) {
+	qr := &qlogRecord{}
+	tc := newTestConn(t, clientSide, permissiveTransportParameters, qr.config)
+	tc.handshake()
+
+	// A garbage-filled datagram with a DCID matching this connection.
+	dgram := bytes.Join([][]byte{
+		{headerFormShort | fixedBit},
+		testLocalConnID(0),
+		make([]byte, 100),
+		[]byte{1, 2, 3, 4}, // random data, to avoid this looking like a stateless reset
+	}, nil)
+	tc.endpoint.write(&datagram{
+		b: dgram,
+	})
+
+	qr.wantEvents(t, jsonEvent{
+		"name": "connectivity:packet_dropped",
 	})
 }
 
