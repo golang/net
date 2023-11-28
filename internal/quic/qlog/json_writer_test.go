@@ -124,9 +124,10 @@ func TestJSONWriterBoolField(t *testing.T) {
 func TestJSONWriterDurationField(t *testing.T) {
 	w := newTestJSONWriter()
 	w.writeRecordStart()
-	w.writeDurationField("field", (10*time.Millisecond)+(2*time.Nanosecond))
+	w.writeDurationField("field1", (10*time.Millisecond)+(2*time.Nanosecond))
+	w.writeDurationField("field2", -((10 * time.Millisecond) + (2 * time.Nanosecond)))
 	w.writeRecordEnd()
-	wantJSONRecord(t, w, `{"field":10.000002}`)
+	wantJSONRecord(t, w, `{"field1":10.000002,"field2":-10.000002}`)
 }
 
 func TestJSONWriterFloat64Field(t *testing.T) {

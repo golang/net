@@ -157,6 +157,10 @@ func (w *jsonWriter) writeBoolField(name string, v bool) {
 
 // writeDuration writes a duration as milliseconds.
 func (w *jsonWriter) writeDuration(v time.Duration) {
+	if v < 0 {
+		w.buf.WriteByte('-')
+		v = -v
+	}
 	fmt.Fprintf(&w.buf, "%d.%06d", v.Milliseconds(), v%time.Millisecond)
 }
 
