@@ -249,8 +249,9 @@ func TestConnCloseUnblocksNewStream(t *testing.T) {
 func TestConnCloseUnblocksStreamRead(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
+		s.SetReadContext(ctx)
 		buf := make([]byte, 16)
-		_, err := s.ReadContext(ctx, buf)
+		_, err := s.Read(buf)
 		return err
 	}, permissiveTransportParameters)
 }
@@ -258,8 +259,9 @@ func TestConnCloseUnblocksStreamRead(t *testing.T) {
 func TestConnCloseUnblocksStreamWrite(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
+		s.SetWriteContext(ctx)
 		buf := make([]byte, 32)
-		_, err := s.WriteContext(ctx, buf)
+		_, err := s.Write(buf)
 		return err
 	}, permissiveTransportParameters, func(c *Config) {
 		c.MaxStreamWriteBufferSize = 16
@@ -269,11 +271,12 @@ func TestConnCloseUnblocksStreamWrite(t *testing.T) {
 func TestConnCloseUnblocksStreamClose(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
+		s.SetWriteContext(ctx)
 		buf := make([]byte, 16)
-		_, err := s.WriteContext(ctx, buf)
+		_, err := s.Write(buf)
 		if err != nil {
 			return err
 		}
-		return s.CloseContext(ctx)
+		return s.Close()
 	}, permissiveTransportParameters)
 }

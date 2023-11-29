@@ -200,7 +200,6 @@ func TestStreamLimitMaxStreamsFrameTooLarge(t *testing.T) {
 
 func TestStreamLimitSendUpdatesMaxStreams(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		ctx := canceledContext()
 		tc := newTestConn(t, serverSide, func(c *Config) {
 			if styp == uniStream {
 				c.MaxUniRemoteStreams = 4
@@ -218,13 +217,9 @@ func TestStreamLimitSendUpdatesMaxStreams(t *testing.T) {
 				id:  newStreamID(clientSide, styp, int64(i)),
 				fin: true,
 			})
-			s, err := tc.conn.AcceptStream(ctx)
-			if err != nil {
-				t.Fatalf("AcceptStream = %v", err)
-			}
-			streams = append(streams, s)
+			streams = append(streams, tc.acceptStream())
 		}
-		streams[3].CloseContext(ctx)
+		streams[3].Close()
 		if styp == bidiStream {
 			tc.wantFrame("stream is closed",
 				packetType1RTT, debugFrameStream{

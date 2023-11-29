@@ -19,7 +19,6 @@ import (
 
 func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		ctx := canceledContext()
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		const writeBufferSize = 4
 		tc := newTestConn(t, clientSide, permissiveTransportParameters, func(c *Config) {
@@ -28,15 +27,12 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
 
-		s, err := tc.conn.newLocalStream(ctx, styp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		s := newLocalStream(t, tc, styp)
 
 		// Non-blocking write.
-		n, err := s.WriteContext(ctx, want)
+		n, err := s.Write(want)
 		if n != writeBufferSize || err != context.Canceled {
-			t.Fatalf("s.WriteContext() = %v, %v; want %v, context.Canceled", n, err, writeBufferSize)
+			t.Fatalf("s.Write() = %v, %v; want %v, context.Canceled", n, err, writeBufferSize)
 		}
 		s.Flush()
 		tc.wantFrame("first write buffer of data sent",
@@ -48,7 +44,8 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 
 		// Blocking write, which must wait for buffer space.
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			n, err := s.WriteContext(ctx, want[writeBufferSize:])
+			s.SetWriteContext(ctx)
+			n, err := s.Write(want[writeBufferSize:])
 			s.Flush()
 			return n, err
 		})
@@ -75,7 +72,7 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 			})
 
 		if n, err := w.result(); n != len(want)-writeBufferSize || err != nil {
-			t.Fatalf("s.WriteContext() = %v, %v; want %v, nil",
+			t.Fatalf("s.Write() = %v, %v; want %v, nil",
 				len(want)-writeBufferSize, err, writeBufferSize)
 		}
 	})
@@ -99,7 +96,7 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 		}
 
 		// Data is written to the stream output buffer, but we have no flow control.
-		_, err = s.WriteContext(ctx, want[:1])
+		_, err = s.Write(want[:1])
 		if err != nil {
 			t.Fatalf("write with available output buffer: unexpected error: %v", err)
 		}
@@ -110,7 +107,7 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 			})
 
 		// Write more data.
-		_, err = s.WriteContext(ctx, want[1:])
+		_, err = s.Write(want[1:])
 		if err != nil {
 			t.Fatalf("write with available output buffer: unexpected error: %v", err)
 		}
@@ -172,7 +169,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.WriteContext(ctx, want[:1])
+		s.Write(want[:1])
 		s.Flush()
 		tc.wantFrame("sent data (1 byte) fits within flow control limit",
 			packetType1RTT, debugFrameStream{
@@ -188,7 +185,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 		})
 
 		// Write [1,4).
-		s.WriteContext(ctx, want[1:])
+		s.Write(want[1:])
 		tc.wantFrame("stream limit is 4 bytes, ignoring decrease in MAX_STREAM_DATA",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -208,7 +205,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 		})
 
 		// Write [1,4).
-		s.WriteContext(ctx, want[4:])
+		s.Write(want[4:])
 		tc.wantFrame("stream limit is 8 bytes, ignoring decrease in MAX_STREAM_DATA",
 			packetType1RTT, debugFrameStream{
 				id:   s.id,
@@ -220,7 +217,6 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 
 func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		ctx := canceledContext()
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		const maxWriteBuffer = 4
 		tc := newTestConn(t, clientSide, func(p *transportParameters) {
@@ -238,12 +234,10 @@ func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
 		// Write more data than StreamWriteBufferSize.
 		// The peer has given us plenty of flow control,
 		// so we're just blocked by our local limit.
-		s, err := tc.conn.newLocalStream(ctx, styp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		s := newLocalStream(t, tc, styp)
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.WriteContext(ctx, want)
+			s.SetWriteContext(ctx)
+			return s.Write(want)
 		})
 		tc.wantFrame("stream write should send as much data as write buffer allows",
 			packetType1RTT, debugFrameStream{
@@ -266,7 +260,7 @@ func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
 		w.cancel()
 		n, err := w.result()
 		if n != 2*maxWriteBuffer || err == nil {
-			t.Fatalf("WriteContext() = %v, %v; want %v bytes, error", n, err, 2*maxWriteBuffer)
+			t.Fatalf("Write() = %v, %v; want %v bytes, error", n, err, 2*maxWriteBuffer)
 		}
 	})
 }
@@ -397,7 +391,6 @@ func TestStreamReceive(t *testing.T) {
 		}},
 	}} {
 		testStreamTypes(t, test.name, func(t *testing.T, styp streamType) {
-			ctx := canceledContext()
 			tc := newTestConn(t, serverSide)
 			tc.handshake()
 			sid := newStreamID(clientSide, styp, 0)
@@ -413,21 +406,17 @@ func TestStreamReceive(t *testing.T) {
 					fin:  f.fin,
 				})
 				if s == nil {
-					var err error
-					s, err = tc.conn.AcceptStream(ctx)
-					if err != nil {
-						tc.t.Fatalf("conn.AcceptStream() = %v", err)
-					}
+					s = tc.acceptStream()
 				}
 				for {
-					n, err := s.ReadContext(ctx, got[total:])
-					t.Logf("s.ReadContext() = %v, %v", n, err)
+					n, err := s.Read(got[total:])
+					t.Logf("s.Read() = %v, %v", n, err)
 					total += n
 					if f.wantEOF && err != io.EOF {
-						t.Fatalf("ReadContext() error = %v; want io.EOF", err)
+						t.Fatalf("Read() error = %v; want io.EOF", err)
 					}
 					if !f.wantEOF && err == io.EOF {
-						t.Fatalf("ReadContext() error = io.EOF, want something else")
+						t.Fatalf("Read() error = io.EOF, want something else")
 					}
 					if err != nil {
 						break
@@ -468,8 +457,8 @@ func TestStreamReceiveExtendsStreamWindow(t *testing.T) {
 		}
 		tc.wantIdle("stream window is not extended before data is read")
 		buf := make([]byte, maxWindowSize+1)
-		if n, err := s.ReadContext(ctx, buf); n != maxWindowSize || err != nil {
-			t.Fatalf("s.ReadContext() = %v, %v; want %v, nil", n, err, maxWindowSize)
+		if n, err := s.Read(buf); n != maxWindowSize || err != nil {
+			t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, maxWindowSize)
 		}
 		tc.wantFrame("stream window is extended after reading data",
 			packetType1RTT, debugFrameMaxStreamData{
@@ -482,8 +471,8 @@ func TestStreamReceiveExtendsStreamWindow(t *testing.T) {
 			data: make([]byte, maxWindowSize),
 			fin:  true,
 		})
-		if n, err := s.ReadContext(ctx, buf); n != maxWindowSize || err != io.EOF {
-			t.Fatalf("s.ReadContext() = %v, %v; want %v, io.EOF", n, err, maxWindowSize)
+		if n, err := s.Read(buf); n != maxWindowSize || err != io.EOF {
+			t.Fatalf("s.Read() = %v, %v; want %v, io.EOF", n, err, maxWindowSize)
 		}
 		tc.wantIdle("stream window is not extended after FIN")
 	})
@@ -673,18 +662,19 @@ func TestStreamReceiveUnblocksReader(t *testing.T) {
 			t.Fatalf("AcceptStream() = %v", err)
 		}
 
-		// ReadContext succeeds immediately, since we already have data.
+		// Read succeeds immediately, since we already have data.
 		got := make([]byte, len(want))
 		read := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.ReadContext(ctx, got)
+			return s.Read(got)
 		})
 		if n, err := read.result(); n != write1size || err != nil {
-			t.Fatalf("ReadContext = %v, %v; want %v, nil", n, err, write1size)
+			t.Fatalf("Read = %v, %v; want %v, nil", n, err, write1size)
 		}
 
-		// ReadContext blocks waiting for more data.
+		// Read blocks waiting for more data.
 		read = runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.ReadContext(ctx, got[write1size:])
+			s.SetReadContext(ctx)
+			return s.Read(got[write1size:])
 		})
 		tc.writeFrames(packetType1RTT, debugFrameStream{
 			id:   sid,
@@ -693,7 +683,7 @@ func TestStreamReceiveUnblocksReader(t *testing.T) {
 			fin:  true,
 		})
 		if n, err := read.result(); n != len(want)-write1size || err != io.EOF {
-			t.Fatalf("ReadContext = %v, %v; want %v, io.EOF", n, err, len(want)-write1size)
+			t.Fatalf("Read = %v, %v; want %v, io.EOF", n, err, len(want)-write1size)
 		}
 		if !bytes.Equal(got, want) {
 			t.Fatalf("read bytes %x, want %x", got, want)
@@ -935,7 +925,8 @@ func TestStreamResetBlockedStream(t *testing.T) {
 		})
 	tc.ignoreFrame(frameTypeStreamDataBlocked)
 	writing := runAsync(tc, func(ctx context.Context) (int, error) {
-		return s.WriteContext(ctx, []byte{0, 1, 2, 3, 4, 5, 6, 7})
+		s.SetWriteContext(ctx)
+		return s.Write([]byte{0, 1, 2, 3, 4, 5, 6, 7})
 	})
 	tc.wantFrame("stream writes data until write buffer fills",
 		packetType1RTT, debugFrameStream{
@@ -972,7 +963,7 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 	want := make([]byte, 4096)
 	rand.Read(want) // doesn't need to be crypto/rand, but non-deprecated and harmless
 	w := runAsync(tc, func(ctx context.Context) (int, error) {
-		n, err := s.WriteContext(ctx, want)
+		n, err := s.Write(want)
 		s.Flush()
 		return n, err
 	})
@@ -992,7 +983,7 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 		got = append(got, sf.data...)
 	}
 	if n, err := w.result(); n != len(want) || err != nil {
-		t.Fatalf("s.WriteContext() = %v, %v; want %v, nil", n, err, len(want))
+		t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(want))
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("mismatch in received stream data")
@@ -1000,17 +991,16 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 }
 
 func TestStreamCloseWaitsForAcks(t *testing.T) {
-	ctx := canceledContext()
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	data := make([]byte, 100)
-	s.WriteContext(ctx, data)
+	s.Write(data)
 	s.Flush()
 	tc.wantFrame("conn sends data for the stream",
 		packetType1RTT, debugFrameStream{
 			id:   s.id,
 			data: data,
 		})
-	if err := s.CloseContext(ctx); err != context.Canceled {
+	if err := s.Close(); err != context.Canceled {
 		t.Fatalf("s.Close() = %v, want context.Canceled (data not acked yet)", err)
 	}
 	tc.wantFrame("conn sends FIN for closed stream",
@@ -1021,21 +1011,22 @@ func TestStreamCloseWaitsForAcks(t *testing.T) {
 			data: []byte{},
 		})
 	closing := runAsync(tc, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, s.CloseContext(ctx)
+		s.SetWriteContext(ctx)
+		return struct{}{}, s.Close()
 	})
 	if _, err := closing.result(); err != errNotDone {
-		t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
+		t.Fatalf("s.Close() = %v, want it to block waiting for acks", err)
 	}
 	tc.writeAckForAll()
 	if _, err := closing.result(); err != nil {
-		t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
+		t.Fatalf("s.Close() = %v, want nil (all data acked)", err)
 	}
 }
 
 func TestStreamCloseReadOnly(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, permissiveTransportParameters)
-	if err := s.CloseContext(canceledContext()); err != nil {
-		t.Errorf("s.CloseContext() = %v, want nil", err)
+	if err := s.Close(); err != nil {
+		t.Errorf("s.Close() = %v, want nil", err)
 	}
 	tc.wantFrame("closed stream sends STOP_SENDING",
 		packetType1RTT, debugFrameStopSending{
@@ -1069,17 +1060,16 @@ func TestStreamCloseUnblocked(t *testing.T) {
 		},
 	}} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := canceledContext()
 			tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 			data := make([]byte, 100)
-			s.WriteContext(ctx, data)
+			s.Write(data)
 			s.Flush()
 			tc.wantFrame("conn sends data for the stream",
 				packetType1RTT, debugFrameStream{
 					id:   s.id,
 					data: data,
 				})
-			if err := s.CloseContext(ctx); err != context.Canceled {
+			if err := s.Close(); err != context.Canceled {
 				t.Fatalf("s.Close() = %v, want context.Canceled (data not acked yet)", err)
 			}
 			tc.wantFrame("conn sends FIN for closed stream",
@@ -1090,34 +1080,34 @@ func TestStreamCloseUnblocked(t *testing.T) {
 					data: []byte{},
 				})
 			closing := runAsync(tc, func(ctx context.Context) (struct{}, error) {
-				return struct{}{}, s.CloseContext(ctx)
+				s.SetWriteContext(ctx)
+				return struct{}{}, s.Close()
 			})
 			if _, err := closing.result(); err != errNotDone {
-				t.Fatalf("s.CloseContext() = %v, want it to block waiting for acks", err)
+				t.Fatalf("s.Close() = %v, want it to block waiting for acks", err)
 			}
 			test.unblock(tc, s)
 			_, err := closing.result()
 			switch {
 			case err == errNotDone:
-				t.Fatalf("s.CloseContext() still blocking; want it to have returned")
+				t.Fatalf("s.Close() still blocking; want it to have returned")
 			case err == nil && !test.success:
-				t.Fatalf("s.CloseContext() = nil, want error")
+				t.Fatalf("s.Close() = nil, want error")
 			case err != nil && test.success:
-				t.Fatalf("s.CloseContext() = %v, want nil (all data acked)", err)
+				t.Fatalf("s.Close() = %v, want nil (all data acked)", err)
 			}
 		})
 	}
 }
 
 func TestStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
-	ctx := canceledContext()
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters,
 		func(p *transportParameters) {
 			//p.initialMaxData = 0
 			p.initialMaxStreamDataUni = 0
 		})
 	tc.ignoreFrame(frameTypeStreamDataBlocked)
-	if _, err := s.WriteContext(ctx, []byte{0, 1}); err != nil {
+	if _, err := s.Write([]byte{0, 1}); err != nil {
 		t.Fatalf("s.Write = %v", err)
 	}
 	s.CloseWrite()
@@ -1149,7 +1139,6 @@ func TestStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
 
 func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		ctx := canceledContext()
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
 		data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 		tc.writeFrames(packetType1RTT, debugFrameStream{
@@ -1157,7 +1146,7 @@ func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 			data: data,
 		})
 		got := make([]byte, 4)
-		if n, err := s.ReadContext(ctx, got); n != len(got) || err != nil {
+		if n, err := s.Read(got); n != len(got) || err != nil {
 			t.Fatalf("Read start of stream: got %v, %v; want %v, nil", n, err, len(got))
 		}
 		const sentCode = 42
@@ -1167,7 +1156,7 @@ func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 			code:      sentCode,
 		})
 		wantErr := StreamErrorCode(sentCode)
-		if n, err := s.ReadContext(ctx, got); n != 0 || !errors.Is(err, wantErr) {
+		if n, err := s.Read(got); n != 0 || !errors.Is(err, wantErr) {
 			t.Fatalf("Read reset stream: got %v, %v; want 0, %v", n, err, wantErr)
 		}
 	})
@@ -1177,8 +1166,9 @@ func TestStreamPeerResetWakesBlockedRead(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
 		reader := runAsync(tc, func(ctx context.Context) (int, error) {
+			s.SetReadContext(ctx)
 			got := make([]byte, 4)
-			return s.ReadContext(ctx, got)
+			return s.Read(got)
 		})
 		const sentCode = 42
 		tc.writeFrames(packetType1RTT, debugFrameResetStream{
@@ -1348,7 +1338,8 @@ func TestStreamFlushImplicitLargerThanBuffer(t *testing.T) {
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			n, err := s.WriteContext(ctx, want)
+			s.SetWriteContext(ctx)
+			n, err := s.Write(want)
 			return n, err
 		})
 
@@ -1401,7 +1392,10 @@ func newTestConnAndLocalStream(t *testing.T, side connSide, styp streamType, opt
 	tc := newTestConn(t, side, opts...)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
-	return tc, newLocalStream(t, tc, styp)
+	s := newLocalStream(t, tc, styp)
+	s.SetReadContext(canceledContext())
+	s.SetWriteContext(canceledContext())
+	return tc, s
 }
 
 func newLocalStream(t *testing.T, tc *testConn, styp streamType) *Stream {
@@ -1411,6 +1405,8 @@ func newLocalStream(t *testing.T, tc *testConn, styp streamType) *Stream {
 	if err != nil {
 		t.Fatalf("conn.newLocalStream(%v) = %v", styp, err)
 	}
+	s.SetReadContext(canceledContext())
+	s.SetWriteContext(canceledContext())
 	return s
 }
 
@@ -1419,7 +1415,10 @@ func newTestConnAndRemoteStream(t *testing.T, side connSide, styp streamType, op
 	tc := newTestConn(t, side, opts...)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
-	return tc, newRemoteStream(t, tc, styp)
+	s := newRemoteStream(t, tc, styp)
+	s.SetReadContext(canceledContext())
+	s.SetWriteContext(canceledContext())
+	return tc, s
 }
 
 func newRemoteStream(t *testing.T, tc *testConn, styp streamType) *Stream {
@@ -1432,6 +1431,8 @@ func newRemoteStream(t *testing.T, tc *testConn, styp streamType) *Stream {
 	if err != nil {
 		t.Fatalf("conn.AcceptStream() = %v", err)
 	}
+	s.SetReadContext(canceledContext())
+	s.SetWriteContext(canceledContext())
 	return s
 }
 

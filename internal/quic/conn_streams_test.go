@@ -230,8 +230,8 @@ func TestStreamsWriteQueueFairness(t *testing.T) {
 			t.Fatal(err)
 		}
 		streams = append(streams, s)
-		if n, err := s.WriteContext(ctx, data); n != len(data) || err != nil {
-			t.Fatalf("s.WriteContext() = %v, %v; want %v, nil", n, err, len(data))
+		if n, err := s.Write(data); n != len(data) || err != nil {
+			t.Fatalf("s.Write() = %v, %v; want %v, nil", n, err, len(data))
 		}
 		// Wait for the stream to finish writing whatever frames it can before
 		// congestion control blocks it.
@@ -298,7 +298,7 @@ func TestStreamsShutdown(t *testing.T) {
 		side: localStream,
 		styp: uniStream,
 		setup: func(t *testing.T, tc *testConn, s *Stream) {
-			s.CloseContext(canceledContext())
+			s.Close()
 		},
 		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
 			tc.writeAckForAll()
@@ -311,7 +311,7 @@ func TestStreamsShutdown(t *testing.T) {
 			tc.writeFrames(packetType1RTT, debugFrameResetStream{
 				id: s.id,
 			})
-			s.CloseContext(canceledContext())
+			s.Close()
 		},
 		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
 			tc.writeAckForAll()
@@ -321,8 +321,8 @@ func TestStreamsShutdown(t *testing.T) {
 		side: localStream,
 		styp: bidiStream,
 		setup: func(t *testing.T, tc *testConn, s *Stream) {
-			s.CloseContext(canceledContext())
-			tc.wantIdle("all frames after CloseContext are ignored")
+			s.Close()
+			tc.wantIdle("all frames after Close are ignored")
 			tc.writeAckForAll()
 		},
 		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
@@ -335,13 +335,12 @@ func TestStreamsShutdown(t *testing.T) {
 		side: remoteStream,
 		styp: uniStream,
 		setup: func(t *testing.T, tc *testConn, s *Stream) {
-			ctx := canceledContext()
 			tc.writeFrames(packetType1RTT, debugFrameStream{
 				id:  s.id,
 				fin: true,
 			})
-			if n, err := s.ReadContext(ctx, make([]byte, 16)); n != 0 || err != io.EOF {
-				t.Errorf("ReadContext() = %v, %v; want 0, io.EOF", n, err)
+			if n, err := s.Read(make([]byte, 16)); n != 0 || err != io.EOF {
+				t.Errorf("Read() = %v, %v; want 0, io.EOF", n, err)
 			}
 		},
 		shutdown: func(t *testing.T, tc *testConn, s *Stream) {
@@ -451,17 +450,14 @@ func TestStreamsCreateAndCloseRemote(t *testing.T) {
 				id: op.id,
 			})
 		case acceptOp:
-			s, err := tc.conn.AcceptStream(ctx)
-			if err != nil {
-				t.Fatalf("AcceptStream() = %q; want stream %v", err, stringID(op.id))
-			}
+			s := tc.acceptStream()
 			if s.id != op.id {
-				t.Fatalf("accepted stram %v; want stream %v", err, stringID(op.id))
+				t.Fatalf("accepted stream %v; want stream %v", stringID(s.id), stringID(op.id))
 			}
 			t.Logf("accepted stream %v", stringID(op.id))
 			// Immediately close the stream, so the stream becomes done when the
 			// peer closes its end.
-			s.CloseContext(ctx)
+			s.Close()
 		}
 		p := tc.readPacket()
 		if p != nil {

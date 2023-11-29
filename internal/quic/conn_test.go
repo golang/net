@@ -382,6 +382,17 @@ func (tc *testConn) cleanup() {
 	<-tc.conn.donec
 }
 
+func (tc *testConn) acceptStream() *Stream {
+	tc.t.Helper()
+	s, err := tc.conn.AcceptStream(canceledContext())
+	if err != nil {
+		tc.t.Fatalf("conn.AcceptStream() = %v, want stream", err)
+	}
+	s.SetReadContext(canceledContext())
+	s.SetWriteContext(canceledContext())
+	return s
+}
+
 func logDatagram(t *testing.T, text string, d *testDatagram) {
 	t.Helper()
 	if !*testVV {

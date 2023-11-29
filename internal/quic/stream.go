@@ -18,6 +18,11 @@ type Stream struct {
 	id   streamID
 	conn *Conn
 
+	// Contexts used for read/write operations.
+	// Intentionally not mutex-guarded, to allow the race detector to catch concurrent access.
+	inctx  context.Context
+	outctx context.Context
+
 	// ingate's lock guards all receive-related state.
 	//
 	// The gate condition is set if a read from the stream will not block,
@@ -152,11 +157,29 @@ func newStream(c *Conn, id streamID) *Stream {
 		inresetcode: -1, // -1 indicates no RESET_STREAM received
 		ingate:      newLockedGate(),
 		outgate:     newLockedGate(),
+		inctx:       context.Background(),
+		outctx:      context.Background(),
 	}
 	if !s.IsReadOnly() {
 		s.outdone = make(chan struct{})
 	}
 	return s
+}
+
+// SetReadContext sets the context used for reads from the stream.
+//
+// It is not safe to call SetReadContext concurrently.
+func (s *Stream) SetReadContext(ctx context.Context) {
+	s.inctx = ctx
+}
+
+// SetWriteContext sets the context used for writes to the stream.
+// The write context is also used by Close when waiting for writes to be
+// received by the peer.
+//
+// It is not safe to call SetWriteContext concurrently.
+func (s *Stream) SetWriteContext(ctx context.Context) {
+	s.outctx = ctx
 }
 
 // IsReadOnly reports whether the stream is read-only
@@ -172,24 +195,18 @@ func (s *Stream) IsWriteOnly() bool {
 }
 
 // Read reads data from the stream.
-// See ReadContext for more details.
-func (s *Stream) Read(b []byte) (n int, err error) {
-	return s.ReadContext(context.Background(), b)
-}
-
-// ReadContext reads data from the stream.
 //
-// ReadContext returns as soon as at least one byte of data is available.
+// Read returns as soon as at least one byte of data is available.
 //
-// If the peer closes the stream cleanly, ReadContext returns io.EOF after
+// If the peer closes the stream cleanly, Read returns io.EOF after
 // returning all data sent by the peer.
-// If the peer aborts reads on the stream, ReadContext returns
+// If the peer aborts reads on the stream, Read returns
 // an error wrapping StreamResetCode.
-func (s *Stream) ReadContext(ctx context.Context, b []byte) (n int, err error) {
+func (s *Stream) Read(b []byte) (n int, err error) {
 	if s.IsWriteOnly() {
 		return 0, errors.New("read from write-only stream")
 	}
-	if err := s.ingate.waitAndLock(ctx, s.conn.testHooks); err != nil {
+	if err := s.ingate.waitAndLock(s.inctx, s.conn.testHooks); err != nil {
 		return 0, err
 	}
 	defer func() {
@@ -237,17 +254,11 @@ func shouldUpdateFlowControl(maxWindow, addedWindow int64) bool {
 }
 
 // Write writes data to the stream.
-// See WriteContext for more details.
-func (s *Stream) Write(b []byte) (n int, err error) {
-	return s.WriteContext(context.Background(), b)
-}
-
-// WriteContext writes data to the stream.
 //
-// WriteContext writes data to the stream write buffer.
+// Write writes data to the stream write buffer.
 // Buffered data is only sent when the buffer is sufficiently full.
 // Call the Flush method to ensure buffered data is sent.
-func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) {
+func (s *Stream) Write(b []byte) (n int, err error) {
 	if s.IsReadOnly() {
 		return 0, errors.New("write to read-only stream")
 	}
@@ -259,7 +270,7 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 		if len(b) > 0 && !canWrite {
 			// Our send buffer is full. Wait for the peer to ack some data.
 			s.outUnlock()
-			if err := s.outgate.waitAndLock(ctx, s.conn.testHooks); err != nil {
+			if err := s.outgate.waitAndLock(s.outctx, s.conn.testHooks); err != nil {
 				return n, err
 			}
 			// Successfully returning from waitAndLockGate means we are no longer
@@ -317,7 +328,7 @@ func (s *Stream) WriteContext(ctx context.Context, b []byte) (n int, err error) 
 
 // Flush flushes data written to the stream.
 // It does not wait for the peer to acknowledge receipt of the data.
-// Use CloseContext to wait for the peer's acknowledgement.
+// Use Close to wait for the peer's acknowledgement.
 func (s *Stream) Flush() {
 	s.outgate.lock()
 	defer s.outUnlock()
@@ -333,27 +344,21 @@ func (s *Stream) flushLocked() {
 }
 
 // Close closes the stream.
-// See CloseContext for more details.
-func (s *Stream) Close() error {
-	return s.CloseContext(context.Background())
-}
-
-// CloseContext closes the stream.
 // Any blocked stream operations will be unblocked and return errors.
 //
-// CloseContext flushes any data in the stream write buffer and waits for the peer to
+// Close flushes any data in the stream write buffer and waits for the peer to
 // acknowledge receipt of the data.
 // If the stream has been reset, it waits for the peer to acknowledge the reset.
 // If the context expires before the peer receives the stream's data,
-// CloseContext discards the buffer and returns the context error.
-func (s *Stream) CloseContext(ctx context.Context) error {
+// Close discards the buffer and returns the context error.
+func (s *Stream) Close() error {
 	s.CloseRead()
 	if s.IsReadOnly() {
 		return nil
 	}
 	s.CloseWrite()
 	// TODO: Return code from peer's RESET_STREAM frame?
-	if err := s.conn.waitOnDone(ctx, s.outdone); err != nil {
+	if err := s.conn.waitOnDone(s.outctx, s.outdone); err != nil {
 		return err
 	}
 	s.outgate.lock()
@@ -369,7 +374,7 @@ func (s *Stream) CloseContext(ctx context.Context) error {
 //
 // CloseRead notifies the peer that the stream has been closed for reading.
 // It does not wait for the peer to acknowledge the closure.
-// Use CloseContext to wait for the peer's acknowledgement.
+// Use Close to wait for the peer's acknowledgement.
 func (s *Stream) CloseRead() {
 	if s.IsWriteOnly() {
 		return
@@ -394,7 +399,7 @@ func (s *Stream) CloseRead() {
 //
 // CloseWrite sends any data in the stream write buffer to the peer.
 // It does not wait for the peer to acknowledge receipt of the data.
-// Use CloseContext to wait for the peer's acknowledgement.
+// Use Close to wait for the peer's acknowledgement.
 func (s *Stream) CloseWrite() {
 	if s.IsReadOnly() {
 		return
@@ -412,7 +417,7 @@ func (s *Stream) CloseWrite() {
 // Reset sends the application protocol error code, which must be
 // less than 2^62, to the peer.
 // It does not wait for the peer to acknowledge receipt of the error.
-// Use CloseContext to wait for the peer's acknowledgement.
+// Use Close to wait for the peer's acknowledgement.
 //
 // Reset does not affect reads.
 // Use CloseRead to abort reads on the stream.

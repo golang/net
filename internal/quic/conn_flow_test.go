@@ -12,7 +12,6 @@ import (
 )
 
 func TestConnInflowReturnOnRead(t *testing.T) {
-	ctx := canceledContext()
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
 		c.MaxConnReadBufferSize = 64
 	})
@@ -21,14 +20,14 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 		data: make([]byte, 64),
 	})
 	const readSize = 8
-	if n, err := s.ReadContext(ctx, make([]byte, readSize)); n != readSize || err != nil {
+	if n, err := s.Read(make([]byte, readSize)); n != readSize || err != nil {
 		t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, readSize)
 	}
 	tc.wantFrame("available window increases, send a MAX_DATA",
 		packetType1RTT, debugFrameMaxData{
 			max: 64 + readSize,
 		})
-	if n, err := s.ReadContext(ctx, make([]byte, 64)); n != 64-readSize || err != nil {
+	if n, err := s.Read(make([]byte, 64)); n != 64-readSize || err != nil {
 		t.Fatalf("s.Read() = %v, %v; want %v, nil", n, err, 64-readSize)
 	}
 	tc.wantFrame("available window increases, send a MAX_DATA",
@@ -42,7 +41,7 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 		data: make([]byte, 64),
 	})
 	tc.wantIdle("connection is idle")
-	if n, err := s.ReadContext(ctx, make([]byte, 64)); n != 64 || err != nil {
+	if n, err := s.Read(make([]byte, 64)); n != 64 || err != nil {
 		t.Fatalf("offset 64: s.Read() = %v, %v; want %v, nil", n, err, 64)
 	}
 }
@@ -79,10 +78,10 @@ func TestConnInflowReturnOnRacingReads(t *testing.T) {
 		t.Fatalf("conn.AcceptStream() = %v", err)
 	}
 	read1 := runAsync(tc, func(ctx context.Context) (int, error) {
-		return s1.ReadContext(ctx, make([]byte, 16))
+		return s1.Read(make([]byte, 16))
 	})
 	read2 := runAsync(tc, func(ctx context.Context) (int, error) {
-		return s2.ReadContext(ctx, make([]byte, 1))
+		return s2.Read(make([]byte, 1))
 	})
 	// This MAX_DATA might extend the window by 16 or 17, depending on
 	// whether the second write occurs before the update happens.
@@ -90,10 +89,10 @@ func TestConnInflowReturnOnRacingReads(t *testing.T) {
 		packetType1RTT, debugFrameMaxData{})
 	tc.wantIdle("redundant MAX_DATA is not sent")
 	if _, err := read1.result(); err != nil {
-		t.Errorf("ReadContext #1 = %v", err)
+		t.Errorf("Read #1 = %v", err)
 	}
 	if _, err := read2.result(); err != nil {
-		t.Errorf("ReadContext #2 = %v", err)
+		t.Errorf("Read #2 = %v", err)
 	}
 }
 
@@ -227,13 +226,13 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 			t.Fatalf("AcceptStream() = %v", err)
 		}
 		streams = append(streams, s)
-		if n, err := s.ReadContext(ctx, make([]byte, 1)); err != nil || n != 1 {
+		if n, err := s.Read(make([]byte, 1)); err != nil || n != 1 {
 			t.Fatalf("s.Read() = %v, %v; want 1, nil", n, err)
 		}
 	}
 	tc.wantIdle("streams have read data, but not enough to update MAX_DATA")
 
-	if n, err := streams[0].ReadContext(ctx, make([]byte, 32)); err != nil || n != 31 {
+	if n, err := streams[0].Read(make([]byte, 32)); err != nil || n != 31 {
 		t.Fatalf("s.Read() = %v, %v; want 31, nil", n, err)
 	}
 	tc.wantFrame("read enough data to trigger a MAX_DATA update",

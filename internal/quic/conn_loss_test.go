@@ -433,7 +433,8 @@ func TestLostMaxStreamsFrameMostRecent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("AcceptStream() = %v", err)
 			}
-			s.CloseContext(ctx)
+			s.SetWriteContext(ctx)
+			s.Close()
 			if styp == bidiStream {
 				tc.wantFrame("stream is closed",
 					packetType1RTT, debugFrameStream{
@@ -480,7 +481,7 @@ func TestLostMaxStreamsFrameNotMostRecent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AcceptStream() = %v", err)
 		}
-		if err := s.CloseContext(ctx); err != nil {
+		if err := s.Close(); err != nil {
 			t.Fatalf("stream.Close() = %v", err)
 		}
 		tc.wantFrame("closing stream updates peer's MAX_STREAMS",
@@ -512,7 +513,7 @@ func TestLostStreamDataBlockedFrame(t *testing.T) {
 		})
 
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.WriteContext(ctx, []byte{0, 1, 2, 3})
+			return s.Write([]byte{0, 1, 2, 3})
 		})
 		defer w.cancel()
 		tc.wantFrame("write is blocked by flow control",
@@ -564,7 +565,7 @@ func TestLostStreamDataBlockedFrameAfterStreamUnblocked(t *testing.T) {
 
 		data := []byte{0, 1, 2, 3}
 		w := runAsync(tc, func(ctx context.Context) (int, error) {
-			return s.WriteContext(ctx, data)
+			return s.Write(data)
 		})
 		defer w.cancel()
 		tc.wantFrame("write is blocked by flow control",
