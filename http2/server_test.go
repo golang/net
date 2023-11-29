@@ -145,6 +145,12 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 
 	ConfigureServer(ts.Config, h2server)
 
+	// Go 1.22 changes the default minimum TLS version to TLS 1.2,
+	// in order to properly test cases where we want to reject low
+	// TLS versions, we need to explicitly configure the minimum
+	// version here.
+	ts.Config.TLSConfig.MinVersion = tls.VersionTLS10
+
 	st := &serverTester{
 		t:  t,
 		ts: ts,
