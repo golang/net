@@ -533,7 +533,9 @@ func initialClientCrypto(t *testing.T, e *testEndpoint, p transportParameters) [
 	tlsClient := tls.QUICClient(config)
 	tlsClient.SetTransportParameters(marshalTransportParameters(p))
 	tlsClient.Start(context.Background())
-	//defer tlsClient.Close()
+	t.Cleanup(func() {
+		tlsClient.Close()
+	})
 	e.peerTLSConn = tlsClient
 	var data []byte
 	for {

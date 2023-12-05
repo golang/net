@@ -279,6 +279,9 @@ func newTestConnForConn(t *testing.T, endpoint *testEndpoint, conn *Conn) *testC
 	}
 	tc.peerTLSConn.SetTransportParameters(marshalTransportParameters(peerProvidedParams))
 	tc.peerTLSConn.Start(context.Background())
+	t.Cleanup(func() {
+		tc.peerTLSConn.Close()
+	})
 
 	return tc
 }
