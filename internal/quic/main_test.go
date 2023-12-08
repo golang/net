@@ -22,6 +22,11 @@ func TestMain(m *testing.M) {
 	//
 	// Checking after every test makes it easier to tell which test is the culprit,
 	// but checking once at the end is faster and less likely to miss something.
+	if runtime.GOOS == "js" {
+		// The js-wasm runtime creates an additional background goroutine.
+		// Just skip the leak check there.
+		return
+	}
 	start := time.Now()
 	warned := false
 	for {
