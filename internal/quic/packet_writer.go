@@ -47,6 +47,11 @@ func (w *packetWriter) datagram() []byte {
 	return w.b
 }
 
+// packet returns the size of the current packet.
+func (w *packetWriter) packetLen() int {
+	return len(w.b[w.pktOff:]) + aeadOverhead
+}
+
 // payload returns the payload of the current packet.
 func (w *packetWriter) payload() []byte {
 	return w.b[w.payOff:]

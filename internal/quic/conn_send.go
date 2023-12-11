@@ -76,7 +76,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				logSentPacket(c, packetTypeInitial, pnum, p.srcConnID, p.dstConnID, c.w.payload())
 			}
 			if c.logEnabled(QLogLevelPacket) && len(c.w.payload()) > 0 {
-				c.logPacketSent(packetTypeInitial, pnum, p.srcConnID, p.dstConnID, c.w.payload())
+				c.logPacketSent(packetTypeInitial, pnum, p.srcConnID, p.dstConnID, c.w.packetLen(), c.w.payload())
 			}
 			sentInitial = c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysInitial.w, p)
 			if sentInitial != nil {
@@ -108,7 +108,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				logSentPacket(c, packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.payload())
 			}
 			if c.logEnabled(QLogLevelPacket) && len(c.w.payload()) > 0 {
-				c.logPacketSent(packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.payload())
+				c.logPacketSent(packetTypeHandshake, pnum, p.srcConnID, p.dstConnID, c.w.packetLen(), c.w.payload())
 			}
 			if sent := c.w.finishProtectedLongHeaderPacket(pnumMaxAcked, c.keysHandshake.w, p); sent != nil {
 				c.idleHandlePacketSent(now, sent)
@@ -139,7 +139,7 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 				logSentPacket(c, packetType1RTT, pnum, nil, dstConnID, c.w.payload())
 			}
 			if c.logEnabled(QLogLevelPacket) && len(c.w.payload()) > 0 {
-				c.logPacketSent(packetType1RTT, pnum, nil, dstConnID, c.w.payload())
+				c.logPacketSent(packetType1RTT, pnum, nil, dstConnID, c.w.packetLen(), c.w.payload())
 			}
 			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, &c.keysAppData); sent != nil {
 				c.idleHandlePacketSent(now, sent)

@@ -148,8 +148,6 @@ func (c *Conn) logConnectionClosed() {
 }
 
 func (c *Conn) logLongPacketReceived(p longPacket, pkt []byte) {
-	pnumLen := 1 + int(pkt[0]&0x03)
-	length := pnumLen + len(p.payload)
 	var frames slog.Attr
 	if c.logEnabled(QLogLevelFrame) {
 		frames = c.packetFramesAttr(p.payload)
@@ -162,7 +160,9 @@ func (c *Conn) logLongPacketReceived(p longPacket, pkt []byte) {
 			slog.Uint64("flags", uint64(pkt[0])),
 			slogHexstring("scid", p.srcConnID),
 			slogHexstring("dcid", p.dstConnID),
-			slog.Int("length", length),
+		),
+		slog.Group("raw",
+			slog.Int("length", len(pkt)),
 		),
 		frames,
 	)
@@ -180,14 +180,16 @@ func (c *Conn) log1RTTPacketReceived(p shortPacket, pkt []byte) {
 			slog.String("packet_type", packetType1RTT.qlogString()),
 			slog.Uint64("packet_number", uint64(p.num)),
 			slog.Uint64("flags", uint64(pkt[0])),
-			slog.String("scid", ""),
 			slogHexstring("dcid", dstConnID),
+		),
+		slog.Group("raw",
+			slog.Int("length", len(pkt)),
 		),
 		frames,
 	)
 }
 
-func (c *Conn) logPacketSent(ptype packetType, pnum packetNumber, src, dst, payload []byte) {
+func (c *Conn) logPacketSent(ptype packetType, pnum packetNumber, src, dst []byte, pktLen int, payload []byte) {
 	var frames slog.Attr
 	if c.logEnabled(QLogLevelFrame) {
 		frames = c.packetFramesAttr(payload)
@@ -203,6 +205,9 @@ func (c *Conn) logPacketSent(ptype packetType, pnum packetNumber, src, dst, payl
 			slog.Uint64("packet_number", uint64(pnum)),
 			scid,
 			slogHexstring("dcid", dst),
+		),
+		slog.Group("raw",
+			slog.Int("length", pktLen),
 		),
 		frames,
 	)
