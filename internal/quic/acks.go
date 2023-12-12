@@ -130,12 +130,19 @@ func (acks *ackState) mustAckImmediately(space numberSpace, num packetNumber) bo
 		// there are no gaps. If it does not, there must be a gap.
 		return true
 	}
-	if acks.unackedAckEliciting >= 2 {
-		// "[...] after receiving at least two ack-eliciting packets."
-		// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.2.2
-		return true
+	// "[...] SHOULD send an ACK frame after receiving at least two ack-eliciting packets."
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.2.2
+	//
+	// This ack frequency takes a substantial toll on performance, however.
+	// Follow the behavior of Google QUICHE:
+	// Ack every other packet for the first 100 packets, and then ack every 10th packet.
+	// This keeps ack frequency high during the beginning of slow start when CWND is
+	// increasing rapidly.
+	packetsBeforeAck := 2
+	if acks.seen.max() > 100 {
+		packetsBeforeAck = 10
 	}
-	return false
+	return acks.unackedAckEliciting >= packetsBeforeAck
 }
 
 // shouldSendAck reports whether the connection should send an ACK frame at this time,
