@@ -14,8 +14,16 @@ import (
 )
 
 type streamsState struct {
-	queue   queue[*Stream] // new, peer-created streams
-	streams map[streamID]*Stream
+	queue queue[*Stream] // new, peer-created streams
+
+	// All peer-created streams.
+	//
+	// Implicitly created streams are included as an empty entry in the map.
+	// (For example, if we receive a frame for stream 4, we implicitly create stream 0 and
+	// insert an empty entry for it to the map.)
+	//
+	// The map value is maybeStream rather than *Stream as a reminder that values can be nil.
+	streams map[streamID]maybeStream
 
 	// Limits on the number of streams, indexed by streamType.
 	localLimit  [streamTypeCount]localStreamLimits
@@ -37,8 +45,13 @@ type streamsState struct {
 	queueData streamRing // streams with only flow-controlled frames
 }
 
+// maybeStream is a possibly nil *Stream. See streamsState.streams.
+type maybeStream struct {
+	s *Stream
+}
+
 func (c *Conn) streamsInit() {
-	c.streams.streams = make(map[streamID]*Stream)
+	c.streams.streams = make(map[streamID]maybeStream)
 	c.streams.queue = newQueue[*Stream]()
 	c.streams.localLimit[bidiStream].init()
 	c.streams.localLimit[uniStream].init()
@@ -52,8 +65,8 @@ func (c *Conn) streamsCleanup() {
 	c.streams.localLimit[bidiStream].connHasClosed()
 	c.streams.localLimit[uniStream].connHasClosed()
 	for _, s := range c.streams.streams {
-		if s != nil {
-			s.connHasClosed()
+		if s.s != nil {
+			s.s.connHasClosed()
 		}
 	}
 }
@@ -97,7 +110,7 @@ func (c *Conn) newLocalStream(ctx context.Context, styp streamType) (*Stream, er
 
 	// Modify c.streams on the conn's loop.
 	if err := c.runOnLoop(ctx, func(now time.Time, c *Conn) {
-		c.streams.streams[s.id] = s
+		c.streams.streams[s.id] = maybeStream{s}
 	}); err != nil {
 		return nil, err
 	}
@@ -119,7 +132,7 @@ const (
 // streamForID returns the stream with the given id.
 // If the stream does not exist, it returns nil.
 func (c *Conn) streamForID(id streamID) *Stream {
-	return c.streams.streams[id]
+	return c.streams.streams[id].s
 }
 
 // streamForFrame returns the stream with the given id.
@@ -144,9 +157,9 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 		}
 	}
 
-	s, isOpen := c.streams.streams[id]
-	if s != nil {
-		return s
+	ms, isOpen := c.streams.streams[id]
+	if ms.s != nil {
+		return ms.s
 	}
 
 	num := id.num()
@@ -183,10 +196,10 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 	// with the same initiator and type and a lower number.
 	// Add a nil entry to the streams map for each implicitly created stream.
 	for n := newStreamID(id.initiator(), id.streamType(), prevOpened); n < id; n += 4 {
-		c.streams.streams[n] = nil
+		c.streams.streams[n] = maybeStream{}
 	}
 
-	s = newStream(c, id)
+	s := newStream(c, id)
 	s.inmaxbuf = c.config.maxStreamReadBufferSize()
 	s.inwin = c.config.maxStreamReadBufferSize()
 	if id.streamType() == bidiStream {
@@ -196,7 +209,7 @@ func (c *Conn) streamForFrame(now time.Time, id streamID, ftype streamFrameType)
 	s.inUnlock()
 	s.outUnlock()
 
-	c.streams.streams[id] = s
+	c.streams.streams[id] = maybeStream{s}
 	c.streams.queue.put(s)
 	return s
 }
@@ -400,7 +413,11 @@ func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
 	const pto = true
-	for _, s := range c.streams.streams {
+	for _, ms := range c.streams.streams {
+		s := ms.s
+		if s == nil {
+			continue
+		}
 		const pto = true
 		s.ingate.lock()
 		inOK := s.appendInFramesLocked(w, pnum, pto)

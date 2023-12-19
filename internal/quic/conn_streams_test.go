@@ -522,3 +522,38 @@ func TestStreamsCreateConcurrency(t *testing.T) {
 		t.Errorf("accepted %v streams, want %v", got, want)
 	}
 }
+
+func TestStreamsPTOWithImplicitStream(t *testing.T) {
+	ctx := canceledContext()
+	tc := newTestConn(t, serverSide, permissiveTransportParameters)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	// Peer creates stream 1, and implicitly creates stream 0.
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id: newStreamID(clientSide, bidiStream, 1),
+	})
+
+	// We accept stream 1 and write data to it.
+	data := []byte("data")
+	s, err := tc.conn.AcceptStream(ctx)
+	if err != nil {
+		t.Fatalf("conn.AcceptStream() = %v, want stream", err)
+	}
+	s.Write(data)
+	s.Flush()
+	tc.wantFrame("data written to stream",
+		packetType1RTT, debugFrameStream{
+			id:   newStreamID(clientSide, bidiStream, 1),
+			data: data,
+		})
+
+	// PTO expires, and the data is resent.
+	const pto = true
+	tc.triggerLossOrPTO(packetType1RTT, true)
+	tc.wantFrame("data resent after PTO expires",
+		packetType1RTT, debugFrameStream{
+			id:   newStreamID(clientSide, bidiStream, 1),
+			data: data,
+		})
+}
