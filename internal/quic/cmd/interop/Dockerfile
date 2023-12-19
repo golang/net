@@ -9,7 +9,7 @@ ENV GOVERSION=1.21.1
 
 RUN platform=$(echo ${TARGETPLATFORM} | tr '/' '-') && \
   filename="go${GOVERSION}.${platform}.tar.gz" && \
-  wget https://dl.google.com/go/${filename} && \
+  wget --no-verbose https://dl.google.com/go/${filename} && \
   tar xfz ${filename} && \
   rm ${filename}
 
