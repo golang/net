@@ -510,6 +510,10 @@ func TestStreamsCreateConcurrency(t *testing.T) {
 					return
 				}
 				s.Flush()
+				_, err = io.ReadAll(s)
+				if err != nil {
+					t.Errorf("ReadFull: %v", err)
+				}
 				s.Close()
 			}
 		}()
