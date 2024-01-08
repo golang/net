@@ -103,25 +103,31 @@ func (e *Endpoint) LocalAddr() netip.AddrPort {
 // It waits for the peers of any open connection to acknowledge the connection has been closed.
 func (e *Endpoint) Close(ctx context.Context) error {
 	e.acceptQueue.close(errors.New("endpoint closed"))
+
+	// It isn't safe to call Conn.Abort or conn.exit with connsMu held,
+	// so copy the list of conns.
+	var conns []*Conn
 	e.connsMu.Lock()
 	if !e.closing {
-		e.closing = true
+		e.closing = true // setting e.closing prevents new conns from being created
 		for c := range e.conns {
-			c.Abort(localTransportError{code: errNo})
+			conns = append(conns, c)
 		}
 		if len(e.conns) == 0 {
 			e.udpConn.Close()
 		}
 	}
 	e.connsMu.Unlock()
+
+	for _, c := range conns {
+		c.Abort(localTransportError{code: errNo})
+	}
 	select {
 	case <-e.closec:
 	case <-ctx.Done():
-		e.connsMu.Lock()
-		for c := range e.conns {
+		for _, c := range conns {
 			c.exit()
 		}
-		e.connsMu.Unlock()
 		return ctx.Err()
 	}
 	return nil

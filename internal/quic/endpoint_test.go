@@ -97,7 +97,7 @@ func newLocalEndpoint(t *testing.T, side connSide, conf *Config) *Endpoint {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		e.Close(context.Background())
+		e.Close(canceledContext())
 	})
 	return e
 }
