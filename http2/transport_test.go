@@ -2867,7 +2867,7 @@ func TestTransportFlowControl(t *testing.T) {
 		}
 		read += int64(n)
 
-		const max = transportDefaultStreamFlow
+		const max = defaultTransportDefaultStreamFlow
 		if w := atomic.LoadInt64(&wrote); -max > read-w || read-w > max {
 			t.Fatalf("Too much data inflight: server wrote %v bytes but client only received %v", w, read)
 		}
