@@ -29,7 +29,7 @@ const (
 	// VantageClient traces follow a connection from the client's perspective.
 	VantageClient = Vantage("client")
 
-	// VantageClient traces follow a connection from the server's perspective.
+	// VantageServer traces follow a connection from the server's perspective.
 	VantageServer = Vantage("server")
 )
 
