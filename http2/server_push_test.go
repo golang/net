@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -483,11 +484,7 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	ready := make(chan struct{})
 	errc := make(chan error, 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-ready:
-		case <-time.After(5 * time.Second):
-			errc <- fmt.Errorf("timeout waiting for GOAWAY to be processed")
-		}
+		<-ready
 		if got, want := w.(http.Pusher).Push("https://"+r.Host+"/pushed", nil), http.ErrNotSupported; got != want {
 			errc <- fmt.Errorf("Push()=%v, want %v", got, want)
 		}
@@ -505,6 +502,10 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 			case <-ready:
 				return
 			default:
+				if runtime.GOARCH == "wasm" {
+					// Work around https://go.dev/issue/65178 to avoid goroutine starvation.
+					runtime.Gosched()
+				}
 			}
 			st.sc.serveMsgCh <- func(loopNum int) {
 				if !st.sc.pushEnabled {
