@@ -350,6 +350,45 @@ type ClientConn struct {
 	werr error        // first write error that has occurred
 	hbuf bytes.Buffer // HPACK encoder writes into this
 	henc *hpack.Encoder
+
+	syncHooks *testSyncHooks // can be nil
+}
+
+// Hook points used for testing.
+// Outside of tests, cc.syncHooks is nil and these all have minimal implementations.
+// Inside tests, see the testSyncHooks function docs.
+
+// goRun starts a new goroutine.
+func (cc *ClientConn) goRun(f func()) {
+	if cc.syncHooks != nil {
+		cc.syncHooks.goRun(f)
+		return
+	}
+	go f()
+}
+
+// condBroadcast is cc.cond.Broadcast.
+func (cc *ClientConn) condBroadcast() {
+	if cc.syncHooks != nil {
+		cc.syncHooks.condBroadcast(cc.cond)
+	}
+	cc.cond.Broadcast()
+}
+
+// condWait is cc.cond.Wait.
+func (cc *ClientConn) condWait() {
+	if cc.syncHooks != nil {
+		cc.syncHooks.condWait(cc.cond)
+	}
+	cc.cond.Wait()
+}
+
+// newTimer creates a new time.Timer, or a synthetic timer in tests.
+func (cc *ClientConn) newTimer(d time.Duration) timer {
+	if cc.syncHooks != nil {
+		return cc.syncHooks.newTimer(d)
+	}
+	return newTimeTimer(d)
 }
 
 // clientStream is the state for a single HTTP/2 stream. One of these
@@ -431,7 +470,7 @@ func (cs *clientStream) abortStreamLocked(err error) {
 	// TODO(dneil): Clean up tests where cs.cc.cond is nil.
 	if cs.cc.cond != nil {
 		// Wake up writeRequestBody if it is waiting on flow control.
-		cs.cc.cond.Broadcast()
+		cs.cc.condBroadcast()
 	}
 }
 
@@ -441,7 +480,7 @@ func (cs *clientStream) abortRequestBodyWrite() {
 	defer cc.mu.Unlock()
 	if cs.reqBody != nil && cs.reqBodyClosed == nil {
 		cs.closeReqBodyLocked()
-		cc.cond.Broadcast()
+		cc.condBroadcast()
 	}
 }
 
@@ -451,10 +490,10 @@ func (cs *clientStream) closeReqBodyLocked() {
 	}
 	cs.reqBodyClosed = make(chan struct{})
 	reqBodyClosed := cs.reqBodyClosed
-	go func() {
+	cs.cc.goRun(func() {
 		cs.reqBody.Close()
 		close(reqBodyClosed)
-	}()
+	})
 }
 
 type stickyErrWriter struct {
@@ -672,7 +711,7 @@ func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse b
 	if err != nil {
 		return nil, err
 	}
-	return t.newClientConn(tconn, singleUse)
+	return t.newClientConn(tconn, singleUse, nil)
 }
 
 func (t *Transport) newTLSConfig(host string) *tls.Config {
@@ -738,10 +777,10 @@ func (t *Transport) maxEncoderHeaderTableSize() uint32 {
 }
 
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
-	return t.newClientConn(c, t.disableKeepAlives())
+	return t.newClientConn(c, t.disableKeepAlives(), nil)
 }
 
-func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
+func (t *Transport) newClientConn(c net.Conn, singleUse bool, hooks *testSyncHooks) (*ClientConn, error) {
 	cc := &ClientConn{
 		t:                     t,
 		tconn:                 c,
@@ -756,6 +795,10 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		wantSettingsAck:       true,
 		pings:                 make(map[[8]byte]chan struct{}),
 		reqHeaderMu:           make(chan struct{}, 1),
+		syncHooks:             hooks,
+	}
+	if hooks != nil {
+		hooks.newclientconn(cc)
 	}
 	if d := t.idleConnTimeout(); d != 0 {
 		cc.idleTimeout = d
@@ -824,7 +867,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		return nil, cc.werr
 	}
 
-	go cc.readLoop()
+	cc.goRun(cc.readLoop)
 	return cc, nil
 }
 
@@ -1062,7 +1105,7 @@ func (cc *ClientConn) Shutdown(ctx context.Context) error {
 	// Wait for all in-flight streams to complete or connection to close
 	done := make(chan struct{})
 	cancelled := false // guarded by cc.mu
-	go func() {
+	cc.goRun(func() {
 		cc.mu.Lock()
 		defer cc.mu.Unlock()
 		for {
@@ -1074,9 +1117,9 @@ func (cc *ClientConn) Shutdown(ctx context.Context) error {
 			if cancelled {
 				break
 			}
-			cc.cond.Wait()
+			cc.condWait()
 		}
-	}()
+	})
 	shutdownEnterWaitStateHook()
 	select {
 	case <-done:
@@ -1086,7 +1129,7 @@ func (cc *ClientConn) Shutdown(ctx context.Context) error {
 		cc.mu.Lock()
 		// Free the goroutine above
 		cancelled = true
-		cc.cond.Broadcast()
+		cc.condBroadcast()
 		cc.mu.Unlock()
 		return ctx.Err()
 	}
@@ -1124,7 +1167,7 @@ func (cc *ClientConn) closeForError(err error) {
 	for _, cs := range cc.streams {
 		cs.abortStreamLocked(err)
 	}
-	cc.cond.Broadcast()
+	cc.condBroadcast()
 	cc.mu.Unlock()
 	cc.closeConn()
 }
@@ -1221,6 +1264,10 @@ func (cc *ClientConn) decrStreamReservationsLocked() {
 }
 
 func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
+	return cc.roundTrip(req, nil)
+}
+
+func (cc *ClientConn) roundTrip(req *http.Request, streamf func(*clientStream)) (*http.Response, error) {
 	ctx := req.Context()
 	cs := &clientStream{
 		cc:                   cc,
@@ -1235,9 +1282,23 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		respHeaderRecv:       make(chan struct{}),
 		donec:                make(chan struct{}),
 	}
-	go cs.doRequest(req)
+	cc.goRun(func() {
+		cs.doRequest(req)
+	})
 
 	waitDone := func() error {
+		if cc.syncHooks != nil {
+			cc.syncHooks.blockUntil(func() bool {
+				select {
+				case <-cs.donec:
+				case <-ctx.Done():
+				case <-cs.reqCancel:
+				default:
+					return false
+				}
+				return true
+			})
+		}
 		select {
 		case <-cs.donec:
 			return nil
@@ -1298,7 +1359,24 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 		return err
 	}
 
+	if streamf != nil {
+		streamf(cs)
+	}
+
 	for {
+		if cc.syncHooks != nil {
+			cc.syncHooks.blockUntil(func() bool {
+				select {
+				case <-cs.respHeaderRecv:
+				case <-cs.abort:
+				case <-ctx.Done():
+				case <-cs.reqCancel:
+				default:
+					return false
+				}
+				return true
+			})
+		}
 		select {
 		case <-cs.respHeaderRecv:
 			return handleResponseHeaders()
@@ -1377,6 +1455,10 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 		cc.doNotReuse = true
 	}
 	cc.mu.Unlock()
+
+	if cc.syncHooks != nil {
+		cc.syncHooks.newstream(cs)
+	}
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
 	if !cc.t.disableCompression() &&
@@ -1458,15 +1540,30 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 	var respHeaderTimer <-chan time.Time
 	var respHeaderRecv chan struct{}
 	if d := cc.responseHeaderTimeout(); d != 0 {
-		timer := time.NewTimer(d)
+		timer := cc.newTimer(d)
 		defer timer.Stop()
-		respHeaderTimer = timer.C
+		respHeaderTimer = timer.C()
 		respHeaderRecv = cs.respHeaderRecv
 	}
 	// Wait until the peer half-closes its end of the stream,
 	// or until the request is aborted (via context, error, or otherwise),
 	// whichever comes first.
 	for {
+		if cc.syncHooks != nil {
+			cc.syncHooks.blockUntil(func() bool {
+				select {
+				case <-cs.peerClosed:
+				case <-respHeaderTimer:
+				case <-respHeaderRecv:
+				case <-cs.abort:
+				case <-ctx.Done():
+				case <-cs.reqCancel:
+				default:
+					return false
+				}
+				return true
+			})
+		}
 		select {
 		case <-cs.peerClosed:
 			return nil
@@ -1615,7 +1712,7 @@ func (cc *ClientConn) awaitOpenSlotForStreamLocked(cs *clientStream) error {
 			return nil
 		}
 		cc.pendingRequests++
-		cc.cond.Wait()
+		cc.condWait()
 		cc.pendingRequests--
 		select {
 		case <-cs.abort:
@@ -1877,7 +1974,7 @@ func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) 
 			cs.flow.take(take)
 			return take, nil
 		}
-		cc.cond.Wait()
+		cc.condWait()
 	}
 }
 
@@ -2149,7 +2246,7 @@ func (cc *ClientConn) forgetStreamID(id uint32) {
 	}
 	// Wake up writeRequestBody via clientStream.awaitFlowControl and
 	// wake up RoundTrip if there is a pending request.
-	cc.cond.Broadcast()
+	cc.condBroadcast()
 
 	closeOnIdle := cc.singleUse || cc.doNotReuse || cc.t.disableKeepAlives() || cc.goAway != nil
 	if closeOnIdle && cc.streamsReserved == 0 && len(cc.streams) == 0 {
@@ -2237,7 +2334,7 @@ func (rl *clientConnReadLoop) cleanup() {
 			cs.abortStreamLocked(err)
 		}
 	}
-	cc.cond.Broadcast()
+	cc.condBroadcast()
 	cc.mu.Unlock()
 }
 
@@ -2873,7 +2970,7 @@ func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 			for _, cs := range cc.streams {
 				cs.flow.add(delta)
 			}
-			cc.cond.Broadcast()
+			cc.condBroadcast()
 
 			cc.initialWindowSize = s.Val
 		case SettingHeaderTableSize:
@@ -2928,7 +3025,7 @@ func (rl *clientConnReadLoop) processWindowUpdate(f *WindowUpdateFrame) error {
 
 		return ConnectionError(ErrCodeFlowControl)
 	}
-	cc.cond.Broadcast()
+	cc.condBroadcast()
 	return nil
 }
 
@@ -2971,7 +3068,7 @@ func (cc *ClientConn) Ping(ctx context.Context) error {
 		cc.mu.Unlock()
 	}
 	errc := make(chan error, 1)
-	go func() {
+	cc.goRun(func() {
 		cc.wmu.Lock()
 		defer cc.wmu.Unlock()
 		if err := cc.fr.WritePing(false, p); err != nil {
@@ -2982,7 +3079,7 @@ func (cc *ClientConn) Ping(ctx context.Context) error {
 			errc <- err
 			return
 		}
-	}()
+	})
 	select {
 	case <-c:
 		return nil
