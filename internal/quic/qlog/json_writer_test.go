@@ -85,6 +85,15 @@ func TestJSONWriterAttrs(t *testing.T) {
 			`}}`)
 }
 
+func TestJSONWriterAttrEmpty(t *testing.T) {
+	w := newTestJSONWriter()
+	w.writeRecordStart()
+	var a slog.Attr
+	w.writeAttr(a)
+	w.writeRecordEnd()
+	wantJSONRecord(t, w, `{}`)
+}
+
 func TestJSONWriterObjectEmpty(t *testing.T) {
 	w := newTestJSONWriter()
 	w.writeRecordStart()

@@ -45,15 +45,15 @@ func (w *jsonWriter) writeRecordEnd() {
 func (w *jsonWriter) writeAttrs(attrs []slog.Attr) {
 	w.buf.WriteByte('{')
 	for _, a := range attrs {
-		if a.Key == "" {
-			continue
-		}
 		w.writeAttr(a)
 	}
 	w.buf.WriteByte('}')
 }
 
 func (w *jsonWriter) writeAttr(a slog.Attr) {
+	if a.Key == "" {
+		return
+	}
 	w.writeName(a.Key)
 	w.writeValue(a.Value)
 }
