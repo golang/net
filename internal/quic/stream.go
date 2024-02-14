@@ -14,6 +14,21 @@ import (
 	"math"
 )
 
+// A Stream is an ordered byte stream.
+//
+// Streams may be bidirectional, read-only, or write-only.
+// Methods inappropriate for a stream's direction
+// (for example, [Write] to a read-only stream)
+// return errors.
+//
+// It is not safe to perform concurrent reads from or writes to a stream.
+// It is safe, however, to read and write at the same time.
+//
+// Reads and writes are buffered.
+// It is generally not necessary to wrap a stream in a [bufio.ReadWriter]
+// or otherwise apply additional buffering.
+//
+// To cancel reads or writes, use the [SetReadContext] and [SetWriteContext] methods.
 type Stream struct {
 	id   streamID
 	conn *Conn
