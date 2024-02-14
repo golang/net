@@ -100,6 +100,7 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 		if err != nil {
 			t.Fatalf("write with available output buffer: unexpected error: %v", err)
 		}
+		s.Flush()
 		tc.wantFrame("write blocked by flow control triggers a STREAM_DATA_BLOCKED frame",
 			packetType1RTT, debugFrameStreamDataBlocked{
 				id:  s.id,
@@ -111,6 +112,7 @@ func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
 		if err != nil {
 			t.Fatalf("write with available output buffer: unexpected error: %v", err)
 		}
+		s.Flush()
 		tc.wantIdle("adding more blocked data does not trigger another STREAM_DATA_BLOCKED")
 
 		// Provide some flow control window.
@@ -1349,7 +1351,6 @@ func TestStreamFlushImplicitExact(t *testing.T) {
 				id:   s.id,
 				data: want[0:4],
 			})
-
 	})
 }
 

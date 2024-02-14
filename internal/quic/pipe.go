@@ -148,6 +148,18 @@ func (p *pipe) peek(n int64) []byte {
 	return b[:min(int64(len(b)), n)]
 }
 
+// availableBuffer returns the available contiguous, allocated buffer space
+// following the pipe window.
+//
+// This is used by the stream write fast path, which makes multiple writes into the pipe buffer
+// without a lock, and then adjusts p.end at a later time with a lock held.
+func (p *pipe) availableBuffer() []byte {
+	if p.tail == nil {
+		return nil
+	}
+	return p.tail.b[p.end-p.tail.off:]
+}
+
 // discardBefore discards all data prior to off.
 func (p *pipe) discardBefore(off int64) {
 	for p.head != nil && p.head.end() < off {

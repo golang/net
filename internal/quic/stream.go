@@ -58,8 +58,10 @@ type Stream struct {
 	outdone      chan struct{}   // closed when all data sent
 
 	// Unsynchronized buffers, used for lock-free fast path.
-	inbuf    []byte // received data
-	inbufoff int    // bytes of inbuf which have been consumed
+	inbuf     []byte // received data
+	inbufoff  int    // bytes of inbuf which have been consumed
+	outbuf    []byte // written data
+	outbufoff int    // bytes of outbuf which contain data to write
 
 	// Atomic stream state bits.
 	//
@@ -313,7 +315,14 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	if s.IsReadOnly() {
 		return 0, errors.New("write to read-only stream")
 	}
+	if len(b) > 0 && len(s.outbuf)-s.outbufoff >= len(b) {
+		// Fast path: The data to write fits in s.outbuf.
+		copy(s.outbuf[s.outbufoff:], b)
+		s.outbufoff += len(b)
+		return len(b), nil
+	}
 	canWrite := s.outgate.lock()
+	s.flushFastOutputBuffer()
 	for {
 		// The first time through this loop, we may or may not be write blocked.
 		// We exit the loop after writing all data, so on subsequent passes through
@@ -373,15 +382,49 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		// If we have bytes left to send, we're blocked.
 		canWrite = false
 	}
+	if lim := s.out.start + s.outmaxbuf - s.out.end - 1; lim > 0 {
+		// If s.out has space allocated and available to be written into,
+		// then reference it in s.outbuf for fast-path writes.
+		//
+		// It's perhaps a bit pointless to limit s.outbuf to the send buffer limit.
+		// We've already allocated this buffer so we aren't saving any memory
+		// by not using it.
+		// For now, we limit it anyway to make it easier to reason about limits.
+		//
+		// We set the limit to one less than the send buffer limit (the -1 above)
+		// so that a write which completely fills the buffer will overflow
+		// s.outbuf and trigger a flush.
+		s.outbuf = s.out.availableBuffer()
+		if int64(len(s.outbuf)) > lim {
+			s.outbuf = s.outbuf[:lim]
+		}
+	}
 	s.outUnlock()
 	return n, nil
 }
 
 // WriteBytes writes a single byte to the stream.
 func (s *Stream) WriteByte(c byte) error {
+	if s.outbufoff < len(s.outbuf) {
+		s.outbuf[s.outbufoff] = c
+		s.outbufoff++
+		return nil
+	}
 	b := [1]byte{c}
 	_, err := s.Write(b[:])
 	return err
+}
+
+func (s *Stream) flushFastOutputBuffer() {
+	if s.outbuf == nil {
+		return
+	}
+	// Commit data previously written to s.outbuf.
+	// s.outbuf is a reference to a buffer in s.out, so we just need to record
+	// that the output buffer has been extended.
+	s.out.end += int64(s.outbufoff)
+	s.outbuf = nil
+	s.outbufoff = 0
 }
 
 // Flush flushes data written to the stream.
@@ -394,6 +437,7 @@ func (s *Stream) Flush() {
 }
 
 func (s *Stream) flushLocked() {
+	s.flushFastOutputBuffer()
 	s.outopened.set()
 	if s.outflushed < s.outwin {
 		s.outunsent.add(s.outflushed, min(s.outwin, s.out.end))
@@ -509,6 +553,8 @@ func (s *Stream) resetInternal(code uint64, userClosed bool) {
 	// extra RESET_STREAM in this case is harmless.
 	s.outreset.set()
 	s.outresetcode = code
+	s.outbuf = nil
+	s.outbufoff = 0
 	s.out.discardBefore(s.out.end)
 	s.outunsent = rangeset[int64]{}
 	s.outblocked.clear()
