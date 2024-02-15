@@ -436,8 +436,8 @@ func TestRetryClientIgnoresRetryWithInvalidIntegrityTag(t *testing.T) {
 	})
 	pkt[len(pkt)-1] ^= 1 // invalidate the integrity tag
 	tc.endpoint.write(&datagram{
-		b:    pkt,
-		addr: testClientAddr,
+		b:        pkt,
+		peerAddr: testClientAddr,
 	})
 	tc.wantIdle("client ignores Retry with invalid integrity tag")
 }

@@ -25,6 +25,7 @@ type Conn struct {
 	config    *Config
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
+	localAddr netip.AddrPort
 
 	msgc  chan any
 	donec chan struct{} // closed when conn loop exits
@@ -97,7 +98,7 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip
 		side:                 side,
 		endpoint:             e,
 		config:               config,
-		peerAddr:             peerAddr,
+		peerAddr:             unmapAddrPort(peerAddr),
 		msgc:                 make(chan any, 1),
 		donec:                make(chan struct{}),
 		peerAckDelayExponent: -1,
@@ -317,7 +318,11 @@ func (c *Conn) loop(now time.Time) {
 		}
 		switch m := m.(type) {
 		case *datagram:
-			c.handleDatagram(now, m)
+			if !c.handleDatagram(now, m) {
+				if c.logEnabled(QLogLevelPacket) {
+					c.logPacketDropped(m)
+				}
+			}
 			m.recycle()
 		case timerEvent:
 			// A connection timer has expired.

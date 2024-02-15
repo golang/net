@@ -139,7 +139,7 @@ func (rs *retryState) additionalData(srcConnID []byte, addr netip.AddrPort) []by
 	return additional
 }
 
-func (e *Endpoint) validateInitialAddress(now time.Time, p genericLongPacket, addr netip.AddrPort) (origDstConnID []byte, ok bool) {
+func (e *Endpoint) validateInitialAddress(now time.Time, p genericLongPacket, peerAddr netip.AddrPort) (origDstConnID []byte, ok bool) {
 	// The retry token is at the start of an Initial packet's data.
 	token, n := consumeUint8Bytes(p.data)
 	if n < 0 {
@@ -151,22 +151,22 @@ func (e *Endpoint) validateInitialAddress(now time.Time, p genericLongPacket, ad
 	if len(token) == 0 {
 		// The sender has not provided a token.
 		// Send a Retry packet to them with one.
-		e.sendRetry(now, p, addr)
+		e.sendRetry(now, p, peerAddr)
 		return nil, false
 	}
-	origDstConnID, ok = e.retry.validateToken(now, token, p.srcConnID, p.dstConnID, addr)
+	origDstConnID, ok = e.retry.validateToken(now, token, p.srcConnID, p.dstConnID, peerAddr)
 	if !ok {
 		// This does not seem to be a valid token.
 		// Close the connection with an INVALID_TOKEN error.
 		// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.2-5
-		e.sendConnectionClose(p, addr, errInvalidToken)
+		e.sendConnectionClose(p, peerAddr, errInvalidToken)
 		return nil, false
 	}
 	return origDstConnID, true
 }
 
-func (e *Endpoint) sendRetry(now time.Time, p genericLongPacket, addr netip.AddrPort) {
-	token, srcConnID, err := e.retry.makeToken(now, p.srcConnID, p.dstConnID, addr)
+func (e *Endpoint) sendRetry(now time.Time, p genericLongPacket, peerAddr netip.AddrPort) {
+	token, srcConnID, err := e.retry.makeToken(now, p.srcConnID, p.dstConnID, peerAddr)
 	if err != nil {
 		return
 	}
@@ -175,7 +175,10 @@ func (e *Endpoint) sendRetry(now time.Time, p genericLongPacket, addr netip.Addr
 		srcConnID: srcConnID,
 		token:     token,
 	})
-	e.sendDatagram(b, addr)
+	e.sendDatagram(datagram{
+		b:        b,
+		peerAddr: peerAddr,
+	})
 }
 
 type retryPacket struct {

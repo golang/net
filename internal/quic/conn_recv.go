@@ -8,17 +8,33 @@ package quic
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"errors"
 	"time"
 )
 
-func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
+func (c *Conn) handleDatagram(now time.Time, dgram *datagram) (handled bool) {
+	if !c.localAddr.IsValid() {
+		// We don't have any way to tell in the general case what address we're
+		// sending packets from. Set our address from the destination address of
+		// the first packet received from the peer.
+		c.localAddr = dgram.localAddr
+	}
+	if dgram.peerAddr.IsValid() && dgram.peerAddr != c.peerAddr {
+		if c.side == clientSide {
+			// "If a client receives packets from an unknown server address,
+			// the client MUST discard these packets."
+			// https://www.rfc-editor.org/rfc/rfc9000#section-9-6
+			return false
+		}
+		// We currently don't support connection migration,
+		// so for now the server also drops packets from an unknown address.
+		return false
+	}
 	buf := dgram.b
 	c.loss.datagramReceived(now, len(buf))
 	if c.isDraining() {
-		return
+		return false
 	}
 	for len(buf) > 0 {
 		var n int
@@ -28,7 +44,7 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			if c.side == serverSide && len(dgram.b) < paddedInitialDatagramSize {
 				// Discard client-sent Initial packets in too-short datagrams.
 				// https://www.rfc-editor.org/rfc/rfc9000#section-14.1-4
-				return
+				return false
 			}
 			n = c.handleLongHeader(now, ptype, initialSpace, c.keysInitial.r, buf)
 		case packetTypeHandshake:
@@ -37,10 +53,10 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 			n = c.handle1RTT(now, buf)
 		case packetTypeRetry:
 			c.handleRetry(now, buf)
-			return
+			return true
 		case packetTypeVersionNegotiation:
 			c.handleVersionNegotiation(now, buf)
-			return
+			return true
 		default:
 			n = -1
 		}
@@ -58,20 +74,16 @@ func (c *Conn) handleDatagram(now time.Time, dgram *datagram) {
 				var token statelessResetToken
 				copy(token[:], buf[len(buf)-len(token):])
 				if c.handleStatelessReset(now, token) {
-					return
+					return true
 				}
 			}
 			// Invalid data at the end of a datagram is ignored.
-			if c.logEnabled(QLogLevelPacket) {
-				c.log.LogAttrs(context.Background(), QLogLevelPacket,
-					"connectivity:packet_dropped",
-				)
-			}
-			break
+			return false
 		}
 		c.idleHandlePacketReceived(now)
 		buf = buf[n:]
 	}
+	return true
 }
 
 func (c *Conn) handleLongHeader(now time.Time, ptype packetType, space numberSpace, k fixedKeys, buf []byte) int {

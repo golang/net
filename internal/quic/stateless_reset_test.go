@@ -57,8 +57,8 @@ func newDatagramForReset(cid []byte, size int, addr netip.AddrPort) *datagram {
 		dgram = append(dgram, byte(len(dgram))) // semi-random junk
 	}
 	return &datagram{
-		b:    dgram,
-		addr: addr,
+		b:        dgram,
+		peerAddr: addr,
 	}
 }
 

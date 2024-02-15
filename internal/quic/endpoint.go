@@ -22,11 +22,11 @@ import (
 //
 // Multiple goroutines may invoke methods on an Endpoint simultaneously.
 type Endpoint struct {
-	config    *Config
-	udpConn   udpConn
-	testHooks endpointTestHooks
-	resetGen  statelessResetTokenGenerator
-	retry     retryState
+	config     *Config
+	packetConn packetConn
+	testHooks  endpointTestHooks
+	resetGen   statelessResetTokenGenerator
+	retry      retryState
 
 	acceptQueue queue[*Conn] // new inbound connections
 	connsMap    connsMap     // only accessed by the listen loop
@@ -42,13 +42,12 @@ type endpointTestHooks interface {
 	newConn(c *Conn)
 }
 
-// A udpConn is a UDP connection.
-// It is implemented by net.UDPConn.
-type udpConn interface {
+// A packetConn is the interface to sending and receiving UDP packets.
+type packetConn interface {
 	Close() error
-	LocalAddr() net.Addr
-	ReadMsgUDPAddrPort(b, control []byte) (n, controln, flags int, _ netip.AddrPort, _ error)
-	WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error)
+	LocalAddr() netip.AddrPort
+	Read(f func(*datagram))
+	Write(datagram) error
 }
 
 // Listen listens on a local network address.
@@ -65,13 +64,17 @@ func Listen(network, address string, config *Config) (*Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newEndpoint(udpConn, config, nil)
+	pc, err := newNetUDPConn(udpConn)
+	if err != nil {
+		return nil, err
+	}
+	return newEndpoint(pc, config, nil)
 }
 
-func newEndpoint(udpConn udpConn, config *Config, hooks endpointTestHooks) (*Endpoint, error) {
+func newEndpoint(pc packetConn, config *Config, hooks endpointTestHooks) (*Endpoint, error) {
 	e := &Endpoint{
 		config:      config,
-		udpConn:     udpConn,
+		packetConn:  pc,
 		testHooks:   hooks,
 		conns:       make(map[*Conn]struct{}),
 		acceptQueue: newQueue[*Conn](),
@@ -90,8 +93,7 @@ func newEndpoint(udpConn udpConn, config *Config, hooks endpointTestHooks) (*End
 
 // LocalAddr returns the local network address.
 func (e *Endpoint) LocalAddr() netip.AddrPort {
-	a, _ := e.udpConn.LocalAddr().(*net.UDPAddr)
-	return a.AddrPort()
+	return e.packetConn.LocalAddr()
 }
 
 // Close closes the Endpoint.
@@ -114,7 +116,7 @@ func (e *Endpoint) Close(ctx context.Context) error {
 			conns = append(conns, c)
 		}
 		if len(e.conns) == 0 {
-			e.udpConn.Close()
+			e.packetConn.Close()
 		}
 	}
 	e.connsMu.Unlock()
@@ -200,34 +202,18 @@ func (e *Endpoint) connDrained(c *Conn) {
 	defer e.connsMu.Unlock()
 	delete(e.conns, c)
 	if e.closing && len(e.conns) == 0 {
-		e.udpConn.Close()
+		e.packetConn.Close()
 	}
 }
 
 func (e *Endpoint) listen() {
 	defer close(e.closec)
-	for {
-		m := newDatagram()
-		// TODO: Read and process the ECN (explicit congestion notification) field.
-		// https://tools.ietf.org/html/draft-ietf-quic-transport-32#section-13.4
-		n, _, _, addr, err := e.udpConn.ReadMsgUDPAddrPort(m.b, nil)
-		if err != nil {
-			// The user has probably closed the endpoint.
-			// We currently don't surface errors from other causes;
-			// we could check to see if the endpoint has been closed and
-			// record the unexpected error if it has not.
-			return
-		}
-		if n == 0 {
-			continue
-		}
+	e.packetConn.Read(func(m *datagram) {
 		if e.connsMap.updateNeeded.Load() {
 			e.connsMap.applyUpdates()
 		}
-		m.addr = addr
-		m.b = m.b[:n]
 		e.handleDatagram(m)
-	}
+	})
 }
 
 func (e *Endpoint) handleDatagram(m *datagram) {
@@ -277,7 +263,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	// If this is a 1-RTT packet, there's nothing productive we can do with it.
 	// Send a stateless reset if possible.
 	if !isLongHeader(m.b[0]) {
-		e.maybeSendStatelessReset(m.b, m.addr)
+		e.maybeSendStatelessReset(m.b, m.peerAddr)
 		return
 	}
 	p, ok := parseGenericLongHeaderPacket(m.b)
@@ -291,7 +277,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		return
 	default:
 		// Unknown version.
-		e.sendVersionNegotiation(p, m.addr)
+		e.sendVersionNegotiation(p, m.peerAddr)
 		return
 	}
 	if getPacketType(m.b) != packetTypeInitial {
@@ -309,7 +295,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	if e.config.RequireAddressValidation {
 		var ok bool
 		cids.retrySrcConnID = p.dstConnID
-		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.addr)
+		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.peerAddr)
 		if !ok {
 			return
 		}
@@ -317,7 +303,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		cids.originalDstConnID = p.dstConnID
 	}
 	var err error
-	c, err := e.newConn(now, serverSide, cids, m.addr)
+	c, err := e.newConn(now, serverSide, cids, m.peerAddr)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.
@@ -329,7 +315,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	m = nil // don't recycle, sendMsg takes ownership
 }
 
-func (e *Endpoint) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
+func (e *Endpoint) maybeSendStatelessReset(b []byte, peerAddr netip.AddrPort) {
 	if !e.resetGen.canReset {
 		// Config.StatelessResetKey isn't set, so we don't send stateless resets.
 		return
@@ -370,17 +356,21 @@ func (e *Endpoint) maybeSendStatelessReset(b []byte, addr netip.AddrPort) {
 	b[0] &^= headerFormLong // clear long header bit
 	b[0] |= fixedBit        // set fixed bit
 	copy(b[len(b)-statelessResetTokenLen:], token[:])
-	e.sendDatagram(b, addr)
+	e.sendDatagram(datagram{
+		b:        b,
+		peerAddr: peerAddr,
+	})
 }
 
-func (e *Endpoint) sendVersionNegotiation(p genericLongPacket, addr netip.AddrPort) {
+func (e *Endpoint) sendVersionNegotiation(p genericLongPacket, peerAddr netip.AddrPort) {
 	m := newDatagram()
 	m.b = appendVersionNegotiation(m.b[:0], p.srcConnID, p.dstConnID, quicVersion1)
-	e.sendDatagram(m.b, addr)
+	m.peerAddr = peerAddr
+	e.sendDatagram(*m)
 	m.recycle()
 }
 
-func (e *Endpoint) sendConnectionClose(in genericLongPacket, addr netip.AddrPort, code transportError) {
+func (e *Endpoint) sendConnectionClose(in genericLongPacket, peerAddr netip.AddrPort, code transportError) {
 	keys := initialKeys(in.dstConnID, serverSide)
 	var w packetWriter
 	p := longPacket{
@@ -399,12 +389,14 @@ func (e *Endpoint) sendConnectionClose(in genericLongPacket, addr netip.AddrPort
 	if len(buf) == 0 {
 		return
 	}
-	e.sendDatagram(buf, addr)
+	e.sendDatagram(datagram{
+		b:        buf,
+		peerAddr: peerAddr,
+	})
 }
 
-func (e *Endpoint) sendDatagram(p []byte, addr netip.AddrPort) error {
-	_, err := e.udpConn.WriteToUDPAddrPort(p, addr)
-	return err
+func (e *Endpoint) sendDatagram(dgram datagram) error {
+	return e.packetConn.Write(dgram)
 }
 
 // A connsMap is an endpoint's mapping of conn ids and reset tokens to conns.

@@ -12,9 +12,24 @@ import (
 )
 
 type datagram struct {
-	b    []byte
-	addr netip.AddrPort
+	b         []byte
+	localAddr netip.AddrPort
+	peerAddr  netip.AddrPort
+	ecn       ecnBits
 }
+
+// Explicit Congestion Notification bits.
+//
+// https://www.rfc-editor.org/rfc/rfc3168.html#section-5
+type ecnBits byte
+
+const (
+	ecnMask   = 0b000000_11
+	ecnNotECT = 0b000000_00
+	ecnECT1   = 0b000000_01
+	ecnECT0   = 0b000000_10
+	ecnCE     = 0b000000_11
+)
 
 var datagramPool = sync.Pool{
 	New: func() any {
@@ -26,7 +41,9 @@ var datagramPool = sync.Pool{
 
 func newDatagram() *datagram {
 	m := datagramPool.Get().(*datagram)
-	m.b = m.b[:cap(m.b)]
+	*m = datagram{
+		b: m.b[:cap(m.b)],
+	}
 	return m
 }
 

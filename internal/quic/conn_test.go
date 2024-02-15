@@ -453,6 +453,7 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 			dstConnID:   dstConnID,
 			srcConnID:   tc.peerConnID,
 		}},
+		addr: tc.conn.peerAddr,
 	}
 	if ptype == packetTypeInitial && tc.conn.side == serverSide {
 		d.paddedSize = 1200
@@ -656,6 +657,12 @@ func (tc *testConn) wantPacket(expectation string, want *testPacket) {
 }
 
 func packetEqual(a, b *testPacket) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
 	ac := *a
 	ac.frames = nil
 	ac.header = 0

@@ -151,6 +151,12 @@ func (c *Conn) logConnectionClosed() {
 	)
 }
 
+func (c *Conn) logPacketDropped(dgram *datagram) {
+	c.log.LogAttrs(context.Background(), QLogLevelPacket,
+		"connectivity:packet_dropped",
+	)
+}
+
 func (c *Conn) logLongPacketReceived(p longPacket, pkt []byte) {
 	var frames slog.Attr
 	if c.logEnabled(QLogLevelFrame) {
