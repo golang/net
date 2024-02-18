@@ -388,11 +388,7 @@ func (w *packetWriter) appendStreamFrame(id streamID, off int64, size int, fin b
 	w.b = appendVarint(w.b, uint64(size))
 	start := len(w.b)
 	w.b = w.b[:start+size]
-	if fin {
-		w.sent.appendAckElicitingFrame(frameTypeStreamBase | streamFinBit)
-	} else {
-		w.sent.appendAckElicitingFrame(frameTypeStreamBase)
-	}
+	w.sent.appendAckElicitingFrame(typ & (frameTypeStreamBase | streamFinBit))
 	w.sent.appendInt(uint64(id))
 	w.sent.appendOffAndSize(off, size)
 	return w.b[start:][:size], true
