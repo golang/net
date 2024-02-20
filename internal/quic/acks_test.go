@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -198,26 +199,12 @@ func TestAcksSent(t *testing.T) {
 				if len(gotNums) == 0 {
 					wantDelay = 0
 				}
-				if !slicesEqual(gotNums, test.wantAcks) || gotDelay != wantDelay {
+				if !slices.Equal(gotNums, test.wantAcks) || gotDelay != wantDelay {
 					t.Errorf("acks.acksToSend(T+%v) = %v, %v; want %v, %v", delay, gotNums, gotDelay, test.wantAcks, wantDelay)
 				}
 			}
 		})
 	}
-}
-
-// slicesEqual reports whether two slices are equal.
-// Replace this with slices.Equal once the module go.mod is go1.17 or newer.
-func slicesEqual[E comparable](s1, s2 []E) bool {
-	if len(s1) != len(s2) {
-		return false
-	}
-	for i := range s1 {
-		if s1[i] != s2[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestAcksDiscardAfterAck(t *testing.T) {
