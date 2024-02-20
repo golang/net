@@ -107,6 +107,13 @@ type Config struct {
 	QLogLogger *slog.Logger
 }
 
+// Clone returns a shallow clone of c, or nil if c is nil.
+// It is safe to clone a [Config] that is being used concurrently by a QUIC endpoint.
+func (c *Config) Clone() *Config {
+	n := *c
+	return &n
+}
+
 func configDefault[T ~int64](v, def, limit T) T {
 	switch {
 	case v == 0:

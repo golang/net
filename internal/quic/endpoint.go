@@ -22,11 +22,11 @@ import (
 //
 // Multiple goroutines may invoke methods on an Endpoint simultaneously.
 type Endpoint struct {
-	config     *Config
-	packetConn packetConn
-	testHooks  endpointTestHooks
-	resetGen   statelessResetTokenGenerator
-	retry      retryState
+	listenConfig *Config
+	packetConn   packetConn
+	testHooks    endpointTestHooks
+	resetGen     statelessResetTokenGenerator
+	retry        retryState
 
 	acceptQueue queue[*Conn] // new inbound connections
 	connsMap    connsMap     // only accessed by the listen loop
@@ -51,9 +51,11 @@ type packetConn interface {
 }
 
 // Listen listens on a local network address.
-// The configuration config must be non-nil.
-func Listen(network, address string, config *Config) (*Endpoint, error) {
-	if config.TLSConfig == nil {
+//
+// The config is used to for connections accepted by the endpoint.
+// If the config is nil, the endpoint will not accept connections.
+func Listen(network, address string, listenConfig *Config) (*Endpoint, error) {
+	if listenConfig != nil && listenConfig.TLSConfig == nil {
 		return nil, errors.New("TLSConfig is not set")
 	}
 	a, err := net.ResolveUDPAddr(network, address)
@@ -68,21 +70,25 @@ func Listen(network, address string, config *Config) (*Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newEndpoint(pc, config, nil)
+	return newEndpoint(pc, listenConfig, nil)
 }
 
 func newEndpoint(pc packetConn, config *Config, hooks endpointTestHooks) (*Endpoint, error) {
 	e := &Endpoint{
-		config:      config,
-		packetConn:  pc,
-		testHooks:   hooks,
-		conns:       make(map[*Conn]struct{}),
-		acceptQueue: newQueue[*Conn](),
-		closec:      make(chan struct{}),
+		listenConfig: config,
+		packetConn:   pc,
+		testHooks:    hooks,
+		conns:        make(map[*Conn]struct{}),
+		acceptQueue:  newQueue[*Conn](),
+		closec:       make(chan struct{}),
 	}
-	e.resetGen.init(config.StatelessResetKey)
+	var statelessResetKey [32]byte
+	if config != nil {
+		statelessResetKey = config.StatelessResetKey
+	}
+	e.resetGen.init(statelessResetKey)
 	e.connsMap.init()
-	if config.RequireAddressValidation {
+	if config != nil && config.RequireAddressValidation {
 		if err := e.retry.init(); err != nil {
 			return nil, err
 		}
@@ -141,14 +147,15 @@ func (e *Endpoint) Accept(ctx context.Context) (*Conn, error) {
 }
 
 // Dial creates and returns a connection to a network address.
-func (e *Endpoint) Dial(ctx context.Context, network, address string) (*Conn, error) {
+// The config cannot be nil.
+func (e *Endpoint) Dial(ctx context.Context, network, address string, config *Config) (*Conn, error) {
 	u, err := net.ResolveUDPAddr(network, address)
 	if err != nil {
 		return nil, err
 	}
 	addr := u.AddrPort()
 	addr = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
-	c, err := e.newConn(time.Now(), clientSide, newServerConnIDs{}, addr)
+	c, err := e.newConn(time.Now(), config, clientSide, newServerConnIDs{}, address, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -159,13 +166,13 @@ func (e *Endpoint) Dial(ctx context.Context, network, address string) (*Conn, er
 	return c, nil
 }
 
-func (e *Endpoint) newConn(now time.Time, side connSide, cids newServerConnIDs, peerAddr netip.AddrPort) (*Conn, error) {
+func (e *Endpoint) newConn(now time.Time, config *Config, side connSide, cids newServerConnIDs, peerHostname string, peerAddr netip.AddrPort) (*Conn, error) {
 	e.connsMu.Lock()
 	defer e.connsMu.Unlock()
 	if e.closing {
 		return nil, errors.New("endpoint closed")
 	}
-	c, err := newConn(now, side, cids, peerAddr, e.config, e)
+	c, err := newConn(now, side, cids, peerHostname, peerAddr, config, e)
 	if err != nil {
 		return nil, err
 	}
@@ -288,11 +295,15 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		// https://www.rfc-editor.org/rfc/rfc9000#section-10.3-16
 		return
 	}
+	if e.listenConfig == nil {
+		// We are not configured to accept connections.
+		return
+	}
 	cids := newServerConnIDs{
 		srcConnID: p.srcConnID,
 		dstConnID: p.dstConnID,
 	}
-	if e.config.RequireAddressValidation {
+	if e.listenConfig.RequireAddressValidation {
 		var ok bool
 		cids.retrySrcConnID = p.dstConnID
 		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.peerAddr)
@@ -303,7 +314,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		cids.originalDstConnID = p.dstConnID
 	}
 	var err error
-	c, err := e.newConn(now, serverSide, cids, m.peerAddr)
+	c, err := e.newConn(now, e.listenConfig, serverSide, cids, "", m.peerAddr)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.

@@ -67,7 +67,8 @@ func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverCon
 	ctx := context.Background()
 	e1 := newLocalEndpoint(t, serverSide, conf1)
 	e2 := newLocalEndpoint(t, clientSide, conf2)
-	c2, err := e2.Dial(ctx, "udp", e1.LocalAddr().String())
+	conf2 = makeTestConfig(conf2, clientSide)
+	c2, err := e2.Dial(ctx, "udp", e1.LocalAddr().String(), conf2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,17 +81,7 @@ func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverCon
 
 func newLocalEndpoint(t testing.TB, side connSide, conf *Config) *Endpoint {
 	t.Helper()
-	if conf.TLSConfig == nil {
-		newConf := *conf
-		conf = &newConf
-		conf.TLSConfig = newTestTLSConfig(side)
-	}
-	if conf.QLogLogger == nil {
-		conf.QLogLogger = slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
-			Level: QLogLevelFrame,
-			Dir:   *qlogdir,
-		}))
-	}
+	conf = makeTestConfig(conf, side)
 	e, err := Listen("udp", "127.0.0.1:0", conf)
 	if err != nil {
 		t.Fatal(err)
@@ -99,6 +90,24 @@ func newLocalEndpoint(t testing.TB, side connSide, conf *Config) *Endpoint {
 		e.Close(canceledContext())
 	})
 	return e
+}
+
+func makeTestConfig(conf *Config, side connSide) *Config {
+	if conf == nil {
+		return nil
+	}
+	newConf := *conf
+	conf = &newConf
+	if conf.TLSConfig == nil {
+		conf.TLSConfig = newTestTLSConfig(side)
+	}
+	if conf.QLogLogger == nil {
+		conf.QLogLogger = slog.New(qlog.NewJSONHandler(qlog.HandlerOptions{
+			Level: QLogLevelFrame,
+			Dir:   *qlogdir,
+		}))
+	}
+	return conf
 }
 
 type testEndpoint struct {

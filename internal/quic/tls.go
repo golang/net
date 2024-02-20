@@ -11,14 +11,24 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 )
 
 // startTLS starts the TLS handshake.
-func (c *Conn) startTLS(now time.Time, initialConnID []byte, params transportParameters) error {
+func (c *Conn) startTLS(now time.Time, initialConnID []byte, peerHostname string, params transportParameters) error {
+	tlsConfig := c.config.TLSConfig
+	if a, _, err := net.SplitHostPort(peerHostname); err == nil {
+		peerHostname = a
+	}
+	if tlsConfig.ServerName == "" && peerHostname != "" {
+		tlsConfig = tlsConfig.Clone()
+		tlsConfig.ServerName = peerHostname
+	}
+
 	c.keysInitial = initialKeys(initialConnID, c.side)
 
-	qconfig := &tls.QUICConfig{TLSConfig: c.config.TLSConfig}
+	qconfig := &tls.QUICConfig{TLSConfig: tlsConfig}
 	if c.side == clientSide {
 		c.tls = tls.QUICClient(qconfig)
 	} else {
