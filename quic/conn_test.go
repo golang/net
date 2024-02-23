@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/internal/quic/qlog"
+	"golang.org/x/net/quic/qlog"
 )
 
 var (
