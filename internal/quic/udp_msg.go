@@ -7,6 +7,7 @@
 package quic
 
 import (
+	"encoding/binary"
 	"net"
 	"net/netip"
 	"sync"
@@ -141,15 +142,11 @@ func parseControl(d *datagram, control []byte) {
 		case unix.IPPROTO_IP:
 			switch hdr.Type {
 			case unix.IP_TOS, unix.IP_RECVTOS:
-				// Single byte containing the IP TOS field.
-				// The low two bits are the ECN field.
-				//
 				// (Linux sets the type to IP_TOS, Darwin to IP_RECVTOS,
-				// jus check for both.)
-				if len(data) < 1 {
-					break
+				// just check for both.)
+				if ecn, ok := parseIPTOS(data); ok {
+					d.ecn = ecn
 				}
-				d.ecn = ecnBits(data[0] & ecnMask)
 			case unix.IP_PKTINFO:
 				if a, ok := parseInPktinfo(data); ok {
 					d.localAddr = netip.AddrPortFrom(a, d.localAddr.Port())
@@ -158,12 +155,11 @@ func parseControl(d *datagram, control []byte) {
 		case unix.IPPROTO_IPV6:
 			switch hdr.Type {
 			case unix.IPV6_TCLASS:
-				// Single byte containing the traffic class field.
+				// 32-bit integer containing the traffic class field.
 				// The low two bits are the ECN field.
-				if len(data) < 1 {
-					break
+				if ecn, ok := parseIPv6TCLASS(data); ok {
+					d.ecn = ecn
 				}
-				d.ecn = ecnBits(data[0] & ecnMask)
 			case unix.IPV6_PKTINFO:
 				if a, ok := parseIn6Pktinfo(data); ok {
 					d.localAddr = netip.AddrPortFrom(a, d.localAddr.Port())
@@ -173,27 +169,33 @@ func parseControl(d *datagram, control []byte) {
 	}
 }
 
-func parseInPktinfo(b []byte) (netip.Addr, bool) {
-	// struct in_pktinfo {
-	//   unsigned int   ipi_ifindex;  /* send/recv interface index */
-	//   struct in_addr ipi_spec_dst; /* Local address */
-	//   struct in_addr ipi_addr;     /* IP Header dst address */
-	// };
+// IPV6_TCLASS is specified by RFC 3542 as an int.
+
+func parseIPv6TCLASS(b []byte) (ecnBits, bool) {
+	if len(b) != 4 {
+		return 0, false
+	}
+	return ecnBits(binary.NativeEndian.Uint32(b) & ecnMask), true
+}
+
+func appendCmsgECNv6(b []byte, ecn ecnBits) []byte {
+	b, data := appendCmsg(b, unix.IPPROTO_IPV6, unix.IPV6_TCLASS, 4)
+	binary.NativeEndian.PutUint32(data, uint32(ecn))
+	return b
+}
+
+// struct in_pktinfo {
+//   unsigned int   ipi_ifindex;  /* send/recv interface index */
+//   struct in_addr ipi_spec_dst; /* Local address */
+//   struct in_addr ipi_addr;     /* IP Header dst address */
+// };
+
+// parseInPktinfo returns the destination address from an IP_PKTINFO.
+func parseInPktinfo(b []byte) (dst netip.Addr, ok bool) {
 	if len(b) != 12 {
 		return netip.Addr{}, false
 	}
 	return netip.AddrFrom4([4]byte(b[8:][:4])), true
-}
-
-func parseIn6Pktinfo(b []byte) (netip.Addr, bool) {
-	// struct in6_pktinfo {
-	//   struct in6_addr  ipi6_addr;    /* src/dst IPv6 address */
-	//   unsigned int     ipi6_ifindex; /* send/recv interface index */
-	// };
-	if len(b) != 20 {
-		return netip.Addr{}, false
-	}
-	return netip.AddrFrom16([16]byte(b[:16])).Unmap(), true
 }
 
 // appendCmsgIPSourceAddrV4 appends an IP_PKTINFO setting the source address
@@ -210,28 +212,25 @@ func appendCmsgIPSourceAddrV4(b []byte, src netip.Addr) []byte {
 	return b
 }
 
-// appendCmsgIPSourceAddrV6 appends an IP_PKTINFO or IPV6_PKTINFO
-// setting the source address for an outbound datagram.
+// struct in6_pktinfo {
+//   struct in6_addr  ipi6_addr;    /* src/dst IPv6 address */
+//   unsigned int     ipi6_ifindex; /* send/recv interface index */
+// };
+
+// parseIn6Pktinfo returns the destination address from an IPV6_PKTINFO.
+func parseIn6Pktinfo(b []byte) (netip.Addr, bool) {
+	if len(b) != 20 {
+		return netip.Addr{}, false
+	}
+	return netip.AddrFrom16([16]byte(b[:16])).Unmap(), true
+}
+
+// appendCmsgIPSourceAddrV6 appends an IPV6_PKTINFO setting the source address
+// for an outbound datagram.
 func appendCmsgIPSourceAddrV6(b []byte, src netip.Addr) []byte {
-	// struct in6_pktinfo {
-	//   struct in6_addr  ipi6_addr;    /* src/dst IPv6 address */
-	//   unsigned int     ipi6_ifindex; /* send/recv interface index */
-	// };
 	b, data := appendCmsg(b, unix.IPPROTO_IPV6, unix.IPV6_PKTINFO, 20)
 	ip := src.As16()
 	copy(data[0:], ip[:])
-	return b
-}
-
-func appendCmsgECNv4(b []byte, ecn ecnBits) []byte {
-	b, data := appendCmsg(b, unix.IPPROTO_IP, unix.IP_TOS, 4)
-	data[0] = byte(ecn)
-	return b
-}
-
-func appendCmsgECNv6(b []byte, ecn ecnBits) []byte {
-	b, data := appendCmsg(b, unix.IPPROTO_IPV6, unix.IPV6_TCLASS, 4)
-	data[0] = byte(ecn)
 	return b
 }
 
