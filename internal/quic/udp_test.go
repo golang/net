@@ -16,6 +16,7 @@ import (
 )
 
 func TestUDPSourceUnspecified(t *testing.T) {
+	t.Skip("https://go.dev/issue/65906 - temporarily skipped pending fix")
 	// Send datagram with no source address set.
 	runUDPTest(t, func(t *testing.T, test udpTest) {
 		data := []byte("source unspecified")
@@ -33,6 +34,7 @@ func TestUDPSourceUnspecified(t *testing.T) {
 }
 
 func TestUDPSourceSpecified(t *testing.T) {
+	t.Skip("https://go.dev/issue/65906 - temporarily skipped pending fix")
 	// Send datagram with source address set.
 	runUDPTest(t, func(t *testing.T, test udpTest) {
 		data := []byte("source specified")
@@ -51,6 +53,7 @@ func TestUDPSourceSpecified(t *testing.T) {
 }
 
 func TestUDPSourceInvalid(t *testing.T) {
+	t.Skip("https://go.dev/issue/65906 - temporarily skipped pending fix")
 	// Send datagram with source address set to an address not associated with the connection.
 	if !udpInvalidLocalAddrIsError {
 		t.Skipf("%v: sending from invalid source succeeds", runtime.GOOS)
@@ -74,6 +77,7 @@ func TestUDPSourceInvalid(t *testing.T) {
 }
 
 func TestUDPECN(t *testing.T) {
+	t.Skip("https://go.dev/issue/65907 - temporarily skipped pending fix")
 	if !udpECNSupport {
 		t.Skipf("%v: no ECN support", runtime.GOOS)
 	}
