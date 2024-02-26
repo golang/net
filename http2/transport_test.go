@@ -6254,3 +6254,32 @@ func TestDialRaceResumesDial(t *testing.T) {
 	case <-successCh:
 	}
 }
+
+func TestTransportDataAfter1xxHeader(t *testing.T) {
+	// Discard logger output to avoid spamming stderr.
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(os.Stderr)
+
+	// https://go.dev/issue/65927 - server sends a 1xx response, followed by a DATA frame.
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+
+	tc.wantFrameType(FrameHeaders)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  false,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "100",
+		),
+	})
+	tc.writeData(rt.streamID(), true, []byte{0})
+	err := rt.err()
+	if err, ok := err.(StreamError); !ok || err.Code != ErrCodeProtocol {
+		t.Errorf("RoundTrip error: %v; want ErrCodeProtocol", err)
+	}
+	tc.wantFrameType(FrameRSTStream)
+}
