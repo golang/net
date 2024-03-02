@@ -79,6 +79,7 @@ func parseAuthority(location *url.URL) string {
 	return location.Host
 }
 
+// DialConfig opens a new client connection to a WebSocket with a config.
 func DialConfig(config *Config) (ws *Conn, err error) {
 	return config.DialContext(context.Background())
 }
