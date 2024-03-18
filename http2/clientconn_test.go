@@ -191,7 +191,7 @@ func testClientConnReadFrame[T any](tc *testClientConn) T {
 	var v T
 	fr := tc.readFrame()
 	if fr == nil {
-		tc.t.Fatalf("got no frame, want frame %v", v)
+		tc.t.Fatalf("got no frame, want frame %T", v)
 	}
 	v, ok := fr.(T)
 	if !ok {
@@ -203,6 +203,7 @@ func testClientConnReadFrame[T any](tc *testClientConn) T {
 // wantFrameType reads the next frame from the conn.
 // It produces an error if the frame type is not the expected value.
 func (tc *testClientConn) wantFrameType(want FrameType) {
+	tc.t.Helper()
 	fr := tc.readFrame()
 	if fr == nil {
 		tc.t.Fatalf("got no frame, want frame %v", want)
@@ -221,11 +222,8 @@ type wantHeader struct {
 // wantHeaders reads a HEADERS frame and potential CONTINUATION frames,
 // and asserts that they contain the expected headers.
 func (tc *testClientConn) wantHeaders(want wantHeader) {
-	fr := tc.readFrame()
-	got, ok := fr.(*MetaHeadersFrame)
-	if !ok {
-		tc.t.Fatalf("got %v, want HEADERS frame", want)
-	}
+	tc.t.Helper()
+	got := testClientConnReadFrame[*MetaHeadersFrame](tc)
 	if got, want := got.StreamID, want.streamID; got != want {
 		tc.t.Fatalf("got stream ID %v, want %v", got, want)
 	}
