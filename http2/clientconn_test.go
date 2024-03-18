@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -209,6 +210,71 @@ func (tc *testClientConn) wantFrameType(want FrameType) {
 	}
 }
 
+// wantUnorderedFrames reads frames from the conn until every condition in want has been satisfied.
+//
+// want is a list of func(*SomeFrame) bool.
+// wantUnorderedFrames will call each func with frames of the appropriate type
+// until the func returns true.
+// It calls t.Fatal if an unexpected frame is received (no func has that frame type,
+// or all funcs with that type have returned true), or if the conn runs out of frames
+// with unsatisfied funcs.
+//
+// Example:
+//
+//	// Read a SETTINGS frame, and any number of DATA frames for a stream.
+//	// The SETTINGS frame may appear anywhere in the sequence.
+//	// The last DATA frame must indicate the end of the stream.
+//	tc.wantUnorderedFrames(
+//		func(f *SettingsFrame) bool {
+//			return true
+//		},
+//		func(f *DataFrame) bool {
+//			return f.StreamEnded()
+//		},
+//	)
+func (tc *testClientConn) wantUnorderedFrames(want ...any) {
+	tc.t.Helper()
+	want = slices.Clone(want)
+	seen := 0
+frame:
+	for seen < len(want) && !tc.t.Failed() {
+		fr := tc.readFrame()
+		if fr == nil {
+			break
+		}
+		for i, f := range want {
+			if f == nil {
+				continue
+			}
+			typ := reflect.TypeOf(f)
+			if typ.Kind() != reflect.Func ||
+				typ.NumIn() != 1 ||
+				typ.NumOut() != 1 ||
+				typ.Out(0) != reflect.TypeOf(true) {
+				tc.t.Fatalf("expected func(*SomeFrame) bool, got %T", f)
+			}
+			if typ.In(0) == reflect.TypeOf(fr) {
+				out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(fr)})
+				if out[0].Bool() {
+					want[i] = nil
+					seen++
+				}
+				continue frame
+			}
+		}
+		tc.t.Errorf("got unexpected frame type %T", fr)
+	}
+	if seen < len(want) {
+		for _, f := range want {
+			if f == nil {
+				continue
+			}
+			tc.t.Errorf("did not see expected frame: %v", reflect.TypeOf(f).In(0))
+		}
+		tc.t.Fatalf("did not see %v expected frame types", len(want)-seen)
+	}
+}
+
 type wantHeader struct {
 	streamID  uint32
 	endStream bool
@@ -396,6 +462,14 @@ func (tc *testClientConn) writeSettingsAck() {
 func (tc *testClientConn) writeData(streamID uint32, endStream bool, data []byte) {
 	tc.t.Helper()
 	if err := tc.fr.WriteData(streamID, endStream, data); err != nil {
+		tc.t.Fatal(err)
+	}
+	tc.sync()
+}
+
+func (tc *testClientConn) writeDataPadded(streamID uint32, endStream bool, data, pad []byte) {
+	tc.t.Helper()
+	if err := tc.fr.WriteDataPadded(streamID, endStream, data, pad); err != nil {
 		tc.t.Fatal(err)
 	}
 	tc.sync()
