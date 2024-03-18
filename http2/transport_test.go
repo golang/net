@@ -3310,26 +3310,24 @@ func TestTransportNoRaceOnRequestObjectAfterRequestComplete(t *testing.T) {
 }
 
 func TestTransportCloseAfterLostPing(t *testing.T) {
-	clientDone := make(chan struct{})
-	ct := newClientTester(t)
-	ct.tr.PingTimeout = 1 * time.Second
-	ct.tr.ReadIdleTimeout = 1 * time.Second
-	ct.client = func() error {
-		defer ct.cc.(*net.TCPConn).CloseWrite()
-		defer close(clientDone)
-		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
-		_, err := ct.tr.RoundTrip(req)
-		if err == nil || !strings.Contains(err.Error(), "client connection lost") {
-			return fmt.Errorf("expected to get error about \"connection lost\", got %v", err)
-		}
-		return nil
+	tc := newTestClientConn(t, func(tr *Transport) {
+		tr.PingTimeout = 1 * time.Second
+		tr.ReadIdleTimeout = 1 * time.Second
+	})
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
+
+	tc.advance(1 * time.Second)
+	tc.wantFrameType(FramePing)
+
+	tc.advance(1 * time.Second)
+	err := rt.err()
+	if err == nil || !strings.Contains(err.Error(), "client connection lost") {
+		t.Fatalf("expected to get error about \"connection lost\", got %v", err)
 	}
-	ct.server = func() error {
-		ct.greet()
-		<-clientDone
-		return nil
-	}
-	ct.run()
 }
 
 func TestTransportPingWriteBlocks(t *testing.T) {
@@ -3362,38 +3360,73 @@ func TestTransportPingWriteBlocks(t *testing.T) {
 	}
 }
 
-func TestTransportPingWhenReading(t *testing.T) {
-	testCases := []struct {
-		name              string
-		readIdleTimeout   time.Duration
-		deadline          time.Duration
-		expectedPingCount int
-	}{
-		{
-			name:              "two pings",
-			readIdleTimeout:   100 * time.Millisecond,
-			deadline:          time.Second,
-			expectedPingCount: 2,
-		},
-		{
-			name:              "zero ping",
-			readIdleTimeout:   time.Second,
-			deadline:          200 * time.Millisecond,
-			expectedPingCount: 0,
-		},
-		{
-			name:              "0 readIdleTimeout means no ping",
-			readIdleTimeout:   0 * time.Millisecond,
-			deadline:          500 * time.Millisecond,
-			expectedPingCount: 0,
-		},
+func TestTransportPingWhenReadingMultiplePings(t *testing.T) {
+	tc := newTestClientConn(t, func(tr *Transport) {
+		tr.ReadIdleTimeout = 1000 * time.Millisecond
+	})
+	tc.greet()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+
+	tc.wantFrameType(FrameHeaders)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  false,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+
+	for i := 0; i < 5; i++ {
+		// No ping yet...
+		tc.advance(999 * time.Millisecond)
+		if f := tc.readFrame(); f != nil {
+			t.Fatalf("unexpected frame: %v", f)
+		}
+
+		// ...ping now.
+		tc.advance(1 * time.Millisecond)
+		f := testClientConnReadFrame[*PingFrame](tc)
+		tc.writePing(true, f.Data)
 	}
 
-	for _, tc := range testCases {
-		tc := tc // capture range variable
-		t.Run(tc.name, func(t *testing.T) {
-			testTransportPingWhenReading(t, tc.readIdleTimeout, tc.deadline, tc.expectedPingCount)
-		})
+	// Cancel the request, Transport resets it and returns an error from body reads.
+	cancel()
+	tc.sync()
+
+	tc.wantFrameType(FrameRSTStream)
+	_, err := rt.readBody()
+	if err == nil {
+		t.Fatalf("Response.Body.Read() = %v, want error", err)
+	}
+}
+
+func TestTransportPingWhenReadingPingDisabled(t *testing.T) {
+	tc := newTestClientConn(t, func(tr *Transport) {
+		tr.ReadIdleTimeout = 0 // PINGs disabled
+	})
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+
+	tc.wantFrameType(FrameHeaders)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  false,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+
+	// No PING is sent, even after a long delay.
+	tc.advance(1 * time.Minute)
+	if f := tc.readFrame(); f != nil {
+		t.Fatalf("unexpected frame: %v", f)
 	}
 }
 

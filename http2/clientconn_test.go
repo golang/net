@@ -123,6 +123,7 @@ func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
 	tc.fr.SetMaxReadFrameSize(10 << 20)
 
 	t.Cleanup(func() {
+		tc.sync()
 		if tc.rerr == nil {
 			tc.rerr = io.EOF
 		}
@@ -454,6 +455,14 @@ func (tc *testClientConn) writeHeadersMode(mode headerType, p HeadersFrameParam)
 func (tc *testClientConn) writeContinuation(streamID uint32, endHeaders bool, headerBlockFragment []byte) {
 	tc.t.Helper()
 	if err := tc.fr.WriteContinuation(streamID, endHeaders, headerBlockFragment); err != nil {
+		tc.t.Fatal(err)
+	}
+	tc.sync()
+}
+
+func (tc *testClientConn) writePing(ack bool, data [8]byte) {
+	tc.t.Helper()
+	if err := tc.fr.WritePing(ack, data); err != nil {
 		tc.t.Fatal(err)
 	}
 	tc.sync()

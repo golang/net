@@ -391,6 +391,21 @@ func (cc *ClientConn) newTimer(d time.Duration) timer {
 	return newTimeTimer(d)
 }
 
+// afterFunc creates a new time.AfterFunc timer, or a synthetic timer in tests.
+func (cc *ClientConn) afterFunc(d time.Duration, f func()) timer {
+	if cc.syncHooks != nil {
+		return cc.syncHooks.afterFunc(d, f)
+	}
+	return newTimeAfterFunc(d, f)
+}
+
+func (cc *ClientConn) contextWithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if cc.syncHooks != nil {
+		return cc.syncHooks.contextWithTimeout(ctx, d)
+	}
+	return context.WithTimeout(ctx, d)
+}
+
 // clientStream is the state for a single HTTP/2 stream. One of these
 // is created for each Transport.RoundTrip call.
 type clientStream struct {
@@ -875,7 +890,7 @@ func (cc *ClientConn) healthCheck() {
 	pingTimeout := cc.t.pingTimeout()
 	// We don't need to periodically ping in the health check, because the readLoop of ClientConn will
 	// trigger the healthCheck again if there is no frame received.
-	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	ctx, cancel := cc.contextWithTimeout(context.Background(), pingTimeout)
 	defer cancel()
 	cc.vlogf("http2: Transport sending health check")
 	err := cc.Ping(ctx)
@@ -1432,6 +1447,21 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 	if cc.reqHeaderMu == nil {
 		panic("RoundTrip on uninitialized ClientConn") // for tests
 	}
+	var newStreamHook func(*clientStream)
+	if cc.syncHooks != nil {
+		newStreamHook = cc.syncHooks.newstream
+		cc.syncHooks.blockUntil(func() bool {
+			select {
+			case cc.reqHeaderMu <- struct{}{}:
+				<-cc.reqHeaderMu
+			case <-cs.reqCancel:
+			case <-ctx.Done():
+			default:
+				return false
+			}
+			return true
+		})
+	}
 	select {
 	case cc.reqHeaderMu <- struct{}{}:
 	case <-cs.reqCancel:
@@ -1456,8 +1486,8 @@ func (cs *clientStream) writeRequest(req *http.Request) (err error) {
 	}
 	cc.mu.Unlock()
 
-	if cc.syncHooks != nil {
-		cc.syncHooks.newstream(cs)
+	if newStreamHook != nil {
+		newStreamHook(cs)
 	}
 
 	// TODO(bradfitz): this is a copy of the logic in net/http. Unify somewhere?
@@ -2369,10 +2399,9 @@ func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
 	gotSettings := false
 	readIdleTimeout := cc.t.ReadIdleTimeout
-	var t *time.Timer
+	var t timer
 	if readIdleTimeout != 0 {
-		t = time.AfterFunc(readIdleTimeout, cc.healthCheck)
-		defer t.Stop()
+		t = cc.afterFunc(readIdleTimeout, cc.healthCheck)
 	}
 	for {
 		f, err := cc.fr.ReadFrame()
@@ -3067,24 +3096,38 @@ func (cc *ClientConn) Ping(ctx context.Context) error {
 		}
 		cc.mu.Unlock()
 	}
-	errc := make(chan error, 1)
+	var pingError error
+	errc := make(chan struct{})
 	cc.goRun(func() {
 		cc.wmu.Lock()
 		defer cc.wmu.Unlock()
-		if err := cc.fr.WritePing(false, p); err != nil {
-			errc <- err
+		if pingError = cc.fr.WritePing(false, p); pingError != nil {
+			close(errc)
 			return
 		}
-		if err := cc.bw.Flush(); err != nil {
-			errc <- err
+		if pingError = cc.bw.Flush(); pingError != nil {
+			close(errc)
 			return
 		}
 	})
+	if cc.syncHooks != nil {
+		cc.syncHooks.blockUntil(func() bool {
+			select {
+			case <-c:
+			case <-errc:
+			case <-ctx.Done():
+			case <-cc.readerDone:
+			default:
+				return false
+			}
+			return true
+		})
+	}
 	select {
 	case <-c:
 		return nil
-	case err := <-errc:
-		return err
+	case <-errc:
+		return pingError
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-cc.readerDone:

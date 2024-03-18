@@ -4,6 +4,7 @@
 package http2
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -173,16 +174,54 @@ func (h *testSyncHooks) condWait(cond *sync.Cond) {
 	h.unlock()
 }
 
-// newTimer creates a new timer: A time.Timer if h is nil, or a synthetic timer in tests.
+// newTimer creates a new fake timer.
 func (h *testSyncHooks) newTimer(d time.Duration) timer {
 	h.lock()
 	defer h.unlock()
 	t := &fakeTimer{
-		when: h.now.Add(d),
-		c:    make(chan time.Time),
+		hooks: h,
+		when:  h.now.Add(d),
+		c:     make(chan time.Time),
 	}
 	h.timers = append(h.timers, t)
 	return t
+}
+
+// afterFunc creates a new fake AfterFunc timer.
+func (h *testSyncHooks) afterFunc(d time.Duration, f func()) timer {
+	h.lock()
+	defer h.unlock()
+	t := &fakeTimer{
+		hooks: h,
+		when:  h.now.Add(d),
+		f:     f,
+	}
+	h.timers = append(h.timers, t)
+	return t
+}
+
+func (h *testSyncHooks) contextWithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	t := h.afterFunc(d, cancel)
+	return ctx, func() {
+		t.Stop()
+		cancel()
+	}
+}
+
+func (h *testSyncHooks) timeUntilEvent() time.Duration {
+	h.lock()
+	defer h.unlock()
+	var next time.Time
+	for _, t := range h.timers {
+		if next.IsZero() || t.when.Before(next) {
+			next = t.when
+		}
+	}
+	if d := next.Sub(h.now); d > 0 {
+		return d
+	}
+	return 0
 }
 
 // advance advances time and causes synthetic timers to fire.
@@ -192,6 +231,7 @@ func (h *testSyncHooks) advance(d time.Duration) {
 	h.now = h.now.Add(d)
 	timers := h.timers[:0]
 	for _, t := range h.timers {
+		t := t // remove after go.mod depends on go1.22
 		t.mu.Lock()
 		switch {
 		case t.when.After(h.now):
@@ -200,7 +240,20 @@ func (h *testSyncHooks) advance(d time.Duration) {
 			// stopped timer
 		default:
 			t.when = time.Time{}
-			close(t.c)
+			if t.c != nil {
+				close(t.c)
+			}
+			if t.f != nil {
+				h.total++
+				go func() {
+					defer func() {
+						h.lock()
+						h.total--
+						h.unlock()
+					}()
+					t.f()
+				}()
+			}
 		}
 		t.mu.Unlock()
 	}
@@ -212,13 +265,16 @@ func (h *testSyncHooks) advance(d time.Duration) {
 type timer interface {
 	C() <-chan time.Time
 	Stop() bool
+	Reset(d time.Duration) bool
 }
 
+// timeTimer implements timer using real time.
 type timeTimer struct {
 	t *time.Timer
 	c chan time.Time
 }
 
+// newTimeTimer creates a new timer using real time.
 func newTimeTimer(d time.Duration) timer {
 	ch := make(chan time.Time)
 	t := time.AfterFunc(d, func() {
@@ -227,20 +283,49 @@ func newTimeTimer(d time.Duration) timer {
 	return &timeTimer{t, ch}
 }
 
-func (t timeTimer) C() <-chan time.Time { return t.c }
-func (t timeTimer) Stop() bool          { return t.t.Stop() }
+// newTimeAfterFunc creates an AfterFunc timer using real time.
+func newTimeAfterFunc(d time.Duration, f func()) timer {
+	return &timeTimer{
+		t: time.AfterFunc(d, f),
+	}
+}
 
+func (t timeTimer) C() <-chan time.Time        { return t.c }
+func (t timeTimer) Stop() bool                 { return t.t.Stop() }
+func (t timeTimer) Reset(d time.Duration) bool { return t.t.Reset(d) }
+
+// fakeTimer implements timer using fake time.
 type fakeTimer struct {
+	hooks *testSyncHooks
+
 	mu   sync.Mutex
-	when time.Time
-	c    chan time.Time
+	when time.Time      // when the timer will fire
+	c    chan time.Time // closed when the timer fires; mutually exclusive with f
+	f    func()         // called when the timer fires; mutually exclusive with c
 }
 
 func (t *fakeTimer) C() <-chan time.Time { return t.c }
+
 func (t *fakeTimer) Stop() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	stopped := t.when.IsZero()
 	t.when = time.Time{}
 	return stopped
+}
+
+func (t *fakeTimer) Reset(d time.Duration) bool {
+	if t.c != nil || t.f == nil {
+		panic("fakeTimer only supports Reset on AfterFunc timers")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.hooks.lock()
+	defer t.hooks.unlock()
+	active := !t.when.IsZero()
+	t.when = t.hooks.now.Add(d)
+	if !active {
+		t.hooks.timers = append(t.hooks.timers, t)
+	}
+	return active
 }
