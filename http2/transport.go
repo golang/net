@@ -310,7 +310,7 @@ type ClientConn struct {
 	readerErr  error         // set before readerDone is closed
 
 	idleTimeout time.Duration // or 0 for never
-	idleTimer   *time.Timer
+	idleTimer   timer
 
 	mu              sync.Mutex // guards following
 	cond            *sync.Cond // hold mu; broadcast on flow/closed changes
@@ -828,7 +828,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, hooks *testSyncHoo
 	}
 	if d := t.idleConnTimeout(); d != 0 {
 		cc.idleTimeout = d
-		cc.idleTimer = time.AfterFunc(d, cc.onIdleTimeout)
+		cc.idleTimer = cc.afterFunc(d, cc.onIdleTimeout)
 	}
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())

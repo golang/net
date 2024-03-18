@@ -97,63 +97,83 @@ func startH2cServer(t *testing.T) net.Listener {
 
 func TestIdleConnTimeout(t *testing.T) {
 	for _, test := range []struct {
+		name            string
 		idleConnTimeout time.Duration
 		wait            time.Duration
 		baseTransport   *http.Transport
-		wantConns       int32
+		wantNewConn     bool
 	}{{
+		name:            "NoExpiry",
 		idleConnTimeout: 2 * time.Second,
 		wait:            1 * time.Second,
 		baseTransport:   nil,
-		wantConns:       1,
+		wantNewConn:     false,
 	}, {
+		name:            "H2TransportTimeoutExpires",
 		idleConnTimeout: 1 * time.Second,
 		wait:            2 * time.Second,
 		baseTransport:   nil,
-		wantConns:       5,
+		wantNewConn:     true,
 	}, {
+		name:            "H1TransportTimeoutExpires",
 		idleConnTimeout: 0 * time.Second,
 		wait:            1 * time.Second,
 		baseTransport: &http.Transport{
 			IdleConnTimeout: 2 * time.Second,
 		},
-		wantConns: 1,
+		wantNewConn: false,
 	}} {
-		var gotConns int32
+		t.Run(test.name, func(t *testing.T) {
+			tt := newTestTransport(t, func(tr *Transport) {
+				tr.IdleConnTimeout = test.idleConnTimeout
+			})
+			var tc *testClientConn
+			for i := 0; i < 3; i++ {
+				req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+				rt := tt.roundTrip(req)
 
-		st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-			io.WriteString(w, r.RemoteAddr)
-		}, optOnlyServer)
-		defer st.Close()
+				// This request happens on a new conn if it's the first request
+				// (and there is no cached conn), or if the test timeout is long
+				// enough that old conns are being closed.
+				wantConn := i == 0 || test.wantNewConn
+				if has := tt.hasConn(); has != wantConn {
+					t.Fatalf("request %v: hasConn=%v, want %v", i, has, wantConn)
+				}
+				if wantConn {
+					tc = tt.getConn()
+					// Read client's SETTINGS and first WINDOW_UPDATE,
+					// send our SETTINGS.
+					tc.wantFrameType(FrameSettings)
+					tc.wantFrameType(FrameWindowUpdate)
+					tc.writeSettings()
+				}
+				if tt.hasConn() {
+					t.Fatalf("request %v: Transport has more than one conn", i)
+				}
 
-		tr := &Transport{
-			IdleConnTimeout: test.idleConnTimeout,
-			TLSClientConfig: tlsConfigInsecure,
-		}
-		defer tr.CloseIdleConnections()
+				// Respond to the client's request.
+				hf := testClientConnReadFrame[*MetaHeadersFrame](tc)
+				tc.writeHeaders(HeadersFrameParam{
+					StreamID:   hf.StreamID,
+					EndHeaders: true,
+					EndStream:  true,
+					BlockFragment: tc.makeHeaderBlockFragment(
+						":status", "200",
+					),
+				})
+				rt.wantStatus(200)
 
-		for i := 0; i < 5; i++ {
-			req, _ := http.NewRequest("GET", st.ts.URL, http.NoBody)
-			trace := &httptrace.ClientTrace{
-				GotConn: func(connInfo httptrace.GotConnInfo) {
-					if !connInfo.Reused {
-						atomic.AddInt32(&gotConns, 1)
-					}
-				},
+				// If this was a newly-accepted conn, read the SETTINGS ACK.
+				if wantConn {
+					tc.wantFrameType(FrameSettings) // ACK to our settings
+				}
+
+				tt.advance(test.wait)
+				if got, want := tc.netConnClosed, test.wantNewConn; got != want {
+					t.Fatalf("after waiting %v, conn closed=%v; want %v", test.wait, got, want)
+				}
 			}
-			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-
-			_, err := tr.RoundTrip(req)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-
-			<-time.After(test.wait)
-		}
-
-		if gotConns != test.wantConns {
-			t.Errorf("incorrect gotConns: %d != %d", gotConns, test.wantConns)
-		}
+		})
 	}
 }
 
