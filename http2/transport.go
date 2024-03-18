@@ -184,6 +184,8 @@ type Transport struct {
 
 	connPoolOnce  sync.Once
 	connPoolOrDef ClientConnPool // non-nil version of ConnPool
+
+	syncHooks *testSyncHooks
 }
 
 func (t *Transport) maxHeaderListSize() uint32 {
@@ -597,15 +599,6 @@ func authorityAddr(scheme string, authority string) (addr string) {
 	return net.JoinHostPort(host, port)
 }
 
-var retryBackoffHook func(time.Duration) *time.Timer
-
-func backoffNewTimer(d time.Duration) *time.Timer {
-	if retryBackoffHook != nil {
-		return retryBackoffHook(d)
-	}
-	return time.NewTimer(d)
-}
-
 // RoundTripOpt is like RoundTrip, but takes options.
 func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Response, error) {
 	if !(req.URL.Scheme == "https" || (req.URL.Scheme == "http" && t.AllowHTTP)) {
@@ -633,13 +626,27 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 				backoff := float64(uint(1) << (uint(retry) - 1))
 				backoff += backoff * (0.1 * mathrand.Float64())
 				d := time.Second * time.Duration(backoff)
-				timer := backoffNewTimer(d)
+				var tm timer
+				if t.syncHooks != nil {
+					tm = t.syncHooks.newTimer(d)
+					t.syncHooks.blockUntil(func() bool {
+						select {
+						case <-tm.C():
+						case <-req.Context().Done():
+						default:
+							return false
+						}
+						return true
+					})
+				} else {
+					tm = newTimeTimer(d)
+				}
 				select {
-				case <-timer.C:
+				case <-tm.C():
 					t.vlogf("RoundTrip retrying after failure: %v", roundTripErr)
 					continue
 				case <-req.Context().Done():
-					timer.Stop()
+					tm.Stop()
 					err = req.Context().Err()
 				}
 			}
@@ -718,6 +725,9 @@ func canRetryError(err error) bool {
 }
 
 func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse bool) (*ClientConn, error) {
+	if t.syncHooks != nil {
+		return t.newClientConn(nil, singleUse, t.syncHooks)
+	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -814,6 +824,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, hooks *testSyncHoo
 	}
 	if hooks != nil {
 		hooks.newclientconn(cc)
+		c = cc.tconn
 	}
 	if d := t.idleConnTimeout(); d != 0 {
 		cc.idleTimeout = d

@@ -3688,61 +3688,49 @@ func TestTransportRetryAfterRefusedStream(t *testing.T) {
 }
 
 func TestTransportRetryHasLimit(t *testing.T) {
-	// Skip in short mode because the total expected delay is 1s+2s+4s+8s+16s=29s.
-	if testing.Short() {
-		t.Skip("skipping long test in short mode")
-	}
-	retryBackoffHook = func(d time.Duration) *time.Timer {
-		return time.NewTimer(0) // fires immediately
-	}
-	defer func() {
-		retryBackoffHook = nil
-	}()
-	clientDone := make(chan struct{})
-	ct := newClientTester(t)
-	ct.client = func() error {
-		defer ct.cc.(*net.TCPConn).CloseWrite()
-		if runtime.GOOS == "plan9" {
-			// CloseWrite not supported on Plan 9; Issue 17906
-			defer ct.cc.(*net.TCPConn).Close()
+	tt := newTestTransport(t)
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tt.roundTrip(req)
+
+	// First attempt: Server sends a GOAWAY.
+	tc := tt.getConn()
+	tc.wantFrameType(FrameSettings)
+	tc.wantFrameType(FrameWindowUpdate)
+
+	var totalDelay time.Duration
+	count := 0
+	for streamID := uint32(1); ; streamID += 2 {
+		count++
+		tc.wantHeaders(wantHeader{
+			streamID:  streamID,
+			endStream: true,
+		})
+		if streamID == 1 {
+			tc.writeSettings()
+			tc.wantFrameType(FrameSettings) // settings ACK
 		}
-		defer close(clientDone)
-		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
-		resp, err := ct.tr.RoundTrip(req)
-		if err == nil {
-			return fmt.Errorf("RoundTrip expected error, got response: %+v", resp)
-		}
-		t.Logf("expected error, got: %v", err)
-		return nil
-	}
-	ct.server = func() error {
-		ct.greet()
-		for {
-			f, err := ct.fr.ReadFrame()
-			if err != nil {
-				select {
-				case <-clientDone:
-					// If the client's done, it
-					// will have reported any
-					// errors on its side.
-					return nil
-				default:
-					return err
-				}
+		tc.writeRSTStream(streamID, ErrCodeRefusedStream)
+
+		d := tt.tr.syncHooks.timeUntilEvent()
+		if d == 0 {
+			if streamID == 1 {
+				continue
 			}
-			switch f := f.(type) {
-			case *WindowUpdateFrame, *SettingsFrame:
-			case *HeadersFrame:
-				if !f.HeadersEnded() {
-					return fmt.Errorf("headers should have END_HEADERS be ended: %v", f)
-				}
-				ct.fr.WriteRSTStream(f.StreamID, ErrCodeRefusedStream)
-			default:
-				return fmt.Errorf("Unexpected client frame %v", f)
-			}
+			break
 		}
+		totalDelay += d
+		if totalDelay > 5*time.Minute {
+			t.Fatalf("RoundTrip still retrying after %v, should have given up", totalDelay)
+		}
+		tt.advance(d)
 	}
-	ct.run()
+	if got, want := count, 5; got < count {
+		t.Errorf("RoundTrip made %v attempts, want at least %v", got, want)
+	}
+	if rt.err() == nil {
+		t.Errorf("RoundTrip succeeded, want error")
+	}
 }
 
 func TestTransportResponseDataBeforeHeaders(t *testing.T) {
@@ -5593,155 +5581,80 @@ func TestTransportCloseRequestBody(t *testing.T) {
 	}
 }
 
-// collectClientsConnPool is a ClientConnPool that wraps lower and
-// collects what calls were made on it.
-type collectClientsConnPool struct {
-	lower ClientConnPool
-
-	mu      sync.Mutex
-	getErrs int
-	got     []*ClientConn
-}
-
-func (p *collectClientsConnPool) GetClientConn(req *http.Request, addr string) (*ClientConn, error) {
-	cc, err := p.lower.GetClientConn(req, addr)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if err != nil {
-		p.getErrs++
-		return nil, err
-	}
-	p.got = append(p.got, cc)
-	return cc, nil
-}
-
-func (p *collectClientsConnPool) MarkDead(cc *ClientConn) {
-	p.lower.MarkDead(cc)
-}
-
 func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
-	ct := newClientTester(t)
-	pool := &collectClientsConnPool{
-		lower: &clientConnPool{t: ct.tr},
+	// This test verifies that
+	//   - receiving a protocol error on a connection does not interfere with
+	//     other requests in flight on that connection;
+	//   - the connection is not reused for further requests; and
+	//   - the failed request is retried on a new connecection.
+	tt := newTestTransport(t)
+
+	// Start two requests. The first is a long request
+	// that will finish after the second. The second one
+	// will result in the protocol error.
+
+	// Request #1: The long request.
+	req1, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt1 := tt.roundTrip(req1)
+	tc1 := tt.getConn()
+	tc1.wantFrameType(FrameSettings)
+	tc1.wantFrameType(FrameWindowUpdate)
+	tc1.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
+	tc1.writeSettings()
+	tc1.wantFrameType(FrameSettings) // settings ACK
+
+	// Request #2(a): The short request.
+	req2, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt2 := tt.roundTrip(req2)
+	tc1.wantHeaders(wantHeader{
+		streamID:  3,
+		endStream: true,
+	})
+
+	// Request #2(a) fails with ErrCodeProtocol.
+	tc1.writeRSTStream(3, ErrCodeProtocol)
+	if rt1.done() {
+		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #1 is done; want still in progress")
 	}
-	ct.tr.ConnPool = pool
-
-	gotProtoError := make(chan bool, 1)
-	ct.tr.CountError = func(errType string) {
-		if errType == "recv_rststream_PROTOCOL_ERROR" {
-			select {
-			case gotProtoError <- true:
-			default:
-			}
-		}
+	if rt2.done() {
+		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #2 is done; want still in progress")
 	}
-	ct.client = func() error {
-		// Start two requests. The first is a long request
-		// that will finish after the second. The second one
-		// will result in the protocol error.  We check that
-		// after the first one closes, the connection then
-		// shuts down.
 
-		// The long, outer request.
-		req1, _ := http.NewRequest("GET", "https://dummy.tld/long", nil)
-		res1, err := ct.tr.RoundTrip(req1)
-		if err != nil {
-			return err
-		}
-		if got, want := res1.Header.Get("Is-Long"), "1"; got != want {
-			return fmt.Errorf("First response's Is-Long header = %q; want %q", got, want)
-		}
+	// Request #2(b): The short request is retried on a new connection.
+	tc2 := tt.getConn()
+	tc2.wantFrameType(FrameSettings)
+	tc2.wantFrameType(FrameWindowUpdate)
+	tc2.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
+	tc2.writeSettings()
+	tc2.wantFrameType(FrameSettings) // settings ACK
 
-		req, _ := http.NewRequest("POST", "https://dummy.tld/fails", nil)
-		res, err := ct.tr.RoundTrip(req)
-		const want = "only one dial allowed in test mode"
-		if got := fmt.Sprint(err); got != want {
-			t.Errorf("didn't dial again: got %#q; want %#q", got, want)
-		}
-		if res != nil {
-			res.Body.Close()
-		}
-		select {
-		case <-gotProtoError:
-		default:
-			t.Errorf("didn't get stream protocol error")
-		}
+	// Request #2(b) succeeds.
+	tc2.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc1.makeHeaderBlockFragment(
+			":status", "201",
+		),
+	})
+	rt2.wantStatus(201)
 
-		if n, err := res1.Body.Read(make([]byte, 10)); err != io.EOF || n != 0 {
-			t.Errorf("unexpected body read %v, %v", n, err)
-		}
-
-		pool.mu.Lock()
-		defer pool.mu.Unlock()
-		if pool.getErrs != 1 {
-			t.Errorf("pool get errors = %v; want 1", pool.getErrs)
-		}
-		if len(pool.got) == 2 {
-			if pool.got[0] != pool.got[1] {
-				t.Errorf("requests went on different connections")
-			}
-			cc := pool.got[0]
-			cc.mu.Lock()
-			if !cc.doNotReuse {
-				t.Error("ClientConn not marked doNotReuse")
-			}
-			cc.mu.Unlock()
-
-			select {
-			case <-cc.readerDone:
-			case <-time.After(5 * time.Second):
-				t.Errorf("timeout waiting for reader to be done")
-			}
-		} else {
-			t.Errorf("pool get success = %v; want 2", len(pool.got))
-		}
-		return nil
-	}
-	ct.server = func() error {
-		ct.greet()
-		var sentErr bool
-		var numHeaders int
-		var firstStreamID uint32
-
-		var hbuf bytes.Buffer
-		enc := hpack.NewEncoder(&hbuf)
-
-		for {
-			f, err := ct.fr.ReadFrame()
-			if err == io.EOF {
-				// Client hung up on us, as it should at the end.
-				return nil
-			}
-			if err != nil {
-				return nil
-			}
-			switch f := f.(type) {
-			case *WindowUpdateFrame, *SettingsFrame:
-			case *HeadersFrame:
-				numHeaders++
-				if numHeaders == 1 {
-					firstStreamID = f.StreamID
-					hbuf.Reset()
-					enc.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
-					enc.WriteField(hpack.HeaderField{Name: "is-long", Value: "1"})
-					ct.fr.WriteHeaders(HeadersFrameParam{
-						StreamID:      f.StreamID,
-						EndHeaders:    true,
-						EndStream:     false,
-						BlockFragment: hbuf.Bytes(),
-					})
-					continue
-				}
-				if !sentErr {
-					sentErr = true
-					ct.fr.WriteRSTStream(f.StreamID, ErrCodeProtocol)
-					ct.fr.WriteData(firstStreamID, true, nil)
-					continue
-				}
-			}
-		}
-	}
-	ct.run()
+	// Request #1 succeeds.
+	tc1.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc1.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt1.wantStatus(200)
 }
 
 func TestClientConnReservations(t *testing.T) {
