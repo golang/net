@@ -4578,13 +4578,16 @@ func TestCanonicalHeaderCacheGrowth(t *testing.T) {
 		sc := &serverConn{
 			serveG: newGoroutineLock(),
 		}
-		const count = 1000
-		for i := 0; i < count; i++ {
-			h := fmt.Sprintf("%v-%v", base, i)
+		count := 0
+		added := 0
+		for added < 10*maxCachedCanonicalHeadersKeysSize {
+			h := fmt.Sprintf("%v-%v", base, count)
 			c := sc.canonicalHeader(h)
 			if len(h) != len(c) {
 				t.Errorf("sc.canonicalHeader(%q) = %q, want same length", h, c)
 			}
+			count++
+			added += len(h)
 		}
 		total := 0
 		for k, v := range sc.canonHeader {
