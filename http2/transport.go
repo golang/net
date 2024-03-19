@@ -2019,6 +2019,22 @@ func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) 
 	}
 }
 
+func validateHeaders(hdrs http.Header) string {
+	for k, vv := range hdrs {
+		if !httpguts.ValidHeaderFieldName(k) {
+			return fmt.Sprintf("name %q", k)
+		}
+		for _, v := range vv {
+			if !httpguts.ValidHeaderFieldValue(v) {
+				// Don't include the value in the error,
+				// because it may be sensitive.
+				return fmt.Sprintf("value for header %q", k)
+			}
+		}
+	}
+	return ""
+}
+
 var errNilRequestURL = errors.New("http2: Request.URI is nil")
 
 // requires cc.wmu be held.
@@ -2056,19 +2072,14 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		}
 	}
 
-	// Check for any invalid headers and return an error before we
+	// Check for any invalid headers+trailers and return an error before we
 	// potentially pollute our hpack state. (We want to be able to
 	// continue to reuse the hpack encoder for future requests)
-	for k, vv := range req.Header {
-		if !httpguts.ValidHeaderFieldName(k) {
-			return nil, fmt.Errorf("invalid HTTP header name %q", k)
-		}
-		for _, v := range vv {
-			if !httpguts.ValidHeaderFieldValue(v) {
-				// Don't include the value in the error, because it may be sensitive.
-				return nil, fmt.Errorf("invalid HTTP header value for header %q", k)
-			}
-		}
+	if err := validateHeaders(req.Header); err != "" {
+		return nil, fmt.Errorf("invalid HTTP header %s", err)
+	}
+	if err := validateHeaders(req.Trailer); err != "" {
+		return nil, fmt.Errorf("invalid HTTP trailer %s", err)
 	}
 
 	enumerateHeaders := func(f func(name, value string)) {

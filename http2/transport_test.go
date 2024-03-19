@@ -2290,7 +2290,8 @@ func TestTransportRejectsContentLengthWithSign(t *testing.T) {
 }
 
 // golang.org/issue/14048
-func TestTransportFailsOnInvalidHeaders(t *testing.T) {
+// golang.org/issue/64766
+func TestTransportFailsOnInvalidHeadersAndTrailers(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		var got []string
 		for k := range r.Header {
@@ -2303,6 +2304,7 @@ func TestTransportFailsOnInvalidHeaders(t *testing.T) {
 
 	tests := [...]struct {
 		h       http.Header
+		t       http.Header
 		wantErr string
 	}{
 		0: {
@@ -2321,6 +2323,14 @@ func TestTransportFailsOnInvalidHeaders(t *testing.T) {
 			h:       http.Header{"foo": {"foo\x01bar"}},
 			wantErr: `invalid HTTP header value for header "foo"`,
 		},
+		4: {
+			t:       http.Header{"foo": {"foo\x01bar"}},
+			wantErr: `invalid HTTP trailer value for header "foo"`,
+		},
+		5: {
+			t:       http.Header{"x-\r\nda": {"foo\x01bar"}},
+			wantErr: `invalid HTTP trailer name "x-\r\nda"`,
+		},
 	}
 
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
@@ -2329,6 +2339,7 @@ func TestTransportFailsOnInvalidHeaders(t *testing.T) {
 	for i, tt := range tests {
 		req, _ := http.NewRequest("GET", st.ts.URL, nil)
 		req.Header = tt.h
+		req.Trailer = tt.t
 		res, err := tr.RoundTrip(req)
 		var bad bool
 		if tt.wantErr == "" {
