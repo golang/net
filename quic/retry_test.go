@@ -521,7 +521,7 @@ func TestParseInvalidRetryPackets(t *testing.T) {
 	}} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, ok := parseRetryPacket(test.pkt, originalDstConnID); ok {
-				t.Errorf("parseRetryPacket succeded, want failure")
+				t.Errorf("parseRetryPacket succeeded, want failure")
 			}
 		})
 	}

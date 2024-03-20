@@ -50,7 +50,7 @@ func (s *rangeset[T]) add(start, end T) {
 		if end <= r.end {
 			return
 		}
-		// Possibly coalesce subsquent ranges into range i.
+		// Possibly coalesce subsequent ranges into range i.
 		r.end = end
 		j := i + 1
 		for ; j < len(*s) && r.end >= (*s)[j].start; j++ {

@@ -39,10 +39,10 @@ func TestVersionNegotiationServerReceivesUnknownVersion(t *testing.T) {
 	})
 	gotPkt := te.read()
 	if gotPkt == nil {
-		t.Fatalf("got no response; want Version Negotiaion")
+		t.Fatalf("got no response; want Version Negotiation")
 	}
 	if got := getPacketType(gotPkt); got != packetTypeVersionNegotiation {
-		t.Fatalf("got packet type %v; want Version Negotiaion", got)
+		t.Fatalf("got packet type %v; want Version Negotiation", got)
 	}
 	gotDst, gotSrc, versions := parseVersionNegotiation(gotPkt)
 	if got, want := gotDst, srcConnID; !bytes.Equal(got, want) {
