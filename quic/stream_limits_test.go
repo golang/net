@@ -249,7 +249,7 @@ func TestStreamLimitStopSendingDoesNotUpdateMaxStreams(t *testing.T) {
 	tc.writeFrames(packetType1RTT, debugFrameStopSending{
 		id: s.id,
 	})
-	tc.wantFrame("recieved STOP_SENDING, send RESET_STREAM",
+	tc.wantFrame("received STOP_SENDING, send RESET_STREAM",
 		packetType1RTT, debugFrameResetStream{
 			id: s.id,
 		})

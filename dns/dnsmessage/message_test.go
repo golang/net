@@ -1635,7 +1635,7 @@ func FuzzUnpackPack(f *testing.F) {
 
 		msgPacked, err := m.Pack()
 		if err != nil {
-			t.Fatalf("failed to pack message that was succesfully unpacked: %v", err)
+			t.Fatalf("failed to pack message that was successfully unpacked: %v", err)
 		}
 
 		var m2 Message
