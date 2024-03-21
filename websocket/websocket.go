@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -208,7 +207,7 @@ again:
 	n, err = ws.frameReader.Read(msg)
 	if err == io.EOF {
 		if trailer := ws.frameReader.TrailerReader(); trailer != nil {
-			io.Copy(ioutil.Discard, trailer)
+			io.Copy(io.Discard, trailer)
 		}
 		ws.frameReader = nil
 		goto again
@@ -298,13 +297,13 @@ func (ws *Conn) Config() *Config { return ws.config }
 func (ws *Conn) Request() *http.Request { return ws.request }
 
 // Codec represents a symmetric pair of functions that implement a codec.
-type Codec struct {
-	Marshal   func(v interface{}) (data []byte, payloadType byte, err error)
+type Codec[T any] struct {
+	Marshal   func(v T) (data []byte, payloadType byte, err error)
 	Unmarshal func(data []byte, payloadType byte, v interface{}) (err error)
 }
 
 // Send sends v marshaled by cd.Marshal as single frame to ws.
-func (cd Codec) Send(ws *Conn, v interface{}) (err error) {
+func (cd Codec[T]) Send(ws *Conn, v T) (err error) {
 	data, payloadType, err := cd.Marshal(v)
 	if err != nil {
 		return err
@@ -326,11 +325,11 @@ func (cd Codec) Send(ws *Conn, v interface{}) (err error) {
 // limit, ErrFrameTooLarge is returned; in this case frame is not read off wire
 // completely. The next call to Receive would read and discard leftover data of
 // previous oversized frame before processing next frame.
-func (cd Codec) Receive(ws *Conn, v interface{}) (err error) {
+func (cd Codec[T]) Receive(ws *Conn, v interface{}) (err error) {
 	ws.rio.Lock()
 	defer ws.rio.Unlock()
 	if ws.frameReader != nil {
-		_, err = io.Copy(ioutil.Discard, ws.frameReader)
+		_, err = io.Copy(io.Discard, ws.frameReader)
 		if err != nil {
 			return err
 		}
@@ -362,7 +361,7 @@ again:
 		return ErrFrameTooLarge
 	}
 	payloadType := frame.PayloadType()
-	data, err := ioutil.ReadAll(frame)
+	data, err := io.ReadAll(frame)
 	if err != nil {
 		return err
 	}
@@ -416,7 +415,7 @@ Trivial usage:
 	data = []byte{0, 1, 2}
 	websocket.Message.Send(ws, data)
 */
-var Message = Codec{marshal, unmarshal}
+var Message = Codec[interface{}]{Marshal: marshal, Unmarshal: unmarshal}
 
 func jsonMarshal(v interface{}) (msg []byte, payloadType byte, err error) {
 	msg, err = json.Marshal(v)
@@ -446,4 +445,4 @@ Trivial usage:
 	// send JSON type T
 	websocket.JSON.Send(ws, data)
 */
-var JSON = Codec{jsonMarshal, jsonUnmarshal}
+var JSON = Codec[interface{}]{Marshal: jsonMarshal, Unmarshal: jsonUnmarshal}
