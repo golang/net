@@ -170,6 +170,22 @@ func (h *Handler) confirmLocks(r *http.Request, src, dst string) (release func()
 	return nil, http.StatusPreconditionFailed, ErrLocked
 }
 
+func (h *Handler) deleteLocks(reqPath string) (status int, err error) {
+	deleter, ok := h.LockSystem.(LockDeleter)
+	if !ok {
+		// Can't delete -- system doesn't support it. Assume it can handle this case
+		return 0, nil
+	}
+
+	err = deleter.Delete(time.Now(), reqPath)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+
+}
+
 func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request) (status int, err error) {
 	reqPath, status, err := h.stripPrefix(r.URL.Path)
 	if err != nil {
@@ -247,6 +263,10 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) (status i
 	}
 	if err := h.FileSystem.RemoveAll(ctx, reqPath); err != nil {
 		return http.StatusMethodNotAllowed, err
+	}
+
+	if status, err := h.deleteLocks(reqPath); err != nil {
+		return status, err
 	}
 	return http.StatusNoContent, nil
 }
@@ -387,7 +407,17 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request) (status
 			return http.StatusBadRequest, errInvalidDepth
 		}
 	}
-	return moveFiles(ctx, h.FileSystem, src, dst, r.Header.Get("Overwrite") == "T")
+	status, err = moveFiles(ctx, h.FileSystem, src, dst, r.Header.Get("Overwrite") == "T")
+	if status < 200 || status > 300 {
+		return status, err
+	}
+
+	delStatus, err := h.deleteLocks(src)
+	if err != nil {
+		return delStatus, err
+	}
+
+	return status, err
 }
 
 func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus int, retErr error) {
