@@ -68,7 +68,7 @@ Sec-WebSocket-Protocol: chat
 		config.handshakeData = map[string]string{
 			"key": "dGhlIHNhbXBsZSBub25jZQ==",
 		}
-		if err := hybiClientHandshake(&config, br, bw); err != nil {
+		if _, err := hybiClientHandshake(&config, br, bw); err != nil {
 			t.Fatal("handshake", err)
 		}
 		req, err := http.ReadRequest(bufio.NewReader(&b))
@@ -132,7 +132,7 @@ Sec-WebSocket-Protocol: chat
 	config.handshakeData = map[string]string{
 		"key": "dGhlIHNhbXBsZSBub25jZQ==",
 	}
-	err = hybiClientHandshake(config, br, bw)
+	_, err = hybiClientHandshake(config, br, bw)
 	if err != nil {
 		t.Errorf("handshake failed: %v", err)
 	}
