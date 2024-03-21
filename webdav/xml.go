@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	// As of https://go-review.googlesource.com/#/c/12772/ which was submitted
@@ -87,6 +88,11 @@ func writeLockInfo(w io.Writer, token string, ld LockDetails) (int, error) {
 		depth = "0"
 	}
 	timeout := ld.Duration / time.Second
+	// PathEscape the root. Any URLs in this response body should match data on the wire
+	// meaning if a request came in escaped (which it should have), it should go out that
+	// way as well.
+	rootUrl := url.URL{Path: ld.Root}
+	root := rootUrl.EscapedPath()
 	return fmt.Fprintf(w, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"+
 		"<D:prop xmlns:D=\"DAV:\"><D:lockdiscovery><D:activelock>\n"+
 		"	<D:locktype><D:write/></D:locktype>\n"+
@@ -97,7 +103,7 @@ func writeLockInfo(w io.Writer, token string, ld LockDetails) (int, error) {
 		"	<D:locktoken><D:href>%s</D:href></D:locktoken>\n"+
 		"	<D:lockroot><D:href>%s</D:href></D:lockroot>\n"+
 		"</D:activelock></D:lockdiscovery></D:prop>",
-		depth, ld.OwnerXML, timeout, escape(token), escape(ld.Root),
+		depth, ld.OwnerXML, timeout, escape(token), escape(root),
 	)
 }
 
