@@ -1591,7 +1591,7 @@ func (fr *Framer) readMetaFrame(hf *HeadersFrame) (*MetaHeadersFrame, error) {
 				log.Printf("http2: header list too large")
 			}
 			// It would be nice to send a RST_STREAM before sending the GOAWAY,
-			// but the struture of the server's frame writer makes this difficult.
+			// but the structure of the server's frame writer makes this difficult.
 			return nil, ConnectionError(ErrCodeProtocol)
 		}
 
@@ -1603,7 +1603,7 @@ func (fr *Framer) readMetaFrame(hf *HeadersFrame) (*MetaHeadersFrame, error) {
 				log.Printf("http2: invalid header: %v", invalid)
 			}
 			// It would be nice to send a RST_STREAM before sending the GOAWAY,
-			// but the struture of the server's frame writer makes this difficult.
+			// but the structure of the server's frame writer makes this difficult.
 			return nil, ConnectionError(ErrCodeProtocol)
 		}
 
