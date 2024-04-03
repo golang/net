@@ -4896,22 +4896,24 @@ func TestServerContinuationFlood(t *testing.T) {
 		"x-last-header", "1",
 	))
 
-	var sawGoAway bool
 	for {
 		f, err := st.readFrame()
 		if err != nil {
 			break
 		}
 		switch f.(type) {
-		case *GoAwayFrame:
-			sawGoAway = true
 		case *HeadersFrame:
-			t.Fatalf("received HEADERS frame; want GOAWAY")
+			t.Fatalf("received HEADERS frame; want GOAWAY and a closed connection")
 		}
 	}
-	if !sawGoAway {
-		t.Errorf("connection closed with no GOAWAY frame; want one")
-	}
+	// We expect to have seen a GOAWAY before the connection closes,
+	// but the server will close the connection after one second
+	// whether or not it has finished sending the GOAWAY. On windows-amd64-race
+	// builders, this fairly consistently results in the connection closing without
+	// the GOAWAY being sent.
+	//
+	// Since the server's behavior is inherently racy here and the important thing
+	// is that the connection is closed, don't check for the GOAWAY having been sent.
 }
 
 func TestServerContinuationAfterInvalidHeader(t *testing.T) {
