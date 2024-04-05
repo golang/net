@@ -3144,13 +3144,40 @@ func TestTransportPingWhenReadingPingDisabled(t *testing.T) {
 	}
 }
 
-func TestTransportRetryAfterGOAWAY(t *testing.T) {
+func TestTransportRetryAfterGOAWAYNoRetry(t *testing.T) {
 	tt := newTestTransport(t)
 
 	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
 	rt := tt.roundTrip(req)
 
-	// First attempt: Server sends a GOAWAY.
+	// First attempt: Server sends a GOAWAY with an error and
+	// a MaxStreamID less than the request ID.
+	// This probably indicates that there was something wrong with our request,
+	// so we don't retry it.
+	tc := tt.getConn()
+	tc.wantFrameType(FrameSettings)
+	tc.wantFrameType(FrameWindowUpdate)
+	tc.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
+	tc.writeSettings()
+	tc.writeGoAway(0 /*max id*/, ErrCodeInternal, nil)
+	if rt.err() == nil {
+		t.Fatalf("after GOAWAY, RoundTrip is not done, want error")
+	}
+}
+
+func TestTransportRetryAfterGOAWAYRetry(t *testing.T) {
+	tt := newTestTransport(t)
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tt.roundTrip(req)
+
+	// First attempt: Server sends a GOAWAY with ErrCodeNo and
+	// a MaxStreamID less than the request ID.
+	// We take the server at its word that nothing has really gone wrong,
+	// and retry the request.
 	tc := tt.getConn()
 	tc.wantFrameType(FrameSettings)
 	tc.wantFrameType(FrameWindowUpdate)
@@ -3183,6 +3210,69 @@ func TestTransportRetryAfterGOAWAY(t *testing.T) {
 	})
 
 	rt.wantStatus(200)
+}
+
+func TestTransportRetryAfterGOAWAYSecondRequest(t *testing.T) {
+	tt := newTestTransport(t)
+
+	// First request succeeds.
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt1 := tt.roundTrip(req)
+	tc := tt.getConn()
+	tc.wantFrameType(FrameSettings)
+	tc.wantFrameType(FrameWindowUpdate)
+	tc.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
+	tc.writeSettings()
+	tc.wantFrameType(FrameSettings) // Settings ACK
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt1.wantStatus(200)
+
+	// Second request: Server sends a GOAWAY with
+	// a MaxStreamID less than the request ID.
+	// The server says it didn't see this request,
+	// so we retry it on a new connection.
+	req, _ = http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt2 := tt.roundTrip(req)
+
+	// Second request, first attempt.
+	tc.wantHeaders(wantHeader{
+		streamID:  3,
+		endStream: true,
+	})
+	tc.writeSettings()
+	tc.writeGoAway(1 /*max id*/, ErrCodeProtocol, nil)
+	if rt2.done() {
+		t.Fatalf("after GOAWAY, RoundTrip is done; want it to be retrying")
+	}
+
+	// Second request, second attempt.
+	tc = tt.getConn()
+	tc.wantFrameType(FrameSettings)
+	tc.wantFrameType(FrameWindowUpdate)
+	tc.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
+	tc.writeSettings()
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt2.wantStatus(200)
 }
 
 func TestTransportRetryAfterRefusedStream(t *testing.T) {
