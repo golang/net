@@ -4809,9 +4809,17 @@ func TestServerContinuationFlood(t *testing.T) {
 		if err != nil {
 			break
 		}
-		switch f.(type) {
+		switch f := f.(type) {
 		case *HeadersFrame:
 			t.Fatalf("received HEADERS frame; want GOAWAY and a closed connection")
+		case *GoAwayFrame:
+			// We might not see the GOAWAY (see below), but if we do it should
+			// indicate that the server processed this request so the client doesn't
+			// attempt to retry it.
+			if got, want := f.LastStreamID, uint32(1); got != want {
+				t.Errorf("received GOAWAY with LastStreamId %v, want %v", got, want)
+			}
+
 		}
 	}
 	// We expect to have seen a GOAWAY before the connection closes,
