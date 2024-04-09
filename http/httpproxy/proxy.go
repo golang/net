@@ -174,16 +174,8 @@ func (cfg *config) useProxy(addr string) bool {
 	if err != nil {
 		return false
 	}
-	if host == "localhost" {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip != nil {
-		if ip.IsLoopback() {
-			return false
-		}
-	}
 
+	ip := net.ParseIP(host)
 	addr = strings.ToLower(strings.TrimSpace(host))
 
 	if ip != nil {
