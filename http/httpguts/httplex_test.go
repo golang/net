@@ -30,6 +30,15 @@ func TestIsTokenRune(t *testing.T) {
 	}
 }
 
+func BenchmarkIsTokenRune(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var r rune
+		for ; r < 1024; r++ {
+			IsTokenRune(r)
+		}
+	}
+}
+
 func TestHeaderValuesContainsToken(t *testing.T) {
 	tests := []struct {
 		vals  []string
