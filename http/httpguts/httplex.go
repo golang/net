@@ -97,10 +97,6 @@ func IsTokenRune(r rune) bool {
 	return i < len(isTokenTable) && isTokenTable[i]
 }
 
-func isNotToken(r rune) bool {
-	return !IsTokenRune(r)
-}
-
 // HeaderValuesContainsToken reports whether any string in values
 // contains the provided token, ASCII case-insensitively.
 func HeaderValuesContainsToken(values []string, token string) bool {
