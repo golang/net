@@ -20,12 +20,21 @@ func isSeparator(c rune) bool {
 	return false
 }
 
-func TestIsToken(t *testing.T) {
+func TestIsTokenRune(t *testing.T) {
 	for i := 0; i <= 130; i++ {
 		r := rune(i)
 		expected := isChar(r) && !isCtl(r) && !isSeparator(r)
 		if IsTokenRune(r) != expected {
 			t.Errorf("isToken(0x%x) = %v", r, !expected)
+		}
+	}
+}
+
+func BenchmarkIsTokenRune(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var r rune
+		for ; r < 1024; r++ {
+			IsTokenRune(r)
 		}
 	}
 }
@@ -96,6 +105,44 @@ func TestHeaderValuesContainsToken(t *testing.T) {
 		got := HeaderValuesContainsToken(tt.vals, tt.token)
 		if got != tt.want {
 			t.Errorf("headerValuesContainsToken(%q, %q) = %v; want %v", tt.vals, tt.token, got, tt.want)
+		}
+	}
+}
+
+func TestValidHeaderFieldName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"Accept Charset", false},
+		{"Accept-Charset", true},
+		{"AccepT-EncodinG", true},
+		{"CONNECTION", true},
+		{"résumé", false},
+	}
+	for _, tt := range tests {
+		got := ValidHeaderFieldName(tt.in)
+		if tt.want != got {
+			t.Errorf("ValidHeaderFieldName(%q) = %t; want %t", tt.in, got, tt.want)
+		}
+	}
+}
+
+func BenchmarkValidHeaderFieldName(b *testing.B) {
+	names := []string{
+		"",
+		"Accept Charset",
+		"Accept-Charset",
+		"AccepT-EncodinG",
+		"CONNECTION",
+		"résumé",
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, name := range names {
+			ValidHeaderFieldName(name)
 		}
 	}
 }
