@@ -12,7 +12,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-var isTokenTable = [127]bool{
+var isTokenTable = [256]bool{
 	'!':  true,
 	'#':  true,
 	'$':  true,
@@ -93,8 +93,7 @@ var isTokenTable = [127]bool{
 }
 
 func IsTokenRune(r rune) bool {
-	i := int(r)
-	return i < len(isTokenTable) && isTokenTable[i]
+	return r < utf8.RuneSelf && isTokenTable[byte(r)]
 }
 
 // HeaderValuesContainsToken reports whether any string in values
