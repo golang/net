@@ -109,6 +109,44 @@ func TestHeaderValuesContainsToken(t *testing.T) {
 	}
 }
 
+func TestValidHeaderFieldName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"Accept Charset", false},
+		{"Accept-Charset", true},
+		{"AccepT-EncodinG", true},
+		{"CONNECTION", true},
+		{"résumé", false},
+	}
+	for _, tt := range tests {
+		got := ValidHeaderFieldName(tt.in)
+		if tt.want != got {
+			t.Errorf("ValidHeaderFieldName(%q) = %t; want %t", tt.in, got, tt.want)
+		}
+	}
+}
+
+func BenchmarkValidHeaderFieldName(b *testing.B) {
+	names := []string{
+		"",
+		"Accept Charset",
+		"Accept-Charset",
+		"AccepT-EncodinG",
+		"CONNECTION",
+		"résumé",
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, name := range names {
+			ValidHeaderFieldName(name)
+		}
+	}
+}
+
 func TestPunycodeHostPort(t *testing.T) {
 	tests := []struct {
 		in, want string
