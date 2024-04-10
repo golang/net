@@ -197,8 +197,8 @@ func ValidHeaderFieldName(v string) bool {
 	if len(v) == 0 {
 		return false
 	}
-	for _, r := range v {
-		if !IsTokenRune(r) {
+	for i := 0; i < len(v); i++ {
+		if !isTokenTable[v[i]] {
 			return false
 		}
 	}
