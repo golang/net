@@ -20,7 +20,7 @@ func isSeparator(c rune) bool {
 	return false
 }
 
-func TestIsToken(t *testing.T) {
+func TestIsTokenRune(t *testing.T) {
 	for i := 0; i <= 130; i++ {
 		r := rune(i)
 		expected := isChar(r) && !isCtl(r) && !isSeparator(r)
