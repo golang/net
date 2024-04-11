@@ -826,10 +826,6 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, hooks *testSyncHoo
 		hooks.newclientconn(cc)
 		c = cc.tconn
 	}
-	if d := t.idleConnTimeout(); d != 0 {
-		cc.idleTimeout = d
-		cc.idleTimer = cc.afterFunc(d, cc.onIdleTimeout)
-	}
 	if VerboseLogs {
 		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())
 	}
@@ -891,6 +887,12 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, hooks *testSyncHoo
 	if cc.werr != nil {
 		cc.Close()
 		return nil, cc.werr
+	}
+
+	// Start the idle timer after the connection is fully initialized.
+	if d := t.idleConnTimeout(); d != 0 {
+		cc.idleTimeout = d
+		cc.idleTimer = cc.afterFunc(d, cc.onIdleTimeout)
 	}
 
 	cc.goRun(cc.readLoop)

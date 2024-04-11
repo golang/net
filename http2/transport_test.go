@@ -5426,3 +5426,28 @@ func TestTransportDataAfter1xxHeader(t *testing.T) {
 	}
 	tc.wantFrameType(FrameRSTStream)
 }
+
+func TestIssue66763Race(t *testing.T) {
+	tr := &Transport{
+		IdleConnTimeout: 1 * time.Nanosecond,
+		AllowHTTP:       true, // issue 66763 only occurs when AllowHTTP is true
+	}
+	defer tr.CloseIdleConnections()
+
+	cli, srv := net.Pipe()
+	donec := make(chan struct{})
+	go func() {
+		// Creating the client conn may succeed or fail,
+		// depending on when the idle timeout happens.
+		// Either way, the idle timeout will close the net.Conn.
+		tr.NewClientConn(cli)
+		close(donec)
+	}()
+
+	// The client sends its preface and SETTINGS frame,
+	// and then closes its conn after the idle timeout.
+	io.ReadAll(srv)
+	srv.Close()
+
+	<-donec
+}
