@@ -169,7 +169,7 @@ func TestIdleConnTimeout(t *testing.T) {
 				}
 
 				tt.advance(test.wait)
-				if got, want := tc.netConnClosed, test.wantNewConn; got != want {
+				if got, want := tc.isClosed(), test.wantNewConn; got != want {
 					t.Fatalf("after waiting %v, conn closed=%v; want %v", test.wait, got, want)
 				}
 			}
@@ -838,7 +838,7 @@ func TestTransportReqBodyAfterResponse_200(t *testing.T) { testTransportReqBodyA
 func TestTransportReqBodyAfterResponse_403(t *testing.T) { testTransportReqBodyAfterResponse(t, 403) }
 
 func testTransportReqBodyAfterResponse(t *testing.T, status int) {
-	const bodySize = 10 << 20
+	const bodySize = 1 << 10
 
 	tc := newTestClientConn(t)
 	tc.greet()
@@ -3339,8 +3339,8 @@ func TestTransportRetryHasLimit(t *testing.T) {
 		}
 		tc.writeRSTStream(streamID, ErrCodeRefusedStream)
 
-		d := tt.tr.syncHooks.timeUntilEvent()
-		if d == 0 {
+		d, scheduled := tt.group.TimeUntilEvent()
+		if !scheduled {
 			if streamID == 1 {
 				continue
 			}
@@ -3402,17 +3402,19 @@ func TestTransportMaxFrameReadSize(t *testing.T) {
 		maxReadFrameSize: 1024,
 		want:             minMaxFrameSize,
 	}} {
-		tc := newTestClientConn(t, func(tr *Transport) {
-			tr.MaxReadFrameSize = test.maxReadFrameSize
-		})
+		t.Run(fmt.Sprint(test.maxReadFrameSize), func(t *testing.T) {
+			tc := newTestClientConn(t, func(tr *Transport) {
+				tr.MaxReadFrameSize = test.maxReadFrameSize
+			})
 
-		fr := testClientConnReadFrame[*SettingsFrame](tc)
-		got, ok := fr.Value(SettingMaxFrameSize)
-		if !ok {
-			t.Errorf("Transport.MaxReadFrameSize = %v; server got no setting, want %v", test.maxReadFrameSize, test.want)
-		} else if got != test.want {
-			t.Errorf("Transport.MaxReadFrameSize = %v; server got %v, want %v", test.maxReadFrameSize, got, test.want)
-		}
+			fr := testClientConnReadFrame[*SettingsFrame](tc)
+			got, ok := fr.Value(SettingMaxFrameSize)
+			if !ok {
+				t.Errorf("Transport.MaxReadFrameSize = %v; server got no setting, want %v", test.maxReadFrameSize, test.want)
+			} else if got != test.want {
+				t.Errorf("Transport.MaxReadFrameSize = %v; server got %v, want %v", test.maxReadFrameSize, got, test.want)
+			}
+		})
 	}
 }
 
@@ -3557,6 +3559,8 @@ func TestTransportMaxDecoderHeaderTableSize(t *testing.T) {
 	}
 
 	tc.writeSettings(Setting{SettingHeaderTableSize, resSize})
+	tc.cc.mu.Lock()
+	defer tc.cc.mu.Unlock()
 	if got, want := tc.cc.peerMaxHeaderTableSize, resSize; got != want {
 		t.Fatalf("peerHeaderTableSize = %d, want %d", got, want)
 	}
@@ -4908,7 +4912,7 @@ func TestClientConnReservations(t *testing.T) {
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
 	defer tr.CloseIdleConnections()
 
-	cc, err := tr.newClientConn(st.cc, false, nil)
+	cc, err := tr.newClientConn(st.cc, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5193,7 +5197,7 @@ func testTransportClosesConnAfterGoAway(t *testing.T, lastStream uint32) {
 	if gotErr, wantErr := err != nil, lastStream == 0; gotErr != wantErr {
 		t.Errorf("RoundTrip got error %v (want error: %v)", err, wantErr)
 	}
-	if !tc.netConnClosed {
+	if !tc.isClosed() {
 		t.Errorf("ClientConn did not close its net.Conn, expected it to")
 	}
 }

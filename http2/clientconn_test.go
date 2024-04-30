@@ -9,12 +9,16 @@ package http2
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"reflect"
+	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,17 +97,14 @@ type testClientConn struct {
 	tr    *Transport
 	fr    *Framer
 	cc    *ClientConn
-	hooks *testSyncHooks
+	group *synctestGroup
 
 	encbuf bytes.Buffer
 	enc    *hpack.Encoder
 
 	roundtrips []*testRoundTrip
 
-	rerr          error        // returned by Read
-	netConnClosed bool         // set when the ClientConn closes the net.Conn
-	rbuf          bytes.Buffer // sent to the test conn
-	wbuf          bytes.Buffer // sent by the test conn
+	netconn testClientConnNetConn
 }
 
 func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientConn {
@@ -111,19 +112,24 @@ func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientCo
 		t:     t,
 		tr:    cc.t,
 		cc:    cc,
-		hooks: cc.t.syncHooks,
+		group: cc.t.transportTestHooks.group.(*synctestGroup),
 	}
-	cc.tconn = (*testClientConnNetConn)(tc)
 	tc.enc = hpack.NewEncoder(&tc.encbuf)
-	tc.fr = NewFramer(&tc.rbuf, &tc.wbuf)
+	tc.netconn.gate = newGate()
+
+	// all writes and reads are finished.
+	//
+	// cli is the ClientConn's side, srv is the side controlled by the test.
+	cc.tconn = &tc.netconn
+	tc.fr = NewFramer(
+		(*testClientConnNetConnWriteToClient)(&tc.netconn),
+		(*testClientConnNetConnReadFromClient)(&tc.netconn),
+	)
+
 	tc.fr.ReadMetaHeaders = hpack.NewDecoder(initialHeaderTableSize, nil)
 	tc.fr.SetMaxReadFrameSize(10 << 20)
 	t.Cleanup(func() {
-		tc.sync()
-		if tc.rerr == nil {
-			tc.rerr = io.EOF
-		}
-		tc.sync()
+		tc.closeWrite(io.EOF)
 	})
 	return tc
 }
@@ -132,7 +138,8 @@ func (tc *testClientConn) readClientPreface() {
 	tc.t.Helper()
 	// Read the client's HTTP/2 preface, sent prior to any HTTP/2 frames.
 	buf := make([]byte, len(clientPreface))
-	if _, err := io.ReadFull(&tc.wbuf, buf); err != nil {
+	r := (*testClientConnNetConnReadFromClient)(&tc.netconn)
+	if _, err := io.ReadFull(r, buf); err != nil {
 		tc.t.Fatalf("reading preface: %v", err)
 	}
 	if !bytes.Equal(buf, clientPreface) {
@@ -145,7 +152,7 @@ func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
 
 	tt := newTestTransport(t, opts...)
 	const singleUse = false
-	_, err := tt.tr.newClientConn(nil, singleUse, tt.tr.syncHooks)
+	_, err := tt.tr.newClientConn(nil, singleUse)
 	if err != nil {
 		t.Fatalf("newClientConn: %v", err)
 	}
@@ -156,26 +163,35 @@ func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
 // sync waits for the ClientConn under test to reach a stable state,
 // with all goroutines blocked on some input.
 func (tc *testClientConn) sync() {
-	tc.hooks.waitInactive()
+	tc.group.Wait()
 }
 
 // advance advances synthetic time by a duration.
 func (tc *testClientConn) advance(d time.Duration) {
-	tc.hooks.advance(d)
+	tc.group.AdvanceTime(d)
 	tc.sync()
 }
 
 // hasFrame reports whether a frame is available to be read.
 func (tc *testClientConn) hasFrame() bool {
-	return tc.wbuf.Len() > 0
+	tc.netconn.lock()
+	defer tc.netconn.unlock()
+	return tc.netconn.fromConn.Len() > 0
+}
+
+func (tc *testClientConn) isClosed() bool {
+	tc.netconn.lock()
+	defer tc.netconn.unlock()
+	return tc.netconn.fromConnClosed
 }
 
 // readFrame reads the next frame from the conn.
 func (tc *testClientConn) readFrame() Frame {
-	if tc.wbuf.Len() == 0 {
+	tc.sync()
+	fr, err := tc.fr.ReadFrame()
+	if err == io.EOF {
 		return nil
 	}
-	fr, err := tc.fr.ReadFrame()
 	if err != nil {
 		return nil
 	}
@@ -331,7 +347,8 @@ func (tc *testClientConn) wantData(want wantData) {
 
 // testRequestBody is a Request.Body for use in tests.
 type testRequestBody struct {
-	tc *testClientConn
+	tc   *testClientConn
+	gate gate
 
 	// At most one of buf or bytes can be set at any given time:
 	buf   bytes.Buffer // specific bytes to read from the body
@@ -342,16 +359,22 @@ type testRequestBody struct {
 
 func (tc *testClientConn) newRequestBody() *testRequestBody {
 	b := &testRequestBody{
-		tc: tc,
+		tc:   tc,
+		gate: newGate(),
 	}
 	return b
 }
 
+func (b *testRequestBody) unlock() {
+	b.gate.unlock(b.buf.Len() > 0 || b.bytes > 0 || b.err != nil)
+}
+
 // Read is called by the ClientConn to read from a request body.
 func (b *testRequestBody) Read(p []byte) (n int, _ error) {
-	b.tc.cc.syncHooks.blockUntil(func() bool {
-		return b.buf.Len() > 0 || b.bytes > 0 || b.err != nil
-	})
+	if err := b.gate.waitAndLock(context.Background()); err != nil {
+		return 0, err
+	}
+	defer b.unlock()
 	switch {
 	case b.buf.Len() > 0:
 		return b.buf.Read(p)
@@ -376,6 +399,9 @@ func (b *testRequestBody) Close() error {
 
 // writeBytes adds n arbitrary bytes to the body.
 func (b *testRequestBody) writeBytes(n int) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	b.bytes += n
 	b.checkWrite()
 	b.tc.sync()
@@ -383,9 +409,11 @@ func (b *testRequestBody) writeBytes(n int) {
 
 // Write adds bytes to the body.
 func (b *testRequestBody) Write(p []byte) (int, error) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	n, err := b.buf.Write(p)
 	b.checkWrite()
-	b.tc.sync()
 	return n, err
 }
 
@@ -400,8 +428,10 @@ func (b *testRequestBody) checkWrite() {
 
 // closeWithError sets an error which will be returned by Read.
 func (b *testRequestBody) closeWithError(err error) {
+	defer b.tc.sync()
+	b.gate.lock()
+	defer b.unlock()
 	b.err = err
-	b.tc.sync()
 }
 
 // roundTrip starts a RoundTrip call.
@@ -414,13 +444,14 @@ func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 		donec: make(chan struct{}),
 	}
 	tc.roundtrips = append(tc.roundtrips, rt)
-	tc.hooks.newstream = func(cs *clientStream) { rt.cs = cs }
-	tc.cc.goRun(func() {
+	go func() {
+		tc.group.Join()
 		defer close(rt.donec)
-		rt.resp, rt.respErr = tc.cc.RoundTrip(req)
-	})
+		rt.resp, rt.respErr = tc.cc.roundTrip(req, func(cs *clientStream) {
+			rt.id.Store(cs.ID)
+		})
+	}()
 	tc.sync()
-	tc.hooks.newstream = nil
 
 	tc.t.Cleanup(func() {
 		if !rt.done() {
@@ -567,7 +598,9 @@ func (tc *testClientConn) writeWindowUpdate(streamID, incr uint32) {
 // closeWrite causes the net.Conn used by the ClientConn to return a error
 // from Read calls.
 func (tc *testClientConn) closeWrite(err error) {
-	tc.rerr = err
+	tc.netconn.lock()
+	tc.netconn.toConnErr = err
+	tc.netconn.unlock()
 	tc.sync()
 }
 
@@ -593,15 +626,16 @@ type testRoundTrip struct {
 	resp    *http.Response
 	respErr error
 	donec   chan struct{}
-	cs      *clientStream
+	id      atomic.Uint32
 }
 
 // streamID returns the HTTP/2 stream ID of the request.
 func (rt *testRoundTrip) streamID() uint32 {
-	if rt.cs == nil {
+	id := rt.id.Load()
+	if id == 0 {
 		panic("stream ID unknown")
 	}
-	return rt.cs.ID
+	return id
 }
 
 // done reports whether RoundTrip has returned.
@@ -712,25 +746,49 @@ func diffHeaders(got, want http.Header) string {
 	return fmt.Sprintf("got:  %v\nwant: %v", got, want)
 }
 
-// testClientConnNetConn implements net.Conn.
-type testClientConnNetConn testClientConn
+// testClientConnNetConn implements net.Conn,
+// and is the Conn used by a ClientConn under test.
+type testClientConnNetConn struct {
+	gate           gate
+	toConn         bytes.Buffer
+	toConnErr      error
+	fromConn       bytes.Buffer
+	fromConnClosed bool
+}
 
-func (nc *testClientConnNetConn) Read(b []byte) (n int, err error) {
-	nc.cc.syncHooks.blockUntil(func() bool {
-		return nc.rerr != nil || nc.rbuf.Len() > 0
-	})
-	if nc.rbuf.Len() > 0 {
-		return nc.rbuf.Read(b)
+func (c *testClientConnNetConn) lock() {
+	c.gate.lock()
+}
+
+func (c *testClientConnNetConn) unlock() {
+	c.gate.unlock(c.toConn.Len() > 0 || c.toConnErr != nil)
+}
+
+func (c *testClientConnNetConn) Read(b []byte) (n int, err error) {
+	if err := c.gate.waitAndLock(context.Background()); err != nil {
+		return 0, err
 	}
-	return 0, nc.rerr
+	defer c.unlock()
+	if c.toConn.Len() == 0 && c.toConnErr != nil {
+		return 0, c.toConnErr
+	}
+	return c.toConn.Read(b)
 }
 
-func (nc *testClientConnNetConn) Write(b []byte) (n int, err error) {
-	return nc.wbuf.Write(b)
+func (c *testClientConnNetConn) Write(b []byte) (n int, err error) {
+	c.lock()
+	defer c.unlock()
+	return c.fromConn.Write(b)
 }
 
-func (nc *testClientConnNetConn) Close() error {
-	nc.netConnClosed = true
+func (c *testClientConnNetConn) Close() error {
+	c.lock()
+	defer c.unlock()
+	c.fromConnClosed = true
+	c.toConn.Reset()
+	if c.toConnErr == nil {
+		c.toConnErr = errors.New("connection closed")
+	}
 	return nil
 }
 
@@ -740,30 +798,58 @@ func (*testClientConnNetConn) SetDeadline(t time.Time) error      { return nil }
 func (*testClientConnNetConn) SetReadDeadline(t time.Time) error  { return nil }
 func (*testClientConnNetConn) SetWriteDeadline(t time.Time) error { return nil }
 
+// testClientConnNetConnWriteToClient is a view on a testClientConnNetConn
+// that implements an io.Writer that sends to the client conn under test.
+type testClientConnNetConnWriteToClient testClientConnNetConn
+
+func (w *testClientConnNetConnWriteToClient) Write(b []byte) (n int, err error) {
+	c := (*testClientConnNetConn)(w)
+	c.gate.lock()
+	defer c.unlock()
+	return c.toConn.Write(b)
+}
+
+// testClientConnNetConnReadFromClient is a view on a testClientConnNetConn
+// that implements an io.Reader that reads data sent by the client conn under test.
+type testClientConnNetConnReadFromClient testClientConnNetConn
+
+func (w *testClientConnNetConnReadFromClient) Read(b []byte) (n int, err error) {
+	c := (*testClientConnNetConn)(w)
+	c.gate.lock()
+	defer c.unlock()
+	return c.fromConn.Read(b)
+}
+
 // A testTransport allows testing Transport.RoundTrip against fake servers.
 // Tests that aren't specifically exercising RoundTrip's retry loop or connection pooling
 // should use testClientConn instead.
 type testTransport struct {
-	t  *testing.T
-	tr *Transport
+	t     *testing.T
+	tr    *Transport
+	group *synctestGroup
 
 	ccs []*testClientConn
 }
 
 func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
-	tr := &Transport{
-		syncHooks: newTestSyncHooks(),
+	tt := &testTransport{
+		t:     t,
+		group: newSynctest(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
+	tt.group.Join()
+
+	tr := &Transport{}
 	for _, o := range opts {
 		o(tr)
 	}
+	tt.tr = tr
 
-	tt := &testTransport{
-		t:  t,
-		tr: tr,
-	}
-	tr.syncHooks.newclientconn = func(cc *ClientConn) {
-		tt.ccs = append(tt.ccs, newTestClientConnFromClientConn(t, cc))
+	tr.transportTestHooks = &transportTestHooks{
+		group: tt.group,
+		newclientconn: func(cc *ClientConn) {
+			tc := newTestClientConnFromClientConn(t, cc)
+			tt.ccs = append(tt.ccs, tc)
+		},
 	}
 
 	t.Cleanup(func() {
@@ -771,8 +857,11 @@ func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
 		if len(tt.ccs) > 0 {
 			t.Fatalf("%v test ClientConns created, but not examined by test", len(tt.ccs))
 		}
-		if tt.tr.syncHooks.total != 0 {
-			t.Errorf("%v goroutines still running after test completed", tt.tr.syncHooks.total)
+		if count := tt.group.Count(); count != 1 {
+			buf := make([]byte, 16*1024)
+			n := runtime.Stack(buf, true)
+			t.Logf("stacks:\n%s", buf[:n])
+			t.Fatalf("%v goroutines still running after test completed, expect 1", count-1)
 		}
 	})
 
@@ -780,11 +869,11 @@ func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
 }
 
 func (tt *testTransport) sync() {
-	tt.tr.syncHooks.waitInactive()
+	tt.group.Wait()
 }
 
 func (tt *testTransport) advance(d time.Duration) {
-	tt.tr.syncHooks.advance(d)
+	tt.group.AdvanceTime(d)
 	tt.sync()
 }
 
@@ -801,6 +890,7 @@ func (tt *testTransport) getConn() *testClientConn {
 	tt.ccs = tt.ccs[1:]
 	tc.sync()
 	tc.readClientPreface()
+	tc.sync()
 	return tc
 }
 
@@ -809,10 +899,11 @@ func (tt *testTransport) roundTrip(req *http.Request) *testRoundTrip {
 		t:     tt.t,
 		donec: make(chan struct{}),
 	}
-	tt.tr.syncHooks.goRun(func() {
+	go func() {
+		tt.group.Join()
 		defer close(rt.donec)
 		rt.resp, rt.respErr = tt.tr.RoundTrip(req)
-	})
+	}()
 	tt.sync()
 
 	tt.t.Cleanup(func() {
