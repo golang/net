@@ -163,6 +163,7 @@ type memFS struct {
 //   - "/", "foo", false
 //   - "/foo/", "bar", false
 //   - "/foo/bar/", "x", true
+//
 // The frag argument will be empty only if dir is the root node and the walk
 // ends at that root node.
 func (fs *memFS) walk(op, fullname string, f func(dir *memFSNode, frag string, final bool) error) error {
@@ -782,11 +783,11 @@ func walkFS(ctx context.Context, fs FileSystem, depth int, name string, info os.
 		return walkFn(name, info, err)
 	}
 
-	for _, fileInfo := range fileInfos {
-		filename := path.Join(name, fileInfo.Name())
+	for _, dirFileInfo := range fileInfos {
+		filename := path.Join(name, dirFileInfo.Name())
 		fileInfo, err := fs.Stat(ctx, filename)
 		if err != nil {
-			if err := walkFn(filename, fileInfo, err); err != nil && err != filepath.SkipDir {
+			if err := walkFn(filename, dirFileInfo, err); err != nil && err != filepath.SkipDir {
 				return err
 			}
 		} else {

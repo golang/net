@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"os"
@@ -54,13 +55,12 @@ type Propstat struct {
 // makePropstats returns a slice containing those of x and y whose Props slice
 // is non-empty. If both are empty, it returns a slice containing an otherwise
 // zero Propstat whose HTTP status code is 200 OK.
-func makePropstats(x, y Propstat) []Propstat {
-	pstats := make([]Propstat, 0, 2)
-	if len(x.Props) != 0 {
-		pstats = append(pstats, x)
-	}
-	if len(y.Props) != 0 {
-		pstats = append(pstats, y)
+func makePropstats(stats ...Propstat) []Propstat {
+	pstats := make([]Propstat, 0, len(stats))
+	for _, stat := range stats {
+		if len(stat.Props) != 0 {
+			pstats = append(pstats, stat)
+		}
 	}
 	if len(pstats) == 0 {
 		pstats = append(pstats, Propstat{
@@ -172,8 +172,14 @@ func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pname
 		return nil, err
 	}
 	defer f.Close()
+
+	return propsForFile(ctx, f, fs, ls, name, pnames)
+}
+
+func propsForFile(ctx context.Context, f File, fs FileSystem, ls LockSystem, name string, pnames []xml.Name) ([]Propstat, error) {
 	fi, err := f.Stat()
 	if err != nil {
+		fmt.Printf("FileProp error %v\n", err)
 		return nil, err
 	}
 	isDir := fi.IsDir()
@@ -188,6 +194,8 @@ func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pname
 
 	pstatOK := Propstat{Status: http.StatusOK}
 	pstatNotFound := Propstat{Status: http.StatusNotFound}
+	pstatForbidden := Propstat{Status: http.StatusForbidden}
+	pstatInternal := Propstat{Status: http.StatusInternalServerError}
 	for _, pn := range pnames {
 		// If this file has dead properties, check if they contain pn.
 		if dp, ok := deadProps[pn]; ok {
@@ -197,20 +205,27 @@ func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pname
 		// Otherwise, it must either be a live property or we don't know it.
 		if prop := liveProps[pn]; prop.findFn != nil && (prop.dir || !isDir) {
 			innerXML, err := prop.findFn(ctx, fs, ls, name, fi)
-			if err != nil {
-				return nil, err
+			if err == nil {
+				pstatOK.Props = append(pstatOK.Props, Property{
+					XMLName:  pn,
+					InnerXML: []byte(innerXML),
+				})
+			} else if errors.Is(err, os.ErrPermission) {
+				pstatForbidden.Props = append(pstatForbidden.Props, Property{
+					XMLName: pn,
+				})
+			} else {
+				pstatInternal.Props = append(pstatInternal.Props, Property{
+					XMLName: pn,
+				})
 			}
-			pstatOK.Props = append(pstatOK.Props, Property{
-				XMLName:  pn,
-				InnerXML: []byte(innerXML),
-			})
 		} else {
 			pstatNotFound.Props = append(pstatNotFound.Props, Property{
 				XMLName: pn,
 			})
 		}
 	}
-	return makePropstats(pstatOK, pstatNotFound), nil
+	return makePropstats(pstatOK, pstatNotFound, pstatForbidden, pstatInternal), nil
 }
 
 // Propnames returns the property names defined for resource name.
@@ -220,10 +235,15 @@ func propnames(ctx context.Context, fs FileSystem, ls LockSystem, name string) (
 		return nil, err
 	}
 	defer f.Close()
+	return propnamesForFile(f)
+}
+
+func propnamesForFile(f File) ([]xml.Name, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
+
 	isDir := fi.IsDir()
 
 	var deadProps map[xml.Name]Property
@@ -255,7 +275,17 @@ func propnames(ctx context.Context, fs FileSystem, ls LockSystem, name string) (
 //
 // See http://www.webdav.org/specs/rfc4918.html#METHOD_PROPFIND
 func allprop(ctx context.Context, fs FileSystem, ls LockSystem, name string, include []xml.Name) ([]Propstat, error) {
-	pnames, err := propnames(ctx, fs, ls, name)
+	f, err := fs.OpenFile(ctx, name, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return allpropForFile(ctx, f, fs, ls, name, include)
+
+}
+
+func allpropForFile(ctx context.Context, f File, fs FileSystem, ls LockSystem, name string, include []xml.Name) ([]Propstat, error) {
+	pnames, err := propnamesForFile(f)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +299,7 @@ func allprop(ctx context.Context, fs FileSystem, ls LockSystem, name string, inc
 			pnames = append(pnames, pn)
 		}
 	}
-	return props(ctx, fs, ls, name, pnames)
+	return propsForFile(ctx, f, fs, ls, name, pnames)
 }
 
 // Patch patches the properties of resource name. The return values are
@@ -477,4 +507,31 @@ func findSupportedLock(ctx context.Context, fs FileSystem, ls LockSystem, name s
 		`<D:lockscope><D:exclusive/></D:lockscope>` +
 		`<D:locktype><D:write/></D:locktype>` +
 		`</D:lockentry>`, nil
+}
+
+type propstatFallback struct {
+	info fs.FileInfo
+}
+
+func (p *propstatFallback) Close() error {
+	return nil
+}
+
+func (p *propstatFallback) Stat() (fs.FileInfo, error) {
+	return p.info, nil
+}
+
+func (p *propstatFallback) Write([]byte) (int, error) {
+	return 0, errors.New("unimplemeneted")
+}
+
+func (p *propstatFallback) Read([]byte) (int, error) {
+	return 0, errors.New("unimplemeneted")
+}
+
+func (p *propstatFallback) Seek(offset int64, whence int) (int64, error) {
+	return 0, errors.New("unimplemeneted")
+}
+func (p *propstatFallback) Readdir(count int) ([]fs.FileInfo, error) {
+	return nil, errors.New("unimplemented")
 }

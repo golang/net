@@ -5,6 +5,7 @@
 package webdav
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	ixml "golang.org/x/net/webdav/internal/xml"
 )
 
 // createLockBody comes from the example in Section 9.10.7.
@@ -55,7 +58,7 @@ func TestPrefix(t *testing.T) {
 		}
 		defer res.Body.Close()
 		if res.StatusCode != wantStatusCode {
-			return nil, fmt.Errorf("got status code %d, want %d", res.StatusCode, wantStatusCode)
+			return nil, fmt.Errorf("%s got status code %d, want %d", urlStr, res.StatusCode, wantStatusCode)
 		}
 		return res.Header, nil
 	}
@@ -626,5 +629,195 @@ func TestLockRootEscape(t *testing.T) {
 		if gotLockroot != tc.wantLockroot {
 			t.Errorf("name=%q: got lockroot %q, want %q", tc.name, gotLockroot, tc.wantLockroot)
 		}
+	}
+}
+
+type fakeFS struct {
+	FileSystem
+	errors map[string]error
+}
+
+func (f *fakeFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	if err := f.errors[name]; err != nil {
+		return nil, err
+	}
+
+	return f.FileSystem.Stat(ctx, name)
+}
+
+func newFakeFS() *fakeFS {
+	return &fakeFS{
+		FileSystem: NewMemFS(),
+		errors:     make(map[string]error),
+	}
+}
+
+type multistatusResponse struct {
+	XMLName  ixml.Name     `xml:"DAV: multistatus"`
+	Response []davResponse `xml:"response"`
+}
+
+type davResponse struct {
+	XMLName  ixml.Name     `xml:"response"`
+	Href     []string      `xml:"href"`
+	Propstat []davPropstat `xml:"propstat"`
+}
+
+type davPropstat struct {
+	Prop []davProperty `xml:"prop"`
+}
+
+type davProperty struct {
+	XMLName  ixml.Name
+	Lang     string `xml:"xml:lang,attr,omitempty"`
+	InnerXML []byte `xml:",innerxml"`
+}
+
+func TestPropfindErrorHandling(t *testing.T) {
+	// This tests propfind error handling by setting up a hierarchy of files, then
+	// injecting errors into specific ones. A table-driven test probes a few of them
+	// to assert on how the system behaves.
+	// The test is quite complicated because of how complicated parsing the propfind response
+	// if, sadly.
+	// A given file is a 'collection' (directory) if it ends in a '/'.
+	// The general structure of each test is:
+	// If the propfind shoudl succeed, parse it, then assert that the set of entries returned
+	// matches what we expect. Further, if a given entry is a collection, assert that the
+	// collection property exists.
+	fs := newFakeFS()
+
+	ctx := context.Background()
+	for _, file := range []string{
+		"/a/",
+		"/a/b/",
+		"/a/b/1",
+		"/a/b/2",
+		"/a/b/d/",
+		"/a/b/d/1",
+		"/a/b/d/2",
+		"/a/c/",
+		"/a/c/1",
+		"/a/c/2",
+	} {
+		if file[len(file)-1] == '/' {
+			err := fs.Mkdir(ctx, file, 0777)
+			if err != nil {
+				t.Fatalf("failed to mkdir %s: %v", file, err)
+			}
+			continue
+		}
+
+		f, err := fs.OpenFile(ctx, file, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+		if err != nil {
+			t.Fatalf("failed to create %s: %v", file, err)
+		}
+		f.Close()
+	}
+
+	fs.errors["/a/c/"] = os.ErrPermission
+	fs.errors["/a/b/2"] = os.ErrPermission
+	fs.errors["/a/d/2"] = os.ErrPermission
+
+	srv := httptest.NewServer(&Handler{
+		FileSystem: fs,
+		LockSystem: NewMemLS(),
+	})
+	defer srv.Close()
+
+	client := srv.Client()
+	for name, test := range map[string]struct {
+		path          string
+		expectedFiles []string
+		responseCode  int
+	}{
+		"rootDirIncludeBadSubdir": {
+			path:         "/a/",
+			responseCode: StatusMulti,
+			expectedFiles: []string{
+				"/a/",
+				"/a/b/",
+				"/a/c/",
+			},
+		},
+		"testSubdirHasBadFile": {
+			path:         "/a/b/",
+			responseCode: StatusMulti,
+			expectedFiles: []string{
+				"/a/b/",
+				"/a/b/1",
+				"/a/b/2",
+				"/a/b/d/",
+			},
+		},
+		"testSubdirIsBad": {
+			path:          "/a/c/",
+			responseCode:  http.StatusForbidden,
+			expectedFiles: []string{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Build and run a propfind of depth 1
+			url := srv.URL + test.path
+			req, err := http.NewRequestWithContext(ctx, "PROPFIND", url, nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			// Set a depth of 1 so we only probe one directory at a time
+			req.Header.Set("depth", "1")
+			resp, err := client.Do(req)
+
+			// Check that the propfind ran as expected
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+
+			defer resp.Body.Close()
+
+			if resp.StatusCode != test.responseCode {
+				t.Fatalf("StatusCode: %v != %v", test.responseCode, resp.StatusCode)
+			}
+
+			// We're done in this case
+			if resp.StatusCode != StatusMulti {
+				return
+			}
+
+			// Now parse the propfind response, map it to a per-file list, then assert
+			// on the set of files and any of their properties we care about
+			var propResponse multistatusResponse
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("reading body: %v", err)
+			}
+			fmt.Printf("%s", string(body))
+			dec := ixml.NewDecoder(bytes.NewBuffer(body))
+			dec.DefaultSpace = "DAV"
+			err = dec.Decode(&propResponse)
+			if err != nil {
+				t.Fatalf("decoding propfind response: %v", err)
+			}
+
+			pathToResponse := map[string]davResponse{}
+			for _, responseFile := range propResponse.Response {
+				pathToResponse[responseFile.Href[0]] = responseFile
+			}
+
+			for _, file := range test.expectedFiles {
+				fileResp, ok := pathToResponse[file]
+				if !ok {
+					t.Fatalf("Could not find %s in response", file)
+				}
+				props := string(fileResp.Propstat[0].Prop[0].InnerXML)
+
+				// Assert that it's a directory if we expect it to be.
+				if file[len(file)-1] == '/' && !strings.Contains(props, `<D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype>`) {
+					t.Fatalf("Expected %s to be a collection", file)
+				}
+			}
+
+			if len(test.expectedFiles) != len(pathToResponse) {
+				t.Errorf("expected %d files but got %d", len(test.expectedFiles), len(pathToResponse))
+			}
+		})
 	}
 }

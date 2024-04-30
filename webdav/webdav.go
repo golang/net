@@ -659,13 +659,27 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 	mw := multistatusWriter{w: w}
 
 	walkFn := func(reqPath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return handlePropfindError(err, info)
+		// On error from the parent call, we still have the directory-based file info.
+		// Default to it, but override with the one from the fs in the normal non-error case
+		var file File = &propstatFallback{
+			info: info,
 		}
+		if err == nil {
+			f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDONLY, 0)
+			if err == nil {
+				file = f
+			}
+		}
+
+		// at this point, even if there was an error, we use the provided FileInfo, so blow
+		// this away.
+		err = nil
+
+		defer file.Close()
 
 		var pstats []Propstat
 		if pf.Propname != nil {
-			pnames, err := propnames(ctx, h.FileSystem, h.LockSystem, reqPath)
+			pnames, err := propnamesForFile(file)
 			if err != nil {
 				return handlePropfindError(err, info)
 			}
@@ -675,9 +689,9 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 			}
 			pstats = append(pstats, pstat)
 		} else if pf.Allprop != nil {
-			pstats, err = allprop(ctx, h.FileSystem, h.LockSystem, reqPath, pf.Prop)
+			pstats, err = allpropForFile(ctx, file, h.FileSystem, h.LockSystem, reqPath, pf.Prop)
 		} else {
-			pstats, err = props(ctx, h.FileSystem, h.LockSystem, reqPath, pf.Prop)
+			pstats, err = propsForFile(ctx, file, h.FileSystem, h.LockSystem, reqPath, pf.Prop)
 		}
 		if err != nil {
 			return handlePropfindError(err, info)
@@ -797,10 +811,11 @@ const (
 // infiniteDepth. Parsing any other string returns invalidDepth.
 //
 // Different WebDAV methods have further constraints on valid depths:
-//	- PROPFIND has no further restrictions, as per section 9.1.
-//	- COPY accepts only "0" or "infinity", as per section 9.8.3.
-//	- MOVE accepts only "infinity", as per section 9.9.2.
-//	- LOCK accepts only "0" or "infinity", as per section 9.10.3.
+//   - PROPFIND has no further restrictions, as per section 9.1.
+//   - COPY accepts only "0" or "infinity", as per section 9.8.3.
+//   - MOVE accepts only "infinity", as per section 9.9.2.
+//   - LOCK accepts only "0" or "infinity", as per section 9.10.3.
+//
 // These constraints are enforced by the handleXxx methods.
 func parseDepth(s string) int {
 	switch s {
