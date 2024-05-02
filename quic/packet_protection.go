@@ -351,7 +351,13 @@ func (k *updatingKeyPair) init() {
 	// We perform the first key update early in the connection so a peer
 	// which does not support key updates will fail rapidly,
 	// rather than after the connection has been long established.
-	k.updateAfter = 1000
+	//
+	// The QUIC interop runner "keyupdate" test requires that the client
+	// initiate a key rotation early in the connection. Increasing this
+	// value may cause interop test failures; if we do want to increase it,
+	// we should either skip the keyupdate test or provide a way to override
+	// the setting in interop tests.
+	k.updateAfter = 100
 }
 
 func (k *updatingKeyPair) canRead() bool {
