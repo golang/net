@@ -267,6 +267,9 @@ func (h *Handler) handlePut(w http.ResponseWriter, r *http.Request) (status int,
 
 	f, err := h.FileSystem.OpenFile(ctx, reqPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return http.StatusConflict, err
+		}
 		return http.StatusNotFound, err
 	}
 	_, copyErr := io.Copy(f, r.Body)
