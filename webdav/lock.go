@@ -93,6 +93,19 @@ type LockSystem interface {
 	Unlock(now time.Time, token string) error
 }
 
+// LockDeleter extends a LockSystem to support deleting locks by file. This is
+// useful when the LockSystem is decoupled from the FileSystem, particularly
+// because some FileSystem operations impact the LockSystem (e.g. deleting a
+// file).
+type LockDeleter interface {
+	// Delete removes all locks in the system rooted at name.
+	//
+	// A lock on the name should be confirmed prior to calling Delete.
+	// If Delete returns any non-nil error  the Handler will write a "409
+	// Conflict" HTTP status
+	Delete(now time.Time, name string) error
+}
+
 // LockDetails are a lock's metadata.
 type LockDetails struct {
 	// Root is the root resource name being locked. For a zero-depth lock, the
@@ -284,6 +297,22 @@ func (m *memLS) Unlock(now time.Time, token string) error {
 	if n.held {
 		return ErrLocked
 	}
+	m.remove(n)
+	return nil
+}
+
+func (m *memLS) Delete(now time.Time, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.collectExpiredNodes(now)
+
+	n := m.byName[name]
+	if n == nil {
+		// No locks for this node. That's okay, since the goal of this
+		// function is to blindly clean things up.
+		return nil
+	}
+
 	m.remove(n)
 	return nil
 }

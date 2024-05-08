@@ -21,20 +21,20 @@ import (
 	"testing"
 )
 
+// createLockBody comes from the example in Section 9.10.7.
+const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
+	<D:lockinfo xmlns:D='DAV:'>
+		<D:lockscope><D:exclusive/></D:lockscope>
+		<D:locktype><D:write/></D:locktype>
+		<D:owner>
+			<D:href>http://example.org/~ejw/contact.html</D:href>
+		</D:owner>
+	</D:lockinfo>
+`
+
 // TODO: add tests to check XML responses with the expected prefix path
 func TestPrefix(t *testing.T) {
 	const dst, blah = "Destination", "blah blah blah"
-
-	// createLockBody comes from the example in Section 9.10.7.
-	const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
-		<D:lockinfo xmlns:D='DAV:'>
-			<D:lockscope><D:exclusive/></D:lockscope>
-			<D:locktype><D:write/></D:locktype>
-			<D:owner>
-				<D:href>http://example.org/~ejw/contact.html</D:href>
-			</D:owner>
-		</D:lockinfo>
-	`
 
 	do := func(method, urlStr string, body string, wantStatusCode int, headers ...string) (http.Header, error) {
 		var bodyReader io.Reader
@@ -344,6 +344,115 @@ func TestFilenameEscape(t *testing.T) {
 		}
 		if gotDisplayName != tc.wantDisplayName {
 			t.Errorf("name=%q: got dispayname %q, want %q", tc.name, gotDisplayName, tc.wantDisplayName)
+		}
+	}
+}
+
+func TestDelete(t *testing.T) {
+	do := func(method, urlStr, body string, expectedCode int, headers ...string) (error, http.Header) {
+		var bodyReader io.Reader
+		if body != "" {
+			bodyReader = strings.NewReader(body)
+		}
+		req, err := http.NewRequest(method, urlStr, bodyReader)
+		if err != nil {
+			return err, nil
+		}
+
+		for len(headers) >= 2 {
+			req.Header.Add(headers[0], headers[1])
+			headers = headers[2:]
+		}
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err, nil
+		}
+		defer res.Body.Close()
+
+		_, err = ioutil.ReadAll(res.Body)
+		if err != nil {
+			return err, res.Header
+		}
+		if res.StatusCode != expectedCode {
+			return fmt.Errorf("%q path=%q: got status %d, want %d", method, urlStr, res.StatusCode, expectedCode), nil
+
+		}
+		return nil, res.Header
+	}
+
+	testCases := []struct {
+		path           string
+		lock, recreate bool
+	}{{
+		path: `/file`,
+	}, {
+		path:     `/file`,
+		recreate: true,
+	}, {
+		// This reproduces https://github.com/golang/go/issues/42839
+		path:     `/something_else`,
+		lock:     true,
+		recreate: true,
+	}}
+
+	srv := httptest.NewServer(&Handler{
+		FileSystem: NewMemFS(),
+		LockSystem: NewMemLS(),
+	})
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Runs through the following logic:
+	// Create File
+	// If locking, lock file
+	// Delete file
+	// Check that file is gone
+	// If recreating, recreate file
+	for _, tc := range testCases {
+		u.Path = tc.path
+		err, _ := do("PUT", u.String(), "content", http.StatusCreated)
+		if err != nil {
+			t.Errorf("Initial create: %v", err)
+			continue
+		}
+
+		headers := []string{}
+		if tc.lock {
+			err, hdrs := do("LOCK", u.String(), createLockBody, http.StatusOK)
+			if err != nil {
+				t.Errorf("Lock: %v", err)
+				continue
+			}
+
+			lockToken := hdrs.Get("Lock-Token")
+			if lockToken != "" {
+				ifHeader := fmt.Sprintf("<%s%s> (%s)", srv.URL, tc.path, lockToken)
+				headers = append(headers, "If", ifHeader)
+			}
+		}
+
+		err, _ = do("DELETE", u.String(), "", http.StatusNoContent, headers...)
+		if err != nil {
+			t.Errorf("Delete: %v", err)
+			continue
+		}
+
+		err, _ = do("GET", u.String(), "", http.StatusNotFound)
+		if err != nil {
+			t.Errorf("Get: %v", err)
+			continue
+		}
+
+		if tc.recreate {
+			err, _ := do("PUT", u.String(), "content", http.StatusCreated)
+			if err != nil {
+				t.Errorf("Second create: %v", err)
+				continue
+			}
 		}
 	}
 }
