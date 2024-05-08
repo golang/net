@@ -4880,3 +4880,23 @@ func TestServerContinuationAfterInvalidHeader(t *testing.T) {
 		t.Errorf("connection closed with no GOAWAY frame; want one")
 	}
 }
+
+func TestServerUpgradeRequestPrefaceFailure(t *testing.T) {
+	// An h2c upgrade request fails when the client preface is not as expected.
+	s2 := &Server{
+		// Setting IdleTimeout triggers #67168.
+		IdleTimeout: 60 * time.Minute,
+	}
+	c1, c2 := net.Pipe()
+	donec := make(chan struct{})
+	go func() {
+		defer close(donec)
+		s2.ServeConn(c1, &ServeConnOpts{
+			UpgradeRequest: httptest.NewRequest("GET", "/", nil),
+		})
+	}()
+	// The server expects to see the HTTP/2 preface,
+	// but we close the connection instead.
+	c2.Close()
+	<-donec
+}
