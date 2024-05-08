@@ -21,12 +21,8 @@ import (
 	"testing"
 )
 
-// TODO: add tests to check XML responses with the expected prefix path
-func TestPrefix(t *testing.T) {
-	const dst, blah = "Destination", "blah blah blah"
-
-	// createLockBody comes from the example in Section 9.10.7.
-	const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
+// createLockBody comes from the example in Section 9.10.7.
+const createLockBody = `<?xml version="1.0" encoding="utf-8" ?>
 		<D:lockinfo xmlns:D='DAV:'>
 			<D:lockscope><D:exclusive/></D:lockscope>
 			<D:locktype><D:write/></D:locktype>
@@ -35,6 +31,10 @@ func TestPrefix(t *testing.T) {
 			</D:owner>
 		</D:lockinfo>
 	`
+
+// TODO: add tests to check XML responses with the expected prefix path
+func TestPrefix(t *testing.T) {
+	const dst, blah = "Destination", "blah blah blah"
 
 	do := func(method, urlStr string, body string, wantStatusCode int, headers ...string) (http.Header, error) {
 		var bodyReader io.Reader
@@ -181,6 +181,29 @@ func TestPrefix(t *testing.T) {
 			"/a/b/c/": http.StatusNotFound,
 		}[prefix]
 		if _, err := do("PUT", srv.URL+"/a/b/e/g", blah, wantH, "If", ifHeader); err != nil {
+			t.Errorf("prefix=%-9q PUT /a/b/e/g: %v", prefix, err)
+			continue
+		}
+
+		wantI := map[string]int{
+			"/":       http.StatusLocked,
+			"/a/":     http.StatusLocked,
+			"/a/b/":   http.StatusLocked,
+			"/a/b/c/": http.StatusNotFound,
+		}[prefix]
+		if _, err := do("PUT", srv.URL+"/a/b/e/g", blah, wantI); err != nil {
+			t.Errorf("prefix=%-9q PUT /a/b/e/g: %v", prefix, err)
+			continue
+		}
+
+		badIfHeader := fmt.Sprintf("<%s/a/b/e/g> (foobar)", srv.URL)
+		wantJ := map[string]int{
+			"/":       http.StatusPreconditionFailed,
+			"/a/":     http.StatusPreconditionFailed,
+			"/a/b/":   http.StatusPreconditionFailed,
+			"/a/b/c/": http.StatusNotFound,
+		}[prefix]
+		if _, err := do("PUT", srv.URL+"/a/b/e/g", blah, wantJ, "If", badIfHeader); err != nil {
 			t.Errorf("prefix=%-9q PUT /a/b/e/g: %v", prefix, err)
 			continue
 		}
@@ -345,5 +368,66 @@ func TestFilenameEscape(t *testing.T) {
 		if gotDisplayName != tc.wantDisplayName {
 			t.Errorf("name=%q: got dispayname %q, want %q", tc.name, gotDisplayName, tc.wantDisplayName)
 		}
+	}
+}
+
+func TestMoveLockedSrcUnlockedDst(t *testing.T) {
+	// This test reproduces https://github.com/golang/go/issues/43556
+	do := func(method, urlStr string, body string, wantStatusCode int, headers ...string) (http.Header, error) {
+		var bodyReader io.Reader
+		if body != "" {
+			bodyReader = strings.NewReader(body)
+		}
+		req, err := http.NewRequest(method, urlStr, bodyReader)
+		if err != nil {
+			return nil, err
+		}
+		for len(headers) >= 2 {
+			req.Header.Add(headers[0], headers[1])
+			headers = headers[2:]
+		}
+		res, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			return nil, err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != wantStatusCode {
+			return nil, fmt.Errorf("got status code %d, want %d", res.StatusCode, wantStatusCode)
+		}
+		return res.Header, nil
+	}
+
+	srv := httptest.NewServer(&Handler{
+		FileSystem: NewMemFS(),
+		LockSystem: NewMemLS(),
+	})
+	defer srv.Close()
+
+	src, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src.Path = "/locked_src"
+	hdrs, err := do("LOCK", src.String(), createLockBody, http.StatusCreated)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockToken := hdrs.Get("Lock-Token")
+	if lockToken == "" {
+		t.Errorf("Expected lock token")
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	ifHeader := fmt.Sprintf("<%s%s> (%s)", srv.URL, src.Path, lockToken)
+	headers := []string{"If", ifHeader, "Destination", "/unlocked_path"}
+
+	_, err = do("MOVE", src.String(), "", http.StatusCreated, headers...)
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }
