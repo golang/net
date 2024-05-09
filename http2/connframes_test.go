@@ -6,7 +6,6 @@ package http2
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"os"
@@ -295,7 +294,7 @@ func (tf *testConnFramer) wantClosed() {
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want closed connection): %v", fr)
 	}
-	if err == context.DeadlineExceeded {
+	if err == os.ErrDeadlineExceeded {
 		tf.t.Fatalf("connection is not closed; want it to be")
 	}
 }
@@ -306,7 +305,7 @@ func (tf *testConnFramer) wantIdle() {
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want idle connection): %v", fr)
 	}
-	if err != context.DeadlineExceeded {
+	if err != os.ErrDeadlineExceeded {
 		tf.t.Fatalf("got unexpected frame error (want idle connection): %v", err)
 	}
 }

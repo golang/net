@@ -127,6 +127,12 @@ type Server struct {
 	// If zero or negative, there is no timeout.
 	IdleTimeout time.Duration
 
+	// WriteByteTimeout is the timeout after which a connection will be
+	// closed if no data can be written to it. The timeout begins when data is
+	// available to write, and is extended whenever any bytes are written.
+	// If zero or negative, there is no timeout.
+	WriteByteTimeout time.Duration
+
 	// MaxUploadBufferPerConnection is the size of the initial flow
 	// control window for each connections. The HTTP/2 spec does not
 	// allow this to be smaller than 65535 or larger than 2^32-1.
@@ -446,7 +452,7 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 		conn:                        c,
 		baseCtx:                     baseCtx,
 		remoteAddrStr:               c.RemoteAddr().String(),
-		bw:                          newBufferedWriter(c),
+		bw:                          newBufferedWriter(s.group, c, s.WriteByteTimeout),
 		handler:                     opts.handler(),
 		streams:                     make(map[uint32]*stream),
 		readFrameCh:                 make(chan readFrameResult),
@@ -1319,6 +1325,10 @@ func (sc *serverConn) wroteFrame(res frameWriteResult) {
 	}
 	sc.writingFrame = false
 	sc.writingFrameAsync = false
+
+	if res.err != nil {
+		sc.conn.Close()
+	}
 
 	wr := res.wr
 
