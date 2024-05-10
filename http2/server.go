@@ -811,8 +811,8 @@ type readFrameResult struct {
 // consumer is done with the frame.
 // It's run on its own goroutine.
 func (sc *serverConn) readFrames() {
-	gate := make(gate)
-	gateDone := gate.Done
+	gate := make(chan struct{})
+	gateDone := func() { gate <- struct{}{} }
 	for {
 		f, err := sc.framer.ReadFrame()
 		select {

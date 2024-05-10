@@ -210,12 +210,6 @@ type stringWriter interface {
 	WriteString(s string) (n int, err error)
 }
 
-// A gate lets two goroutines coordinate their activities.
-type gate chan struct{}
-
-func (g gate) Done() { g <- struct{}{} }
-func (g gate) Wait() { <-g }
-
 // A closeWaiter is like a sync.WaitGroup but only goes 1 to 0 (open to closed).
 type closeWaiter chan struct{}
 
