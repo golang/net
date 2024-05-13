@@ -4900,3 +4900,39 @@ func TestServerUpgradeRequestPrefaceFailure(t *testing.T) {
 	c2.Close()
 	<-donec
 }
+
+// Issue 67036: A stream error should result in the handler's request context being canceled.
+func TestServerRequestCancelOnError(t *testing.T) {
+	recvc := make(chan struct{}) // handler has started
+	donec := make(chan struct{}) // handler has finished
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		close(recvc)
+		<-r.Context().Done()
+		close(donec)
+	})
+	defer st.Close()
+
+	st.writePreface()
+	st.writeInitialSettings()
+	st.writeSettingsAck()
+
+	// Client sends request headers, handler starts.
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(),
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	<-recvc
+
+	// Client sends an invalid second set of request headers.
+	// The stream is reset.
+	// The handler's context is canceled, and the handler exits.
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(),
+		EndStream:     true,
+		EndHeaders:    true,
+	})
+	<-donec
+}
