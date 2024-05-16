@@ -697,12 +697,6 @@ func TestServer(t *testing.T) {
 	})
 	defer st.Close()
 
-	covers("3.5", `
-		The server connection preface consists of a potentially empty
-		SETTINGS frame ([SETTINGS]) that MUST be the first frame the
-		server sends in the HTTP/2 connection.
-	`)
-
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      1, // clients send odd numbers
