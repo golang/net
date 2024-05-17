@@ -2895,6 +2895,7 @@ func TestRoundTripDoesntConsumeRequestBodyEarly(t *testing.T) {
 	cc := &ClientConn{
 		closed:      true,
 		reqHeaderMu: make(chan struct{}, 1),
+		t:           &Transport{},
 	}
 	_, err := cc.RoundTrip(req)
 	if err != errClientConnUnusable {
