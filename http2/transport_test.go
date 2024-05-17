@@ -2491,7 +2491,7 @@ func testTransportUsesGoAwayDebugError(t *testing.T, failMidBody bool) {
 	// the interesting parts of both.
 	tc.writeGoAway(5, ErrCodeNo, []byte(goAwayDebugData))
 	tc.writeGoAway(5, goAwayErrCode, nil)
-	tc.closeWrite(io.EOF)
+	tc.closeWrite()
 
 	res, err := rt.result()
 	whence := "RoundTrip"
@@ -5151,7 +5151,7 @@ func testTransportClosesConnAfterGoAway(t *testing.T, lastStream uint32) {
 		})
 	}
 
-	tc.closeWrite(io.EOF)
+	tc.closeWrite()
 	err := rt.err()
 	if gotErr, wantErr := err != nil, lastStream == 0; gotErr != wantErr {
 		t.Errorf("RoundTrip got error %v (want error: %v)", err, wantErr)

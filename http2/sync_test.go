@@ -166,6 +166,13 @@ func (g *synctestGroup) AdvanceTime(d time.Duration) {
 	}
 }
 
+// Now returns the current synthetic time.
+func (g *synctestGroup) Now() time.Time {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.now
+}
+
 // TimeUntilEvent returns the amount of time until the next scheduled timer.
 func (g *synctestGroup) TimeUntilEvent() (d time.Duration, scheduled bool) {
 	g.mu.Lock()
