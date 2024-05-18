@@ -105,7 +105,7 @@ func TestServer_Push_Success(t *testing.T) {
 			errc <- fmt.Errorf("unknown RequestURL %q", r.URL.RequestURI())
 		}
 	})
-	stURL = st.ts.URL
+	stURL = "https://" + st.authority()
 
 	// Send one request, which should push two responses.
 	st.greet()
@@ -169,7 +169,7 @@ func TestServer_Push_Success(t *testing.T) {
 				return checkPushPromise(f, 2, [][2]string{
 					{":method", "GET"},
 					{":scheme", "https"},
-					{":authority", st.ts.Listener.Addr().String()},
+					{":authority", st.authority()},
 					{":path", "/pushed?get"},
 					{"user-agent", userAgent},
 				})
@@ -178,7 +178,7 @@ func TestServer_Push_Success(t *testing.T) {
 				return checkPushPromise(f, 4, [][2]string{
 					{":method", "HEAD"},
 					{":scheme", "https"},
-					{":authority", st.ts.Listener.Addr().String()},
+					{":authority", st.authority()},
 					{":path", "/pushed?head"},
 					{"cookie", cookie},
 					{"user-agent", userAgent},

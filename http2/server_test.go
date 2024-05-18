@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -66,7 +67,9 @@ func (sb *safeBuffer) Len() int {
 type serverTester struct {
 	cc             net.Conn // client conn
 	t              testing.TB
-	ts             *httptest.Server
+	group          *synctestGroup
+	h1server       *http.Server
+	h2server       *Server
 	fr             *Framer
 	serverLogBuf   safeBuffer // logger for httptest.Server
 	logFilter      []string   // substrings to filter out
@@ -109,6 +112,8 @@ func newTestServer(t testing.TB, handler http.HandlerFunc, opts ...interface{}) 
 		switch v := opt.(type) {
 		case func(*httptest.Server):
 			v(ts)
+		case func(*http.Server):
+			v(ts.Config)
 		case func(*Server):
 			v(h2server)
 		default:
@@ -140,14 +145,95 @@ type serverTesterOpt string
 
 var optFramerReuseFrames = serverTesterOpt("frame_reuse_frames")
 
-var optQuiet = func(ts *httptest.Server) {
-	ts.Config.ErrorLog = log.New(io.Discard, "", 0)
+var optQuiet = func(server *http.Server) {
+	server.ErrorLog = log.New(io.Discard, "", 0)
 }
 
 func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
+	t.Helper()
+	g := newSynctest(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	h1server := &http.Server{}
+	h2server := &Server{
+		group: g,
+	}
+	tlsState := tls.ConnectionState{
+		Version:     tls.VersionTLS13,
+		ServerName:  "go.dev",
+		CipherSuite: tls.TLS_AES_128_GCM_SHA256,
+	}
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case func(*Server):
+			v(h2server)
+		case func(*http.Server):
+			v(h1server)
+		case func(*tls.ConnectionState):
+			v(&tlsState)
+		default:
+			t.Fatalf("unknown newServerTester option type %T", v)
+		}
+	}
+	ConfigureServer(h1server, h2server)
+
+	cli, srv := synctestNetPipe(g)
+	cli.SetReadDeadline(g.Now())
+	cli.autoWait = true
+
+	st := &serverTester{
+		t:        t,
+		cc:       cli,
+		group:    g,
+		h1server: h1server,
+		h2server: h2server,
+	}
+	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
+	st.hpackDec = hpack.NewDecoder(initialHeaderTableSize, st.onHeaderField)
+	if h1server.ErrorLog == nil {
+		h1server.ErrorLog = log.New(io.MultiWriter(stderrv(), twriter{t: t, st: st}, &st.serverLogBuf), "", log.LstdFlags)
+	}
+
+	t.Cleanup(func() {
+		st.Close()
+	})
+
+	connc := make(chan *serverConn)
+	go func() {
+		g.Join()
+		h2server.serveConn(&netConnWithConnectionState{
+			Conn:  srv,
+			state: tlsState,
+		}, &ServeConnOpts{
+			Handler:    handler,
+			BaseConfig: h1server,
+		}, func(sc *serverConn) {
+			connc <- sc
+		})
+	}()
+	st.sc = <-connc
+
+	st.fr = NewFramer(st.cc, st.cc)
+	g.Wait()
+	return st
+}
+
+type netConnWithConnectionState struct {
+	net.Conn
+	state tls.ConnectionState
+}
+
+func (c *netConnWithConnectionState) ConnectionState() tls.ConnectionState {
+	return c.state
+}
+
+// newServerTesterWithRealConn creates a test server listening on a localhost port.
+// Mostly superseded by newServerTester, which creates a test server using a fake
+// net.Conn and synthetic time. This function is still around because some benchmarks
+// rely on it; new tests should use newServerTester.
+func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
 	resetHooks()
 
 	ts := httptest.NewUnstartedServer(handler)
+	t.Cleanup(ts.Close)
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
@@ -162,6 +248,8 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 			v(tlsConfig)
 		case func(*httptest.Server):
 			v(ts)
+		case func(*http.Server):
+			v(ts.Config)
 		case func(*Server):
 			v(h2server)
 		case serverTesterOpt:
@@ -185,8 +273,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	ts.Config.TLSConfig.MinVersion = tls.VersionTLS10
 
 	st := &serverTester{
-		t:  t,
-		ts: ts,
+		t: t,
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 	st.hpackDec = hpack.NewDecoder(initialHeaderTableSize, st.onHeaderField)
@@ -232,6 +319,20 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		st.fr.logWrites = true
 	}
 	return st
+}
+
+// sync waits for all goroutines to idle.
+func (st *serverTester) sync() {
+	st.group.Wait()
+}
+
+// advance advances synthetic time by a duration.
+func (st *serverTester) advance(d time.Duration) {
+	st.group.AdvanceTime(d)
+}
+
+func (st *serverTester) authority() string {
+	return "dummy.tld"
 }
 
 func (st *serverTester) closeConn() {
@@ -309,7 +410,6 @@ func (st *serverTester) Close() {
 			st.cc.Close()
 		}
 	}
-	st.ts.Close()
 	if st.cc != nil {
 		st.cc.Close()
 	}
@@ -438,7 +538,7 @@ func (st *serverTester) encodeHeader(headers ...string) []byte {
 	}
 
 	st.headerBuf.Reset()
-	defaultAuthority := st.ts.Listener.Addr().String()
+	defaultAuthority := st.authority()
 
 	if len(headers) == 0 {
 		// Fast path, mostly for benchmarks, so test code doesn't pollute
@@ -1245,38 +1345,32 @@ func (l *filterListener) Accept() (net.Conn, error) {
 }
 
 func TestServer_MaxQueuedControlFrames(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
+	// Goroutine debugging makes this test very slow.
+	disableGoroutineTracking(t)
 
-	st := newServerTester(t, nil, func(ts *httptest.Server) {
-		// TCP buffer sizes on test systems aren't under our control and can be large.
-		// Create a conn that blocks after 10000 bytes written.
-		ts.Listener = &filterListener{
-			Listener: ts.Listener,
-			accept: func(conn net.Conn) (net.Conn, error) {
-				return newBlockingWriteConn(conn, 10000), nil
-			},
-		}
-	})
-	defer st.Close()
+	st := newServerTester(t, nil)
 	st.greet()
 
-	const extraPings = 500000 // enough to fill the TCP buffers
+	st.cc.(*synctestNetConn).SetReadBufferSize(0) // all writes block
+	st.cc.(*synctestNetConn).autoWait = false     // don't sync after every write
 
+	// Send maxQueuedControlFrames pings, plus a few extra
+	// to account for ones that enter the server's write buffer.
+	const extraPings = 2
 	for i := 0; i < maxQueuedControlFrames+extraPings; i++ {
 		pingData := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
-		if err := st.fr.WritePing(false, pingData); err != nil {
-			if i == 0 {
-				t.Fatal(err)
-			}
-			// We expect the connection to get closed by the server when the TCP
-			// buffer fills up and the write queue reaches MaxQueuedControlFrames.
-			t.Logf("sent %d PING frames", i)
-			return
-		}
+		st.fr.WritePing(false, pingData)
 	}
-	t.Errorf("unexpected success sending all PING frames")
+	st.group.Wait()
+
+	// Unblock the server.
+	// It should have closed the connection after exceeding the control frame limit.
+	st.cc.(*synctestNetConn).SetReadBufferSize(math.MaxInt)
+	fr, err := st.readFrame()
+	if err != nil {
+		return
+	}
+	t.Errorf("unexpected frame after exceeding maxQueuedControlFrames; want closed conn\n%v", fr)
 }
 
 func TestServer_RejectsLargeFrames(t *testing.T) {
@@ -1762,6 +1856,7 @@ func testServerRejectsConn(t *testing.T, writeReq func(*serverTester)) {
 	writeReq(st)
 
 	st.wantGoAway()
+	st.advance(goAwayTimeout)
 
 	fr, err := st.fr.ReadFrame()
 	if err == nil {
@@ -2611,13 +2706,12 @@ func TestServer_NoCrash_HandlerClose_Then_ClientClose(t *testing.T) {
 func TestServer_Rejects_TLS10(t *testing.T) { testRejectTLS(t, tls.VersionTLS10) }
 func TestServer_Rejects_TLS11(t *testing.T) { testRejectTLS(t, tls.VersionTLS11) }
 
-func testRejectTLS(t *testing.T, max uint16) {
-	st := newServerTester(t, nil, func(c *tls.Config) {
+func testRejectTLS(t *testing.T, version uint16) {
+	st := newServerTester(t, nil, func(state *tls.ConnectionState) {
 		// As of 1.18 the default minimum Go TLS version is
 		// 1.2. In order to test rejection of lower versions,
-		// manually set the minimum version to 1.0
-		c.MinVersion = tls.VersionTLS10
-		c.MaxVersion = max
+		// manually set the version to 1.0
+		state.Version = version
 	})
 	defer st.Close()
 	gf := st.wantGoAway()
@@ -2627,24 +2721,9 @@ func testRejectTLS(t *testing.T, max uint16) {
 }
 
 func TestServer_Rejects_TLSBadCipher(t *testing.T) {
-	st := newServerTester(t, nil, func(c *tls.Config) {
-		// All TLS 1.3 ciphers are good. Test with TLS 1.2.
-		c.MaxVersion = tls.VersionTLS12
-		// Only list bad ones:
-		c.CipherSuites = []uint16{
-			tls.TLS_RSA_WITH_RC4_128_SHA,
-			tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
-			tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			cipher_TLS_RSA_WITH_AES_128_CBC_SHA256,
-		}
+	st := newServerTester(t, nil, func(state *tls.ConnectionState) {
+		state.Version = tls.VersionTLS12
+		state.CipherSuite = tls.TLS_RSA_WITH_RC4_128_SHA
 	})
 	defer st.Close()
 	gf := st.wantGoAway()
@@ -2654,18 +2733,30 @@ func TestServer_Rejects_TLSBadCipher(t *testing.T) {
 }
 
 func TestServer_Advertises_Common_Cipher(t *testing.T) {
-	const requiredSuite = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-	st := newServerTester(t, nil, func(c *tls.Config) {
-		// Have the client only support the one required by the spec.
-		c.CipherSuites = []uint16{requiredSuite}
-	}, func(ts *httptest.Server) {
-		var srv *http.Server = ts.Config
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	}, func(srv *http.Server) {
 		// Have the server configured with no specific cipher suites.
 		// This tests that Go's defaults include the required one.
 		srv.TLSConfig = nil
 	})
-	defer st.Close()
-	st.greet()
+
+	// Have the client only support the one required by the spec.
+	const requiredSuite = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	tlsConfig := tlsConfigInsecure.Clone()
+	tlsConfig.MaxVersion = tls.VersionTLS12
+	tlsConfig.CipherSuites = []uint16{requiredSuite}
+	tr := &Transport{TLSClientConfig: tlsConfig}
+	defer tr.CloseIdleConnections()
+
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
 }
 
 func (st *serverTester) onHeaderField(f hpack.HeaderField) {
@@ -2867,8 +2958,8 @@ func TestCompressionErrorOnWrite(t *testing.T) {
 	var serverConfig *http.Server
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		// No response body.
-	}, func(ts *httptest.Server) {
-		serverConfig = ts.Config
+	}, func(s *http.Server) {
+		serverConfig = s
 		serverConfig.MaxHeaderBytes = maxStrLen
 	})
 	st.addLogFilter("connection error: COMPRESSION_ERROR")
@@ -3141,11 +3232,11 @@ func TestServerDoesntWriteInvalidHeaders(t *testing.T) {
 }
 
 func BenchmarkServerGets(b *testing.B) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
-	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, msg)
 	})
 	defer st.Close()
@@ -3173,11 +3264,11 @@ func BenchmarkServerGets(b *testing.B) {
 }
 
 func BenchmarkServerPosts(b *testing.B) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
-	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
 		// Consume the (empty) body from th peer before replying, otherwise
 		// the server will sometimes (depending on scheduling) send the peer a
 		// a RST_STREAM with the CANCEL error code.
@@ -3225,7 +3316,7 @@ func BenchmarkServerToClientStreamReuseFrames(b *testing.B) {
 }
 
 func benchmarkServerToClientStream(b *testing.B, newServerOpts ...interface{}) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msgLen = 1
 	// default window size
@@ -3241,7 +3332,7 @@ func benchmarkServerToClientStream(b *testing.B, newServerOpts ...interface{}) {
 		return msg
 	}
 
-	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
 		// Consume the (empty) body from th peer before replying, otherwise
 		// the server will sometimes (depending on scheduling) send the peer a
 		// a RST_STREAM with the CANCEL error code.
@@ -3515,17 +3606,17 @@ func TestServerContentLengthCanBeDisabled(t *testing.T) {
 	}
 }
 
-func disableGoroutineTracking() (restore func()) {
+func disableGoroutineTracking(t testing.TB) {
 	old := DebugGoroutines
 	DebugGoroutines = false
-	return func() { DebugGoroutines = old }
+	t.Cleanup(func() { DebugGoroutines = old })
 }
 
 func BenchmarkServer_GetRequest(b *testing.B) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msg = "Hello, world."
-	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
 		n, err := io.Copy(io.Discard, r.Body)
 		if err != nil || n > 0 {
 			b.Errorf("Read %d bytes, error %v; want 0 bytes.", n, err)
@@ -3554,10 +3645,10 @@ func BenchmarkServer_GetRequest(b *testing.B) {
 }
 
 func BenchmarkServer_PostRequest(b *testing.B) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msg = "Hello, world."
-	st := newServerTester(b, func(w http.ResponseWriter, r *http.Request) {
+	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
 		n, err := io.Copy(io.Discard, r.Body)
 		if err != nil || n > 0 {
 			b.Errorf("Read %d bytes, error %v; want 0 bytes.", n, err)
@@ -3901,6 +3992,7 @@ func TestServerIdleTimeout(t *testing.T) {
 	defer st.Close()
 
 	st.greet()
+	st.advance(500 * time.Millisecond)
 	ga := st.wantGoAway()
 	if ga.ErrCode != ErrCodeNo {
 		t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
@@ -3911,12 +4003,16 @@ func TestServerIdleTimeout_AfterRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
 	}
-	const timeout = 250 * time.Millisecond
+	const (
+		requestTimeout = 2 * time.Second
+		idleTimeout    = 1 * time.Second
+	)
 
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(timeout * 2)
+	var st *serverTester
+	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		st.group.Sleep(requestTimeout)
 	}, func(h2s *Server) {
-		h2s.IdleTimeout = timeout
+		h2s.IdleTimeout = idleTimeout
 	})
 	defer st.Close()
 
@@ -3925,10 +4021,12 @@ func TestServerIdleTimeout_AfterRequest(t *testing.T) {
 	// Send a request which takes twice the timeout. Verifies the
 	// idle timeout doesn't fire while we're in a request:
 	st.bodylessReq1()
+	st.advance(requestTimeout)
 	st.wantHeaders()
 
 	// But the idle timeout should be rearmed after the request
 	// is done:
+	st.advance(idleTimeout)
 	ga := st.wantGoAway()
 	if ga.ErrCode != ErrCodeNo {
 		t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
@@ -4092,6 +4190,8 @@ func TestServerHandlerConnectionClose(t *testing.T) {
 				}
 				sawWindowUpdate = true
 				unblockHandler <- true
+				st.sync()
+				st.advance(goAwayTimeout)
 			default:
 				t.Logf("unexpected frame: %v", summarizeFrame(f))
 			}
@@ -4157,20 +4257,9 @@ func TestServer_Headers_HalfCloseRemote(t *testing.T) {
 }
 
 func TestServerGracefulShutdown(t *testing.T) {
-	var st *serverTester
 	handlerDone := make(chan struct{})
-	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		defer close(handlerDone)
-		go st.ts.Config.Shutdown(context.Background())
-
-		ga := st.wantGoAway()
-		if ga.ErrCode != ErrCodeNo {
-			t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
-		}
-		if ga.LastStreamID != 1 {
-			t.Errorf("GOAWAY LastStreamID = %v; want 1", ga.LastStreamID)
-		}
-
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		<-handlerDone
 		w.Header().Set("x-foo", "bar")
 	})
 	defer st.Close()
@@ -4178,7 +4267,20 @@ func TestServerGracefulShutdown(t *testing.T) {
 	st.greet()
 	st.bodylessReq1()
 
-	<-handlerDone
+	st.sync()
+	st.h1server.Shutdown(context.Background())
+
+	ga := st.wantGoAway()
+	if ga.ErrCode != ErrCodeNo {
+		t.Errorf("GOAWAY error = %v; want ErrCodeNo", ga.ErrCode)
+	}
+	if ga.LastStreamID != 1 {
+		t.Errorf("GOAWAY LastStreamID = %v; want 1", ga.LastStreamID)
+	}
+
+	close(handlerDone)
+	st.sync()
+
 	hf := st.wantHeaders()
 	goth := st.decodeHeader(hf.HeaderBlockFragment())
 	wanth := [][2]string{
@@ -4396,7 +4498,6 @@ func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
 	}
 
 	st.writeData(1, true, []byte(content))
-	time.Sleep(200 * time.Millisecond)
 	st.Close()
 
 	if bytes.Contains(st.serverLogBuf.Bytes(), []byte("PROTOCOL_ERROR")) {
@@ -4523,6 +4624,7 @@ func TestProtocolErrorAfterGoAway(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	st.advance(goAwayTimeout)
 	for {
 		if _, err := st.readFrame(); err != nil {
 			if err != io.EOF {
@@ -4805,8 +4907,8 @@ Frames:
 func TestServerContinuationFlood(t *testing.T) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(r.Header)
-	}, func(ts *httptest.Server) {
-		ts.Config.MaxHeaderBytes = 4096
+	}, func(s *http.Server) {
+		s.MaxHeaderBytes = 4096
 	})
 	defer st.Close()
 

@@ -3658,7 +3658,7 @@ func TestTransportNoBodyMeansNoDATA(t *testing.T) {
 }
 
 func benchSimpleRoundTrip(b *testing.B, nReqHeaders, nResHeader int) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	b.ReportAllocs()
 	ts := newTestServer(b,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -3770,10 +3770,10 @@ func BenchmarkDownloadFrameSize(b *testing.B) {
 	b.Run("512k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 512*1024) })
 }
 func benchLargeDownloadRoundTrip(b *testing.B, frameSize uint32) {
-	defer disableGoroutineTracking()()
+	disableGoroutineTracking(b)
 	const transferSize = 1024 * 1024 * 1024 // must be multiple of 1M
 	b.ReportAllocs()
-	st := newServerTester(b,
+	ts := newTestServer(b,
 		func(w http.ResponseWriter, r *http.Request) {
 			// test 1GB transfer
 			w.Header().Set("Content-Length", strconv.Itoa(transferSize))
@@ -3784,12 +3784,11 @@ func benchLargeDownloadRoundTrip(b *testing.B, frameSize uint32) {
 			}
 		}, optQuiet,
 	)
-	defer st.Close()
 
 	tr := &Transport{TLSClientConfig: tlsConfigInsecure, MaxReadFrameSize: frameSize}
 	defer tr.CloseIdleConnections()
 
-	req, err := http.NewRequest("GET", st.ts.URL, nil)
+	req, err := http.NewRequest("GET", ts.URL, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -4869,33 +4868,36 @@ func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
 }
 
 func TestClientConnReservations(t *testing.T) {
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-	}, func(s *Server) {
-		s.MaxConcurrentStreams = initialMaxConcurrentStreams
-	})
-	defer st.Close()
+	tc := newTestClientConn(t)
+	tc.greet(
+		Setting{ID: SettingMaxConcurrentStreams, Val: initialMaxConcurrentStreams},
+	)
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
-	cc, err := tr.newClientConn(st.cc, false)
-	if err != nil {
-		t.Fatal(err)
+	doRoundTrip := func() {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt := tc.roundTrip(req)
+		tc.wantFrameType(FrameHeaders)
+		tc.writeHeaders(HeadersFrameParam{
+			StreamID:   rt.streamID(),
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt.wantStatus(200)
 	}
 
-	req, _ := http.NewRequest("GET", st.ts.URL, nil)
 	n := 0
-	for n <= initialMaxConcurrentStreams && cc.ReserveNewRequest() {
+	for n <= initialMaxConcurrentStreams && tc.cc.ReserveNewRequest() {
 		n++
 	}
 	if n != initialMaxConcurrentStreams {
 		t.Errorf("did %v reservations; want %v", n, initialMaxConcurrentStreams)
 	}
-	if _, err := cc.RoundTrip(req); err != nil {
-		t.Fatalf("RoundTrip error = %v", err)
-	}
+	doRoundTrip()
 	n2 := 0
-	for n2 <= 5 && cc.ReserveNewRequest() {
+	for n2 <= 5 && tc.cc.ReserveNewRequest() {
 		n2++
 	}
 	if n2 != 1 {
@@ -4904,11 +4906,11 @@ func TestClientConnReservations(t *testing.T) {
 
 	// Use up all the reservations
 	for i := 0; i < n; i++ {
-		cc.RoundTrip(req)
+		doRoundTrip()
 	}
 
 	n2 = 0
-	for n2 <= initialMaxConcurrentStreams && cc.ReserveNewRequest() {
+	for n2 <= initialMaxConcurrentStreams && tc.cc.ReserveNewRequest() {
 		n2++
 	}
 	if n2 != n {

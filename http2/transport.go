@@ -194,12 +194,7 @@ type Transport struct {
 
 type transportTestHooks struct {
 	newclientconn func(*ClientConn)
-	group         interface {
-		Join()
-		NewTimer(d time.Duration) timer
-		AfterFunc(d time.Duration, f func()) timer
-		ContextWithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc)
-	}
+	group         synctestGroupInterface
 }
 
 func (t *Transport) markNewGoroutine() {

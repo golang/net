@@ -17,6 +17,7 @@ package http2 // import "golang.org/x/net/http2"
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/http/httpguts"
 )
@@ -377,3 +379,14 @@ func validPseudoPath(v string) bool {
 // makes that struct also non-comparable, and generally doesn't add
 // any size (as long as it's first).
 type incomparable [0]func()
+
+// synctestGroupInterface is the methods of synctestGroup used by Server and Transport.
+// It's defined as an interface here to let us keep synctestGroup entirely test-only
+// and not a part of non-test builds.
+type synctestGroupInterface interface {
+	Join()
+	Now() time.Time
+	NewTimer(d time.Duration) timer
+	AfterFunc(d time.Duration, f func()) timer
+	ContextWithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc)
+}

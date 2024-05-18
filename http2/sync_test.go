@@ -31,6 +31,9 @@ type goroutine struct {
 // newSynctest creates a new group with the synthetic clock set the provided time.
 func newSynctest(now time.Time) *synctestGroup {
 	return &synctestGroup{
+		gids: map[int]bool{
+			currentGoroutine(): true,
+		},
 		now: now,
 	}
 }
@@ -39,9 +42,6 @@ func newSynctest(now time.Time) *synctestGroup {
 func (g *synctestGroup) Join() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.gids == nil {
-		g.gids = map[int]bool{}
-	}
 	g.gids[currentGoroutine()] = true
 }
 
@@ -154,6 +154,7 @@ func stacks(all bool) []goroutine {
 
 // AdvanceTime advances the synthetic clock by d.
 func (g *synctestGroup) AdvanceTime(d time.Duration) {
+	defer g.Wait()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.now = g.now.Add(d)
@@ -184,6 +185,12 @@ func (g *synctestGroup) TimeUntilEvent() (d time.Duration, scheduled bool) {
 		}
 	}
 	return d, scheduled
+}
+
+// Sleep is time.Sleep, but using synthetic time.
+func (g *synctestGroup) Sleep(d time.Duration) {
+	tm := g.NewTimer(d)
+	<-tm.C()
 }
 
 // NewTimer is time.NewTimer, but using synthetic time.
