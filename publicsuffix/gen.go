@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"go/format"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"regexp"
@@ -298,7 +297,7 @@ func generate(p func(io.Writer, *node) error, root *node, filename string) error
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filename, b, 0644)
+	return os.WriteFile(filename, b, 0644)
 }
 
 func gitCommit() (sha, date string, retErr error) {
@@ -310,7 +309,7 @@ func gitCommit() (sha, date string, retErr error) {
 		return "", "", fmt.Errorf("bad GET status for %s: %s", gitCommitURL, res.Status)
 	}
 	defer res.Body.Close()
-	b, err := ioutil.ReadAll(res.Body)
+	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", "", err
 	}

@@ -7,7 +7,7 @@ package dnsmessage
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -1611,7 +1611,7 @@ func TestNoFmt(t *testing.T) {
 		// Could use something complex like go/build or x/tools/go/packages,
 		// but there's no reason for "fmt" to appear (in quotes) in the source
 		// otherwise, so just use a simple substring search.
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}

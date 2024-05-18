@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"go/format"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -61,7 +60,7 @@ func genzsys() error {
 	case "freebsd", "linux":
 		zsys = "zsys_" + runtime.GOOS + "_" + runtime.GOARCH + ".go"
 	}
-	if err := ioutil.WriteFile(zsys, b, 0644); err != nil {
+	if err := os.WriteFile(zsys, b, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -100,7 +99,7 @@ func geniana() error {
 	if err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile("iana.go", b, 0644); err != nil {
+	if err := os.WriteFile("iana.go", b, 0644); err != nil {
 		return err
 	}
 	return nil

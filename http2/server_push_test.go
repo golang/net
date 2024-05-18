@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -40,7 +39,7 @@ func TestServer_Push_Success(t *testing.T) {
 		if r.Body == nil {
 			return fmt.Errorf("nil Body")
 		}
-		if buf, err := ioutil.ReadAll(r.Body); err != nil || len(buf) != 0 {
+		if buf, err := io.ReadAll(r.Body); err != nil || len(buf) != 0 {
 			return fmt.Errorf("ReadAll(Body)=%q,%v, want '',nil", buf, err)
 		}
 		return nil
