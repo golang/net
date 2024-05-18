@@ -151,7 +151,7 @@ func TestIdleConnTimeout(t *testing.T) {
 				}
 
 				// Respond to the client's request.
-				hf := testClientConnReadFrame[*MetaHeadersFrame](tc)
+				hf := readFrame[*HeadersFrame](t, tc)
 				tc.writeHeaders(HeadersFrameParam{
 					StreamID:   hf.StreamID,
 					EndHeaders: true,
@@ -865,6 +865,7 @@ func testTransportReqBodyAfterResponse(t *testing.T, status int) {
 			streamID:  rt.streamID(),
 			endStream: true,
 			size:      bodySize / 2,
+			multiple:  true,
 		})
 	} else {
 		// After a 403 response, client gives up and resets the stream.
@@ -1870,6 +1871,7 @@ func testTransportResponseHeaderTimeout(t *testing.T, body bool) {
 		tc.wantData(wantData{
 			endStream: true,
 			size:      bodySize,
+			multiple:  true,
 		})
 	}
 
@@ -2604,7 +2606,7 @@ func TestTransportAdjustsFlowControl(t *testing.T) {
 
 	gotBytes := int64(0)
 	for {
-		f := testClientConnReadFrame[*DataFrame](tc)
+		f := readFrame[*DataFrame](t, tc)
 		gotBytes += int64(len(f.Data()))
 		// After we've got half the client's initial flow control window's worth
 		// of request body data, give it just enough flow control to finish.
@@ -2700,7 +2702,7 @@ func TestTransportReturnsErrorOnBadResponseHeaders(t *testing.T) {
 		t.Fatalf("RoundTrip error = %#v; want %#v", err, want)
 	}
 
-	fr := testClientConnReadFrame[*RSTStreamFrame](tc)
+	fr := readFrame[*RSTStreamFrame](t, tc)
 	if fr.StreamID != 1 || fr.ErrCode != ErrCodeProtocol {
 		t.Errorf("Frame = %v; want RST_STREAM for stream 1 with ErrCodeProtocol", summarizeFrame(fr))
 	}
@@ -3071,7 +3073,7 @@ func TestTransportPingWhenReadingMultiplePings(t *testing.T) {
 
 		// ...ping now.
 		tc.advance(1 * time.Millisecond)
-		f := testClientConnReadFrame[*PingFrame](tc)
+		f := readFrame[*PingFrame](t, tc)
 		tc.writePing(true, f.Data)
 	}
 
@@ -3375,7 +3377,7 @@ func TestTransportMaxFrameReadSize(t *testing.T) {
 				tr.MaxReadFrameSize = test.maxReadFrameSize
 			})
 
-			fr := testClientConnReadFrame[*SettingsFrame](tc)
+			fr := readFrame[*SettingsFrame](t, tc)
 			got, ok := fr.Value(SettingMaxFrameSize)
 			if !ok {
 				t.Errorf("Transport.MaxReadFrameSize = %v; server got no setting, want %v", test.maxReadFrameSize, test.want)
@@ -3518,7 +3520,7 @@ func TestTransportMaxDecoderHeaderTableSize(t *testing.T) {
 		tr.MaxDecoderHeaderTableSize = reqSize
 	})
 
-	fr := testClientConnReadFrame[*SettingsFrame](tc)
+	fr := readFrame[*SettingsFrame](t, tc)
 	if v, ok := fr.Value(SettingHeaderTableSize); !ok {
 		t.Fatalf("missing SETTINGS_HEADER_TABLE_SIZE setting")
 	} else if v != reqSize {
@@ -4135,7 +4137,7 @@ func TestTransportBodyEagerEndStream(t *testing.T) {
 	tc.roundTrip(req)
 
 	tc.wantFrameType(FrameHeaders)
-	f := testClientConnReadFrame[*DataFrame](tc)
+	f := readFrame[*DataFrame](t, tc)
 	if !f.StreamEnded() {
 		t.Fatalf("data frame without END_STREAM %v", f)
 	}

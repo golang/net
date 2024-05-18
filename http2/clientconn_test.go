@@ -13,10 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"reflect"
 	"runtime"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,6 +60,7 @@ func TestTestClientConn(t *testing.T) {
 		streamID:  rt.streamID(),
 		endStream: true,
 		size:      10,
+		multiple:  true,
 	})
 
 	// tc.writeHeaders sends a HEADERS frame back to the client.
@@ -97,6 +96,7 @@ type testClientConn struct {
 	fr    *Framer
 	cc    *ClientConn
 	group *synctestGroup
+	testConnFramer
 
 	encbuf bytes.Buffer
 	enc    *hpack.Encoder
@@ -115,6 +115,7 @@ func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientCo
 	}
 	cli, srv := synctestNetPipe(tc.group)
 	srv.SetReadDeadline(tc.group.Now())
+	srv.autoWait = true
 	tc.netconn = srv
 	tc.enc = hpack.NewEncoder(&tc.encbuf)
 
@@ -123,8 +124,12 @@ func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientCo
 	// cli is the ClientConn's side, srv is the side controlled by the test.
 	cc.tconn = cli
 	tc.fr = NewFramer(srv, srv)
+	tc.testConnFramer = testConnFramer{
+		t:   t,
+		fr:  tc.fr,
+		dec: hpack.NewDecoder(initialHeaderTableSize, nil),
+	}
 
-	tc.fr.ReadMetaHeaders = hpack.NewDecoder(initialHeaderTableSize, nil)
 	tc.fr.SetMaxReadFrameSize(10 << 20)
 	t.Cleanup(func() {
 		tc.closeWrite()
@@ -174,169 +179,15 @@ func (tc *testClientConn) hasFrame() bool {
 	return len(tc.netconn.Peek()) > 0
 }
 
+// isClosed reports whether the peer has closed the connection.
 func (tc *testClientConn) isClosed() bool {
 	return tc.netconn.IsClosedByPeer()
 }
 
-// readFrame reads the next frame from the conn.
-func (tc *testClientConn) readFrame() Frame {
-	tc.t.Helper()
-	tc.sync()
-	fr, err := tc.fr.ReadFrame()
-	if err == io.EOF || err == os.ErrDeadlineExceeded {
-		return nil
-	}
-	if err != nil {
-		tc.t.Fatalf("ReadFrame: %v", err)
-	}
-	return fr
-}
-
-// testClientConnReadFrame reads a frame of a specific type from the conn.
-func testClientConnReadFrame[T any](tc *testClientConn) T {
-	tc.t.Helper()
-	var v T
-	fr := tc.readFrame()
-	if fr == nil {
-		tc.t.Fatalf("got no frame, want frame %T", v)
-	}
-	v, ok := fr.(T)
-	if !ok {
-		tc.t.Fatalf("got frame %T, want %T", fr, v)
-	}
-	return v
-}
-
-// wantFrameType reads the next frame from the conn.
-// It produces an error if the frame type is not the expected value.
-func (tc *testClientConn) wantFrameType(want FrameType) {
-	tc.t.Helper()
-	fr := tc.readFrame()
-	if fr == nil {
-		tc.t.Fatalf("got no frame, want frame %v", want)
-	}
-	if got := fr.Header().Type; got != want {
-		tc.t.Fatalf("got frame %v, want %v", got, want)
-	}
-}
-
-// wantUnorderedFrames reads frames from the conn until every condition in want has been satisfied.
-//
-// want is a list of func(*SomeFrame) bool.
-// wantUnorderedFrames will call each func with frames of the appropriate type
-// until the func returns true.
-// It calls t.Fatal if an unexpected frame is received (no func has that frame type,
-// or all funcs with that type have returned true), or if the conn runs out of frames
-// with unsatisfied funcs.
-//
-// Example:
-//
-//	// Read a SETTINGS frame, and any number of DATA frames for a stream.
-//	// The SETTINGS frame may appear anywhere in the sequence.
-//	// The last DATA frame must indicate the end of the stream.
-//	tc.wantUnorderedFrames(
-//		func(f *SettingsFrame) bool {
-//			return true
-//		},
-//		func(f *DataFrame) bool {
-//			return f.StreamEnded()
-//		},
-//	)
-func (tc *testClientConn) wantUnorderedFrames(want ...any) {
-	tc.t.Helper()
-	want = slices.Clone(want)
-	seen := 0
-frame:
-	for seen < len(want) && !tc.t.Failed() {
-		fr := tc.readFrame()
-		if fr == nil {
-			break
-		}
-		for i, f := range want {
-			if f == nil {
-				continue
-			}
-			typ := reflect.TypeOf(f)
-			if typ.Kind() != reflect.Func ||
-				typ.NumIn() != 1 ||
-				typ.NumOut() != 1 ||
-				typ.Out(0) != reflect.TypeOf(true) {
-				tc.t.Fatalf("expected func(*SomeFrame) bool, got %T", f)
-			}
-			if typ.In(0) == reflect.TypeOf(fr) {
-				out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(fr)})
-				if out[0].Bool() {
-					want[i] = nil
-					seen++
-				}
-				continue frame
-			}
-		}
-		tc.t.Errorf("got unexpected frame type %T", fr)
-	}
-	if seen < len(want) {
-		for _, f := range want {
-			if f == nil {
-				continue
-			}
-			tc.t.Errorf("did not see expected frame: %v", reflect.TypeOf(f).In(0))
-		}
-		tc.t.Fatalf("did not see %v expected frame types", len(want)-seen)
-	}
-}
-
-type wantHeader struct {
-	streamID  uint32
-	endStream bool
-	header    http.Header
-}
-
-// wantHeaders reads a HEADERS frame and potential CONTINUATION frames,
-// and asserts that they contain the expected headers.
-func (tc *testClientConn) wantHeaders(want wantHeader) {
-	tc.t.Helper()
-	got := testClientConnReadFrame[*MetaHeadersFrame](tc)
-	if got, want := got.StreamID, want.streamID; got != want {
-		tc.t.Fatalf("got stream ID %v, want %v", got, want)
-	}
-	if got, want := got.StreamEnded(), want.endStream; got != want {
-		tc.t.Fatalf("got stream ended %v, want %v", got, want)
-	}
-	gotHeader := make(http.Header)
-	for _, f := range got.Fields {
-		gotHeader[f.Name] = append(gotHeader[f.Name], f.Value)
-	}
-	for k, v := range want.header {
-		if !reflect.DeepEqual(v, gotHeader[k]) {
-			tc.t.Fatalf("got header %q = %q; want %q", k, v, gotHeader[k])
-		}
-	}
-}
-
-type wantData struct {
-	streamID  uint32
-	endStream bool
-	size      int
-}
-
-// wantData reads zero or more DATA frames, and asserts that they match the expectation.
-func (tc *testClientConn) wantData(want wantData) {
-	tc.t.Helper()
-	gotSize := 0
-	gotEndStream := false
-	for tc.hasFrame() && !gotEndStream {
-		data := testClientConnReadFrame[*DataFrame](tc)
-		gotSize += len(data.Data())
-		if data.StreamEnded() {
-			gotEndStream = true
-		}
-	}
-	if gotSize != want.size {
-		tc.t.Fatalf("got %v bytes of DATA frames, want %v", gotSize, want.size)
-	}
-	if gotEndStream != want.endStream {
-		tc.t.Fatalf("after %v bytes of DATA frames, got END_STREAM=%v; want %v", gotSize, gotEndStream, want.endStream)
-	}
+// closeWrite causes the net.Conn used by the ClientConn to return a error
+// from Read calls.
+func (tc *testClientConn) closeWrite() {
+	tc.netconn.Close()
 }
 
 // testRequestBody is a Request.Body for use in tests.
@@ -468,38 +319,6 @@ func (tc *testClientConn) greet(settings ...Setting) {
 	tc.wantFrameType(FrameSettings) // acknowledgement
 }
 
-func (tc *testClientConn) writeSettings(settings ...Setting) {
-	tc.t.Helper()
-	if err := tc.fr.WriteSettings(settings...); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeSettingsAck() {
-	tc.t.Helper()
-	if err := tc.fr.WriteSettingsAck(); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeData(streamID uint32, endStream bool, data []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteData(streamID, endStream, data); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeDataPadded(streamID uint32, endStream bool, data, pad []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteDataPadded(streamID, endStream, data, pad); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
 // makeHeaderBlockFragment encodes headers in a form suitable for inclusion
 // in a HEADERS or CONTINUATION frame.
 //
@@ -513,87 +332,6 @@ func (tc *testClientConn) makeHeaderBlockFragment(s ...string) []byte {
 		tc.enc.WriteField(hpack.HeaderField{Name: s[i], Value: s[i+1]})
 	}
 	return tc.encbuf.Bytes()
-}
-
-func (tc *testClientConn) writeHeaders(p HeadersFrameParam) {
-	tc.t.Helper()
-	if err := tc.fr.WriteHeaders(p); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-// writeHeadersMode writes header frames, as modified by mode:
-//
-//   - noHeader: Don't write the header.
-//   - oneHeader: Write a single HEADERS frame.
-//   - splitHeader: Write a HEADERS frame and CONTINUATION frame.
-func (tc *testClientConn) writeHeadersMode(mode headerType, p HeadersFrameParam) {
-	tc.t.Helper()
-	switch mode {
-	case noHeader:
-	case oneHeader:
-		tc.writeHeaders(p)
-	case splitHeader:
-		if len(p.BlockFragment) < 2 {
-			panic("too small")
-		}
-		contData := p.BlockFragment[1:]
-		contEnd := p.EndHeaders
-		p.BlockFragment = p.BlockFragment[:1]
-		p.EndHeaders = false
-		tc.writeHeaders(p)
-		tc.writeContinuation(p.StreamID, contEnd, contData)
-	default:
-		panic("bogus mode")
-	}
-}
-
-func (tc *testClientConn) writeContinuation(streamID uint32, endHeaders bool, headerBlockFragment []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteContinuation(streamID, endHeaders, headerBlockFragment); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeRSTStream(streamID uint32, code ErrCode) {
-	tc.t.Helper()
-	if err := tc.fr.WriteRSTStream(streamID, code); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writePing(ack bool, data [8]byte) {
-	tc.t.Helper()
-	if err := tc.fr.WritePing(ack, data); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeGoAway(maxStreamID uint32, code ErrCode, debugData []byte) {
-	tc.t.Helper()
-	if err := tc.fr.WriteGoAway(maxStreamID, code, debugData); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-func (tc *testClientConn) writeWindowUpdate(streamID, incr uint32) {
-	tc.t.Helper()
-	if err := tc.fr.WriteWindowUpdate(streamID, incr); err != nil {
-		tc.t.Fatal(err)
-	}
-	tc.sync()
-}
-
-// closeWrite causes the net.Conn used by the ClientConn to return a error
-// from Read calls.
-func (tc *testClientConn) closeWrite() {
-	tc.netconn.Close()
-	tc.sync()
 }
 
 // inflowWindow returns the amount of inbound flow control available for a stream,

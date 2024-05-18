@@ -218,12 +218,12 @@ func TestServer_Push_Success(t *testing.T) {
 
 	consumed := map[uint32]int{}
 	for k := 0; len(expected) > 0; k++ {
-		f, err := st.readFrame()
-		if err != nil {
+		f := st.readFrame()
+		if f == nil {
 			for id, left := range expected {
 				t.Errorf("stream %d: missing %d frames", id, len(left))
 			}
-			t.Fatalf("readFrame %d: %v", k, err)
+			break
 		}
 		id := f.Header().StreamID
 		label := fmt.Sprintf("stream %d, frame %d", id, consumed[id])
@@ -339,10 +339,10 @@ func testServer_Push_RejectSingleRequest(t *testing.T, doPush func(http.Pusher, 
 		t.Error(err)
 	}
 	// Should not get a PUSH_PROMISE frame.
-	hf := st.wantHeaders()
-	if !hf.StreamEnded() {
-		t.Error("stream should end after headers")
-	}
+	st.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+	})
 }
 
 func TestServer_Push_RejectIfDisabled(t *testing.T) {
@@ -459,7 +459,7 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 	}
 	getSlash(st)
 	// After the PUSH_PROMISE is sent, the stream should be stateHalfClosedRemote.
-	st.wantPushPromise()
+	_ = readFrame[*PushPromiseFrame](t, st)
 	if got, want := st.streamState(2), stateHalfClosedRemote; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
@@ -468,10 +468,10 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 	// the stream before we check st.streamState(2) -- should that happen, we'll
 	// see stateClosed and fail the above check.
 	close(gotPromise)
-	st.wantHeaders()
-	if df := st.wantData(); !df.StreamEnded() {
-		t.Fatal("expected END_STREAM flag on DATA")
-	}
+	st.wantHeaders(wantHeader{
+		streamID:  2,
+		endStream: false,
+	})
 	if got, want := st.streamState(2), stateClosed; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
@@ -554,9 +554,9 @@ func TestServer_Push_Underflow(t *testing.T) {
 	numPushPromises := 0
 	numHeaders := 0
 	for numHeaders < numRequests*2 || numPushPromises < numRequests {
-		f, err := st.readFrame()
-		if err != nil {
-			st.t.Fatal(err)
+		f := st.readFrame()
+		if f == nil {
+			st.t.Fatal("conn is idle, want frame")
 		}
 		switch f := f.(type) {
 		case *HeadersFrame:
