@@ -481,18 +481,6 @@ func TestTransportGroupsPendingDials(t *testing.T) {
 	}
 }
 
-func retry(tries int, delay time.Duration, fn func() error) error {
-	var err error
-	for i := 0; i < tries; i++ {
-		err = fn()
-		if err == nil {
-			return nil
-		}
-		time.Sleep(delay)
-	}
-	return err
-}
-
 func TestTransportAbortClosesPipes(t *testing.T) {
 	shutdown := make(chan struct{})
 	ts := newTestServer(t,
