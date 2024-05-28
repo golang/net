@@ -3,13 +3,15 @@
 // license that can be found in the LICENSE file.
 
 //go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows || zos
-// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows zos
 
 package ipv6_test
 
 import (
+	"errors"
 	"os"
 	"syscall"
+
+	"golang.org/x/net/ipv6"
 )
 
 func protocolNotSupported(err error) bool {
@@ -28,5 +30,5 @@ func protocolNotSupported(err error) bool {
 			}
 		}
 	}
-	return false
+	return errors.Is(err, ipv6.ErrNotImplemented)
 }

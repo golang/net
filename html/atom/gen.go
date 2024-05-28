@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 //go:generate go run gen.go
 //go:generate go run gen.go -test
@@ -15,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"sort"
@@ -49,7 +47,7 @@ func genFile(name string, buf *bytes.Buffer) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := ioutil.WriteFile(name, b, 0644); err != nil {
+	if err := os.WriteFile(name, b, 0644); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

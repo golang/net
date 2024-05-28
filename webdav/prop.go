@@ -162,7 +162,7 @@ var liveProps = map[xml.Name]struct {
 
 // TODO(nigeltao) merge props and allprop?
 
-// Props returns the status of the properties named pnames for resource name.
+// props returns the status of the properties named pnames for resource name.
 //
 // Each Propstat has a unique status and each property name will only be part
 // of one Propstat element.
@@ -213,7 +213,7 @@ func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pname
 	return makePropstats(pstatOK, pstatNotFound), nil
 }
 
-// Propnames returns the property names defined for resource name.
+// propnames returns the property names defined for resource name.
 func propnames(ctx context.Context, fs FileSystem, ls LockSystem, name string) ([]xml.Name, error) {
 	f, err := fs.OpenFile(ctx, name, os.O_RDONLY, 0)
 	if err != nil {
@@ -246,7 +246,7 @@ func propnames(ctx context.Context, fs FileSystem, ls LockSystem, name string) (
 	return pnames, nil
 }
 
-// Allprop returns the properties defined for resource name and the properties
+// allprop returns the properties defined for resource name and the properties
 // named in include.
 //
 // Note that RFC 4918 defines 'allprop' to return the DAV: properties defined
@@ -272,7 +272,7 @@ func allprop(ctx context.Context, fs FileSystem, ls LockSystem, name string, inc
 	return props(ctx, fs, ls, name, pnames)
 }
 
-// Patch patches the properties of resource name. The return values are
+// patch patches the properties of resource name. The return values are
 // constrained in the same manner as DeadPropsHolder.Patch.
 func patch(ctx context.Context, fs FileSystem, ls LockSystem, name string, patches []Proppatch) ([]Propstat, error) {
 	conflict := false
@@ -425,7 +425,7 @@ func findContentType(ctx context.Context, fs FileSystem, ls LockSystem, name str
 	}
 	ctype = http.DetectContentType(buf[:n])
 	// Rewind file.
-	_, err = f.Seek(0, os.SEEK_SET)
+	_, err = f.Seek(0, io.SeekStart)
 	return ctype, err
 }
 

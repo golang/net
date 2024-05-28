@@ -6,6 +6,7 @@ package route
 
 import (
 	"reflect"
+	"syscall"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ type parseAddrsOnDarwinTest struct {
 
 var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	{
-		sysRTA_DST | sysRTA_GATEWAY | sysRTA_NETMASK,
+		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x10, 0x2, 0x0, 0x0, 0xc0, 0xa8, 0x56, 0x0,

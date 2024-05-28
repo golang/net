@@ -16,7 +16,7 @@ import (
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
@@ -61,7 +61,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if _, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback); err != nil {
@@ -85,10 +85,6 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 }
 
 func TestRawConnUnicastSocketOptions(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}

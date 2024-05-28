@@ -11,7 +11,6 @@ import (
 	"os"
 	"runtime"
 	"testing"
-	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/internal/iana"
@@ -30,7 +29,7 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows", "zos":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "windows", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -100,9 +99,6 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 					}
 					t.Fatal(err)
 				}
-				if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-					t.Fatal(err)
-				}
 				if err := p.SetMulticastTTL(i + 1); err != nil {
 					t.Fatal(err)
 				}
@@ -131,10 +127,6 @@ var packetConnReadWriteMulticastICMPTests = []struct {
 }
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -221,9 +213,6 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 					}
 					t.Fatal(err)
 				}
-				if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-					t.Fatal(err)
-				}
 				if err := p.SetMulticastTTL(i + 1); err != nil {
 					t.Fatal(err)
 				}
@@ -261,10 +250,6 @@ var rawConnReadWriteMulticastICMPTests = []struct {
 }
 
 func TestRawConnReadWriteMulticastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
@@ -343,9 +328,6 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
-				t.Fatal(err)
-			}
-			if err := r.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 				t.Fatal(err)
 			}
 			r.SetMulticastTTL(i + 1)

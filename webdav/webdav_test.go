@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -256,7 +255,7 @@ func TestFilenameEscape(t *testing.T) {
 		}
 		defer res.Body.Close()
 
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		if err != nil {
 			return "", "", err
 		}
@@ -344,6 +343,66 @@ func TestFilenameEscape(t *testing.T) {
 		}
 		if gotDisplayName != tc.wantDisplayName {
 			t.Errorf("name=%q: got dispayname %q, want %q", tc.name, gotDisplayName, tc.wantDisplayName)
+		}
+	}
+}
+
+func TestPutRequest(t *testing.T) {
+	h := &Handler{
+		FileSystem: NewMemFS(),
+		LockSystem: NewMemLS(),
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	do := func(method, urlStr string, body string) (*http.Response, error) {
+		bodyReader := strings.NewReader(body)
+		req, err := http.NewRequest(method, urlStr, bodyReader)
+		if err != nil {
+			return nil, err
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+
+	testCases := []struct {
+		name      string
+		urlPrefix string
+		want      int
+	}{{
+		name:      "put",
+		urlPrefix: "/res",
+		want:      http.StatusCreated,
+	}, {
+		name:      "put_utf8_segment",
+		urlPrefix: "/res-%e2%82%ac",
+		want:      http.StatusCreated,
+	}, {
+		name:      "put_empty_segment",
+		urlPrefix: "",
+		want:      http.StatusNotFound,
+	}, {
+		name:      "put_root_segment",
+		urlPrefix: "/",
+		want:      http.StatusNotFound,
+	}, {
+		name:      "put_no_parent [RFC4918:S9.7.1]",
+		urlPrefix: "/409me/noparent.txt",
+		want:      http.StatusConflict,
+	}}
+
+	for _, tc := range testCases {
+		urlStr := srv.URL + tc.urlPrefix
+		res, err := do("PUT", urlStr, "ABC\n")
+		if err != nil {
+			t.Errorf("name=%q: PUT: %v", tc.name, err)
+			continue
+		}
+		if res.StatusCode != tc.want {
+			t.Errorf("name=%q: got status code %d, want %d", tc.name, res.StatusCode, tc.want)
 		}
 	}
 }

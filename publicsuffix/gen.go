@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -22,11 +21,11 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"go/format"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"regexp"
@@ -37,10 +36,14 @@ import (
 )
 
 const (
-	// These sum of these four values must be no greater than 32.
+	// This must be a multiple of 8 and no greater than 64.
+	// Update nodeValue in list.go if this changes.
+	nodesBits = 40
+
+	// These sum of these four values must be no greater than nodesBits.
 	nodesBitsChildren   = 10
 	nodesBitsICANN      = 1
-	nodesBitsTextOffset = 15
+	nodesBitsTextOffset = 16
 	nodesBitsTextLength = 6
 
 	// These sum of these four values must be no greater than 32.
@@ -51,6 +54,7 @@ const (
 )
 
 var (
+	combinedText  string
 	maxChildren   int
 	maxTextOffset int
 	maxTextLength int
@@ -97,7 +101,7 @@ const (
 )
 
 var (
-	labelEncoding = map[string]uint32{}
+	labelEncoding = map[string]uint64{}
 	labelsList    = []string{}
 	labelsMap     = map[string]bool{}
 	rules         = []string{}
@@ -111,11 +115,10 @@ var (
 	shaRE  = regexp.MustCompile(`"sha":"([^"]+)"`)
 	dateRE = regexp.MustCompile(`"committer":{[^{]+"date":"([^"]+)"`)
 
-	comments = flag.Bool("comments", false, "generate table.go comments, for debugging")
-	subset   = flag.Bool("subset", false, "generate only a subset of the full table, for debugging")
-	url      = flag.String("url", defaultURL, "URL of the publicsuffix.org list. If empty, stdin is read instead")
-	v        = flag.Bool("v", false, "verbose output (to stderr)")
-	version  = flag.String("version", "", "the effective_tld_names.dat version")
+	subset  = flag.Bool("subset", false, "generate only a subset of the full table, for debugging")
+	url     = flag.String("url", defaultURL, "URL of the publicsuffix.org list. If empty, stdin is read instead")
+	v       = flag.Bool("v", false, "verbose output (to stderr)")
+	version = flag.String("version", "", "the effective_tld_names.dat version")
 )
 
 func main() {
@@ -127,7 +130,13 @@ func main() {
 
 func main1() error {
 	flag.Parse()
-	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsICANN+nodesBitsChildren > 32 {
+	if nodesBits > 64 {
+		return fmt.Errorf("nodesBits is too large")
+	}
+	if nodesBits%8 != 0 {
+		return fmt.Errorf("nodesBits must be a multiple of 8")
+	}
+	if nodesBitsTextLength+nodesBitsTextOffset+nodesBitsICANN+nodesBitsChildren > nodesBits {
 		return fmt.Errorf("not enough bits to encode the nodes table")
 	}
 	if childrenBitsLo+childrenBitsHi+childrenBitsNodeType+childrenBitsWildcard > 32 {
@@ -244,7 +253,33 @@ func main1() error {
 	}
 	sort.Strings(labelsList)
 
-	if err := generate(printReal, &root, "table.go"); err != nil {
+	combinedText = combineText(labelsList)
+	if combinedText == "" {
+		return fmt.Errorf("internal error: combineText returned no text")
+	}
+	for _, label := range labelsList {
+		offset, length := strings.Index(combinedText, label), len(label)
+		if offset < 0 {
+			return fmt.Errorf("internal error: could not find %q in text %q", label, combinedText)
+		}
+		maxTextOffset, maxTextLength = max(maxTextOffset, offset), max(maxTextLength, length)
+		if offset >= 1<<nodesBitsTextOffset {
+			return fmt.Errorf("text offset %d is too large, or nodeBitsTextOffset is too small", offset)
+		}
+		if length >= 1<<nodesBitsTextLength {
+			return fmt.Errorf("text length %d is too large, or nodeBitsTextLength is too small", length)
+		}
+		labelEncoding[label] = uint64(offset)<<nodesBitsTextLength | uint64(length)
+	}
+
+	if err := root.walk(assignIndexes); err != nil {
+		return err
+	}
+
+	if err := generate(printMetadata, &root, "table.go"); err != nil {
+		return err
+	}
+	if err := generateBinaryData(&root, combinedText); err != nil {
 		return err
 	}
 	if err := generate(printTest, &root, "table_test.go"); err != nil {
@@ -262,7 +297,7 @@ func generate(p func(io.Writer, *node) error, root *node, filename string) error
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filename, b, 0644)
+	return os.WriteFile(filename, b, 0644)
 }
 
 func gitCommit() (sha, date string, retErr error) {
@@ -274,7 +309,7 @@ func gitCommit() (sha, date string, retErr error) {
 		return "", "", fmt.Errorf("bad GET status for %s: %s", gitCommitURL, res.Status)
 	}
 	defer res.Body.Close()
-	b, err := ioutil.ReadAll(res.Body)
+	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", "", err
 	}
@@ -297,21 +332,67 @@ func printTest(w io.Writer, n *node) error {
 		fmt.Fprintf(w, "%q,\n", rule)
 	}
 	fmt.Fprintf(w, "}\n\nvar nodeLabels = [...]string{\n")
-	if err := n.walk(w, printNodeLabel); err != nil {
+	if err := n.walk(func(n *node) error {
+		return printNodeLabel(w, n)
+	}); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "}\n")
 	return nil
 }
 
-func printReal(w io.Writer, n *node) error {
+func generateBinaryData(root *node, combinedText string) error {
+	if err := os.WriteFile("data/text", []byte(combinedText), 0666); err != nil {
+		return err
+	}
+
+	var nodes []byte
+	if err := root.walk(func(n *node) error {
+		for _, c := range n.children {
+			nodes = appendNodeEncoding(nodes, c)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := os.WriteFile("data/nodes", nodes, 0666); err != nil {
+		return err
+	}
+
+	var children []byte
+	for _, c := range childrenEncoding {
+		children = binary.BigEndian.AppendUint32(children, c)
+	}
+	if err := os.WriteFile("data/children", children, 0666); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func appendNodeEncoding(b []byte, n *node) []byte {
+	encoding := labelEncoding[n.label]
+	if n.icann {
+		encoding |= 1 << (nodesBitsTextLength + nodesBitsTextOffset)
+	}
+	encoding |= uint64(n.childrenIndex) << (nodesBitsTextLength + nodesBitsTextOffset + nodesBitsICANN)
+	for i := nodesBits - 8; i >= 0; i -= 8 {
+		b = append(b, byte((encoding>>i)&0xff))
+	}
+	return b
+}
+
+func printMetadata(w io.Writer, n *node) error {
 	const header = `// generated by go run gen.go; DO NOT EDIT
 
 package publicsuffix
 
+import _ "embed"
+
 const version = %q
 
 const (
+	nodesBits           = %d
 	nodesBitsChildren   = %d
 	nodesBitsICANN      = %d
 	nodesBitsTextOffset = %d
@@ -332,72 +413,36 @@ const (
 // numTLD is the number of top level domains.
 const numTLD = %d
 
+// text is the combined text of all labels.
+//
+//go:embed data/text
+var text string
+
 `
 	fmt.Fprintf(w, header, *version,
+		nodesBits,
 		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength,
 		childrenBitsWildcard, childrenBitsNodeType, childrenBitsHi, childrenBitsLo,
 		nodeTypeNormal, nodeTypeException, nodeTypeParentOnly, len(n.children))
-
-	text := combineText(labelsList)
-	if text == "" {
-		return fmt.Errorf("internal error: makeText returned no text")
-	}
-	for _, label := range labelsList {
-		offset, length := strings.Index(text, label), len(label)
-		if offset < 0 {
-			return fmt.Errorf("internal error: could not find %q in text %q", label, text)
-		}
-		maxTextOffset, maxTextLength = max(maxTextOffset, offset), max(maxTextLength, length)
-		if offset >= 1<<nodesBitsTextOffset {
-			return fmt.Errorf("text offset %d is too large, or nodeBitsTextOffset is too small", offset)
-		}
-		if length >= 1<<nodesBitsTextLength {
-			return fmt.Errorf("text length %d is too large, or nodeBitsTextLength is too small", length)
-		}
-		labelEncoding[label] = uint32(offset)<<nodesBitsTextLength | uint32(length)
-	}
-	fmt.Fprintf(w, "// Text is the combined text of all labels.\nconst text = ")
-	for len(text) > 0 {
-		n, plus := len(text), ""
-		if n > 64 {
-			n, plus = 64, " +"
-		}
-		fmt.Fprintf(w, "%q%s\n", text[:n], plus)
-		text = text[n:]
-	}
-
-	if err := n.walk(w, assignIndexes); err != nil {
-		return err
-	}
-
 	fmt.Fprintf(w, `
-
-// nodes is the list of nodes. Each node is represented as a uint32, which
-// encodes the node's children, wildcard bit and node type (as an index into
-// the children array), ICANN bit and text.
+// nodes is the list of nodes. Each node is represented as a %v-bit integer,
+// which encodes the node's children, wildcard bit and node type (as an index
+// into the children array), ICANN bit and text.
 //
-// If the table was generated with the -comments flag, there is a //-comment
-// after each node's data. In it is the nodes-array indexes of the children,
-// formatted as (n0x1234-n0x1256), with * denoting the wildcard bit. The
-// nodeType is printed as + for normal, ! for exception, and o for parent-only
-// nodes that have children but don't match a domain label in their own right.
-// An I denotes an ICANN domain.
-//
-// The layout within the uint32, from MSB to LSB, is:
+// The layout within the node, from MSB to LSB, is:
 //	[%2d bits] unused
 //	[%2d bits] children index
 //	[%2d bits] ICANN bit
 //	[%2d bits] text index
 //	[%2d bits] text length
-var nodes = [...]uint32{
+//
+//go:embed data/nodes
+var nodes uint40String
 `,
-		32-nodesBitsChildren-nodesBitsICANN-nodesBitsTextOffset-nodesBitsTextLength,
+		nodesBits,
+		nodesBits-nodesBitsChildren-nodesBitsICANN-nodesBitsTextOffset-nodesBitsTextLength,
 		nodesBitsChildren, nodesBitsICANN, nodesBitsTextOffset, nodesBitsTextLength)
-	if err := n.walk(w, printNode); err != nil {
-		return err
-	}
-	fmt.Fprintf(w, `}
-
+	fmt.Fprintf(w, `
 // children is the list of nodes' children, the parent's wildcard bit and the
 // parent's node type. If a node has no children then their children index
 // will be in the range [0, 6), depending on the wildcard bit and node type.
@@ -408,27 +453,13 @@ var nodes = [...]uint32{
 //	[%2d bits] node type
 //	[%2d bits] high nodes index (exclusive) of children
 //	[%2d bits] low nodes index (inclusive) of children
-var children=[...]uint32{
+//
+//go:embed data/children
+var children uint32String
 `,
 		32-childrenBitsWildcard-childrenBitsNodeType-childrenBitsHi-childrenBitsLo,
 		childrenBitsWildcard, childrenBitsNodeType, childrenBitsHi, childrenBitsLo)
-	for i, c := range childrenEncoding {
-		s := "---------------"
-		lo := c & (1<<childrenBitsLo - 1)
-		hi := (c >> childrenBitsLo) & (1<<childrenBitsHi - 1)
-		if lo != hi {
-			s = fmt.Sprintf("n0x%04x-n0x%04x", lo, hi)
-		}
-		nodeType := int(c>>(childrenBitsLo+childrenBitsHi)) & (1<<childrenBitsNodeType - 1)
-		wildcard := c>>(childrenBitsLo+childrenBitsHi+childrenBitsNodeType) != 0
-		if *comments {
-			fmt.Fprintf(w, "0x%08x, // c0x%04x (%s)%s %s\n",
-				c, i, s, wildcardStr(wildcard), nodeTypeStr(nodeType))
-		} else {
-			fmt.Fprintf(w, "0x%x,\n", c)
-		}
-	}
-	fmt.Fprintf(w, "}\n\n")
+
 	fmt.Fprintf(w, "// max children %d (capacity %d)\n", maxChildren, 1<<nodesBitsChildren-1)
 	fmt.Fprintf(w, "// max text offset %d (capacity %d)\n", maxTextOffset, 1<<nodesBitsTextOffset-1)
 	fmt.Fprintf(w, "// max text length %d (capacity %d)\n", maxTextLength, 1<<nodesBitsTextLength-1)
@@ -452,12 +483,12 @@ type node struct {
 	children []*node
 }
 
-func (n *node) walk(w io.Writer, f func(w1 io.Writer, n1 *node) error) error {
-	if err := f(w, n); err != nil {
+func (n *node) walk(f func(*node) error) error {
+	if err := f(n); err != nil {
 		return err
 	}
 	for _, c := range n.children {
-		if err := c.walk(w, f); err != nil {
+		if err := c.walk(f); err != nil {
 			return err
 		}
 	}
@@ -503,7 +534,7 @@ var childrenEncoding = []uint32{
 
 var firstCallToAssignIndexes = true
 
-func assignIndexes(w io.Writer, n *node) error {
+func assignIndexes(n *node) error {
 	if len(n.children) != 0 {
 		// Assign nodesIndex.
 		n.firstChild = nextNodesIndex
@@ -543,29 +574,6 @@ func assignIndexes(w io.Writer, n *node) error {
 		n.childrenIndex = n.nodeType
 		if n.wildcard {
 			n.childrenIndex += numNodeType
-		}
-	}
-	return nil
-}
-
-func printNode(w io.Writer, n *node) error {
-	for _, c := range n.children {
-		s := "---------------"
-		if len(c.children) != 0 {
-			s = fmt.Sprintf("n0x%04x-n0x%04x", c.firstChild, c.firstChild+len(c.children))
-		}
-		encoding := labelEncoding[c.label]
-		if c.icann {
-			encoding |= 1 << (nodesBitsTextLength + nodesBitsTextOffset)
-		}
-		encoding |= uint32(c.childrenIndex) << (nodesBitsTextLength + nodesBitsTextOffset + nodesBitsICANN)
-		if *comments {
-			fmt.Fprintf(w, "0x%08x, // n0x%04x c0x%04x (%s)%s %s %s %s\n",
-				encoding, c.nodesIndex, c.childrenIndex, s, wildcardStr(c.wildcard),
-				nodeTypeStr(c.nodeType), icannStr(c.icann), c.label,
-			)
-		} else {
-			fmt.Fprintf(w, "0x%x,\n", encoding)
 		}
 	}
 	return nil

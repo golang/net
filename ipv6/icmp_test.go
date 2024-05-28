@@ -5,6 +5,7 @@
 package ipv6_test
 
 import (
+	"errors"
 	"net"
 	"reflect"
 	"runtime"
@@ -34,7 +35,7 @@ func TestICMPString(t *testing.T) {
 
 func TestICMPFilter(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -60,10 +61,6 @@ func TestICMPFilter(t *testing.T) {
 }
 
 func TestSetICMPFilter(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
 	}
@@ -83,9 +80,12 @@ func TestSetICMPFilter(t *testing.T) {
 	f.SetAll(true)
 	f.Accept(ipv6.ICMPTypeEchoRequest)
 	f.Accept(ipv6.ICMPTypeEchoReply)
-	if err := p.SetICMPFilter(&f); err != nil {
+	if err := p.SetICMPFilter(&f); errors.Is(err, ipv6.ErrNotImplemented) {
+		t.Skipf("setting ICMP filter not supported: %v", err)
+	} else if err != nil {
 		t.Fatal(err)
 	}
+
 	kf, err := p.ICMPFilter()
 	if err != nil {
 		t.Fatal(err)

@@ -7,12 +7,22 @@ package html
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+// https://github.com/golang/go/issues/58246
+const issue58246 = `<!--[if gte mso 12]>
+  <xml>
+      <o:OfficeDocumentSettings>
+      <o:AllowPNG/>
+      <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+<![endif]-->`
 
 type tokenTest struct {
 	// A short description of the test case.
@@ -295,7 +305,7 @@ var tokenTests = []tokenTest{
 		"<?xml?>",
 		"<!--?xml?-->",
 	},
-	// Comments.
+	// Comments. See also func TestComments.
 	{
 		"comment0",
 		"abc<b><!-- skipme --></b>def",
@@ -319,7 +329,7 @@ var tokenTests = []tokenTest{
 	{
 		"comment4",
 		"a<!--x->-->z",
-		"a$<!--x->-->$z",
+		"a$<!--x-&gt;-->$z",
 	},
 	{
 		"comment5",
@@ -365,6 +375,133 @@ var tokenTests = []tokenTest{
 		"comment13",
 		"a<!--x--!>z",
 		"a$<!--x-->$z",
+	},
+	{
+		"comment14",
+		"a<!--!-->z",
+		"a$<!--!-->$z",
+	},
+	{
+		"comment15",
+		"a<!-- !-->z",
+		"a$<!-- !-->$z",
+	},
+	{
+		"comment16",
+		"a<!--i\x00j-->z",
+		"a$<!--i\uFFFDj-->$z",
+	},
+	{
+		"comment17",
+		"a<!--\x00",
+		"a$<!--\uFFFD-->",
+	},
+	{
+		"comment18",
+		"a<!--<!-->z",
+		"a$<!--<!-->$z",
+	},
+	{
+		"comment19",
+		"a<!--<!--",
+		"a$<!--<!-->",
+	},
+	{
+		"comment20",
+		"a<!--ij--kl-->z",
+		"a$<!--ij--kl-->$z",
+	},
+	{
+		"comment21",
+		"a<!--ij--kl--!>z",
+		"a$<!--ij--kl-->$z",
+	},
+	{
+		"comment22",
+		"a<!--!--!<--!-->z",
+		"a$<!--!--!<--!-->$z",
+	},
+	{
+		"comment23",
+		"a<!--&gt;-->z",
+		"a$<!--&gt;-->$z",
+	},
+	{
+		"comment24",
+		"a<!--&gt;>x",
+		"a$<!--&gt;>x-->",
+	},
+	{
+		"comment25",
+		"a<!--&gt;&gt;",
+		"a$<!--&gt;>-->",
+	},
+	{
+		"comment26",
+		"a<!--&gt;&gt;-",
+		"a$<!--&gt;>-->",
+	},
+	{
+		"comment27",
+		"a<!--&gt;&gt;-->z",
+		"a$<!--&gt;>-->$z",
+	},
+	{
+		"comment28",
+		"a<!--&amp;&gt;-->z",
+		"a$<!--&amp;>-->$z",
+	},
+	{
+		"comment29",
+		"a<!--&amp;gt;-->z",
+		"a$<!--&amp;gt;-->$z",
+	},
+	{
+		"comment30",
+		"a<!--&nosuchentity;-->z",
+		"a$<!--&amp;nosuchentity;-->$z",
+	},
+	{
+		"comment31",
+		"a<!--i>>j-->z",
+		"a$<!--i>>j-->$z",
+	},
+	{
+		"comment32",
+		"a<!--i!>>j-->z",
+		"a$<!--i!&gt;>j-->$z",
+	},
+	// https://stackoverflow.design/email/base/mso/#targeting-specific-outlook-versions
+	// says "[For] Windows Outlook 2003 and above... conditional comments allow
+	// us to add bits of HTML that are only read by the Word-based versions of
+	// Outlook". These comments (with angle brackets) should pass through
+	// unchanged (by this Go package) when rendering.
+	//
+	// We should also still escape ">" as "&gt;" when necessary.
+	// https://github.com/golang/go/issues/48237
+	//
+	// The "your code" example below comes from that stackoverflow.design link
+	// above but note that it can contain angle-bracket-rich XML.
+	// https://github.com/golang/go/issues/58246
+	{
+		"issue48237CommentWithAmpgtsemi1",
+		"a<!--<p></p>&lt;!--[video]--&gt;-->z",
+		"a$<!--<p></p><!--[video]--&gt;-->$z",
+	},
+	{
+		"issue48237CommentWithAmpgtsemi2",
+		"a<!--<p></p>&lt;!--[video]--!&gt;-->z",
+		"a$<!--<p></p><!--[video]--!&gt;-->$z",
+	},
+	{
+		"issue58246MicrosoftOutlookComment1",
+		"a<!--[if mso]> your code <![endif]-->z",
+		"a$<!--[if mso]> your code <![endif]-->$z",
+	},
+	{
+		"issue58246MicrosoftOutlookComment2",
+		"a" + issue58246 + "z",
+		"a$" + issue58246 + "$z",
 	},
 	// An attribute with a backslash.
 	{
@@ -453,29 +590,56 @@ var tokenTests = []tokenTest{
 		`<p id=can't><p id=won't>`,
 		`<p id="can&#39;t">$<p id="won&#39;t">`,
 	},
+	// WHATWG 13.2.5.32 equals sign before attribute name state
+	{
+		"equals sign before attribute name",
+		`<p  =>`,
+		`<p =="">`,
+	},
+	{
+		"equals sign before attribute name, extra cruft",
+		`<p  =asd>`,
+		`<p =asd="">`,
+	},
+	{
+		"forward slash before attribute name",
+		`<p/=">`,
+		`<p ="="">`,
+	},
+	{
+		"forward slash before attribute name with spaces around",
+		`<p / =">`,
+		`<p ="="">`,
+	},
+	{
+		"forward slash after attribute name followed by a character",
+		`<p a/ ="">`,
+		`<p a="" =""="">`,
+	},
 }
 
 func TestTokenizer(t *testing.T) {
-loop:
 	for _, tt := range tokenTests {
-		z := NewTokenizer(strings.NewReader(tt.html))
-		if tt.golden != "" {
-			for i, s := range strings.Split(tt.golden, "$") {
-				if z.Next() == ErrorToken {
-					t.Errorf("%s token %d: want %q got error %v", tt.desc, i, s, z.Err())
-					continue loop
-				}
-				actual := z.Token().String()
-				if s != actual {
-					t.Errorf("%s token %d: want %q got %q", tt.desc, i, s, actual)
-					continue loop
+		t.Run(tt.desc, func(t *testing.T) {
+			z := NewTokenizer(strings.NewReader(tt.html))
+			if tt.golden != "" {
+				for i, s := range strings.Split(tt.golden, "$") {
+					if z.Next() == ErrorToken {
+						t.Errorf("%s token %d: want %q got error %v", tt.desc, i, s, z.Err())
+						return
+					}
+					actual := z.Token().String()
+					if s != actual {
+						t.Errorf("%s token %d: want %q got %q", tt.desc, i, s, actual)
+						return
+					}
 				}
 			}
-		}
-		z.Next()
-		if z.Err() != io.EOF {
-			t.Errorf("%s: want EOF got %q", tt.desc, z.Err())
-		}
+			z.Next()
+			if z.Err() != io.EOF {
+				t.Errorf("%s: want EOF got %q", tt.desc, z.Err())
+			}
+		})
 	}
 }
 
@@ -516,7 +680,7 @@ tests:
 				}
 			}
 			// Anything tokenized along with untokenized input or data left in the reader.
-			assembled, err := ioutil.ReadAll(io.MultiReader(&tokenized, bytes.NewReader(z.Buffered()), r))
+			assembled, err := io.ReadAll(io.MultiReader(&tokenized, bytes.NewReader(z.Buffered()), r))
 			if err != nil {
 				t.Errorf("%s: ReadAll: %v", test.desc, err)
 				continue tests
@@ -702,7 +866,7 @@ const (
 )
 
 func benchmarkTokenizer(b *testing.B, level int) {
-	buf, err := ioutil.ReadFile("testdata/go1.html")
+	buf, err := os.ReadFile("testdata/go1.html")
 	if err != nil {
 		b.Fatalf("could not read testdata/go1.html: %v", err)
 	}

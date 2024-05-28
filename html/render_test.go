@@ -6,6 +6,8 @@ package html
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +96,10 @@ func TestRenderer(t *testing.T) {
 			Data: "comm",
 		},
 		15: {
+			Type: CommentNode,
+			Data: "x-->y", // Needs escaping.
+		},
+		16: {
 			Type: RawNode,
 			Data: "7<pre>8</pre>9",
 		},
@@ -104,22 +110,23 @@ func TestRenderer(t *testing.T) {
 	// just commentary. The "0:" prefixes are for easy cross-reference with
 	// the nodes array.
 	treeAsText := [...]string{
-		0: `<html>`,
-		1: `.	<head>`,
-		2: `.	<body>`,
-		3: `.	.	"0&lt;1"`,
-		4: `.	.	<p id="A" foo="abc&#34;def">`,
-		5: `.	.	.	"2"`,
-		6: `.	.	.	<b empty="">`,
-		7: `.	.	.	.	"3"`,
-		8: `.	.	.	<i backslash="\">`,
-		9: `.	.	.	.	"&amp;4"`,
+		0:  `<html>`,
+		1:  `.	<head>`,
+		2:  `.	<body>`,
+		3:  `.	.	"0&lt;1"`,
+		4:  `.	.	<p id="A" foo="abc&#34;def">`,
+		5:  `.	.	.	"2"`,
+		6:  `.	.	.	<b empty="">`,
+		7:  `.	.	.	.	"3"`,
+		8:  `.	.	.	<i backslash="\">`,
+		9:  `.	.	.	.	"&amp;4"`,
 		10: `.	.	"5"`,
 		11: `.	.	<blockquote>`,
 		12: `.	.	<br>`,
 		13: `.	.	"6"`,
 		14: `.	.	"<!--comm-->"`,
-		15: `.	.	"7<pre>8</pre>9"`,
+		15: `.	.	"<!--x--&gt;y-->"`,
+		16: `.	.	"7<pre>8</pre>9"`,
 	}
 	if len(nodes) != len(treeAsText) {
 		t.Fatal("len(nodes) != len(treeAsText)")
@@ -155,12 +162,46 @@ func TestRenderer(t *testing.T) {
 
 	want := `<html><head></head><body>0&lt;1<p id="A" foo="abc&#34;def">` +
 		`2<b empty="">3</b><i backslash="\">&amp;4</i></p>` +
-		`5<blockquote></blockquote><br/>6<!--comm-->7<pre>8</pre>9</body></html>`
+		`5<blockquote></blockquote><br/>6<!--comm--><!--x--&gt;y-->7<pre>8</pre>9</body></html>`
 	b := new(bytes.Buffer)
 	if err := Render(b, nodes[0]); err != nil {
 		t.Fatal(err)
 	}
 	if got := b.String(); got != want {
 		t.Errorf("got vs want:\n%s\n%s\n", got, want)
+	}
+}
+
+func TestRenderTextNodes(t *testing.T) {
+	elements := []string{"style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"}
+	for _, namespace := range []string{
+		"", // html
+		"svg",
+		"math",
+	} {
+		for _, e := range elements {
+			var namespaceOpen, namespaceClose string
+			if namespace != "" {
+				namespaceOpen, namespaceClose = fmt.Sprintf("<%s>", namespace), fmt.Sprintf("</%s>", namespace)
+			}
+			doc := fmt.Sprintf(`<html><head></head><body>%s<%s>&</%s>%s</body></html>`, namespaceOpen, e, e, namespaceClose)
+			n, err := Parse(strings.NewReader(doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := bytes.NewBuffer(nil)
+			if err := Render(b, n); err != nil {
+				t.Fatal(err)
+			}
+
+			expected := doc
+			if namespace != "" {
+				expected = strings.Replace(expected, "&", "&amp;", 1)
+			}
+
+			if b.String() != expected {
+				t.Errorf("unexpected output: got %q, want %q", b.String(), expected)
+			}
+		}
 	}
 }

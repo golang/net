@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -39,7 +39,7 @@ func TestServer_Push_Success(t *testing.T) {
 		if r.Body == nil {
 			return fmt.Errorf("nil Body")
 		}
-		if buf, err := ioutil.ReadAll(r.Body); err != nil || len(buf) != 0 {
+		if buf, err := io.ReadAll(r.Body); err != nil || len(buf) != 0 {
 			return fmt.Errorf("ReadAll(Body)=%q,%v, want '',nil", buf, err)
 		}
 		return nil
@@ -483,11 +483,7 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	ready := make(chan struct{})
 	errc := make(chan error, 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-ready:
-		case <-time.After(5 * time.Second):
-			errc <- fmt.Errorf("timeout waiting for GOAWAY to be processed")
-		}
+		<-ready
 		if got, want := w.(http.Pusher).Push("https://"+r.Host+"/pushed", nil), http.ErrNotSupported; got != want {
 			errc <- fmt.Errorf("Push()=%v, want %v", got, want)
 		}
@@ -505,6 +501,10 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 			case <-ready:
 				return
 			default:
+				if runtime.GOARCH == "wasm" {
+					// Work around https://go.dev/issue/65178 to avoid goroutine starvation.
+					runtime.Gosched()
+				}
 			}
 			st.sc.serveMsgCh <- func(loopNum int) {
 				if !st.sc.pushEnabled {
@@ -515,5 +515,57 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	}()
 	if err := <-errc; err != nil {
 		t.Error(err)
+	}
+}
+
+func TestServer_Push_Underflow(t *testing.T) {
+	// Test for #63511: Send several requests which generate PUSH_PROMISE responses,
+	// verify they all complete successfully.
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RequestURI() {
+		case "/":
+			opt := &http.PushOptions{
+				Header: http.Header{"User-Agent": {"testagent"}},
+			}
+			if err := w.(http.Pusher).Push("/pushed", opt); err != nil {
+				t.Errorf("error pushing: %v", err)
+			}
+			w.WriteHeader(200)
+		case "/pushed":
+			r.Header.Set("User-Agent", "newagent")
+			r.Header.Set("Cookie", "cookie")
+			w.WriteHeader(200)
+		default:
+			t.Errorf("unknown RequestURL %q", r.URL.RequestURI())
+		}
+	})
+	// Send several requests.
+	st.greet()
+	const numRequests = 4
+	for i := 0; i < numRequests; i++ {
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      uint32(1 + i*2), // clients send odd numbers
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	// Each request should result in one PUSH_PROMISE and two responses.
+	numPushPromises := 0
+	numHeaders := 0
+	for numHeaders < numRequests*2 || numPushPromises < numRequests {
+		f, err := st.readFrame()
+		if err != nil {
+			st.t.Fatal(err)
+		}
+		switch f := f.(type) {
+		case *HeadersFrame:
+			if !f.Flags.Has(FlagHeadersEndStream) {
+				t.Fatalf("got HEADERS frame with no END_STREAM, expected END_STREAM: %v", f)
+			}
+			numHeaders++
+		case *PushPromiseFrame:
+			numPushPromises++
+		}
 	}
 }

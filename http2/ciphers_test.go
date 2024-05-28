@@ -28,7 +28,7 @@ func TestIsBadCipherGood(t *testing.T) {
 	}
 }
 
-// copied from https://http2.github.io/http2-spec/#BadCipherSuites,
+// copied from https://httpwg.org/specs/rfc7540.html#BadCipherSuites,
 var badCiphers = []uint16{
 	cipher_TLS_NULL_WITH_NULL_NULL,
 	cipher_TLS_RSA_WITH_NULL_MD5,

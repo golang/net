@@ -69,6 +69,12 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	want: "http://cache.corp.example.com",
 }, {
+	// single label domain is recognized as scheme by url.Parse
+	cfg: httpproxy.Config{
+		HTTPProxy: "localhost",
+	},
+	want: "http://localhost",
+}, {
 	cfg: httpproxy.Config{
 		HTTPProxy: "https://cache.corp.example.com",
 	},
@@ -88,6 +94,12 @@ var proxyForURLTests = []proxyForURLTest{{
 		HTTPProxy: "socks5://127.0.0.1",
 	},
 	want: "socks5://127.0.0.1",
+}, {
+	// Preserve unknown schemes.
+	cfg: httpproxy.Config{
+		HTTPProxy: "foo://host",
+	},
+	want: "foo://host",
 }, {
 	// Don't use secure for http
 	cfg: httpproxy.Config{

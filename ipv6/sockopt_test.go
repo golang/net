@@ -5,6 +5,7 @@
 package ipv6_test
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"runtime"
@@ -17,11 +18,12 @@ import (
 
 func TestConnInitiatorPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+
+	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
@@ -50,11 +52,11 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 func TestConnResponderPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
 
 	ln, err := net.Listen("tcp6", "[::1]:0")
@@ -82,10 +84,6 @@ func TestConnResponderPathMTU(t *testing.T) {
 }
 
 func TestPacketConnChecksum(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsIPv6() {
 		t.Skip("ipv6 is not supported")
 	}
@@ -103,7 +101,9 @@ func TestPacketConnChecksum(t *testing.T) {
 	offset := 12 // see RFC 5340
 
 	for _, toggle := range []bool{false, true} {
-		if err := p.SetChecksum(toggle, offset); err != nil {
+		if err := p.SetChecksum(toggle, offset); errors.Is(err, ipv6.ErrNotImplemented) {
+			t.Skipf("setting checksum not supported: %v", err)
+		} else if err != nil {
 			if toggle {
 				t.Fatalf("ipv6.PacketConn.SetChecksum(%v, %v) failed: %v", toggle, offset, err)
 			} else {
