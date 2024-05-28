@@ -4706,3 +4706,46 @@ func TestServerWriteByteTimeout(t *testing.T) {
 	st.advance(1 * time.Second) // timeout after failing to write any more bytes
 	st.wantClosed()
 }
+
+func TestServerPingSent(t *testing.T) {
+	const readIdleTimeout = 15 * time.Second
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+	}, func(s *Server) {
+		s.ReadIdleTimeout = readIdleTimeout
+	})
+	st.greet()
+
+	st.wantIdle()
+
+	st.advance(readIdleTimeout)
+	_ = readFrame[*PingFrame](t, st)
+	st.wantIdle()
+
+	st.advance(14 * time.Second)
+	st.wantIdle()
+	st.advance(1 * time.Second)
+	st.wantClosed()
+}
+
+func TestServerPingResponded(t *testing.T) {
+	const readIdleTimeout = 15 * time.Second
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+	}, func(s *Server) {
+		s.ReadIdleTimeout = readIdleTimeout
+	})
+	st.greet()
+
+	st.wantIdle()
+
+	st.advance(readIdleTimeout)
+	pf := readFrame[*PingFrame](t, st)
+	st.wantIdle()
+
+	st.advance(14 * time.Second)
+	st.wantIdle()
+
+	st.writePing(true, pf.Data)
+
+	st.advance(2 * time.Second)
+	st.wantIdle()
+}

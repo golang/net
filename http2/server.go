@@ -29,6 +29,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -126,6 +127,16 @@ type Server struct {
 	// activity for the purposes of IdleTimeout.
 	// If zero or negative, there is no timeout.
 	IdleTimeout time.Duration
+
+	// ReadIdleTimeout is the timeout after which a health check using a ping
+	// frame will be carried out if no frame is received on the connection.
+	// If zero, no health check is performed.
+	ReadIdleTimeout time.Duration
+
+	// PingTimeout is the timeout after which the connection will be closed
+	// if a response to a ping is not received.
+	// If zero, a default of 15 seconds is used.
+	PingTimeout time.Duration
 
 	// WriteByteTimeout is the timeout after which a connection will be
 	// closed if no data can be written to it. The timeout begins when data is
@@ -644,9 +655,12 @@ type serverConn struct {
 	inGoAway                    bool              // we've started to or sent GOAWAY
 	inFrameScheduleLoop         bool              // whether we're in the scheduleFrameWrite loop
 	needToSendGoAway            bool              // we need to schedule a GOAWAY frame write
+	pingSent                    bool
+	sentPingData                [8]byte
 	goAwayCode                  ErrCode
 	shutdownTimer               timer // nil until used
 	idleTimer                   timer // nil if unused
+	readIdleTimer               timer // nil if unused
 
 	// Owned by the writeFrameAsync goroutine:
 	headerWriteBuf bytes.Buffer
@@ -974,11 +988,17 @@ func (sc *serverConn) serve() {
 		defer sc.idleTimer.Stop()
 	}
 
+	if sc.srv.ReadIdleTimeout > 0 {
+		sc.readIdleTimer = sc.srv.afterFunc(sc.srv.ReadIdleTimeout, sc.onReadIdleTimer)
+		defer sc.readIdleTimer.Stop()
+	}
+
 	go sc.readFrames() // closed by defer sc.conn.Close above
 
 	settingsTimer := sc.srv.afterFunc(firstSettingsTimeout, sc.onSettingsTimer)
 	defer settingsTimer.Stop()
 
+	lastFrameTime := sc.srv.now()
 	loopNum := 0
 	for {
 		loopNum++
@@ -992,6 +1012,7 @@ func (sc *serverConn) serve() {
 		case res := <-sc.wroteFrameCh:
 			sc.wroteFrame(res)
 		case res := <-sc.readFrameCh:
+			lastFrameTime = sc.srv.now()
 			// Process any written frames before reading new frames from the client since a
 			// written frame could have triggered a new stream to be started.
 			if sc.writingFrameAsync {
@@ -1023,6 +1044,8 @@ func (sc *serverConn) serve() {
 				case idleTimerMsg:
 					sc.vlogf("connection is idle")
 					sc.goAway(ErrCodeNo)
+				case readIdleTimerMsg:
+					sc.handlePingTimer(lastFrameTime)
 				case shutdownTimerMsg:
 					sc.vlogf("GOAWAY close timer fired; closing conn from %v", sc.conn.RemoteAddr())
 					return
@@ -1061,12 +1084,43 @@ func (sc *serverConn) serve() {
 	}
 }
 
+func (sc *serverConn) handlePingTimer(lastFrameReadTime time.Time) {
+	if sc.pingSent {
+		sc.vlogf("timeout waiting for PING response")
+		sc.conn.Close()
+		return
+	}
+
+	pingAt := lastFrameReadTime.Add(sc.srv.ReadIdleTimeout)
+	now := sc.srv.now()
+	if pingAt.After(now) {
+		// We received frames since arming the ping timer.
+		// Reset it for the next possible timeout.
+		sc.readIdleTimer.Reset(pingAt.Sub(now))
+		return
+	}
+
+	sc.pingSent = true
+	// Ignore crypto/rand.Read errors: It generally can't fail, and worse case if it does
+	// is we send a PING frame containing 0s.
+	_, _ = rand.Read(sc.sentPingData[:])
+	sc.writeFrame(FrameWriteRequest{
+		write: &writePing{data: sc.sentPingData},
+	})
+	pingTimeout := sc.srv.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = 15 * time.Second
+	}
+	sc.readIdleTimer.Reset(pingTimeout)
+}
+
 type serverMessage int
 
 // Message values sent to serveMsgCh.
 var (
 	settingsTimerMsg    = new(serverMessage)
 	idleTimerMsg        = new(serverMessage)
+	readIdleTimerMsg    = new(serverMessage)
 	shutdownTimerMsg    = new(serverMessage)
 	gracefulShutdownMsg = new(serverMessage)
 	handlerDoneMsg      = new(serverMessage)
@@ -1074,6 +1128,7 @@ var (
 
 func (sc *serverConn) onSettingsTimer() { sc.sendServeMsg(settingsTimerMsg) }
 func (sc *serverConn) onIdleTimer()     { sc.sendServeMsg(idleTimerMsg) }
+func (sc *serverConn) onReadIdleTimer() { sc.sendServeMsg(readIdleTimerMsg) }
 func (sc *serverConn) onShutdownTimer() { sc.sendServeMsg(shutdownTimerMsg) }
 
 func (sc *serverConn) sendServeMsg(msg interface{}) {
@@ -1604,6 +1659,11 @@ func (sc *serverConn) processFrame(f Frame) error {
 func (sc *serverConn) processPing(f *PingFrame) error {
 	sc.serveG.check()
 	if f.IsAck() {
+		if sc.pingSent && sc.sentPingData == f.Data {
+			// This is a response to a PING we sent.
+			sc.pingSent = false
+			sc.readIdleTimer.Reset(sc.srv.ReadIdleTimeout)
+		}
 		// 6.7 PING: " An endpoint MUST NOT respond to PING frames
 		// containing this flag."
 		return nil
