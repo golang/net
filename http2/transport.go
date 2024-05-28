@@ -864,8 +864,15 @@ func (cc *ClientConn) idleState() clientConnIdleState {
 }
 
 func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
-	if cc.singleUse && cc.nextStreamID > 1 {
-		return
+	if cc.singleUse {
+		// h2c requests stream id starts at 3
+		if cc.t.AllowHTTP && cc.nextStreamID > 3 {
+			return
+		}
+		// else it starts at 1
+		if !cc.t.AllowHTTP && cc.nextStreamID > 1 {
+			return
+		}
 	}
 	var maxConcurrentOkay bool
 	if cc.t.StrictMaxConcurrentStreams {
