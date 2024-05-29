@@ -562,3 +562,37 @@ func TestPriorityRstStreamOnNonOpenStreams(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// https://go.dev/issue/66514
+func TestPriorityIssue66514(t *testing.T) {
+	addDep := func(ws *priorityWriteScheduler, child uint32, parent uint32) {
+		ws.AdjustStream(child, PriorityParam{
+			StreamDep: parent,
+			Exclusive: false,
+			Weight:    16,
+		})
+	}
+
+	validateDepTree := func(ws *priorityWriteScheduler, id uint32, t *testing.T) {
+		for n := ws.nodes[id]; n != nil; n = n.parent {
+			if n.parent == nil {
+				if n.id != uint32(0) {
+					t.Errorf("detected nodes not parented to 0")
+				}
+			}
+		}
+	}
+
+	ws := NewPriorityWriteScheduler(nil).(*priorityWriteScheduler)
+
+	// Root entry
+	addDep(ws, uint32(1), uint32(0))
+	addDep(ws, uint32(3), uint32(1))
+	addDep(ws, uint32(5), uint32(1))
+
+	for id := uint32(7); id < uint32(100); id += uint32(4) {
+		addDep(ws, id, id-uint32(4))
+		addDep(ws, id+uint32(2), id-uint32(4))
+		validateDepTree(ws, id, t)
+	}
+}
