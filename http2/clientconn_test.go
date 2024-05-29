@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -513,12 +512,7 @@ func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
 		if len(tt.ccs) > 0 {
 			t.Fatalf("%v test ClientConns created, but not examined by test", len(tt.ccs))
 		}
-		if count := tt.group.Count(); count != 1 {
-			buf := make([]byte, 16*1024)
-			n := runtime.Stack(buf, true)
-			t.Logf("stacks:\n%s", buf[:n])
-			t.Fatalf("%v goroutines still running after test completed, expect 1", count)
-		}
+		tt.group.Close(t)
 	})
 
 	return tt

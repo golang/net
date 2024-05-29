@@ -150,6 +150,10 @@ var optQuiet = func(server *http.Server) {
 func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
 	t.Helper()
 	g := newSynctest(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	t.Cleanup(func() {
+		g.Close(t)
+	})
+
 	h1server := &http.Server{}
 	h2server := &Server{
 		group: g,
@@ -191,6 +195,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 
 	t.Cleanup(func() {
 		st.Close()
+		g.AdvanceTime(goAwayTimeout) // give server time to shut down
 	})
 
 	connc := make(chan *serverConn)

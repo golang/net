@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -56,6 +57,16 @@ func (g *synctestGroup) Count() int {
 		count++
 	}
 	return count
+}
+
+// Close calls t.Fatal if the group contains any running goroutines.
+func (g *synctestGroup) Close(t testing.TB) {
+	if count := g.Count(); count != 1 {
+		buf := make([]byte, 16*1024)
+		n := runtime.Stack(buf, true)
+		t.Logf("stacks:\n%s", buf[:n])
+		t.Fatalf("%v goroutines still running after test completed, expect 1", count)
+	}
 }
 
 // Wait blocks until every goroutine in the group and their direct children are idle.
