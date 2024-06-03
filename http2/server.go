@@ -2821,9 +2821,9 @@ func (w *responseWriter) SetReadDeadline(deadline time.Time) error {
 		if deadline.IsZero() {
 			st.readDeadline = nil
 		} else if st.readDeadline == nil {
-			st.readDeadline = sc.srv.afterFunc(deadline.Sub(w.rws.conn.srv.now()), st.onReadTimeout)
+			st.readDeadline = sc.srv.afterFunc(deadline.Sub(sc.srv.now()), st.onReadTimeout)
 		} else {
-			st.readDeadline.Reset(deadline.Sub(w.rws.conn.srv.now()))
+			st.readDeadline.Reset(deadline.Sub(sc.srv.now()))
 		}
 	})
 	return nil
@@ -2847,9 +2847,9 @@ func (w *responseWriter) SetWriteDeadline(deadline time.Time) error {
 		if deadline.IsZero() {
 			st.writeDeadline = nil
 		} else if st.writeDeadline == nil {
-			st.writeDeadline = sc.srv.afterFunc(deadline.Sub(w.rws.conn.srv.now()), st.onWriteTimeout)
+			st.writeDeadline = sc.srv.afterFunc(deadline.Sub(sc.srv.now()), st.onWriteTimeout)
 		} else {
-			st.writeDeadline.Reset(deadline.Sub(w.rws.conn.srv.now()))
+			st.writeDeadline.Reset(deadline.Sub(sc.srv.now()))
 		}
 	})
 	return nil

@@ -4661,3 +4661,16 @@ func TestServerRequestCancelOnError(t *testing.T) {
 	})
 	<-donec
 }
+
+func TestServerSetReadWriteDeadlineRace(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		ctl := http.NewResponseController(w)
+		ctl.SetReadDeadline(time.Now().Add(3600 * time.Second))
+		ctl.SetWriteDeadline(time.Now().Add(3600 * time.Second))
+	})
+	resp, err := ts.Client().Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+}
