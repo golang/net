@@ -20,10 +20,29 @@ func newTestTLSConfig(side connSide) *tls.Config {
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 		},
 		MinVersion: tls.VersionTLS13,
+		// Default key exchange mechanisms as of Go 1.23 minus X25519Kyber768Draft00,
+		// which bloats the client hello enough to spill into a second datagram.
+		// Tests were written with the assuption each flight in the handshake
+		// fits in one datagram, and it's simpler to keep that property.
+		CurvePreferences: []tls.CurveID{
+			tls.X25519, tls.CurveP256, tls.CurveP384, tls.CurveP521,
+		},
 	}
 	if side == serverSide {
 		config.Certificates = []tls.Certificate{testCert}
 	}
+	return config
+}
+
+// newTestTLSConfigWithMoreDefaults returns a *tls.Config for testing
+// which behaves more like a default, empty config.
+//
+// In particular, it uses the default curve preferences, which can increase
+// the size of the handshake.
+func newTestTLSConfigWithMoreDefaults(side connSide) *tls.Config {
+	config := newTestTLSConfig(side)
+	config.CipherSuites = nil
+	config.CurvePreferences = nil
 	return config
 }
 
