@@ -94,9 +94,13 @@ func (p *clientConnPool) getClientConn(req *http.Request, addr string, dialOnMis
 		traceGetConn(req, addr)
 		call := p.getStartDialLocked(req.Context(), addr)
 		p.mu.Unlock()
-		<-call.done
-		if shouldRetryDial(call, req) {
-			continue
+		select {
+		case <-call.done:
+			if shouldRetryDial(call, req) {
+				continue
+			}
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
 		}
 		cc, err := call.res, call.err
 		if err != nil {
