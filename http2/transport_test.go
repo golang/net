@@ -5401,3 +5401,23 @@ func TestIssue66763Race(t *testing.T) {
 
 	<-donec
 }
+
+// Issue 67671: Sending a Connection: close request on a Transport with AllowHTTP
+// set caused a the transport to wedge.
+func TestIssue67671(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		AllowHTTP:       true,
+	}
+	defer tr.CloseIdleConnections()
+	req, _ := http.NewRequest("GET", ts.URL, nil)
+	req.Close = true
+	for i := 0; i < 2; i++ {
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+	}
+}
