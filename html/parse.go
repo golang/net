@@ -2366,6 +2366,13 @@ func ParseOptionEnableScripting(enable bool) ParseOption {
 	}
 }
 
+// ParseOptionSetTokenizerMaxBuf sets the maximum buffer size for the tokenizer.
+func ParseOptionSetTokenizerMaxBuf(maxBuf int) ParseOption {
+	return func(p *parser) {
+		p.tokenizer.SetMaxBuf(maxBuf)
+	}
+}
+
 // ParseWithOptions is like Parse, with options.
 func ParseWithOptions(r io.Reader, opts ...ParseOption) (*Node, error) {
 	p := &parser{
