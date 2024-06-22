@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build goexperiment.rangefunc
+
 // This example demonstrates parsing HTML data and walking the resulting tree.
 package html_test
 
@@ -19,8 +21,7 @@ func ExampleParse() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var f func(*html.Node)
-	f = func(n *html.Node) {
+	for n := range doc.All() {
 		if n.Type == html.ElementNode && n.Data == "a" {
 			for _, a := range n.Attr {
 				if a.Key == "href" {
@@ -29,11 +30,8 @@ func ExampleParse() {
 				}
 			}
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
 	}
-	f(doc)
+
 	// Output:
 	// foo
 	// /bar/baz
