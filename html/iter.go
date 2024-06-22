@@ -49,3 +49,14 @@ func (n *Node) All() iter.Seq[*Node] {
 		n.all(yield)
 	}
 }
+
+// Parents returns an sequence yielding the node and its parents.
+func (n *Node) Parents() iter.Seq[*Node] {
+	return func(yield func(*Node) bool) {
+		for p := n; p != nil; p = p.Parent {
+			if !yield(p) {
+				return
+			}
+		}
+	}
+}
