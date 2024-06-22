@@ -26,9 +26,6 @@ func (n *Node) ChildNodes() iter.Seq[*Node] {
 }
 
 func (n *Node) all(yield func(*Node) bool) bool {
-	if n == nil {
-		return true
-	}
 	if !yield(n) {
 		return false
 	}
@@ -46,6 +43,9 @@ func (n *Node) all(yield func(*Node) bool) bool {
 // Mutating a Node while iterating through it or its descendents may have unexpected results.
 func (n *Node) All() iter.Seq[*Node] {
 	return func(yield func(*Node) bool) {
+		if n == nil {
+			return
+		}
 		n.all(yield)
 	}
 }
