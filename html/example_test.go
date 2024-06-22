@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 func ExampleParse() {
@@ -22,7 +23,7 @@ func ExampleParse() {
 		log.Fatal(err)
 	}
 	for n := range doc.All() {
-		if n.Type == html.ElementNode && n.Data == "a" {
+		if n.Type == html.ElementNode && n.DataAtom == atom.A {
 			for _, a := range n.Attr {
 				if a.Key == "href" {
 					fmt.Println(a.Val)
