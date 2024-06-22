@@ -51,6 +51,8 @@ func (n *Node) All() iter.Seq[*Node] {
 }
 
 // Parents returns an sequence yielding the node and its parents.
+//
+// Mutating a Node while iterating through it or its parents may have unexpected results.
 func (n *Node) Parents() iter.Seq[*Node] {
 	return func(yield func(*Node) bool) {
 		for p := n; p != nil; p = p.Parent {
