@@ -73,3 +73,36 @@ func TestNode_All(t *testing.T) {
 		}
 	}
 }
+
+func TestNode_Parents(t *testing.T) {
+	testParents(t, nil, 0)
+	for size := range 100 {
+		n := buildChain(size)
+		testParents(t, n, size+1)
+	}
+}
+
+func testParents(t *testing.T, n *Node, wantSize int) {
+	nParents := 0
+	for _ = range n.Parents() {
+		nParents++
+	}
+	if nParents != wantSize {
+		t.Errorf("unexpected number of Parents; want %d got: %d", wantSize, nParents)
+	}
+}
+
+func buildChain(size int) *Node {
+	descendent := &Node{
+		Type: ElementNode,
+	}
+	current := descendent
+	for range size {
+		parent := &Node{
+			Type: ElementNode,
+		}
+		parent.AppendChild(current)
+		current = parent
+	}
+	return descendent
+}

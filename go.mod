@@ -1,6 +1,6 @@
 module golang.org/x/net
 
-go 1.18
+go 1.22
 
 require (
 	golang.org/x/crypto v0.28.0
