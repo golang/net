@@ -82,6 +82,17 @@ func TestNode_Parents(t *testing.T) {
 	}
 }
 
+func buildChain(size int) *Node {
+	descendent := new(Node)
+	current := descendent
+	for range size {
+		parent := new(Node)
+		parent.AppendChild(current)
+		current = parent
+	}
+	return descendent
+}
+
 func testParents(t *testing.T, n *Node, wantSize int) {
 	nParents := 0
 	for _ = range n.Parents() {
@@ -90,19 +101,4 @@ func testParents(t *testing.T, n *Node, wantSize int) {
 	if nParents != wantSize {
 		t.Errorf("unexpected number of Parents; want %d got: %d", wantSize, nParents)
 	}
-}
-
-func buildChain(size int) *Node {
-	descendent := &Node{
-		Type: ElementNode,
-	}
-	current := descendent
-	for range size {
-		parent := &Node{
-			Type: ElementNode,
-		}
-		parent.AppendChild(current)
-		current = parent
-	}
-	return descendent
 }
