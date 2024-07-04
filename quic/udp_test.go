@@ -129,6 +129,8 @@ func runUDPTest(t *testing.T, f func(t *testing.T, u udpTest)) {
 				if test.srcNet == "udp6" && test.dstNet == "udp" {
 					t.Skipf("%v: no support for mapping IPv4 address to IPv6", runtime.GOOS)
 				}
+			case "plan9":
+				t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
 			}
 			if runtime.GOARCH == "wasm" && test.srcNet == "udp6" {
 				t.Skipf("%v: IPv6 tests fail when using wasm fake net", runtime.GOARCH)

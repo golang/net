@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"runtime"
 	"testing"
 	"time"
 
@@ -69,6 +70,10 @@ func TestStreamTransfer(t *testing.T) {
 }
 
 func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
+	}
 	t.Helper()
 	ctx := context.Background()
 	e1 := newLocalEndpoint(t, serverSide, conf1)
