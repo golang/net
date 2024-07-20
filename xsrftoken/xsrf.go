@@ -45,10 +45,9 @@ func generateTokenAtTime(key, userID, actionID string, now time.Time) string {
 	h := hmac.New(sha1.New, []byte(key))
 	fmt.Fprintf(h, "%s:%s:%d", clean(userID), clean(actionID), milliTime)
 
-	// Get the padded base64 string then removing the padding.
+	// Get the no padding base64 string.
 	tok := string(h.Sum(nil))
-	tok = base64.URLEncoding.EncodeToString([]byte(tok))
-	tok = strings.TrimRight(tok, "=")
+	tok = base64.RawURLEncoding.EncodeToString([]byte(tok))
 
 	return fmt.Sprintf("%s:%d", tok, milliTime)
 }
