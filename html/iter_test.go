@@ -83,14 +83,13 @@ func TestNode_Parents(t *testing.T) {
 }
 
 func buildChain(size int) *Node {
-	descendent := new(Node)
-	current := descendent
+	child := new(Node)
 	for range size {
-		parent := new(Node)
-		parent.AppendChild(current)
-		current = parent
+		parent := child
+		child = new(Node)
+		parent.AppendChild(child)
 	}
-	return descendent
+	return child
 }
 
 func testParents(t *testing.T, n *Node, wantSize int) {
