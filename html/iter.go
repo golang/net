@@ -8,9 +8,22 @@ package html
 
 import "iter"
 
+// Parents returns an sequence yielding the node and its parents.
+//
+// Mutating a Node or its parents while iterating may have unexpected results.
+func (n *Node) Parents() iter.Seq[*Node] {
+	return func(yield func(*Node) bool) {
+		for p := n; p != nil; p = p.Parent {
+			if !yield(p) {
+				return
+			}
+		}
+	}
+}
+
 // ChildNodes returns a sequence yielding the immediate children of n.
 //
-// Mutating a Node while iterating through its ChildNodes may have unexpected results.
+// Mutating a Node or its ChildNodes while iterating may have unexpected results.
 func (n *Node) ChildNodes() iter.Seq[*Node] {
 	return func(yield func(*Node) bool) {
 		if n == nil {
@@ -25,6 +38,18 @@ func (n *Node) ChildNodes() iter.Seq[*Node] {
 
 }
 
+// All returns a sequence yielding all descendents of n in depth-first pre-order.
+//
+// Mutating a Node or its descendents while iterating may have unexpected results.
+func (n *Node) All() iter.Seq[*Node] {
+	return func(yield func(*Node) bool) {
+		if n == nil {
+			return
+		}
+		n.all(yield)
+	}
+}
+
 func (n *Node) all(yield func(*Node) bool) bool {
 	if !yield(n) {
 		return false
@@ -36,29 +61,4 @@ func (n *Node) all(yield func(*Node) bool) bool {
 		}
 	}
 	return true
-}
-
-// All returns a sequence yielding all descendents of n in depth-first pre-order.
-//
-// Mutating a Node while iterating through it or its descendents may have unexpected results.
-func (n *Node) All() iter.Seq[*Node] {
-	return func(yield func(*Node) bool) {
-		if n == nil {
-			return
-		}
-		n.all(yield)
-	}
-}
-
-// Parents returns an sequence yielding the node and its parents.
-//
-// Mutating a Node while iterating through it or its parents may have unexpected results.
-func (n *Node) Parents() iter.Seq[*Node] {
-	return func(yield func(*Node) bool) {
-		for p := n; p != nil; p = p.Parent {
-			if !yield(p) {
-				return
-			}
-		}
-	}
 }
