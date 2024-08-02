@@ -37,6 +37,20 @@ func init() {
 	}
 }
 
+// Option is used to specify the behavior for the h2c handler
+type Option = func(*option)
+
+type option struct {
+	disableUpgrade bool
+}
+
+// DisableH2CUpgrade disable the Upgrade mechanism mentioned in RFC7203 topic 6.7 by the h2c server.
+func DisableH2CUpgrade() Option {
+	return func(o *option) {
+		o.disableUpgrade = true
+	}
+}
+
 // h2cHandler is a Handler which implements h2c by hijacking the HTTP/1 traffic
 // that should be h2c traffic. There are two ways to begin a h2c connection
 // (RFC 7540 Section 3.2 and 3.4): (1) Starting with Prior Knowledge - this
@@ -48,6 +62,7 @@ func init() {
 type h2cHandler struct {
 	Handler http.Handler
 	s       *http2.Server
+	opt     option
 }
 
 // NewHandler returns an http.Handler that wraps h, intercepting any h2c
@@ -63,10 +78,16 @@ type h2cHandler struct {
 // The first request on an h2c connection is read entirely into memory before
 // the Handler is called. To limit the memory consumed by this request, wrap
 // the result of NewHandler in an http.MaxBytesHandler.
-func NewHandler(h http.Handler, s *http2.Server) http.Handler {
+func NewHandler(h http.Handler, s *http2.Server, opts ...Option) http.Handler {
+	var o option
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	return &h2cHandler{
 		Handler: h,
 		s:       s,
+		opt:     o,
 	}
 }
 
@@ -103,7 +124,7 @@ func (s h2cHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Handle Upgrade to h2c (RFC 7540 Section 3.2)
-	if isH2CUpgrade(r.Header) {
+	if !s.opt.disableUpgrade && isH2CUpgrade(r.Header) {
 		conn, settings, err := h2cUpgrade(w, r)
 		if err != nil {
 			if http2VerboseLogs {
