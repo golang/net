@@ -6,6 +6,14 @@
 //
 // The h2c protocol is the non-TLS version of HTTP/2 which is not available from
 // net/http or golang.org/x/net/http2.
+//
+// There are two ways to begin a h2c connection
+// (RFC 7540 Section 3.2 and 3.4): (1) Starting with Prior Knowledge - this
+// works by starting an h2c connection with a string of bytes that is valid
+// HTTP/1, but unlikely to occur in practice and (2) Upgrading from HTTP/1 to
+// h2c - this works by using the HTTP/1 Upgrade header to request an upgrade to
+// h2c. When either of those situations occur we hijack the HTTP/1 connection,
+// convert it to an HTTP/2 connection and pass the net.Conn to http2.ServeConn.
 package h2c
 
 import (
@@ -38,13 +46,7 @@ func init() {
 }
 
 // h2cHandler is a Handler which implements h2c by hijacking the HTTP/1 traffic
-// that should be h2c traffic. There are two ways to begin a h2c connection
-// (RFC 7540 Section 3.2 and 3.4): (1) Starting with Prior Knowledge - this
-// works by starting an h2c connection with a string of bytes that is valid
-// HTTP/1, but unlikely to occur in practice and (2) Upgrading from HTTP/1 to
-// h2c - this works by using the HTTP/1 Upgrade header to request an upgrade to
-// h2c. When either of those situations occur we hijack the HTTP/1 connection,
-// convert it to an HTTP/2 connection and pass the net.Conn to http2.ServeConn.
+// that should be h2c traffic.
 type h2cHandler struct {
 	Handler http.Handler
 	s       *http2.Server
