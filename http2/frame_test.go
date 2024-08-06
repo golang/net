@@ -1258,3 +1258,20 @@ func TestSettingsDuplicates(t *testing.T) {
 	}
 
 }
+
+func BenchmarkParseDataFrames(b *testing.B) {
+	fr, _ := testFramer()
+	fr.SetReuseFrames()
+	payload := []byte("foo")
+	for i := 0; i < b.N; i++ {
+		parseDataFrame(fr.frameCache, FrameHeader{StreamID: 3}, func(s string) {}, payload)
+	}
+}
+
+func BenchmarkParseDataFramesWithoutReuse(b *testing.B) {
+	fr, _ := testFramer()
+	payload := []byte("foo")
+	for i := 0; i < b.N; i++ {
+		parseDataFrame(fr.frameCache, FrameHeader{StreamID: 3}, func(s string) {}, payload)
+	}
+}
