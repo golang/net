@@ -261,6 +261,24 @@ func (tf *testConnFramer) wantRSTStream(streamID uint32, code ErrCode) {
 	}
 }
 
+func (tf *testConnFramer) wantSettings(want map[SettingID]uint32) {
+	fr := readFrame[*SettingsFrame](tf.t, tf)
+	if fr.Header().Flags.Has(FlagSettingsAck) {
+		tf.t.Errorf("got SETTINGS frame with ACK set, want no ACK")
+	}
+	for wantID, wantVal := range want {
+		gotVal, ok := fr.Value(wantID)
+		if !ok {
+			tf.t.Errorf("SETTINGS: %v is not set, want %v", wantID, wantVal)
+		} else if gotVal != wantVal {
+			tf.t.Errorf("SETTINGS: %v is %v, want %v", wantID, gotVal, wantVal)
+		}
+	}
+	if tf.t.Failed() {
+		tf.t.Fatalf("%v", fr)
+	}
+}
+
 func (tf *testConnFramer) wantSettingsAck() {
 	tf.t.Helper()
 	fr := readFrame[*SettingsFrame](tf.t, tf)

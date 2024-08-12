@@ -148,7 +148,7 @@ func (tc *testClientConn) readClientPreface() {
 	}
 }
 
-func newTestClientConn(t *testing.T, opts ...func(*Transport)) *testClientConn {
+func newTestClientConn(t *testing.T, opts ...any) *testClientConn {
 	t.Helper()
 
 	tt := newTestTransport(t, opts...)
@@ -486,7 +486,7 @@ type testTransport struct {
 	ccs []*testClientConn
 }
 
-func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
+func newTestTransport(t *testing.T, opts ...any) *testTransport {
 	tt := &testTransport{
 		t:     t,
 		group: newSynctest(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
@@ -495,7 +495,15 @@ func newTestTransport(t *testing.T, opts ...func(*Transport)) *testTransport {
 
 	tr := &Transport{}
 	for _, o := range opts {
-		o(tr)
+		switch o := o.(type) {
+		case func(*http.Transport):
+			if tr.t1 == nil {
+				tr.t1 = &http.Transport{}
+			}
+			o(tr.t1)
+		case func(*Transport):
+			o(tr)
+		}
 	}
 	tt.tr = tr
 

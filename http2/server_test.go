@@ -461,7 +461,8 @@ func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error
 			if f.FrameHeader.StreamID != 0 {
 				st.t.Fatalf("WindowUpdate StreamID = %d; want 0", f.FrameHeader.StreamID)
 			}
-			incr := uint32(st.sc.srv.initialConnRecvWindowSize() - initialWindowSize)
+			conf := configFromServer(st.sc.hs, st.sc.srv)
+			incr := uint32(conf.MaxUploadBufferPerConnection - initialWindowSize)
 			if f.Increment != incr {
 				st.t.Fatalf("WindowUpdate increment = %d; want %d", f.Increment, incr)
 			}
@@ -589,11 +590,12 @@ func (st *serverTester) bodylessReq1(headers ...string) {
 }
 
 func (st *serverTester) wantFlowControlConsumed(streamID, consumed int32) {
+	conf := configFromServer(st.sc.hs, st.sc.srv)
 	var initial int32
 	if streamID == 0 {
-		initial = st.sc.srv.initialConnRecvWindowSize()
+		initial = conf.MaxUploadBufferPerConnection
 	} else {
-		initial = st.sc.srv.initialStreamRecvWindowSize()
+		initial = conf.MaxUploadBufferPerStream
 	}
 	donec := make(chan struct{})
 	st.sc.sendServeMsg(func(sc *serverConn) {

@@ -53,10 +53,14 @@ import (
 )
 
 const (
-	prefaceTimeout         = 10 * time.Second
-	firstSettingsTimeout   = 2 * time.Second // should be in-flight with preface anyway
-	handlerChunkWriteSize  = 4 << 10
-	defaultMaxStreams      = 250 // TODO: make this 100 as the GFE seems to?
+	prefaceTimeout        = 10 * time.Second
+	firstSettingsTimeout  = 2 * time.Second // should be in-flight with preface anyway
+	handlerChunkWriteSize = 4 << 10
+	defaultMaxStreams     = 250 // TODO: make this 100 as the GFE seems to?
+
+	// maxQueuedControlFrames is the maximum number of control frames like
+	// SETTINGS, PING and RST_STREAM that will be queued for writing before
+	// the connection is closed to prevent memory exhaustion attacks.
 	maxQueuedControlFrames = 10000
 )
 
@@ -204,57 +208,6 @@ func (s *Server) afterFunc(d time.Duration, f func()) timer {
 		return s.group.AfterFunc(d, f)
 	}
 	return timeTimer{time.AfterFunc(d, f)}
-}
-
-func (s *Server) initialConnRecvWindowSize() int32 {
-	if s.MaxUploadBufferPerConnection >= initialWindowSize {
-		return s.MaxUploadBufferPerConnection
-	}
-	return 1 << 20
-}
-
-func (s *Server) initialStreamRecvWindowSize() int32 {
-	if s.MaxUploadBufferPerStream > 0 {
-		return s.MaxUploadBufferPerStream
-	}
-	return 1 << 20
-}
-
-func (s *Server) maxReadFrameSize() uint32 {
-	if v := s.MaxReadFrameSize; v >= minMaxFrameSize && v <= maxFrameSize {
-		return v
-	}
-	return defaultMaxReadFrameSize
-}
-
-func (s *Server) maxConcurrentStreams() uint32 {
-	if v := s.MaxConcurrentStreams; v > 0 {
-		return v
-	}
-	return defaultMaxStreams
-}
-
-func (s *Server) maxDecoderHeaderTableSize() uint32 {
-	if v := s.MaxDecoderHeaderTableSize; v > 0 {
-		return v
-	}
-	return initialHeaderTableSize
-}
-
-func (s *Server) maxEncoderHeaderTableSize() uint32 {
-	if v := s.MaxEncoderHeaderTableSize; v > 0 {
-		return v
-	}
-	return initialHeaderTableSize
-}
-
-// maxQueuedControlFrames is the maximum number of control frames like
-// SETTINGS, PING and RST_STREAM that will be queued for writing before
-// the connection is closed to prevent memory exhaustion attacks.
-func (s *Server) maxQueuedControlFrames() int {
-	// TODO: if anybody asks, add a Server field, and remember to define the
-	// behavior of negative values.
-	return maxQueuedControlFrames
 }
 
 type serverInternalState struct {
@@ -457,13 +410,15 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 	baseCtx, cancel := serverConnBaseContext(c, opts)
 	defer cancel()
 
+	http1srv := opts.baseConfig()
+	conf := configFromServer(http1srv, s)
 	sc := &serverConn{
 		srv:                         s,
-		hs:                          opts.baseConfig(),
+		hs:                          http1srv,
 		conn:                        c,
 		baseCtx:                     baseCtx,
 		remoteAddrStr:               c.RemoteAddr().String(),
-		bw:                          newBufferedWriter(s.group, c, s.WriteByteTimeout),
+		bw:                          newBufferedWriter(s.group, c, conf.WriteByteTimeout),
 		handler:                     opts.handler(),
 		streams:                     make(map[uint32]*stream),
 		readFrameCh:                 make(chan readFrameResult),
@@ -473,9 +428,12 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 		bodyReadCh:                  make(chan bodyReadMsg),         // buffering doesn't matter either way
 		doneServing:                 make(chan struct{}),
 		clientMaxStreams:            math.MaxUint32, // Section 6.5.2: "Initially, there is no limit to this value"
-		advMaxStreams:               s.maxConcurrentStreams(),
+		advMaxStreams:               conf.MaxConcurrentStreams,
 		initialStreamSendWindowSize: initialWindowSize,
+		initialStreamRecvWindowSize: conf.MaxUploadBufferPerStream,
 		maxFrameSize:                initialMaxFrameSize,
+		pingTimeout:                 conf.PingTimeout,
+		countErrorFunc:              conf.CountError,
 		serveG:                      newGoroutineLock(),
 		pushEnabled:                 true,
 		sawClientPreface:            opts.SawClientPreface,
@@ -508,15 +466,15 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 	sc.flow.add(initialWindowSize)
 	sc.inflow.init(initialWindowSize)
 	sc.hpackEncoder = hpack.NewEncoder(&sc.headerWriteBuf)
-	sc.hpackEncoder.SetMaxDynamicTableSizeLimit(s.maxEncoderHeaderTableSize())
+	sc.hpackEncoder.SetMaxDynamicTableSizeLimit(conf.MaxEncoderHeaderTableSize)
 
 	fr := NewFramer(sc.bw, c)
-	if s.CountError != nil {
-		fr.countError = s.CountError
+	if conf.CountError != nil {
+		fr.countError = conf.CountError
 	}
-	fr.ReadMetaHeaders = hpack.NewDecoder(s.maxDecoderHeaderTableSize(), nil)
+	fr.ReadMetaHeaders = hpack.NewDecoder(conf.MaxDecoderHeaderTableSize, nil)
 	fr.MaxHeaderListSize = sc.maxHeaderListSize()
-	fr.SetMaxReadFrameSize(s.maxReadFrameSize())
+	fr.SetMaxReadFrameSize(conf.MaxReadFrameSize)
 	sc.framer = fr
 
 	if tc, ok := c.(connectionStater); ok {
@@ -549,7 +507,7 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 			// So for now, do nothing here again.
 		}
 
-		if !s.PermitProhibitedCipherSuites && isBadCipher(sc.tlsState.CipherSuite) {
+		if !conf.PermitProhibitedCipherSuites && isBadCipher(sc.tlsState.CipherSuite) {
 			// "Endpoints MAY choose to generate a connection error
 			// (Section 5.4.1) of type INADEQUATE_SECURITY if one of
 			// the prohibited cipher suites are negotiated."
@@ -586,7 +544,7 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 		opts.UpgradeRequest = nil
 	}
 
-	sc.serve()
+	sc.serve(conf)
 }
 
 func serverConnBaseContext(c net.Conn, opts *ServeConnOpts) (ctx context.Context, cancel func()) {
@@ -626,6 +584,7 @@ type serverConn struct {
 	tlsState         *tls.ConnectionState   // shared by all handlers, like net/http
 	remoteAddrStr    string
 	writeSched       WriteScheduler
+	countErrorFunc   func(errType string)
 
 	// Everything following is owned by the serve loop; use serveG.check():
 	serveG                      goroutineLock // used to verify funcs are on serve()
@@ -645,6 +604,7 @@ type serverConn struct {
 	streams                     map[uint32]*stream
 	unstartedHandlers           []unstartedHandler
 	initialStreamSendWindowSize int32
+	initialStreamRecvWindowSize int32
 	maxFrameSize                int32
 	peerMaxHeaderListSize       uint32            // zero means unknown (default)
 	canonHeader                 map[string]string // http2-lower-case -> Go-Canonical-Case
@@ -660,6 +620,8 @@ type serverConn struct {
 	goAwayCode                  ErrCode
 	shutdownTimer               timer // nil until used
 	idleTimer                   timer // nil if unused
+	readIdleTimeout             time.Duration
+	pingTimeout                 time.Duration
 	readIdleTimer               timer // nil if unused
 
 	// Owned by the writeFrameAsync goroutine:
@@ -675,11 +637,7 @@ func (sc *serverConn) maxHeaderListSize() uint32 {
 	if n <= 0 {
 		n = http.DefaultMaxHeaderBytes
 	}
-	// http2's count is in a slightly different unit and includes 32 bytes per pair.
-	// So, take the net/http.Server value and pad it up a bit, assuming 10 headers.
-	const perFieldOverhead = 32 // per http2 spec
-	const typicalHeaders = 10   // conservative
-	return uint32(n + typicalHeaders*perFieldOverhead)
+	return uint32(adjustHTTP1MaxHeaderSize(int64(n)))
 }
 
 func (sc *serverConn) curOpenStreams() uint32 {
@@ -943,7 +901,7 @@ func (sc *serverConn) notePanic() {
 	}
 }
 
-func (sc *serverConn) serve() {
+func (sc *serverConn) serve(conf http2Config) {
 	sc.serveG.check()
 	defer sc.notePanic()
 	defer sc.conn.Close()
@@ -957,18 +915,18 @@ func (sc *serverConn) serve() {
 
 	sc.writeFrame(FrameWriteRequest{
 		write: writeSettings{
-			{SettingMaxFrameSize, sc.srv.maxReadFrameSize()},
+			{SettingMaxFrameSize, conf.MaxReadFrameSize},
 			{SettingMaxConcurrentStreams, sc.advMaxStreams},
 			{SettingMaxHeaderListSize, sc.maxHeaderListSize()},
-			{SettingHeaderTableSize, sc.srv.maxDecoderHeaderTableSize()},
-			{SettingInitialWindowSize, uint32(sc.srv.initialStreamRecvWindowSize())},
+			{SettingHeaderTableSize, conf.MaxDecoderHeaderTableSize},
+			{SettingInitialWindowSize, uint32(sc.initialStreamRecvWindowSize)},
 		},
 	})
 	sc.unackedSettings++
 
 	// Each connection starts with initialWindowSize inflow tokens.
 	// If a higher value is configured, we add more tokens.
-	if diff := sc.srv.initialConnRecvWindowSize() - initialWindowSize; diff > 0 {
+	if diff := conf.MaxUploadBufferPerConnection - initialWindowSize; diff > 0 {
 		sc.sendWindowUpdate(nil, int(diff))
 	}
 
@@ -988,8 +946,9 @@ func (sc *serverConn) serve() {
 		defer sc.idleTimer.Stop()
 	}
 
-	if sc.srv.ReadIdleTimeout > 0 {
-		sc.readIdleTimer = sc.srv.afterFunc(sc.srv.ReadIdleTimeout, sc.onReadIdleTimer)
+	if conf.SendPingTimeout > 0 {
+		sc.readIdleTimeout = conf.SendPingTimeout
+		sc.readIdleTimer = sc.srv.afterFunc(conf.SendPingTimeout, sc.onReadIdleTimer)
 		defer sc.readIdleTimer.Stop()
 	}
 
@@ -1068,7 +1027,7 @@ func (sc *serverConn) serve() {
 		// If the peer is causing us to generate a lot of control frames,
 		// but not reading them from us, assume they are trying to make us
 		// run out of memory.
-		if sc.queuedControlFrames > sc.srv.maxQueuedControlFrames() {
+		if sc.queuedControlFrames > maxQueuedControlFrames {
 			sc.vlogf("http2: too many control frames in send queue, closing connection")
 			return
 		}
@@ -1091,7 +1050,7 @@ func (sc *serverConn) handlePingTimer(lastFrameReadTime time.Time) {
 		return
 	}
 
-	pingAt := lastFrameReadTime.Add(sc.srv.ReadIdleTimeout)
+	pingAt := lastFrameReadTime.Add(sc.readIdleTimeout)
 	now := sc.srv.now()
 	if pingAt.After(now) {
 		// We received frames since arming the ping timer.
@@ -1107,11 +1066,7 @@ func (sc *serverConn) handlePingTimer(lastFrameReadTime time.Time) {
 	sc.writeFrame(FrameWriteRequest{
 		write: &writePing{data: sc.sentPingData},
 	})
-	pingTimeout := sc.srv.PingTimeout
-	if pingTimeout <= 0 {
-		pingTimeout = 15 * time.Second
-	}
-	sc.readIdleTimer.Reset(pingTimeout)
+	sc.readIdleTimer.Reset(sc.pingTimeout)
 }
 
 type serverMessage int
@@ -1662,7 +1617,7 @@ func (sc *serverConn) processPing(f *PingFrame) error {
 		if sc.pingSent && sc.sentPingData == f.Data {
 			// This is a response to a PING we sent.
 			sc.pingSent = false
-			sc.readIdleTimer.Reset(sc.srv.ReadIdleTimeout)
+			sc.readIdleTimer.Reset(sc.readIdleTimeout)
 		}
 		// 6.7 PING: " An endpoint MUST NOT respond to PING frames
 		// containing this flag."
@@ -2230,7 +2185,7 @@ func (sc *serverConn) newStream(id, pusherID uint32, state streamState) *stream 
 	st.cw.Init()
 	st.flow.conn = &sc.flow // link to conn-level counter
 	st.flow.add(sc.initialStreamSendWindowSize)
-	st.inflow.init(sc.srv.initialStreamRecvWindowSize())
+	st.inflow.init(sc.initialStreamRecvWindowSize)
 	if sc.hs.WriteTimeout > 0 {
 		st.writeDeadline = sc.srv.afterFunc(sc.hs.WriteTimeout, st.onWriteTimeout)
 	}
@@ -3371,7 +3326,7 @@ func (sc *serverConn) countError(name string, err error) error {
 	if sc == nil || sc.srv == nil {
 		return err
 	}
-	f := sc.srv.CountError
+	f := sc.countErrorFunc
 	if f == nil {
 		return err
 	}

@@ -226,38 +226,24 @@ func (t *Transport) contextWithTimeout(ctx context.Context, d time.Duration) (co
 }
 
 func (t *Transport) maxHeaderListSize() uint32 {
-	if t.MaxHeaderListSize == 0 {
+	n := int64(t.MaxHeaderListSize)
+	if t.t1 != nil && t.t1.MaxResponseHeaderBytes != 0 {
+		n = t.t1.MaxResponseHeaderBytes
+		if n > 0 {
+			n = adjustHTTP1MaxHeaderSize(n)
+		}
+	}
+	if n <= 0 {
 		return 10 << 20
 	}
-	if t.MaxHeaderListSize == 0xffffffff {
+	if n >= 0xffffffff {
 		return 0
 	}
-	return t.MaxHeaderListSize
-}
-
-func (t *Transport) maxFrameReadSize() uint32 {
-	if t.MaxReadFrameSize == 0 {
-		return 0 // use the default provided by the peer
-	}
-	if t.MaxReadFrameSize < minMaxFrameSize {
-		return minMaxFrameSize
-	}
-	if t.MaxReadFrameSize > maxFrameSize {
-		return maxFrameSize
-	}
-	return t.MaxReadFrameSize
+	return uint32(n)
 }
 
 func (t *Transport) disableCompression() bool {
 	return t.DisableCompression || (t.t1 != nil && t.t1.DisableCompression)
-}
-
-func (t *Transport) pingTimeout() time.Duration {
-	if t.PingTimeout == 0 {
-		return 15 * time.Second
-	}
-	return t.PingTimeout
-
 }
 
 // ConfigureTransport configures a net/http HTTP/1 Transport to use HTTP/2.
@@ -369,11 +355,14 @@ type ClientConn struct {
 	lastActive      time.Time
 	lastIdle        time.Time // time last idle
 	// Settings from peer: (also guarded by wmu)
-	maxFrameSize           uint32
-	maxConcurrentStreams   uint32
-	peerMaxHeaderListSize  uint64
-	peerMaxHeaderTableSize uint32
-	initialWindowSize      uint32
+	maxFrameSize                uint32
+	maxConcurrentStreams        uint32
+	peerMaxHeaderListSize       uint64
+	peerMaxHeaderTableSize      uint32
+	initialWindowSize           uint32
+	initialStreamRecvWindowSize int32
+	readIdleTimeout             time.Duration
+	pingTimeout                 time.Duration
 
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
@@ -745,39 +734,29 @@ func (t *Transport) expectContinueTimeout() time.Duration {
 	return t.t1.ExpectContinueTimeout
 }
 
-func (t *Transport) maxDecoderHeaderTableSize() uint32 {
-	if v := t.MaxDecoderHeaderTableSize; v > 0 {
-		return v
-	}
-	return initialHeaderTableSize
-}
-
-func (t *Transport) maxEncoderHeaderTableSize() uint32 {
-	if v := t.MaxEncoderHeaderTableSize; v > 0 {
-		return v
-	}
-	return initialHeaderTableSize
-}
-
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 	return t.newClientConn(c, t.disableKeepAlives())
 }
 
 func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
+	conf := configFromTransport(t)
 	cc := &ClientConn{
-		t:                     t,
-		tconn:                 c,
-		readerDone:            make(chan struct{}),
-		nextStreamID:          1,
-		maxFrameSize:          16 << 10,                    // spec default
-		initialWindowSize:     65535,                       // spec default
-		maxConcurrentStreams:  initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
-		peerMaxHeaderListSize: 0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
-		streams:               make(map[uint32]*clientStream),
-		singleUse:             singleUse,
-		wantSettingsAck:       true,
-		pings:                 make(map[[8]byte]chan struct{}),
-		reqHeaderMu:           make(chan struct{}, 1),
+		t:                           t,
+		tconn:                       c,
+		readerDone:                  make(chan struct{}),
+		nextStreamID:                1,
+		maxFrameSize:                16 << 10, // spec default
+		initialWindowSize:           65535,    // spec default
+		initialStreamRecvWindowSize: conf.MaxUploadBufferPerStream,
+		maxConcurrentStreams:        initialMaxConcurrentStreams, // "infinite", per spec. Use a smaller value until we have received server settings.
+		peerMaxHeaderListSize:       0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
+		streams:                     make(map[uint32]*clientStream),
+		singleUse:                   singleUse,
+		wantSettingsAck:             true,
+		readIdleTimeout:             conf.SendPingTimeout,
+		pingTimeout:                 conf.PingTimeout,
+		pings:                       make(map[[8]byte]chan struct{}),
+		reqHeaderMu:                 make(chan struct{}, 1),
 	}
 	var group synctestGroupInterface
 	if t.transportTestHooks != nil {
@@ -798,23 +777,21 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	cc.bw = bufio.NewWriter(stickyErrWriter{
 		group:   group,
 		conn:    c,
-		timeout: t.WriteByteTimeout,
+		timeout: conf.WriteByteTimeout,
 		err:     &cc.werr,
 	})
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
-	if t.maxFrameReadSize() != 0 {
-		cc.fr.SetMaxReadFrameSize(t.maxFrameReadSize())
-	}
+	cc.fr.SetMaxReadFrameSize(conf.MaxReadFrameSize)
 	if t.CountError != nil {
 		cc.fr.countError = t.CountError
 	}
-	maxHeaderTableSize := t.maxDecoderHeaderTableSize()
+	maxHeaderTableSize := conf.MaxDecoderHeaderTableSize
 	cc.fr.ReadMetaHeaders = hpack.NewDecoder(maxHeaderTableSize, nil)
 	cc.fr.MaxHeaderListSize = t.maxHeaderListSize()
 
 	cc.henc = hpack.NewEncoder(&cc.hbuf)
-	cc.henc.SetMaxDynamicTableSizeLimit(t.maxEncoderHeaderTableSize())
+	cc.henc.SetMaxDynamicTableSizeLimit(conf.MaxEncoderHeaderTableSize)
 	cc.peerMaxHeaderTableSize = initialHeaderTableSize
 
 	if cs, ok := c.(connectionStater); ok {
@@ -824,11 +801,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 
 	initialSettings := []Setting{
 		{ID: SettingEnablePush, Val: 0},
-		{ID: SettingInitialWindowSize, Val: transportDefaultStreamFlow},
+		{ID: SettingInitialWindowSize, Val: uint32(cc.initialStreamRecvWindowSize)},
 	}
-	if max := t.maxFrameReadSize(); max != 0 {
-		initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: max})
-	}
+	initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: conf.MaxReadFrameSize})
 	if max := t.maxHeaderListSize(); max != 0 {
 		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
 	}
@@ -838,8 +813,8 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 
 	cc.bw.Write(clientPreface)
 	cc.fr.WriteSettings(initialSettings...)
-	cc.fr.WriteWindowUpdate(0, transportDefaultConnFlow)
-	cc.inflow.init(transportDefaultConnFlow + initialWindowSize)
+	cc.fr.WriteWindowUpdate(0, uint32(conf.MaxUploadBufferPerConnection))
+	cc.inflow.init(conf.MaxUploadBufferPerConnection + initialWindowSize)
 	cc.bw.Flush()
 	if cc.werr != nil {
 		cc.Close()
@@ -857,7 +832,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 }
 
 func (cc *ClientConn) healthCheck() {
-	pingTimeout := cc.t.pingTimeout()
+	pingTimeout := cc.pingTimeout
 	// We don't need to periodically ping in the health check, because the readLoop of ClientConn will
 	// trigger the healthCheck again if there is no frame received.
 	ctx, cancel := cc.t.contextWithTimeout(context.Background(), pingTimeout)
@@ -2189,7 +2164,7 @@ type resAndError struct {
 func (cc *ClientConn) addStreamLocked(cs *clientStream) {
 	cs.flow.add(int32(cc.initialWindowSize))
 	cs.flow.setConnFlow(&cc.flow)
-	cs.inflow.init(transportDefaultStreamFlow)
+	cs.inflow.init(cc.initialStreamRecvWindowSize)
 	cs.ID = cc.nextStreamID
 	cc.nextStreamID += 2
 	cc.streams[cs.ID] = cs
@@ -2335,7 +2310,7 @@ func (cc *ClientConn) countReadFrameError(err error) {
 func (rl *clientConnReadLoop) run() error {
 	cc := rl.cc
 	gotSettings := false
-	readIdleTimeout := cc.t.ReadIdleTimeout
+	readIdleTimeout := cc.readIdleTimeout
 	var t timer
 	if readIdleTimeout != 0 {
 		t = cc.t.afterFunc(readIdleTimeout, cc.healthCheck)
