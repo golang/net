@@ -22,7 +22,7 @@ func ExampleParse() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for n := range doc.All() {
+	for n := range doc.Descendants() {
 		if n.Type == html.ElementNode && n.DataAtom == atom.A {
 			for _, a := range n.Attr {
 				if a.Key == "href" {

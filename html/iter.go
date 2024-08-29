@@ -8,55 +8,55 @@ package html
 
 import "iter"
 
-// Parents returns an sequence yielding the node and its parents.
+// Ancestors returns an iterator over the ancestors of n, starting with n.Parent.
+//
+// Example:
+//
+//	for ancestor := range n.Ancestors() { ... }
 //
 // Mutating a Node or its parents while iterating may have unexpected results.
-func (n *Node) Parents() iter.Seq[*Node] {
+func (n *Node) Ancestors() iter.Seq[*Node] {
+	_ = n.Parent // eager nil check
+
 	return func(yield func(*Node) bool) {
-		for p := n; p != nil; p = p.Parent {
-			if !yield(p) {
-				return
-			}
+		for p := n.Parent; p != nil && yield(p); p = p.Parent {
 		}
 	}
 }
 
-// ChildNodes returns a sequence yielding the immediate children of n.
+// Children returns an iterator over the immediate children of n,
+// starting with n.FirstChild.
 //
-// Mutating a Node or its ChildNodes while iterating may have unexpected results.
-func (n *Node) ChildNodes() iter.Seq[*Node] {
-	return func(yield func(*Node) bool) {
-		if n == nil {
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if !yield(c) {
-				return
-			}
-		}
-	}
-
-}
-
-// All returns a sequence yielding all descendents of n in depth-first pre-order.
+// Example:
 //
-// Mutating a Node or its descendents while iterating may have unexpected results.
-func (n *Node) All() iter.Seq[*Node] {
+//	for child := range n.Children() { ... }
+func (n *Node) Children() iter.Seq[*Node] {
+	_ = n.FirstChild // eager nil check
+
 	return func(yield func(*Node) bool) {
-		if n == nil {
-			return
+		for c := n.FirstChild; c != nil && yield(c); c = c.NextSibling {
 		}
-		n.all(yield)
+	}
+
+}
+
+// Descendants returns an iterator over all nodes recursively beneath
+// n, excluding n itself. Nodes are visited in depth-first preorder.
+//
+// Example:
+//
+//	for desc := range n.Descendants() { ... }
+func (n *Node) Descendants() iter.Seq[*Node] {
+	_ = n.FirstChild // eager nil check
+
+	return func(yield func(*Node) bool) {
+		_ = n.descendants(yield)
 	}
 }
 
-func (n *Node) all(yield func(*Node) bool) bool {
-	if !yield(n) {
-		return false
-	}
-
-	for c := range n.ChildNodes() {
-		if !c.all(yield) {
+func (n *Node) descendants(yield func(*Node) bool) bool {
+	for c := range n.Children() {
+		if !yield(c) || !c.descendants(yield) {
 			return false
 		}
 	}
