@@ -16,21 +16,21 @@ func TestNode_Children(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"<a></a>", ""},
-		{"<a><b></b></a>", "b"},
-		{"<a>b</a>", "b"},
-		{"<a><!--b--></a>", "b"},
-		{"<a>b<c></c>d</a>", "b c d"},
-		{"<a>b<c><!--d--></c>e</a>", "b c e"},
-		{"<a><b><c>d<!--e-->f</c></b>g<!--h--><i>j</i></a>", "b g h i"},
+		{"", ""},
+		{"<a></a>", "a"},
+		{"a", "a"},
+		{"<a></a><!--b-->", "a b"},
+		{"a<b></b>c", "a b c"},
+		{"a<b><!--c--></b>d", "a b d"},
+		{"<a><b>c<!--d-->e</b></a>f<!--g--><h>i</h>", "a f g h"},
 	}
 	for _, test := range tests {
 		doc, err := Parse(strings.NewReader(test.in))
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Drill to <html><head></head><body><a>
-		n := doc.FirstChild.FirstChild.NextSibling.FirstChild
+		// Drill to <html><head></head><body>
+		n := doc.FirstChild.FirstChild.NextSibling
 		var results []string
 		for c := range n.Children() {
 			results = append(results, c.Data)
