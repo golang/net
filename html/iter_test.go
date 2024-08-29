@@ -11,12 +11,11 @@ import (
 	"testing"
 )
 
-func TestNode_ChildNodes(t *testing.T) {
+func TestNode_Children(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
 	}{
-		{"", ""},
 		{"<a></a>", ""},
 		{"<a><b></b></a>", "b"},
 		{"<a>b</a>", "b"},
@@ -30,19 +29,19 @@ func TestNode_ChildNodes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Drill to <html><head></head><body> test.in
+		// Drill to <html><head></head><body><a>
 		n := doc.FirstChild.FirstChild.NextSibling.FirstChild
 		var results []string
-		for c := range n.ChildNodes() {
+		for c := range n.Children() {
 			results = append(results, c.Data)
 		}
 		if got := strings.Join(results, " "); got != test.want {
-			t.Errorf("unexpected children yielded by ChildNodes; want: %q got: %q", test.want, got)
+			t.Errorf("unexpected children yielded by Children; want: %q got: %q", test.want, got)
 		}
 	}
 }
 
-func TestNode_All(t *testing.T) {
+func TestNode_Descendants(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
@@ -61,24 +60,29 @@ func TestNode_All(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Drill to <html><head></head><body> test.in
-		n := doc.FirstChild.FirstChild.NextSibling.FirstChild
+		// Drill to <html><head></head><body>
+		n := doc.FirstChild.FirstChild.NextSibling
 		var results []string
-		for c := range n.All() {
+		for c := range n.Descendants() {
 			results = append(results, c.Data)
 		}
 		if got := strings.Join(results, " "); got != test.want {
-			t.Errorf("unexpected children yielded by All; want: %q got: %q",
+			t.Errorf("unexpected children yielded by Descendants; want: %q got: %q",
 				test.want, got)
 		}
 	}
 }
 
-func TestNode_Parents(t *testing.T) {
-	testParents(t, nil, 0)
-	for size := range 100 {
+func TestNode_Ancestors(t *testing.T) {
+	for _, size := range []int{0, 1, 2, 10, 100, 10_000} {
 		n := buildChain(size)
-		testParents(t, n, size+1)
+		nParents := 0
+		for _ = range n.Ancestors() {
+			nParents++
+		}
+		if nParents != size {
+			t.Errorf("unexpected number of Ancestors; want %d got: %d", size, nParents)
+		}
 	}
 }
 
@@ -90,14 +94,4 @@ func buildChain(size int) *Node {
 		parent.AppendChild(child)
 	}
 	return child
-}
-
-func testParents(t *testing.T, n *Node, wantSize int) {
-	nParents := 0
-	for _ = range n.Parents() {
-		nParents++
-	}
-	if nParents != wantSize {
-		t.Errorf("unexpected number of Parents; want %d got: %d", wantSize, nParents)
-	}
 }
