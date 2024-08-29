@@ -30,6 +30,8 @@ func (n *Node) Ancestors() iter.Seq[*Node] {
 // Example:
 //
 //	for child := range n.Children() { ... }
+//
+// Mutating a Node or its children while iterating may have unexpected results.
 func (n *Node) Children() iter.Seq[*Node] {
 	_ = n.FirstChild // eager nil check
 
@@ -46,6 +48,8 @@ func (n *Node) Children() iter.Seq[*Node] {
 // Example:
 //
 //	for desc := range n.Descendants() { ... }
+//
+// Mutating a Node or its descendants while iterating may have unexpected results.
 func (n *Node) Descendants() iter.Seq[*Node] {
 	_ = n.FirstChild // eager nil check
 
