@@ -78,7 +78,7 @@ example, to process each anchor node in depth-first order:
 	if err != nil {
 		// ...
 	}
-	for n := range doc.All() {
+	for n := range doc.Descendants() {
 		if n.Type == html.ElementNode && n.Data == "a" {
 			// Do something with n...
 		}
