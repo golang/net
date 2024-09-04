@@ -163,7 +163,7 @@ Sec-WebSocket-Protocol: chat
 	}
 	for k, v := range expectedHeader {
 		if req.Header.Get(k) != v {
-			t.Errorf(fmt.Sprintf("%s expected %q but got %q", k, v, req.Header.Get(k)))
+			t.Errorf("%s expected %q but got %q", k, v, req.Header.Get(k))
 		}
 	}
 }
