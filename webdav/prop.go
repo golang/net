@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"mime"
 	"net/http"
 	"os"
@@ -153,7 +154,10 @@ var liveProps = map[xml.Name]struct {
 
 	// TODO: The lockdiscovery property requires LockSystem to list the
 	// active locks on a resource.
-	{Space: "DAV:", Local: "lockdiscovery"}: {},
+	{Space: "DAV:", Local: "lockdiscovery"}: {
+		findFn: findLockDiscovery,
+		dir:    true,
+	},
 	{Space: "DAV:", Local: "supportedlock"}: {
 		findFn: findSupportedLock,
 		dir:    true,
@@ -410,6 +414,36 @@ func findDisplayName(ctx context.Context, fs FileSystem, ls LockSystem, name str
 		return "", nil
 	}
 	return escapeXML(fi.Name()), nil
+}
+
+func findLockDiscovery(ctx context.Context, fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {
+	if slashClean(name) == "/" {
+		// Hide the real name of a possibly prefixed root directory.
+		return "", nil
+	}
+
+	lockDetails, err := ls.LockDetails(name, fi)
+	if err != nil || lockDetails == nil {
+		return "", nil
+	}
+
+	detailsXML := fmt.Sprintf("<D:activelock>"+
+		"<D:locktype><D:write/></D:locktype>"+
+		"<D:lockscope><D:exclusive/></D:lockscope>"+
+		"<D:owner>%s</D:owner>",
+		lockDetails.OwnerXML,
+	)
+
+	if lockDetails.Duration.Seconds() < 0 {
+		detailsXML = detailsXML + "<D:timeout>Infinite</D:timeout>"
+	} else {
+		duration := math.Ceil(lockDetails.Duration.Seconds())
+		detailsXML = detailsXML + fmt.Sprintf("<D:timeout>Second-%d</D:timeout>", int(duration))
+	}
+
+	detailsXML = detailsXML + "</D:activelock>"
+
+	return detailsXML, nil
 }
 
 func findContentLength(ctx context.Context, fs FileSystem, ls LockSystem, name string, fi os.FileInfo) (string, error) {

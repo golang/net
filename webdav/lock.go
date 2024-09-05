@@ -7,6 +7,7 @@ package webdav
 import (
 	"container/heap"
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,10 @@ type LockSystem interface {
 	// URI as defined by RFC 3986, Section 4.3. In particular, it should not
 	// contain whitespace.
 	Create(now time.Time, details LockDetails) (token string, err error)
+
+	// Lockdetails is used to discover lockdetails on a file if it exists
+	// if not implemented, return nil lockDetails
+	LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error)
 
 	// Refresh refreshes the lock with the given token.
 	//
@@ -162,6 +167,10 @@ func (m *memLS) collectExpiredNodes(now time.Time) {
 		}
 		m.remove(m.byExpiry[0])
 	}
+}
+
+func (m *memLS) LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error) {
+	return nil, nil
 }
 
 func (m *memLS) Confirm(now time.Time, name0, name1 string, conditions ...Condition) (func(), error) {
