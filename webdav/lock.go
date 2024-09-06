@@ -7,6 +7,7 @@ package webdav
 import (
 	"container/heap"
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -106,6 +107,12 @@ type LockDeleter interface {
 	Delete(now time.Time, name string) error
 }
 
+// LockInspector extends a LockSystem to support inspecting locks on a file for lockdiscovery
+type LockInspector interface {
+	// Lockdetails is used to discover lockdetails on a file if it exists
+	LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error)
+}
+
 // LockDetails are a lock's metadata.
 type LockDetails struct {
 	// Root is the root resource name being locked. For a zero-depth lock, the
@@ -162,6 +169,10 @@ func (m *memLS) collectExpiredNodes(now time.Time) {
 		}
 		m.remove(m.byExpiry[0])
 	}
+}
+
+func (m *memLS) LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error) {
+	return nil, nil
 }
 
 func (m *memLS) Confirm(now time.Time, name0, name1 string, conditions ...Condition) (func(), error) {
