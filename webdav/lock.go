@@ -69,10 +69,6 @@ type LockSystem interface {
 	// contain whitespace.
 	Create(now time.Time, details LockDetails) (token string, err error)
 
-	// Lockdetails is used to discover lockdetails on a file if it exists
-	// if not implemented, return nil lockDetails
-	LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error)
-
 	// Refresh refreshes the lock with the given token.
 	//
 	// If Refresh returns ErrLocked then the Handler will write a "423 Locked"
@@ -109,6 +105,12 @@ type LockDeleter interface {
 	// If Delete returns any non-nil error  the Handler will write a "409
 	// Conflict" HTTP status
 	Delete(now time.Time, name string) error
+}
+
+// LockInspector extends a LockSystem to support inspecting locks on a file for lockdiscovery
+type LockInspector interface {
+	// Lockdetails is used to discover lockdetails on a file if it exists
+	LockDetails(path string, fi os.FileInfo) (ld *LockDetails, err error)
 }
 
 // LockDetails are a lock's metadata.

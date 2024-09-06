@@ -422,26 +422,34 @@ func findLockDiscovery(ctx context.Context, fs FileSystem, ls LockSystem, name s
 		return "", nil
 	}
 
-	lockDetails, err := ls.LockDetails(name, fi)
-	if err != nil || lockDetails == nil {
+	detailGetter, ok := ls.(LockInspector)
+
+	if !ok {
 		return "", nil
+	}
+
+	lockDetails, err := detailGetter.LockDetails(name, fi)
+	if err != nil || lockDetails == nil {
+		return "", err
+	}
+
+	timeout := ""
+	if lockDetails.Duration.Seconds() < 0 {
+		timeout = "Infinite"
+	} else {
+		duration := math.Ceil(lockDetails.Duration.Seconds())
+		timeout = fmt.Sprintf("Second-%d", int(duration))
 	}
 
 	detailsXML := fmt.Sprintf("<D:activelock>"+
 		"<D:locktype><D:write/></D:locktype>"+
 		"<D:lockscope><D:exclusive/></D:lockscope>"+
-		"<D:owner>%s</D:owner>",
+		"<D:owner>%s</D:owner>"+
+		"<D:timeout>%s</D:timeout>"+
+		"</D:activelock>",
 		lockDetails.OwnerXML,
+		timeout,
 	)
-
-	if lockDetails.Duration.Seconds() < 0 {
-		detailsXML = detailsXML + "<D:timeout>Infinite</D:timeout>"
-	} else {
-		duration := math.Ceil(lockDetails.Duration.Seconds())
-		detailsXML = detailsXML + fmt.Sprintf("<D:timeout>Second-%d</D:timeout>", int(duration))
-	}
-
-	detailsXML = detailsXML + "</D:activelock>"
 
 	return detailsXML, nil
 }
