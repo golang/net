@@ -420,12 +420,12 @@ type clientStream struct {
 	sentHeaders   bool
 
 	// owned by clientConnReadLoop:
-	firstByte    bool  // got the first response byte
-	pastHeaders  bool  // got first MetaHeadersFrame (actual headers)
-	pastTrailers bool  // got optional second MetaHeadersFrame (trailers)
-	num1xx       uint8 // number of 1xx responses seen
-	readClosed   bool  // peer sent an END_STREAM flag
-	readAborted  bool  // read loop reset the stream
+	firstByte       bool  // got the first response byte
+	pastHeaders     bool  // got first MetaHeadersFrame (actual headers)
+	pastTrailers    bool  // got optional second MetaHeadersFrame (trailers)
+	readClosed      bool  // peer sent an END_STREAM flag
+	readAborted     bool  // read loop reset the stream
+	totalHeaderSize int64 // total size of 1xx headers seen
 
 	trailer    http.Header  // accumulated trailers
 	resTrailer *http.Header // client's Response.Trailer
@@ -2494,14 +2494,33 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 		if f.StreamEnded() {
 			return nil, errors.New("1xx informational response with END_STREAM flag")
 		}
-		cs.num1xx++
-		const max1xxResponses = 5 // arbitrary bound on number of informational responses, same as net/http
-		if cs.num1xx > max1xxResponses {
-			return nil, errors.New("http2: too many 1xx informational responses")
-		}
 		if fn := cs.get1xxTraceFunc(); fn != nil {
+			// If the 1xx response is being delivered to the user,
+			// then they're responsible for limiting the number
+			// of responses.
 			if err := fn(statusCode, textproto.MIMEHeader(header)); err != nil {
 				return nil, err
+			}
+		} else {
+			// If the user didn't examine the 1xx response, then we
+			// limit the size of all 1xx headers.
+			//
+			// This differs a bit from the HTTP/1 implementation, which
+			// limits the size of all 1xx headers plus the final response.
+			// Use the larger limit of MaxHeaderListSize and
+			// net/http.Transport.MaxResponseHeaderBytes.
+			limit := int64(cs.cc.t.maxHeaderListSize())
+			if t1 := cs.cc.t.t1; t1 != nil && t1.MaxResponseHeaderBytes > limit {
+				limit = t1.MaxResponseHeaderBytes
+			}
+			for _, h := range f.Fields {
+				cs.totalHeaderSize += int64(h.Size())
+			}
+			if cs.totalHeaderSize > limit {
+				if VerboseLogs {
+					log.Printf("http2: 1xx informational responses too large")
+				}
+				return nil, errors.New("header list too large")
 			}
 		}
 		if statusCode == 100 {

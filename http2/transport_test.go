@@ -5421,3 +5421,94 @@ func TestIssue67671(t *testing.T) {
 		res.Body.Close()
 	}
 }
+
+func TestTransport1xxLimits(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		opt     any
+		ctxfn   func(context.Context) context.Context
+		hcount  int
+		limited bool
+	}{{
+		name:    "default",
+		hcount:  10,
+		limited: false,
+	}, {
+		name: "MaxHeaderListSize",
+		opt: func(tr *Transport) {
+			tr.MaxHeaderListSize = 10000
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "MaxResponseHeaderBytes",
+		opt: func(tr *http.Transport) {
+			tr.MaxResponseHeaderBytes = 10000
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "limit by client trace",
+		ctxfn: func(ctx context.Context) context.Context {
+			count := 0
+			return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+				Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+					count++
+					if count >= 10 {
+						return errors.New("too many 1xx")
+					}
+					return nil
+				},
+			})
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "limit disabled by client trace",
+		opt: func(tr *Transport) {
+			tr.MaxHeaderListSize = 10000
+		},
+		ctxfn: func(ctx context.Context) context.Context {
+			return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+				Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+					return nil
+				},
+			})
+		},
+		hcount:  20,
+		limited: false,
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			tc := newTestClientConn(t, test.opt)
+			tc.greet()
+
+			ctx := context.Background()
+			if test.ctxfn != nil {
+				ctx = test.ctxfn(ctx)
+			}
+			req, _ := http.NewRequestWithContext(ctx, "GET", "https://dummy.tld/", nil)
+			rt := tc.roundTrip(req)
+			tc.wantFrameType(FrameHeaders)
+
+			for i := 0; i < test.hcount; i++ {
+				if fr, err := tc.fr.ReadFrame(); err != os.ErrDeadlineExceeded {
+					t.Fatalf("after writing %v 1xx headers: read %v, %v; want idle", i, fr, err)
+				}
+				tc.writeHeaders(HeadersFrameParam{
+					StreamID:   rt.streamID(),
+					EndHeaders: true,
+					EndStream:  false,
+					BlockFragment: tc.makeHeaderBlockFragment(
+						":status", "103",
+						"x-field", strings.Repeat("a", 1000),
+					),
+				})
+			}
+			if test.limited {
+				tc.wantFrameType(FrameRSTStream)
+			} else {
+				tc.wantIdle()
+			}
+		})
+	}
+}
