@@ -803,6 +803,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 	})
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
+	cc.fr.SetReuseFrames()
 	if t.maxFrameReadSize() != 0 {
 		cc.fr.SetMaxReadFrameSize(t.maxFrameReadSize())
 	}

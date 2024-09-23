@@ -500,6 +500,7 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 	sc.hpackEncoder.SetMaxDynamicTableSizeLimit(s.maxEncoderHeaderTableSize())
 
 	fr := NewFramer(sc.bw, c)
+	fr.SetReuseFrames()
 	if s.CountError != nil {
 		fr.countError = s.CountError
 	}
