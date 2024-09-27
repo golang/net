@@ -350,31 +350,33 @@ type ClientConn struct {
 	idleTimeout time.Duration // or 0 for never
 	idleTimer   timer
 
-	mu              sync.Mutex // guards following
-	cond            *sync.Cond // hold mu; broadcast on flow/closed changes
-	flow            outflow    // our conn-level flow control quota (cs.outflow is per stream)
-	inflow          inflow     // peer's conn-level flow control
-	doNotReuse      bool       // whether conn is marked to not be reused for any future requests
-	closing         bool
-	closed          bool
-	seenSettings    bool                     // true if we've seen a settings frame, false otherwise
-	wantSettingsAck bool                     // we sent a SETTINGS frame and haven't heard back
-	goAway          *GoAwayFrame             // if non-nil, the GoAwayFrame we received
-	goAwayDebug     string                   // goAway frame's debug data, retained as a string
-	streams         map[uint32]*clientStream // client-initiated
-	streamsReserved int                      // incr by ReserveNewRequest; decr on RoundTrip
-	nextStreamID    uint32
-	pendingRequests int                       // requests blocked and waiting to be sent because len(streams) == maxConcurrentStreams
-	pings           map[[8]byte]chan struct{} // in flight ping data to notification channel
-	br              *bufio.Reader
-	lastActive      time.Time
-	lastIdle        time.Time // time last idle
+	mu               sync.Mutex // guards following
+	cond             *sync.Cond // hold mu; broadcast on flow/closed changes
+	flow             outflow    // our conn-level flow control quota (cs.outflow is per stream)
+	inflow           inflow     // peer's conn-level flow control
+	doNotReuse       bool       // whether conn is marked to not be reused for any future requests
+	closing          bool
+	closed           bool
+	seenSettings     bool                     // true if we've seen a settings frame, false otherwise
+	seenSettingsChan chan struct{}            // closed when seenSettings is true or frame reading fails
+	wantSettingsAck  bool                     // we sent a SETTINGS frame and haven't heard back
+	goAway           *GoAwayFrame             // if non-nil, the GoAwayFrame we received
+	goAwayDebug      string                   // goAway frame's debug data, retained as a string
+	streams          map[uint32]*clientStream // client-initiated
+	streamsReserved  int                      // incr by ReserveNewRequest; decr on RoundTrip
+	nextStreamID     uint32
+	pendingRequests  int                       // requests blocked and waiting to be sent because len(streams) == maxConcurrentStreams
+	pings            map[[8]byte]chan struct{} // in flight ping data to notification channel
+	br               *bufio.Reader
+	lastActive       time.Time
+	lastIdle         time.Time // time last idle
 	// Settings from peer: (also guarded by wmu)
 	maxFrameSize           uint32
 	maxConcurrentStreams   uint32
 	peerMaxHeaderListSize  uint64
 	peerMaxHeaderTableSize uint32
 	initialWindowSize      uint32
+	extendedConnecAllowed  bool
 
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
@@ -788,6 +790,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		peerMaxHeaderListSize: 0xffffffffffffffff,          // "infinite", per spec. Use 2^64-1 instead.
 		streams:               make(map[uint32]*clientStream),
 		singleUse:             singleUse,
+		seenSettingsChan:      make(chan struct{}),
 		wantSettingsAck:       true,
 		pings:                 make(map[[8]byte]chan struct{}),
 		reqHeaderMu:           make(chan struct{}, 1),
@@ -1411,6 +1414,8 @@ func (cs *clientStream) doRequest(req *http.Request, streamf func(*clientStream)
 	cs.cleanupWriteRequest(err)
 }
 
+var errExtendedConnectNotSupported = errors.New("net/http: extended connect not supported by peer")
+
 // writeRequest sends a request.
 //
 // It returns nil after the request is written, the response read,
@@ -1440,7 +1445,20 @@ func (cs *clientStream) writeRequest(req *http.Request, streamf func(*clientStre
 		return ctx.Err()
 	}
 
+	// wait for setting frames to be received, a server can change this value later,
+	// but we just wait for the first settings frame
+	var isExtendedConnect bool
+	if req.Method == "CONNECT" && req.Header.Get(":protocol") != "" {
+		isExtendedConnect = true
+		<-cc.seenSettingsChan
+	}
+
 	cc.mu.Lock()
+	if isExtendedConnect && !cc.extendedConnecAllowed {
+		cc.mu.Unlock()
+		<-cc.reqHeaderMu
+		return errExtendedConnectNotSupported
+	}
 	if cc.idleTimer != nil {
 		cc.idleTimer.Stop()
 	}
@@ -1945,7 +1963,7 @@ func (cs *clientStream) awaitFlowControl(maxBytes int) (taken int32, err error) 
 
 func validateHeaders(hdrs http.Header) string {
 	for k, vv := range hdrs {
-		if !httpguts.ValidHeaderFieldName(k) {
+		if !httpguts.ValidHeaderFieldName(k) && k != ":protocol" {
 			return fmt.Sprintf("name %q", k)
 		}
 		for _, v := range vv {
@@ -1960,6 +1978,10 @@ func validateHeaders(hdrs http.Header) string {
 }
 
 var errNilRequestURL = errors.New("http2: Request.URI is nil")
+
+func isNormalConnect(req *http.Request) bool {
+	return req.Method == "CONNECT" && req.Header.Get(":protocol") == ""
+}
 
 // requires cc.wmu be held.
 func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) ([]byte, error) {
@@ -1981,7 +2003,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	}
 
 	var path string
-	if req.Method != "CONNECT" {
+	if !isNormalConnect(req) {
 		path = req.URL.RequestURI()
 		if !validPseudoPath(path) {
 			orig := path
@@ -2018,7 +2040,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 			m = http.MethodGet
 		}
 		f(":method", m)
-		if req.Method != "CONNECT" {
+		if !isNormalConnect(req) {
 			f(":path", path)
 			f(":scheme", req.URL.Scheme)
 		}
@@ -2404,6 +2426,9 @@ func (rl *clientConnReadLoop) run() error {
 		if err != nil {
 			if VerboseLogs {
 				cc.vlogf("http2: Transport conn %p received error from processing frame %v: %v", cc, summarizeFrame(f), err)
+			}
+			if !cc.seenSettings {
+				close(cc.seenSettingsChan)
 			}
 			return err
 		}
@@ -2952,6 +2977,15 @@ func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 		case SettingHeaderTableSize:
 			cc.henc.SetMaxDynamicTableSize(s.Val)
 			cc.peerMaxHeaderTableSize = s.Val
+		case SettingEnableConnectProtocol:
+			if err := s.Valid(); err != nil {
+				return err
+			}
+			// RFC 8441 section, https://datatracker.ietf.org/doc/html/rfc8441#section-3
+			if s.Val == 0 && cc.extendedConnecAllowed {
+				return ConnectionError(ErrCodeProtocol)
+			}
+			cc.extendedConnecAllowed = s.Val == 1
 		default:
 			cc.vlogf("Unhandled Setting: %v", s)
 		}
@@ -2969,6 +3003,7 @@ func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 			// connection can establish to our default.
 			cc.maxConcurrentStreams = defaultMaxConcurrentStreams
 		}
+		close(cc.seenSettingsChan)
 		cc.seenSettings = true
 	}
 

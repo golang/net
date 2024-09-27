@@ -144,6 +144,10 @@ func (s Setting) Valid() error {
 		if s.Val < 16384 || s.Val > 1<<24-1 {
 			return ConnectionError(ErrCodeProtocol)
 		}
+	case SettingEnableConnectProtocol:
+		if s.Val != 1 && s.Val != 0 {
+			return ConnectionError(ErrCodeProtocol)
+		}
 	}
 	return nil
 }
