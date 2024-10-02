@@ -364,7 +364,7 @@ type ClientConn struct {
 	initialStreamRecvWindowSize int32
 	readIdleTimeout             time.Duration
 	pingTimeout                 time.Duration
-	extendedConnecAllowed       bool
+	extendedConnectAllowed      bool
 
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
@@ -1396,34 +1396,42 @@ func (cs *clientStream) writeRequest(req *http.Request, streamf func(*clientStre
 		return err
 	}
 
+	// wait for setting frames to be received, a server can change this value later,
+	// but we just wait for the first settings frame
+	var isExtendedConnect bool
+	if req.Method == "CONNECT" && req.Header.Get(":protocol") != "" {
+		isExtendedConnect = true
+	}
+
 	// Acquire the new-request lock by writing to reqHeaderMu.
 	// This lock guards the critical section covering allocating a new stream ID
 	// (requires mu) and creating the stream (requires wmu).
 	if cc.reqHeaderMu == nil {
 		panic("RoundTrip on uninitialized ClientConn") // for tests
 	}
-	select {
-	case cc.reqHeaderMu <- struct{}{}:
-	case <-cs.reqCancel:
-		return errRequestCanceled
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	// wait for setting frames to be received, a server can change this value later,
-	// but we just wait for the first settings frame
-	var isExtendedConnect bool
-	if req.Method == "CONNECT" && req.Header.Get(":protocol") != "" {
-		isExtendedConnect = true
-		<-cc.seenSettingsChan
+	if isExtendedConnect {
+		select {
+		case cc.reqHeaderMu <- struct{}{}:
+		case <-cs.reqCancel:
+			return errRequestCanceled
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-cc.seenSettingsChan:
+			if !cc.extendedConnectAllowed {
+				return errExtendedConnectNotSupported
+			}
+		}
+	} else {
+		select {
+		case cc.reqHeaderMu <- struct{}{}:
+		case <-cs.reqCancel:
+			return errRequestCanceled
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	cc.mu.Lock()
-	if isExtendedConnect && !cc.extendedConnecAllowed {
-		cc.mu.Unlock()
-		<-cc.reqHeaderMu
-		return errExtendedConnectNotSupported
-	}
 	if cc.idleTimer != nil {
 		cc.idleTimer.Stop()
 	}
@@ -2946,11 +2954,17 @@ func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 			if err := s.Valid(); err != nil {
 				return err
 			}
-			// RFC 8441 section, https://datatracker.ietf.org/doc/html/rfc8441#section-3
-			if s.Val == 0 && cc.extendedConnecAllowed {
-				return ConnectionError(ErrCodeProtocol)
+			// If the peer wants to send us SETTINGS_ENABLE_CONNECT_PROTOCOL,
+			// we require that it do so in the first SETTINGS frame.
+			//
+			// When we attempt to use extended CONNECT, we wait for the first
+			// SETTINGS frame to see if the server supports it. If we let the
+			// server enable the feature with a later SETTINGS frame, then
+			// users will see inconsistent results depending on whether we've
+			// seen that frame or not.
+			if !cc.seenSettings {
+				cc.extendedConnectAllowed = s.Val == 1
 			}
-			cc.extendedConnecAllowed = s.Val == 1
 		default:
 			cc.vlogf("Unhandled Setting: %v", s)
 		}

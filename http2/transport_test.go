@@ -5425,6 +5425,9 @@ func TestIssue67671(t *testing.T) {
 func TestExtendedConnectClientWithServerSupport(t *testing.T) {
 	disableExtendedConnectProtocol = false
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(":protocol") != "extended-connect" {
+			t.Fatalf("unexpected :protocol header received")
+		}
 		t.Log(io.Copy(w, r.Body))
 	})
 	tr := &Transport{
