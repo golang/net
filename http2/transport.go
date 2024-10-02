@@ -364,6 +364,14 @@ type ClientConn struct {
 	readIdleTimeout             time.Duration
 	pingTimeout                 time.Duration
 
+	// pendingResets is the number of RST_STREAM frames we have sent to the peer,
+	// without confirming that the peer has received them. When we send a RST_STREAM,
+	// we bundle it with a PING frame, unless a PING is already in flight. We count
+	// the reset stream against the connection's concurrency limit until we get
+	// a PING response. This limits the number of requests we'll try to send to a
+	// completely unresponsive connection.
+	pendingResets int
+
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
 	// Lock reqmu BEFORE mu or wmu.
@@ -960,7 +968,7 @@ func (cc *ClientConn) State() ClientConnState {
 	return ClientConnState{
 		Closed:               cc.closed,
 		Closing:              cc.closing || cc.singleUse || cc.doNotReuse || cc.goAway != nil,
-		StreamsActive:        len(cc.streams),
+		StreamsActive:        len(cc.streams) + cc.pendingResets,
 		StreamsReserved:      cc.streamsReserved,
 		StreamsPending:       cc.pendingRequests,
 		LastIdle:             cc.lastIdle,
@@ -992,7 +1000,13 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 		// writing it.
 		maxConcurrentOkay = true
 	} else {
-		maxConcurrentOkay = int64(len(cc.streams)+cc.streamsReserved+1) <= int64(cc.maxConcurrentStreams)
+		// We can take a new request if the total of
+		//   - active streams;
+		//   - reservation slots for new streams; and
+		//   - streams for which we have sent a RST_STREAM and a PING,
+		//     but received no subsequent frame
+		// is less than the concurrency limit.
+		maxConcurrentOkay = cc.currentRequestCountLocked() < int(cc.maxConcurrentStreams)
 	}
 
 	st.canTakeNewRequest = cc.goAway == nil && !cc.closed && !cc.closing && maxConcurrentOkay &&
@@ -1000,6 +1014,12 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < math.MaxInt32 &&
 		!cc.tooIdleLocked()
 	return
+}
+
+// currentRequestCountLocked reports the number of concurrency slots currently in use,
+// including active streams, reserved slots, and reset streams waiting for acknowledgement.
+func (cc *ClientConn) currentRequestCountLocked() int {
+	return len(cc.streams) + cc.streamsReserved + cc.pendingResets
 }
 
 func (cc *ClientConn) canTakeNewRequestLocked() bool {
@@ -1578,6 +1598,7 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 		cs.reqBodyClosed = make(chan struct{})
 	}
 	bodyClosed := cs.reqBodyClosed
+	closeOnIdle := cc.singleUse || cc.doNotReuse || cc.t.disableKeepAlives() || cc.goAway != nil
 	cc.mu.Unlock()
 	if mustCloseBody {
 		cs.reqBody.Close()
@@ -1602,16 +1623,40 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 		if cs.sentHeaders {
 			if se, ok := err.(StreamError); ok {
 				if se.Cause != errFromPeer {
-					cc.writeStreamReset(cs.ID, se.Code, err)
+					cc.writeStreamReset(cs.ID, se.Code, false, err)
 				}
 			} else {
-				cc.writeStreamReset(cs.ID, ErrCodeCancel, err)
+				// We're cancelling an in-flight request.
+				//
+				// This could be due to the server becoming unresponsive.
+				// To avoid sending too many requests on a dead connection,
+				// we let the request continue to consume a concurrency slot
+				// until we can confirm the server is still responding.
+				// We do this by sending a PING frame along with the RST_STREAM
+				// (unless a ping is already in flight).
+				//
+				// For simplicity, we don't bother tracking the PING payload:
+				// We reset cc.pendingResets any time we receive a PING ACK.
+				//
+				// We skip this if the conn is going to be closed on idle,
+				// because it's short lived and will probably be closed before
+				// we get the ping response.
+				ping := false
+				if !closeOnIdle {
+					cc.mu.Lock()
+					if cc.pendingResets == 0 {
+						ping = true
+					}
+					cc.pendingResets++
+					cc.mu.Unlock()
+				}
+				cc.writeStreamReset(cs.ID, ErrCodeCancel, ping, err)
 			}
 		}
 		cs.bufPipe.CloseWithError(err) // no-op if already closed
 	} else {
 		if cs.sentHeaders && !cs.sentEndStream {
-			cc.writeStreamReset(cs.ID, ErrCodeNo, nil)
+			cc.writeStreamReset(cs.ID, ErrCodeNo, false, nil)
 		}
 		cs.bufPipe.CloseWithError(errRequestCanceled)
 	}
@@ -1638,7 +1683,7 @@ func (cc *ClientConn) awaitOpenSlotForStreamLocked(cs *clientStream) error {
 			return errClientConnUnusable
 		}
 		cc.lastIdle = time.Time{}
-		if int64(len(cc.streams)) < int64(cc.maxConcurrentStreams) {
+		if cc.currentRequestCountLocked() < int(cc.maxConcurrentStreams) {
 			return nil
 		}
 		cc.pendingRequests++
@@ -3065,6 +3110,11 @@ func (rl *clientConnReadLoop) processPing(f *PingFrame) error {
 			close(c)
 			delete(cc.pings, f.Data)
 		}
+		if cc.pendingResets > 0 {
+			// See clientStream.cleanupWriteRequest.
+			cc.pendingResets = 0
+			cc.cond.Broadcast()
+		}
 		return nil
 	}
 	cc := rl.cc
@@ -3087,13 +3137,20 @@ func (rl *clientConnReadLoop) processPushPromise(f *PushPromiseFrame) error {
 	return ConnectionError(ErrCodeProtocol)
 }
 
-func (cc *ClientConn) writeStreamReset(streamID uint32, code ErrCode, err error) {
+// writeStreamReset sends a RST_STREAM frame.
+// When ping is true, it also sends a PING frame with a random payload.
+func (cc *ClientConn) writeStreamReset(streamID uint32, code ErrCode, ping bool, err error) {
 	// TODO: map err to more interesting error codes, once the
 	// HTTP community comes up with some. But currently for
 	// RST_STREAM there's no equivalent to GOAWAY frame's debug
 	// data, and the error codes are all pretty vague ("cancel").
 	cc.wmu.Lock()
 	cc.fr.WriteRSTStream(streamID, code)
+	if ping {
+		var payload [8]byte
+		rand.Read(payload[:])
+		cc.fr.WritePing(false, payload)
+	}
 	cc.bw.Flush()
 	cc.wmu.Unlock()
 }
