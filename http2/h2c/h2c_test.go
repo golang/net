@@ -169,3 +169,69 @@ func TestMaxBytesHandler(t *testing.T) {
 		t.Errorf("resp.StatusCode = %v, want %v", got, want)
 	}
 }
+
+func TestH2CProtocolSwitch(t *testing.T) {
+	const bodyLimit = 10
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	})
+
+	h2s := &http2.Server{}
+	h1s := httptest.NewUnstartedServer(http.MaxBytesHandler(NewHandler(handler, h2s), bodyLimit))
+	h1s.Start()
+	defer h1s.Close()
+
+	req, err := http.NewRequest("POST", h1s.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Http2-Settings", "")
+	req.Header.Set("Upgrade", "h2c")
+	req.Header.Set("Connection", "Upgrade, HTTP2-Settings")
+
+	resp, err := h1s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := resp.StatusCode, http.StatusSwitchingProtocols; got != want {
+		t.Errorf("resp.StatusCode = %v, want %v", got, want)
+	}
+}
+
+func TestDisableH2CUpgrade(t *testing.T) {
+	const bodyLimit = 10
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	})
+
+	h2s := &http2.Server{}
+	h1s := httptest.NewUnstartedServer(http.MaxBytesHandler(NewHandler(handler, h2s, DisableH2CUpgrade()), bodyLimit))
+	h1s.Start()
+	defer h1s.Close()
+
+	req, err := http.NewRequest("POST", h1s.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Http2-Settings", "")
+	req.Header.Set("Upgrade", "h2c")
+	req.Header.Set("Connection", "Upgrade, HTTP2-Settings")
+
+	resp, err := h1s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := resp.StatusCode, http.StatusOK; got != want {
+		t.Errorf("resp.StatusCode = %v, want %v", got, want)
+	}
+}
