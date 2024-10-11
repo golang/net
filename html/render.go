@@ -41,7 +41,7 @@ type writer interface {
 // re-parsed, results in a different tree. A simple example is that a solitary
 // text node would become a tree containing <html>, <head> and <body> elements.
 // Another example is that the programmatic equivalent of "a<head>b</head>c"
-// becomes "<html><head><head/><body>abc</body></html>".
+// becomes "<html><head></head><body>abc</body></html>".
 func Render(w io.Writer, n *Node) error {
 	if x, ok := w.(writer); ok {
 		return render(x, n)
