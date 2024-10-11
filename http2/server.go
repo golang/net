@@ -3062,6 +3062,11 @@ func (w *responseWriter) handlerDone() {
 	rws := w.rws
 	rws.handlerDone = true
 	w.Flush()
+
+	if rws.req != nil && rws.req.MultipartForm != nil {
+		rws.req.MultipartForm.RemoveAll()
+	}
+
 	w.rws = nil
 	responseWriterStatePool.Put(rws)
 }
