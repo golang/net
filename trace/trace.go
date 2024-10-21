@@ -127,8 +127,8 @@ func init() {
 
 	// TODO(jbd): Serve Traces from /debug/traces in the future?
 	// There is no requirement for a request to be present to have traces.
-	http.HandleFunc(debugRequestsPath, Traces)
-	http.HandleFunc(debugEventsPath, Events)
+	http.HandleFunc(fmt.Sprintf("%s %s", http.MethodGet, debugRequestsPath), Traces)
+	http.HandleFunc(fmt.Sprintf("%s %s", http.MethodGet, debugEventsPath), Events)
 }
 
 // NewContext returns a copy of the parent context
