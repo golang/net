@@ -24,15 +24,15 @@ func (n *Node) Ancestors() iter.Seq[*Node] {
 	}
 }
 
-// Children returns an iterator over the immediate children of n,
+// ChildNodes returns an iterator over the immediate children of n,
 // starting with n.FirstChild.
 //
 // Example:
 //
-//	for child := range n.Children() { ... }
+//	for child := range n.ChildNodes() { ... }
 //
 // Mutating a Node or its children while iterating may have unexpected results.
-func (n *Node) Children() iter.Seq[*Node] {
+func (n *Node) ChildNodes() iter.Seq[*Node] {
 	_ = n.FirstChild // eager nil check
 
 	return func(yield func(*Node) bool) {
@@ -59,7 +59,7 @@ func (n *Node) Descendants() iter.Seq[*Node] {
 }
 
 func (n *Node) descendants(yield func(*Node) bool) bool {
-	for c := range n.Children() {
+	for c := range n.ChildNodes() {
 		if !yield(c) || !c.descendants(yield) {
 			return false
 		}

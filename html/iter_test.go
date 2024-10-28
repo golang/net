@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestNode_Children(t *testing.T) {
+func TestNode_ChildNodes(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
@@ -32,11 +32,11 @@ func TestNode_Children(t *testing.T) {
 		// Drill to <html><head></head><body>
 		n := doc.FirstChild.FirstChild.NextSibling
 		var results []string
-		for c := range n.Children() {
+		for c := range n.ChildNodes() {
 			results = append(results, c.Data)
 		}
 		if got := strings.Join(results, " "); got != test.want {
-			t.Errorf("unexpected children yielded by Children; want: %q got: %q", test.want, got)
+			t.Errorf("unexpected children yielded by ChildNodes; want: %q got: %q", test.want, got)
 		}
 	}
 }
