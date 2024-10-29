@@ -10,10 +10,6 @@ import "iter"
 
 // Ancestors returns an iterator over the ancestors of n, starting with n.Parent.
 //
-// Example:
-//
-//	for ancestor := range n.Ancestors() { ... }
-//
 // Mutating a Node or its parents while iterating may have unexpected results.
 func (n *Node) Ancestors() iter.Seq[*Node] {
 	_ = n.Parent // eager nil check
@@ -26,10 +22,6 @@ func (n *Node) Ancestors() iter.Seq[*Node] {
 
 // ChildNodes returns an iterator over the immediate children of n,
 // starting with n.FirstChild.
-//
-// Example:
-//
-//	for child := range n.ChildNodes() { ... }
 //
 // Mutating a Node or its children while iterating may have unexpected results.
 func (n *Node) ChildNodes() iter.Seq[*Node] {
@@ -45,16 +37,12 @@ func (n *Node) ChildNodes() iter.Seq[*Node] {
 // Descendants returns an iterator over all nodes recursively beneath
 // n, excluding n itself. Nodes are visited in depth-first preorder.
 //
-// Example:
-//
-//	for desc := range n.Descendants() { ... }
-//
 // Mutating a Node or its descendants while iterating may have unexpected results.
 func (n *Node) Descendants() iter.Seq[*Node] {
 	_ = n.FirstChild // eager nil check
 
 	return func(yield func(*Node) bool) {
-		_ = n.descendants(yield)
+		n.descendants(yield)
 	}
 }
 

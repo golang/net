@@ -36,7 +36,7 @@ func TestNode_ChildNodes(t *testing.T) {
 			results = append(results, c.Data)
 		}
 		if got := strings.Join(results, " "); got != test.want {
-			t.Errorf("unexpected children yielded by ChildNodes; want: %q got: %q", test.want, got)
+			t.Errorf("ChildNodes = %q, want %q", got, test.want)
 		}
 	}
 }
@@ -67,8 +67,7 @@ func TestNode_Descendants(t *testing.T) {
 			results = append(results, c.Data)
 		}
 		if got := strings.Join(results, " "); got != test.want {
-			t.Errorf("unexpected children yielded by Descendants; want: %q got: %q",
-				test.want, got)
+			t.Errorf("Descendants = %q; want: %q", got, test.want)
 		}
 	}
 }
@@ -81,7 +80,7 @@ func TestNode_Ancestors(t *testing.T) {
 			nParents++
 		}
 		if nParents != size {
-			t.Errorf("unexpected number of Ancestors; want %d got: %d", size, nParents)
+			t.Errorf("number of Ancestors = %d; want: %d", nParents, size)
 		}
 	}
 }
