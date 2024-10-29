@@ -626,6 +626,27 @@ func TestReadFrameHeader(t *testing.T) {
 	}
 }
 
+func TestReadFrameHeader_FromHTTP1Header(t *testing.T) {
+	tests := []struct {
+		in             string
+		looksLikeHTTP1 bool
+	}{
+		// Ignore high bit:
+		{in: "\xff\xff\xff" + "\xff" + "\xff" + "\xff\xff\xff\xff", looksLikeHTTP1: false},
+		{in: "HTTP/1.1 400 Bad Request\r\n", looksLikeHTTP1: true},
+	}
+	for i, tt := range tests {
+		got, err := readFrameHeader(make([]byte, 9), strings.NewReader(tt.in))
+		if err != nil {
+			t.Errorf("%d. readFrameHeader(%q) = %v", i, tt.in, err)
+			continue
+		}
+		if got.looksLikeHTTP1Header() != tt.looksLikeHTTP1 {
+			t.Errorf("%d. readFrameHeader(%q).looksLikeHTTP1Header = %v; want %v", i, tt.in, got.looksLikeHTTP1Header(), tt.looksLikeHTTP1)
+		}
+	}
+}
+
 func TestReadWriteFrameHeader(t *testing.T) {
 	tests := []struct {
 		len      uint32

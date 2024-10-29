@@ -225,6 +225,16 @@ var fhBytes = sync.Pool{
 	},
 }
 
+var invalidHTTP1LookingFrameHeader = func() FrameHeader {
+	fh, err := readFrameHeader(make([]byte, frameHeaderLen), strings.NewReader("HTTP/1.1 "))
+	if err != nil {
+		panic(err)
+	}
+	return fh
+}()
+
+func (h FrameHeader) looksLikeHTTP1Header() bool { return h == invalidHTTP1LookingFrameHeader }
+
 // ReadFrameHeader reads 9 bytes from r and returns a FrameHeader.
 // Most users should use Framer.ReadFrame instead.
 func ReadFrameHeader(r io.Reader) (FrameHeader, error) {
@@ -503,10 +513,16 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 		return nil, err
 	}
 	if fh.Length > fr.maxReadSize {
+		if fh.looksLikeHTTP1Header() {
+			return nil, fmt.Errorf("http2: failed reading the frame payload: %w, note that the frame header looked like an HTTP/1.1 header", err)
+		}
 		return nil, ErrFrameTooLarge
 	}
 	payload := fr.getReadBuf(fh.Length)
 	if _, err := io.ReadFull(fr.r, payload); err != nil {
+		if fh.looksLikeHTTP1Header() {
+			return nil, fmt.Errorf("http2: failed reading the frame payload: %w, note that the frame header looked like an HTTP/1.1 header", err)
+		}
 		return nil, err
 	}
 	f, err := typeFrameParser(fh.Type)(fr.frameCache, fh, fr.countError, payload)
