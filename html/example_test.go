@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.23
+
 // This example demonstrates parsing HTML data and walking the resulting tree.
 package html_test
 
@@ -11,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 func ExampleParse() {
@@ -19,9 +22,8 @@ func ExampleParse() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
+	for n := range doc.Descendants() {
+		if n.Type == html.ElementNode && n.DataAtom == atom.A {
 			for _, a := range n.Attr {
 				if a.Key == "href" {
 					fmt.Println(a.Val)
@@ -29,11 +31,8 @@ func ExampleParse() {
 				}
 			}
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
 	}
-	f(doc)
+
 	// Output:
 	// foo
 	// /bar/baz
