@@ -176,6 +176,16 @@ func (c *Conn) String() string {
 	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.peerAddr)
 }
 
+// LocalAddr returns the local network address, if known.
+func (c *Conn) LocalAddr() netip.AddrPort {
+	return c.localAddr
+}
+
+// RemoteAddr returns the remote network address, if known.
+func (c *Conn) RemoteAddr() netip.AddrPort {
+	return c.peerAddr
+}
+
 // confirmHandshake is called when the handshake is confirmed.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2
 func (c *Conn) confirmHandshake(now time.Time) {
