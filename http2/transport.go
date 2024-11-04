@@ -281,8 +281,8 @@ func configureTransports(t1 *http.Transport) (*Transport, error) {
 	if !strSliceContains(t1.TLSClientConfig.NextProtos, "http/1.1") {
 		t1.TLSClientConfig.NextProtos = append(t1.TLSClientConfig.NextProtos, "http/1.1")
 	}
-	upgradeFn := func(authority string, c *tls.Conn) http.RoundTripper {
-		addr := authorityAddr("https", authority)
+	upgradeFn := func(scheme, authority string, c net.Conn) http.RoundTripper {
+		addr := authorityAddr(scheme, authority)
 		if used, err := connPool.addConnIfNeeded(addr, t2, c); err != nil {
 			go c.Close()
 			return erringRoundTripper{err}
@@ -293,16 +293,35 @@ func configureTransports(t1 *http.Transport) (*Transport, error) {
 			// was unknown)
 			go c.Close()
 		}
+		if scheme == "http" {
+			return (*unencryptedTransport)(t2)
+		}
 		return t2
 	}
-	if m := t1.TLSNextProto; len(m) == 0 {
-		t1.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{
-			"h2": upgradeFn,
+	if t1.TLSNextProto == nil {
+		t1.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
+	}
+	t1.TLSNextProto[NextProtoTLS] = func(authority string, c *tls.Conn) http.RoundTripper {
+		return upgradeFn("https", authority, c)
+	}
+	// The "unencrypted_http2" TLSNextProto key is used to pass off non-TLS HTTP/2 conns.
+	t1.TLSNextProto[nextProtoUnencryptedHTTP2] = func(authority string, c *tls.Conn) http.RoundTripper {
+		nc, err := unencryptedNetConnFromTLSConn(c)
+		if err != nil {
+			go c.Close()
+			return erringRoundTripper{err}
 		}
-	} else {
-		m["h2"] = upgradeFn
+		return upgradeFn("http", authority, nc)
 	}
 	return t2, nil
+}
+
+// unencryptedTransport is a Transport with a RoundTrip method that
+// always permits http:// URLs.
+type unencryptedTransport Transport
+
+func (t *unencryptedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return (*Transport)(t).RoundTripOpt(req, RoundTripOpt{allowHTTP: true})
 }
 
 func (t *Transport) connPool() ClientConnPool {
@@ -538,6 +557,8 @@ type RoundTripOpt struct {
 	// no cached connection is available, RoundTripOpt
 	// will return ErrNoCachedConn.
 	OnlyCachedConn bool
+
+	allowHTTP bool // allow http:// URLs
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -570,7 +591,14 @@ func authorityAddr(scheme string, authority string) (addr string) {
 
 // RoundTripOpt is like RoundTrip, but takes options.
 func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Response, error) {
-	if !(req.URL.Scheme == "https" || (req.URL.Scheme == "http" && t.AllowHTTP)) {
+	switch req.URL.Scheme {
+	case "https":
+		// Always okay.
+	case "http":
+		if !t.AllowHTTP && !opt.allowHTTP {
+			return nil, errors.New("http2: unencrypted HTTP/2 not enabled")
+		}
+	default:
 		return nil, errors.New("http2: unsupported scheme")
 	}
 
