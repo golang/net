@@ -5638,3 +5638,116 @@ func TestTransportConnBecomesUnresponsive(t *testing.T) {
 	rt2.wantStatus(200)
 	rt2.response().Body.Close()
 }
+
+// Test that the Transport can use a conn provided to it by a TLSNextProto hook.
+func TestTransportTLSNextProtoConnOK(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+	tc.greet()
+
+	// Send a request on the Transport.
+	// It uses the conn we provided.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	tc.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+		header: http.Header{
+			":authority": []string{"dummy.tld"},
+			":method":    []string{"GET"},
+			":path":      []string{"/"},
+		},
+	})
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt.wantStatus(200)
+	rt.wantBody(nil)
+}
+
+// Test the case where a conn provided via a TLSNextProto hook immediately encounters an error.
+func TestTransportTLSNextProtoConnImmediateFailureUsed(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+
+	// The connection encounters an error before we send a request that uses it.
+	tc.closeWrite()
+
+	// Send a request on the Transport.
+	//
+	// It should fail, because we have no usable connections, but not with ErrNoCachedConn.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	if err := rt.err(); err == nil || errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip with broken conn: got %v, want an error other than ErrNoCachedConn", err)
+	}
+
+	// Send the request again.
+	// This time it should fail with ErrNoCachedConn,
+	// because the dead conn has been removed from the pool.
+	rt = tt.roundTrip(req)
+	if err := rt.err(); !errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip after broken conn is used: got %v, want ErrNoCachedConn", err)
+	}
+}
+
+// Test the case where a conn provided via a TLSNextProto hook immediately encounters an error,
+// but no requests are sent which would use the bad connection.
+func TestTransportTLSNextProtoConnImmediateFailureUnused(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+
+	// The connection encounters an error before we send a request that uses it.
+	tc.closeWrite()
+
+	// Some time passes.
+	// The dead connection is removed from the pool.
+	tc.advance(10 * time.Second)
+
+	// Send a request on the Transport.
+	//
+	// It should fail with ErrNoCachedConn, because the pool contains no conns.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	if err := rt.err(); !errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip after broken conn expires: got %v, want ErrNoCachedConn", err)
+	}
+}

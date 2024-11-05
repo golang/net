@@ -202,6 +202,20 @@ func (t *Transport) markNewGoroutine() {
 	}
 }
 
+func (t *Transport) now() time.Time {
+	if t != nil && t.transportTestHooks != nil {
+		return t.transportTestHooks.group.Now()
+	}
+	return time.Now()
+}
+
+func (t *Transport) timeSince(when time.Time) time.Duration {
+	if t != nil && t.transportTestHooks != nil {
+		return t.now().Sub(when)
+	}
+	return time.Since(when)
+}
+
 // newTimer creates a new time.Timer, or a synthetic timer in tests.
 func (t *Transport) newTimer(d time.Duration) timer {
 	if t.transportTestHooks != nil {
@@ -343,7 +357,7 @@ type ClientConn struct {
 	t             *Transport
 	tconn         net.Conn             // usually *tls.Conn, except specialized impls
 	tlsState      *tls.ConnectionState // nil only for specialized impls
-	reused        uint32               // whether conn is being reused; atomic
+	atomicReused  uint32               // whether conn is being reused; atomic
 	singleUse     bool                 // whether being used for a single http.Request
 	getConnCalled bool                 // used by clientConnPool
 
@@ -609,7 +623,7 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 			t.vlogf("http2: Transport failed to get client conn for %s: %v", addr, err)
 			return nil, err
 		}
-		reused := !atomic.CompareAndSwapUint32(&cc.reused, 0, 1)
+		reused := !atomic.CompareAndSwapUint32(&cc.atomicReused, 0, 1)
 		traceGotConn(req, cc, reused)
 		res, err := cc.RoundTrip(req)
 		if err != nil && retry <= 6 {
@@ -634,6 +648,22 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 				}
 			}
 		}
+		if err == errClientConnNotEstablished {
+			// This ClientConn was created recently,
+			// this is the first request to use it,
+			// and the connection is closed and not usable.
+			//
+			// In this state, cc.idleTimer will remove the conn from the pool
+			// when it fires. Stop the timer and remove it here so future requests
+			// won't try to use this connection.
+			//
+			// If the timer has already fired and we're racing it, the redundant
+			// call to MarkDead is harmless.
+			if cc.idleTimer != nil {
+				cc.idleTimer.Stop()
+			}
+			t.connPool().MarkDead(cc)
+		}
 		if err != nil {
 			t.vlogf("RoundTrip failure: %v", err)
 			return nil, err
@@ -652,9 +682,10 @@ func (t *Transport) CloseIdleConnections() {
 }
 
 var (
-	errClientConnClosed    = errors.New("http2: client conn is closed")
-	errClientConnUnusable  = errors.New("http2: client conn not usable")
-	errClientConnGotGoAway = errors.New("http2: Transport received Server's graceful shutdown GOAWAY")
+	errClientConnClosed         = errors.New("http2: client conn is closed")
+	errClientConnUnusable       = errors.New("http2: client conn not usable")
+	errClientConnNotEstablished = errors.New("http2: client conn could not be established")
+	errClientConnGotGoAway      = errors.New("http2: Transport received Server's graceful shutdown GOAWAY")
 )
 
 // shouldRetryRequest is called by RoundTrip when a request fails to get
@@ -793,6 +824,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		pingTimeout:                 conf.PingTimeout,
 		pings:                       make(map[[8]byte]chan struct{}),
 		reqHeaderMu:                 make(chan struct{}, 1),
+		lastActive:                  t.now(),
 	}
 	var group synctestGroupInterface
 	if t.transportTestHooks != nil {
@@ -1041,6 +1073,16 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 		!cc.doNotReuse &&
 		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < math.MaxInt32 &&
 		!cc.tooIdleLocked()
+
+	// If this connection has never been used for a request and is closed,
+	// then let it take a request (which will fail).
+	//
+	// This avoids a situation where an error early in a connection's lifetime
+	// goes unreported.
+	if cc.nextStreamID == 1 && cc.streamsReserved == 0 && cc.closed {
+		st.canTakeNewRequest = true
+	}
+
 	return
 }
 
@@ -1062,7 +1104,7 @@ func (cc *ClientConn) tooIdleLocked() bool {
 	// times are compared based on their wall time. We don't want
 	// to reuse a connection that's been sitting idle during
 	// VM/laptop suspend if monotonic time was also frozen.
-	return cc.idleTimeout != 0 && !cc.lastIdle.IsZero() && time.Since(cc.lastIdle.Round(0)) > cc.idleTimeout
+	return cc.idleTimeout != 0 && !cc.lastIdle.IsZero() && cc.t.timeSince(cc.lastIdle.Round(0)) > cc.idleTimeout
 }
 
 // onIdleTimeout is called from a time.AfterFunc goroutine. It will
@@ -1706,7 +1748,12 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 // Must hold cc.mu.
 func (cc *ClientConn) awaitOpenSlotForStreamLocked(cs *clientStream) error {
 	for {
-		cc.lastActive = time.Now()
+		if cc.closed && cc.nextStreamID == 1 && cc.streamsReserved == 0 {
+			// This is the very first request sent to this connection.
+			// Return a fatal error which aborts the retry loop.
+			return errClientConnNotEstablished
+		}
+		cc.lastActive = cc.t.now()
 		if cc.closed || !cc.canTakeNewRequestLocked() {
 			return errClientConnUnusable
 		}
@@ -2253,10 +2300,10 @@ func (cc *ClientConn) forgetStreamID(id uint32) {
 	if len(cc.streams) != slen-1 {
 		panic("forgetting unknown stream id")
 	}
-	cc.lastActive = time.Now()
+	cc.lastActive = cc.t.now()
 	if len(cc.streams) == 0 && cc.idleTimer != nil {
 		cc.idleTimer.Reset(cc.idleTimeout)
-		cc.lastIdle = time.Now()
+		cc.lastIdle = cc.t.now()
 	}
 	// Wake up writeRequestBody via clientStream.awaitFlowControl and
 	// wake up RoundTrip if there is a pending request.
@@ -2316,7 +2363,6 @@ func isEOFOrNetReadError(err error) bool {
 
 func (rl *clientConnReadLoop) cleanup() {
 	cc := rl.cc
-	cc.t.connPool().MarkDead(cc)
 	defer cc.closeConn()
 	defer close(cc.readerDone)
 
@@ -2339,6 +2385,24 @@ func (rl *clientConnReadLoop) cleanup() {
 		err = io.ErrUnexpectedEOF
 	}
 	cc.closed = true
+
+	// If the connection has never been used, and has been open for only a short time,
+	// leave it in the connection pool for a little while.
+	//
+	// This avoids a situation where new connections are constantly created,
+	// added to the pool, fail, and are removed from the pool, without any error
+	// being surfaced to the user.
+	const unusedWaitTime = 5 * time.Second
+	idleTime := cc.t.now().Sub(cc.lastActive)
+	if atomic.LoadUint32(&cc.atomicReused) == 0 && idleTime < unusedWaitTime {
+		cc.idleTimer = cc.t.afterFunc(unusedWaitTime-idleTime, func() {
+			cc.t.connPool().MarkDead(cc)
+		})
+	} else {
+		cc.mu.Unlock() // avoid any deadlocks in MarkDead
+		cc.t.connPool().MarkDead(cc)
+		cc.mu.Lock()
+	}
 
 	for _, cs := range cc.streams {
 		select {
@@ -3332,7 +3396,7 @@ func traceGotConn(req *http.Request, cc *ClientConn, reused bool) {
 	cc.mu.Lock()
 	ci.WasIdle = len(cc.streams) == 0 && reused
 	if ci.WasIdle && !cc.lastActive.IsZero() {
-		ci.IdleTime = time.Since(cc.lastActive)
+		ci.IdleTime = cc.t.timeSince(cc.lastActive)
 	}
 	cc.mu.Unlock()
 
