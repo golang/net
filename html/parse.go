@@ -838,6 +838,8 @@ func afterHeadIM(p *parser) bool {
 		return true
 	case ErrorToken:
 		// Stop parsing.
+		p.parseImpliedToken(StartTagToken, a.Body, a.Body.String())
+		p.framesetOK = true
 		return true
 	}
 
