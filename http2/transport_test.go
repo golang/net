@@ -5751,3 +5751,65 @@ func TestTransportTLSNextProtoConnImmediateFailureUnused(t *testing.T) {
 		t.Fatalf("RoundTrip after broken conn expires: got %v, want ErrNoCachedConn", err)
 	}
 }
+
+func TestExtendedConnectClientWithServerSupport(t *testing.T) {
+	disableExtendedConnectProtocol = false
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(":protocol") != "extended-connect" {
+			t.Fatalf("unexpected :protocol header received")
+		}
+		t.Log(io.Copy(w, r.Body))
+	})
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		AllowHTTP:       true,
+	}
+	defer tr.CloseIdleConnections()
+	pr, pw := io.Pipe()
+	pwDone := make(chan struct{})
+	req, _ := http.NewRequest("CONNECT", ts.URL, pr)
+	req.Header.Set(":protocol", "extended-connect")
+	go func() {
+		pw.Write([]byte("hello, extended connect"))
+		pw.Close()
+		close(pwDone)
+	}()
+
+	res, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, []byte("hello, extended connect")) {
+		t.Fatal("unexpected body received")
+	}
+}
+
+func TestExtendedConnectClientWithoutServerSupport(t *testing.T) {
+	disableExtendedConnectProtocol = true
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(w, r.Body)
+	})
+	tr := &Transport{
+		TLSClientConfig: tlsConfigInsecure,
+		AllowHTTP:       true,
+	}
+	defer tr.CloseIdleConnections()
+	pr, pw := io.Pipe()
+	pwDone := make(chan struct{})
+	req, _ := http.NewRequest("CONNECT", ts.URL, pr)
+	req.Header.Set(":protocol", "extended-connect")
+	go func() {
+		pw.Write([]byte("hello, extended connect"))
+		pw.Close()
+		close(pwDone)
+	}()
+
+	_, err := tr.RoundTrip(req)
+	if !errors.Is(err, errExtendedConnectNotSupported) {
+		t.Fatalf("expected error errExtendedConnectNotSupported, got: %v", err)
+	}
+}
