@@ -1411,7 +1411,6 @@ func (cs *clientStream) writeRequest(req *http.Request, streamf func(*clientStre
 	}
 	if isExtendedConnect {
 		select {
-		case cc.reqHeaderMu <- struct{}{}:
 		case <-cs.reqCancel:
 			return errRequestCanceled
 		case <-ctx.Done():
@@ -1421,14 +1420,13 @@ func (cs *clientStream) writeRequest(req *http.Request, streamf func(*clientStre
 				return errExtendedConnectNotSupported
 			}
 		}
-	} else {
-		select {
-		case cc.reqHeaderMu <- struct{}{}:
-		case <-cs.reqCancel:
-			return errRequestCanceled
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	}
+	select {
+	case cc.reqHeaderMu <- struct{}{}:
+	case <-cs.reqCancel:
+		return errRequestCanceled
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	cc.mu.Lock()
