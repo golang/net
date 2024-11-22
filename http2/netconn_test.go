@@ -28,8 +28,11 @@ func synctestNetPipe(group *synctestGroup) (r, w *synctestNetConn) {
 	s2addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:8001"))
 	s1 := newSynctestNetConnHalf(s1addr)
 	s2 := newSynctestNetConnHalf(s2addr)
-	return &synctestNetConn{group: group, loc: s1, rem: s2},
-		&synctestNetConn{group: group, loc: s2, rem: s1}
+	r = &synctestNetConn{group: group, loc: s1, rem: s2}
+	w = &synctestNetConn{group: group, loc: s2, rem: s1}
+	r.peer = w
+	w.peer = r
+	return r, w
 }
 
 // A synctestNetConn is one endpoint of the connection created by synctestNetPipe.
@@ -43,6 +46,9 @@ type synctestNetConn struct {
 
 	// When set, group.Wait is automatically called before reads and after writes.
 	autoWait bool
+
+	// peer is the other endpoint.
+	peer *synctestNetConn
 }
 
 // Read reads data from the connection.

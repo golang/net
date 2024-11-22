@@ -10,6 +10,7 @@ package http2
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -112,27 +113,40 @@ func newTestClientConnFromClientConn(t *testing.T, cc *ClientConn) *testClientCo
 		cc:    cc,
 		group: cc.t.transportTestHooks.group.(*synctestGroup),
 	}
-	cli, srv := synctestNetPipe(tc.group)
+
+	// srv is the side controlled by the test.
+	var srv *synctestNetConn
+	if cc.tconn == nil {
+		// If cc.tconn is nil, we're being called with a new conn created by the
+		// Transport's client pool. This path skips dialing the server, and we
+		// create a test connection pair here.
+		cc.tconn, srv = synctestNetPipe(tc.group)
+	} else {
+		// If cc.tconn is non-nil, we're in a test which provides a conn to the
+		// Transport via a TLSNextProto hook. Extract the test connection pair.
+		if tc, ok := cc.tconn.(*tls.Conn); ok {
+			// Unwrap any *tls.Conn to the underlying net.Conn,
+			// to avoid dealing with encryption in tests.
+			cc.tconn = tc.NetConn()
+		}
+		srv = cc.tconn.(*synctestNetConn).peer
+	}
+
 	srv.SetReadDeadline(tc.group.Now())
 	srv.autoWait = true
 	tc.netconn = srv
 	tc.enc = hpack.NewEncoder(&tc.encbuf)
-
-	// all writes and reads are finished.
-	//
-	// cli is the ClientConn's side, srv is the side controlled by the test.
-	cc.tconn = cli
 	tc.fr = NewFramer(srv, srv)
 	tc.testConnFramer = testConnFramer{
 		t:   t,
 		fr:  tc.fr,
 		dec: hpack.NewDecoder(initialHeaderTableSize, nil),
 	}
-
 	tc.fr.SetMaxReadFrameSize(10 << 20)
 	t.Cleanup(func() {
 		tc.closeWrite()
 	})
+
 	return tc
 }
 
@@ -503,6 +517,8 @@ func newTestTransport(t *testing.T, opts ...any) *testTransport {
 			o(tr.t1)
 		case func(*Transport):
 			o(tr)
+		case *Transport:
+			tr = o
 		}
 	}
 	tt.tr = tr

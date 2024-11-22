@@ -283,3 +283,11 @@ func TestNoUnicodeStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// must returns v if err is nil, or panics otherwise.
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}

@@ -2559,6 +2559,9 @@ func testTransportReturnsUnusedFlowControl(t *testing.T, oneDataFrame bool) {
 			}
 			return true
 		},
+		func(f *PingFrame) bool {
+			return true
+		},
 		func(f *WindowUpdateFrame) bool {
 			if !oneDataFrame && !sentAdditionalData {
 				t.Fatalf("Got WindowUpdateFrame, don't expect one yet")
@@ -5419,6 +5422,333 @@ func TestIssue67671(t *testing.T) {
 			t.Fatal(err)
 		}
 		res.Body.Close()
+	}
+}
+
+func TestTransport1xxLimits(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		opt     any
+		ctxfn   func(context.Context) context.Context
+		hcount  int
+		limited bool
+	}{{
+		name:    "default",
+		hcount:  10,
+		limited: false,
+	}, {
+		name: "MaxHeaderListSize",
+		opt: func(tr *Transport) {
+			tr.MaxHeaderListSize = 10000
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "MaxResponseHeaderBytes",
+		opt: func(tr *http.Transport) {
+			tr.MaxResponseHeaderBytes = 10000
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "limit by client trace",
+		ctxfn: func(ctx context.Context) context.Context {
+			count := 0
+			return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+				Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+					count++
+					if count >= 10 {
+						return errors.New("too many 1xx")
+					}
+					return nil
+				},
+			})
+		},
+		hcount:  10,
+		limited: true,
+	}, {
+		name: "limit disabled by client trace",
+		opt: func(tr *Transport) {
+			tr.MaxHeaderListSize = 10000
+		},
+		ctxfn: func(ctx context.Context) context.Context {
+			return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+				Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+					return nil
+				},
+			})
+		},
+		hcount:  20,
+		limited: false,
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			tc := newTestClientConn(t, test.opt)
+			tc.greet()
+
+			ctx := context.Background()
+			if test.ctxfn != nil {
+				ctx = test.ctxfn(ctx)
+			}
+			req, _ := http.NewRequestWithContext(ctx, "GET", "https://dummy.tld/", nil)
+			rt := tc.roundTrip(req)
+			tc.wantFrameType(FrameHeaders)
+
+			for i := 0; i < test.hcount; i++ {
+				if fr, err := tc.fr.ReadFrame(); err != os.ErrDeadlineExceeded {
+					t.Fatalf("after writing %v 1xx headers: read %v, %v; want idle", i, fr, err)
+				}
+				tc.writeHeaders(HeadersFrameParam{
+					StreamID:   rt.streamID(),
+					EndHeaders: true,
+					EndStream:  false,
+					BlockFragment: tc.makeHeaderBlockFragment(
+						":status", "103",
+						"x-field", strings.Repeat("a", 1000),
+					),
+				})
+			}
+			if test.limited {
+				tc.wantFrameType(FrameRSTStream)
+			} else {
+				tc.wantIdle()
+			}
+		})
+	}
+}
+
+func TestTransportSendPingWithReset(t *testing.T) {
+	tc := newTestClientConn(t, func(tr *Transport) {
+		tr.StrictMaxConcurrentStreams = true
+	})
+
+	const maxConcurrent = 3
+	tc.greet(Setting{SettingMaxConcurrentStreams, maxConcurrent})
+
+	// Start several requests.
+	var rts []*testRoundTrip
+	for i := 0; i < maxConcurrent+1; i++ {
+		req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+		rt := tc.roundTrip(req)
+		if i >= maxConcurrent {
+			tc.wantIdle()
+			continue
+		}
+		tc.wantFrameType(FrameHeaders)
+		tc.writeHeaders(HeadersFrameParam{
+			StreamID:   rt.streamID(),
+			EndHeaders: true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt.wantStatus(200)
+		rts = append(rts, rt)
+	}
+
+	// Cancel one request. We send a PING frame along with the RST_STREAM.
+	rts[0].response().Body.Close()
+	tc.wantRSTStream(rts[0].streamID(), ErrCodeCancel)
+	pf := readFrame[*PingFrame](t, tc)
+	tc.wantIdle()
+
+	// Cancel another request. No PING frame, since one is in flight.
+	rts[1].response().Body.Close()
+	tc.wantRSTStream(rts[1].streamID(), ErrCodeCancel)
+	tc.wantIdle()
+
+	// Respond to the PING.
+	// This finalizes the previous resets, and allows the pending request to be sent.
+	tc.writePing(true, pf.Data)
+	tc.wantFrameType(FrameHeaders)
+	tc.wantIdle()
+
+	// Cancel the last request. We send another PING, since none are in flight.
+	rts[2].response().Body.Close()
+	tc.wantRSTStream(rts[2].streamID(), ErrCodeCancel)
+	tc.wantFrameType(FramePing)
+	tc.wantIdle()
+}
+
+func TestTransportConnBecomesUnresponsive(t *testing.T) {
+	// We send a number of requests in series to an unresponsive connection.
+	// Each request is canceled or times out without a response.
+	// Eventually, we open a new connection rather than trying to use the old one.
+	tt := newTestTransport(t)
+
+	const maxConcurrent = 3
+
+	t.Logf("first request opens a new connection and succeeds")
+	req1 := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt1 := tt.roundTrip(req1)
+	tc1 := tt.getConn()
+	tc1.wantFrameType(FrameSettings)
+	tc1.wantFrameType(FrameWindowUpdate)
+	hf1 := readFrame[*HeadersFrame](t, tc1)
+	tc1.writeSettings(Setting{SettingMaxConcurrentStreams, maxConcurrent})
+	tc1.wantFrameType(FrameSettings) // ack
+	tc1.writeHeaders(HeadersFrameParam{
+		StreamID:   hf1.StreamID,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc1.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt1.wantStatus(200)
+	rt1.response().Body.Close()
+
+	// Send more requests.
+	// None receive a response.
+	// Each is canceled.
+	for i := 0; i < maxConcurrent; i++ {
+		t.Logf("request %v receives no response and is canceled", i)
+		ctx, cancel := context.WithCancel(context.Background())
+		req := must(http.NewRequestWithContext(ctx, "GET", "https://dummy.tld/", nil))
+		tt.roundTrip(req)
+		if tt.hasConn() {
+			t.Fatalf("new connection created; expect existing conn to be reused")
+		}
+		tc1.wantFrameType(FrameHeaders)
+		cancel()
+		tc1.wantFrameType(FrameRSTStream)
+		if i == 0 {
+			tc1.wantFrameType(FramePing)
+		}
+		tc1.wantIdle()
+	}
+
+	// The conn has hit its concurrency limit.
+	// The next request is sent on a new conn.
+	req2 := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt2 := tt.roundTrip(req2)
+	tc2 := tt.getConn()
+	tc2.wantFrameType(FrameSettings)
+	tc2.wantFrameType(FrameWindowUpdate)
+	hf := readFrame[*HeadersFrame](t, tc2)
+	tc2.writeSettings(Setting{SettingMaxConcurrentStreams, maxConcurrent})
+	tc2.wantFrameType(FrameSettings) // ack
+	tc2.writeHeaders(HeadersFrameParam{
+		StreamID:   hf.StreamID,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc2.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt2.wantStatus(200)
+	rt2.response().Body.Close()
+}
+
+// Test that the Transport can use a conn provided to it by a TLSNextProto hook.
+func TestTransportTLSNextProtoConnOK(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+	tc.greet()
+
+	// Send a request on the Transport.
+	// It uses the conn we provided.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	tc.wantHeaders(wantHeader{
+		streamID:  1,
+		endStream: true,
+		header: http.Header{
+			":authority": []string{"dummy.tld"},
+			":method":    []string{"GET"},
+			":path":      []string{"/"},
+		},
+	})
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt.wantStatus(200)
+	rt.wantBody(nil)
+}
+
+// Test the case where a conn provided via a TLSNextProto hook immediately encounters an error.
+func TestTransportTLSNextProtoConnImmediateFailureUsed(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+
+	// The connection encounters an error before we send a request that uses it.
+	tc.closeWrite()
+
+	// Send a request on the Transport.
+	//
+	// It should fail, because we have no usable connections, but not with ErrNoCachedConn.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	if err := rt.err(); err == nil || errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip with broken conn: got %v, want an error other than ErrNoCachedConn", err)
+	}
+
+	// Send the request again.
+	// This time it should fail with ErrNoCachedConn,
+	// because the dead conn has been removed from the pool.
+	rt = tt.roundTrip(req)
+	if err := rt.err(); !errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip after broken conn is used: got %v, want ErrNoCachedConn", err)
+	}
+}
+
+// Test the case where a conn provided via a TLSNextProto hook immediately encounters an error,
+// but no requests are sent which would use the bad connection.
+func TestTransportTLSNextProtoConnImmediateFailureUnused(t *testing.T) {
+	t1 := &http.Transport{}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+
+	// The connection encounters an error before we send a request that uses it.
+	tc.closeWrite()
+
+	// Some time passes.
+	// The dead connection is removed from the pool.
+	tc.advance(10 * time.Second)
+
+	// Send a request on the Transport.
+	//
+	// It should fail with ErrNoCachedConn, because the pool contains no conns.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	if err := rt.err(); !errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip after broken conn expires: got %v, want ErrNoCachedConn", err)
 	}
 }
 
