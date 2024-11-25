@@ -5789,6 +5789,38 @@ func TestTransportTLSNextProtoConnImmediateFailureUsed(t *testing.T) {
 	}
 }
 
+// Test the case where a conn provided via a TLSNextProto hook is closed for idleness
+// before we use it.
+func TestTransportTLSNextProtoConnIdleTimoutBeforeUse(t *testing.T) {
+	t1 := &http.Transport{
+		IdleConnTimeout: 1 * time.Second,
+	}
+	t2, _ := ConfigureTransports(t1)
+	tt := newTestTransport(t, t2)
+
+	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
+	cli, _ := synctestNetPipe(tt.group)
+	cliTLS := tls.Client(cli, tlsConfigInsecure)
+	go func() {
+		tt.group.Join()
+		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
+	}()
+	tt.sync()
+	tc := tt.getConn()
+
+	// The connection encounters an error before we send a request that uses it.
+	tc.advance(2 * time.Second)
+
+	// Send a request on the Transport.
+	//
+	// It should fail with ErrNoCachedConn.
+	req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt := tt.roundTrip(req)
+	if err := rt.err(); !errors.Is(err, ErrNoCachedConn) {
+		t.Fatalf("RoundTrip with conn closed for idleness: got %v, want ErrNoCachedConn", err)
+	}
+}
+
 // Test the case where a conn provided via a TLSNextProto hook immediately encounters an error,
 // but no requests are sent which would use the bad connection.
 func TestTransportTLSNextProtoConnImmediateFailureUnused(t *testing.T) {
