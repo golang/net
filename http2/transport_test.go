@@ -5562,11 +5562,82 @@ func TestTransportSendPingWithReset(t *testing.T) {
 	tc.wantFrameType(FrameHeaders)
 	tc.wantIdle()
 
+	// Receive a byte of data for the remaining stream, which resets our ability
+	// to send pings (see comment on ClientConn.rstStreamPingsBlocked).
+	tc.writeData(rts[2].streamID(), false, []byte{0})
+
 	// Cancel the last request. We send another PING, since none are in flight.
 	rts[2].response().Body.Close()
 	tc.wantRSTStream(rts[2].streamID(), ErrCodeCancel)
 	tc.wantFrameType(FramePing)
 	tc.wantIdle()
+}
+
+// Issue #70505: gRPC gets upset if we send more than 2 pings per HEADERS/DATA frame
+// sent by the server.
+func TestTransportSendNoMoreThanOnePingWithReset(t *testing.T) {
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	makeAndResetRequest := func() {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		req := must(http.NewRequestWithContext(ctx, "GET", "https://dummy.tld/", nil))
+		rt := tc.roundTrip(req)
+		tc.wantFrameType(FrameHeaders)
+		cancel()
+		tc.wantRSTStream(rt.streamID(), ErrCodeCancel) // client sends RST_STREAM
+	}
+
+	// Create a request and cancel it.
+	// The client sends a PING frame along with the reset.
+	makeAndResetRequest()
+	pf1 := readFrame[*PingFrame](t, tc) // client sends PING
+
+	// Create another request and cancel it.
+	// We do not send a PING frame along with the reset,
+	// because we haven't received a HEADERS or DATA frame from the server
+	// since the last PING we sent.
+	makeAndResetRequest()
+
+	// Server belatedly responds to request 1.
+	// The server has not responded to our first PING yet.
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   1,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+
+	// Create yet another request and cancel it.
+	// We still do not send a PING frame along with the reset.
+	// We've received a HEADERS frame, but it came before the response to the PING.
+	makeAndResetRequest()
+
+	// The server responds to our PING.
+	tc.writePing(true, pf1.Data)
+
+	// Create yet another request and cancel it.
+	// Still no PING frame; we got a response to the previous one,
+	// but no HEADERS or DATA.
+	makeAndResetRequest()
+
+	// Server belatedly responds to the second request.
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   3,
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+
+	// One more request.
+	// This time we send a PING frame.
+	makeAndResetRequest()
+	tc.wantFrameType(FramePing)
 }
 
 func TestTransportConnBecomesUnresponsive(t *testing.T) {
