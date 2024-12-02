@@ -5,8 +5,9 @@
 package route
 
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 func (typ RIBType) parseable() bool { return true }
@@ -64,7 +65,7 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	// to know the underlying kernel's architecture because the
 	// alignment for routing facilities are set at the build time
 	// of the kernel.
-	conf, _ := syscall.Sysctl("kern.conftxt")
+	conf, _ := unix.Sysctl("kern.conftxt")
 	for i, j := 0, 0; j < len(conf); j++ {
 		if conf[j] != '\n' {
 			continue
@@ -88,21 +89,17 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	if align != wordSize {
 		compatFreeBSD32 = true // 386 emulation on amd64
 	}
-	var rtm, ifm, ifam, ifmam, ifanm *wireFormat
+	var rtm *wireFormat
+	ifam := &wireFormat{extOff: unix.SizeofIfaMsghdr, bodyOff: unix.SizeofIfaMsghdr}
+	ifmam := &wireFormat{extOff: unix.SizeofIfmaMsghdr, bodyOff: unix.SizeofIfmaMsghdr}
+	ifanm := &wireFormat{extOff: unix.SizeofIfAnnounceMsghdr, bodyOff: unix.SizeofIfAnnounceMsghdr}
+	ifm := &wireFormat{extOff: 16}
 	if compatFreeBSD32 {
 		rtm = &wireFormat{extOff: sizeofRtMsghdrFreeBSD10Emu - sizeofRtMetricsFreeBSD10Emu, bodyOff: sizeofRtMsghdrFreeBSD10Emu}
-		ifm = &wireFormat{extOff: 16}
-		ifam = &wireFormat{extOff: sizeofIfaMsghdrFreeBSD10Emu, bodyOff: sizeofIfaMsghdrFreeBSD10Emu}
-		ifmam = &wireFormat{extOff: sizeofIfmaMsghdrFreeBSD10Emu, bodyOff: sizeofIfmaMsghdrFreeBSD10Emu}
-		ifanm = &wireFormat{extOff: sizeofIfAnnouncemsghdrFreeBSD10Emu, bodyOff: sizeofIfAnnouncemsghdrFreeBSD10Emu}
 	} else {
 		rtm = &wireFormat{extOff: sizeofRtMsghdrFreeBSD10 - sizeofRtMetricsFreeBSD10, bodyOff: sizeofRtMsghdrFreeBSD10}
-		ifm = &wireFormat{extOff: 16}
-		ifam = &wireFormat{extOff: sizeofIfaMsghdrFreeBSD10, bodyOff: sizeofIfaMsghdrFreeBSD10}
-		ifmam = &wireFormat{extOff: sizeofIfmaMsghdrFreeBSD10, bodyOff: sizeofIfmaMsghdrFreeBSD10}
-		ifanm = &wireFormat{extOff: sizeofIfAnnouncemsghdrFreeBSD10, bodyOff: sizeofIfAnnouncemsghdrFreeBSD10}
 	}
-	rel, _ := syscall.SysctlUint32("kern.osreldate")
+	rel, _ := unix.SysctlUint32("kern.osreldate")
 	switch {
 	case rel < 800000:
 		if compatFreeBSD32 {
@@ -141,20 +138,20 @@ func probeRoutingStack() (int, map[int]*wireFormat) {
 	ifmam.parse = ifmam.parseInterfaceMulticastAddrMessage
 	ifanm.parse = ifanm.parseInterfaceAnnounceMessage
 	return align, map[int]*wireFormat{
-		syscall.RTM_ADD:        rtm,
-		syscall.RTM_DELETE:     rtm,
-		syscall.RTM_CHANGE:     rtm,
-		syscall.RTM_GET:        rtm,
-		syscall.RTM_LOSING:     rtm,
-		syscall.RTM_REDIRECT:   rtm,
-		syscall.RTM_MISS:       rtm,
-		syscall.RTM_LOCK:       rtm,
-		syscall.RTM_RESOLVE:    rtm,
-		syscall.RTM_NEWADDR:    ifam,
-		syscall.RTM_DELADDR:    ifam,
-		syscall.RTM_IFINFO:     ifm,
-		syscall.RTM_NEWMADDR:   ifmam,
-		syscall.RTM_DELMADDR:   ifmam,
-		syscall.RTM_IFANNOUNCE: ifanm,
+		unix.RTM_ADD:        rtm,
+		unix.RTM_DELETE:     rtm,
+		unix.RTM_CHANGE:     rtm,
+		unix.RTM_GET:        rtm,
+		unix.RTM_LOSING:     rtm,
+		unix.RTM_REDIRECT:   rtm,
+		unix.RTM_MISS:       rtm,
+		unix.RTM_LOCK:       rtm,
+		unix.RTM_RESOLVE:    rtm,
+		unix.RTM_NEWADDR:    ifam,
+		unix.RTM_DELADDR:    ifam,
+		unix.RTM_IFINFO:     ifm,
+		unix.RTM_NEWMADDR:   ifmam,
+		unix.RTM_DELMADDR:   ifmam,
+		unix.RTM_IFANNOUNCE: ifanm,
 	}
 }

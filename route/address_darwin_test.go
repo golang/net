@@ -6,8 +6,9 @@ package route
 
 import (
 	"reflect"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 type parseAddrsOnDarwinTest struct {
@@ -19,7 +20,7 @@ type parseAddrsOnDarwinTest struct {
 
 var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	{
-		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x10, 0x2, 0x0, 0x0, 0xc0, 0xa8, 0x56, 0x0,
@@ -43,7 +44,7 @@ var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 		},
 	},
 	{
-		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x10, 0x02, 0x00, 0x00, 0x64, 0x71, 0x00, 0x00,
@@ -69,7 +70,7 @@ var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	// route -n add -inet6 fd84:1b4e:6281:: -prefixlen 48 fe80::f22f:4bff:fe09:3bff%utun4319
 	// gw fe80:0000:0000:0000:f22f:4bff:fe09:3bff
 	{
-		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x1c, 0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -98,7 +99,7 @@ var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	},
 	// golang/go#70528, the kernel can produce addresses of length 0
 	{
-		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x00, 0x1e, 0x00, 0x00,
@@ -124,7 +125,7 @@ var parseAddrsOnDarwinLittleEndianTests = []parseAddrsOnDarwinTest{
 	},
 	// Additional case: golang/go/issues/70528#issuecomment-2498692877
 	{
-		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK,
+		unix.RTA_DST | unix.RTA_GATEWAY | unix.RTA_NETMASK,
 		parseKernelInetAddr,
 		[]byte{
 			0x84, 0x00, 0x05, 0x04, 0x01, 0x00, 0x00, 0x00, 0x03, 0x08, 0x00, 0x01, 0x15, 0x00, 0x00, 0x00,

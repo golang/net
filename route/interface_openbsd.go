@@ -4,7 +4,7 @@
 
 package route
 
-import "syscall"
+import "golang.org/x/sys/unix"
 
 func (*wireFormat) parseInterfaceMessage(_ RIBType, b []byte) (Message, error) {
 	if len(b) < 32 {
@@ -15,7 +15,7 @@ func (*wireFormat) parseInterfaceMessage(_ RIBType, b []byte) (Message, error) {
 		return nil, errInvalidMessage
 	}
 	attrs := uint(nativeEndian.Uint32(b[12:16]))
-	if attrs&syscall.RTA_IFP == 0 {
+	if attrs&unix.RTA_IFP == 0 {
 		return nil, nil
 	}
 	m := &InterfaceMessage{
@@ -23,7 +23,7 @@ func (*wireFormat) parseInterfaceMessage(_ RIBType, b []byte) (Message, error) {
 		Type:    int(b[3]),
 		Flags:   int(nativeEndian.Uint32(b[16:20])),
 		Index:   int(nativeEndian.Uint16(b[6:8])),
-		Addrs:   make([]Addr, syscall.RTAX_MAX),
+		Addrs:   make([]Addr, unix.RTAX_MAX),
 		raw:     b[:l],
 	}
 	ll := int(nativeEndian.Uint16(b[4:6]))
@@ -34,7 +34,7 @@ func (*wireFormat) parseInterfaceMessage(_ RIBType, b []byte) (Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.Addrs[syscall.RTAX_IFP] = a
+	m.Addrs[unix.RTAX_IFP] = a
 	m.Name = a.(*LinkAddr).Name
 	return m, nil
 }

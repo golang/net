@@ -19,19 +19,8 @@ package route
 import "C"
 
 const (
-	sizeofIfMsghdrDarwin15    = C.sizeof_struct_if_msghdr
-	sizeofIfaMsghdrDarwin15   = C.sizeof_struct_ifa_msghdr
-	sizeofIfmaMsghdrDarwin15  = C.sizeof_struct_ifma_msghdr
-	sizeofIfMsghdr2Darwin15   = C.sizeof_struct_if_msghdr2
-	sizeofIfmaMsghdr2Darwin15 = C.sizeof_struct_ifma_msghdr2
-	sizeofIfDataDarwin15      = C.sizeof_struct_if_data
-	sizeofIfData64Darwin15    = C.sizeof_struct_if_data64
+	sizeofIfMsghdr2Darwin15 = C.sizeof_struct_if_msghdr2
+	sizeofIfData64Darwin15  = C.sizeof_struct_if_data64
 
-	sizeofRtMsghdrDarwin15  = C.sizeof_struct_rt_msghdr
 	sizeofRtMsghdr2Darwin15 = C.sizeof_struct_rt_msghdr2
-	sizeofRtMetricsDarwin15 = C.sizeof_struct_rt_metrics
-
-	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
-	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
-	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
 )

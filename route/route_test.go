@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func (m *RouteMessage) String() string {
@@ -176,13 +177,13 @@ type addrFamily int
 
 func (af addrFamily) String() string {
 	switch af {
-	case syscall.AF_UNSPEC:
+	case unix.AF_UNSPEC:
 		return "unspec"
-	case syscall.AF_LINK:
+	case unix.AF_LINK:
 		return "link"
-	case syscall.AF_INET:
+	case unix.AF_INET:
 		return "inet4"
-	case syscall.AF_INET6:
+	case unix.AF_INET6:
 		return "inet6"
 	default:
 		return fmt.Sprintf("%d", af)
@@ -281,24 +282,24 @@ func (as addrs) String() string {
 
 func (as addrs) match(attrs addrAttrs) error {
 	var ts addrAttrs
-	af := syscall.AF_UNSPEC
+	af := unix.AF_UNSPEC
 	for i := range as {
 		if as[i] != nil {
 			ts |= 1 << uint(i)
 		}
 		switch as[i].(type) {
 		case *Inet4Addr:
-			if af == syscall.AF_UNSPEC {
-				af = syscall.AF_INET
+			if af == unix.AF_UNSPEC {
+				af = unix.AF_INET
 			}
-			if af != syscall.AF_INET {
+			if af != unix.AF_INET {
 				return fmt.Errorf("got %v; want %v", addrs(as), addrFamily(af))
 			}
 		case *Inet6Addr:
-			if af == syscall.AF_UNSPEC {
-				af = syscall.AF_INET6
+			if af == unix.AF_UNSPEC {
+				af = unix.AF_INET6
 			}
-			if af != syscall.AF_INET6 {
+			if af != unix.AF_INET6 {
 				return fmt.Errorf("got %v; want %v", addrs(as), addrFamily(af))
 			}
 		}

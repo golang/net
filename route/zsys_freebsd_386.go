@@ -4,12 +4,6 @@
 package route
 
 const (
-	sizeofIfMsghdrlFreeBSD10        = 0x68
-	sizeofIfaMsghdrFreeBSD10        = 0x14
-	sizeofIfaMsghdrlFreeBSD10       = 0x6c
-	sizeofIfmaMsghdrFreeBSD10       = 0x10
-	sizeofIfAnnouncemsghdrFreeBSD10 = 0x18
-
 	sizeofRtMsghdrFreeBSD10  = 0x5c
 	sizeofRtMetricsFreeBSD10 = 0x38
 
@@ -27,12 +21,6 @@ const (
 
 	// MODIFIED BY HAND FOR 386 EMULATION ON AMD64
 	// 386 EMULATION USES THE UNDERLYING RAW DATA LAYOUT
-
-	sizeofIfMsghdrlFreeBSD10Emu        = 0xb0
-	sizeofIfaMsghdrFreeBSD10Emu        = 0x14
-	sizeofIfaMsghdrlFreeBSD10Emu       = 0xb0
-	sizeofIfmaMsghdrFreeBSD10Emu       = 0x10
-	sizeofIfAnnouncemsghdrFreeBSD10Emu = 0x18
 
 	sizeofRtMsghdrFreeBSD10Emu  = 0x98
 	sizeofRtMetricsFreeBSD10Emu = 0x70

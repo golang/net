@@ -5,25 +5,25 @@
 package route
 
 import (
-	"syscall"
+	"golang.org/x/sys/unix"
 )
 
 func (m *RouteMessage) marshal() ([]byte, error) {
-	l := sizeofRtMsghdr + addrsSpace(m.Addrs)
+	l := unix.SizeofRtMsghdr + addrsSpace(m.Addrs)
 	b := make([]byte, l)
 	nativeEndian.PutUint16(b[:2], uint16(l))
 	if m.Version == 0 {
-		b[2] = syscall.RTM_VERSION
+		b[2] = unix.RTM_VERSION
 	} else {
 		b[2] = byte(m.Version)
 	}
 	b[3] = byte(m.Type)
-	nativeEndian.PutUint16(b[4:6], uint16(sizeofRtMsghdr))
+	nativeEndian.PutUint16(b[4:6], uint16(unix.SizeofRtMsghdr))
 	nativeEndian.PutUint32(b[16:20], uint32(m.Flags))
 	nativeEndian.PutUint16(b[6:8], uint16(m.Index))
 	nativeEndian.PutUint32(b[24:28], uint32(m.ID))
 	nativeEndian.PutUint32(b[28:32], uint32(m.Seq))
-	attrs, err := marshalAddrs(b[sizeofRtMsghdr:], m.Addrs)
+	attrs, err := marshalAddrs(b[unix.SizeofRtMsghdr:], m.Addrs)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (m *RouteMessage) marshal() ([]byte, error) {
 }
 
 func (*wireFormat) parseRouteMessage(_ RIBType, b []byte) (Message, error) {
-	if len(b) < sizeofRtMsghdr {
+	if len(b) < unix.SizeofRtMsghdr {
 		return nil, errMessageTooShort
 	}
 	l := int(nativeEndian.Uint16(b[:2]))
@@ -54,7 +54,7 @@ func (*wireFormat) parseRouteMessage(_ RIBType, b []byte) (Message, error) {
 	if len(b) < ll {
 		return nil, errInvalidMessage
 	}
-	errno := syscall.Errno(nativeEndian.Uint32(b[32:36]))
+	errno := unix.Errno(nativeEndian.Uint32(b[32:36]))
 	if errno != 0 {
 		m.Err = errno
 	}

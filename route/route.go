@@ -15,7 +15,8 @@ package route
 import (
 	"errors"
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -92,8 +93,8 @@ func (m *RouteMessage) Marshal() ([]byte, error) {
 type RIBType int
 
 const (
-	RIBTypeRoute     RIBType = syscall.NET_RT_DUMP
-	RIBTypeInterface RIBType = syscall.NET_RT_IFLIST
+	RIBTypeRoute     RIBType = unix.NET_RT_DUMP
+	RIBTypeInterface RIBType = unix.NET_RT_IFLIST
 )
 
 // FetchRIB fetches a routing information base from the operating
@@ -110,7 +111,7 @@ func FetchRIB(af int, typ RIBType, arg int) ([]byte, error) {
 	try := 0
 	for {
 		try++
-		mib := [6]int32{syscall.CTL_NET, syscall.AF_ROUTE, 0, int32(af), int32(typ), int32(arg)}
+		mib := [6]int32{unix.CTL_NET, unix.AF_ROUTE, 0, int32(af), int32(typ), int32(arg)}
 		n := uintptr(0)
 		if err := sysctl(mib[:], nil, &n, nil, 0); err != nil {
 			return nil, os.NewSyscallError("sysctl", err)
@@ -124,7 +125,7 @@ func FetchRIB(af int, typ RIBType, arg int) ([]byte, error) {
 			// between the two sysctl calls, try a few times
 			// before failing. (golang.org/issue/45736).
 			const maxTries = 3
-			if err == syscall.ENOMEM && try < maxTries {
+			if err == unix.ENOMEM && try < maxTries {
 				continue
 			}
 			return nil, os.NewSyscallError("sysctl", err)
