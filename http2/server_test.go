@@ -333,7 +333,9 @@ func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ..
 
 // sync waits for all goroutines to idle.
 func (st *serverTester) sync() {
-	st.group.Wait()
+	if st.group != nil {
+		st.group.Wait()
+	}
 }
 
 // advance advances synthetic time by a duration.
@@ -2896,15 +2898,10 @@ func BenchmarkServerGets(b *testing.B) {
 			EndStream:     true,
 			EndHeaders:    true,
 		})
-		st.wantHeaders(wantHeader{
-			streamID:  1,
-			endStream: true,
-		})
-		st.wantData(wantData{
-			streamID:  1,
-			endStream: true,
-			size:      0,
-		})
+		st.wantFrameType(FrameHeaders)
+		if df := readFrame[*DataFrame](b, st); !df.StreamEnded() {
+			b.Fatalf("DATA didn't have END_STREAM; got %v", df)
+		}
 	}
 }
 
@@ -2939,15 +2936,10 @@ func BenchmarkServerPosts(b *testing.B) {
 			EndHeaders:    true,
 		})
 		st.writeData(id, true, nil)
-		st.wantHeaders(wantHeader{
-			streamID:  1,
-			endStream: false,
-		})
-		st.wantData(wantData{
-			streamID:  1,
-			endStream: true,
-			size:      0,
-		})
+		st.wantFrameType(FrameHeaders)
+		if df := readFrame[*DataFrame](b, st); !df.StreamEnded() {
+			b.Fatalf("DATA didn't have END_STREAM; got %v", df)
+		}
 	}
 }
 
@@ -3289,14 +3281,8 @@ func BenchmarkServer_GetRequest(b *testing.B) {
 			EndStream:     true,
 			EndHeaders:    true,
 		})
-		st.wantHeaders(wantHeader{
-			streamID:  streamID,
-			endStream: false,
-		})
-		st.wantData(wantData{
-			streamID:  streamID,
-			endStream: true,
-		})
+		st.wantFrameType(FrameHeaders)
+		st.wantFrameType(FrameData)
 	}
 }
 
@@ -3327,14 +3313,8 @@ func BenchmarkServer_PostRequest(b *testing.B) {
 			EndHeaders:    true,
 		})
 		st.writeData(streamID, true, nil)
-		st.wantHeaders(wantHeader{
-			streamID:  streamID,
-			endStream: false,
-		})
-		st.wantData(wantData{
-			streamID:  streamID,
-			endStream: true,
-		})
+		st.wantFrameType(FrameHeaders)
+		st.wantFrameType(FrameData)
 	}
 }
 
