@@ -2210,6 +2210,13 @@ func (rl *clientConnReadLoop) cleanup() {
 	}
 	cc.cond.Broadcast()
 	cc.mu.Unlock()
+
+	if !cc.seenSettings {
+		// If we have a pending request that wants extended CONNECT,
+		// let it continue and fail with the connection error.
+		cc.extendedConnectAllowed = true
+		close(cc.seenSettingsChan)
+	}
 }
 
 // countReadFrameError calls Transport.CountError with a string
@@ -2301,9 +2308,6 @@ func (rl *clientConnReadLoop) run() error {
 		if err != nil {
 			if VerboseLogs {
 				cc.vlogf("http2: Transport conn %p received error from processing frame %v: %v", cc, summarizeFrame(f), err)
-			}
-			if !cc.seenSettings {
-				close(cc.seenSettingsChan)
 			}
 			return err
 		}

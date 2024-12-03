@@ -5914,3 +5914,24 @@ func TestExtendedConnectClientWithoutServerSupport(t *testing.T) {
 		t.Fatalf("expected error errExtendedConnectNotSupported, got: %v", err)
 	}
 }
+
+// Issue #70658: Make sure extended CONNECT requests don't get stuck if a
+// connection fails early in its lifetime.
+func TestExtendedConnectReadFrameError(t *testing.T) {
+	tc := newTestClientConn(t)
+	tc.wantFrameType(FrameSettings)
+	tc.wantFrameType(FrameWindowUpdate)
+
+	req, _ := http.NewRequest("CONNECT", "https://dummy.tld/", nil)
+	req.Header.Set(":protocol", "extended-connect")
+	rt := tc.roundTrip(req)
+	tc.wantIdle() // waiting for SETTINGS response
+
+	tc.closeWrite() // connection breaks without sending SETTINGS
+	if !rt.done() {
+		t.Fatalf("after connection closed: RoundTrip still running; want done")
+	}
+	if rt.err() == nil {
+		t.Fatalf("after connection closed: RoundTrip succeeded; want error")
+	}
+}
