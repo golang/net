@@ -227,6 +227,12 @@ const (
 	sizeofIfMsghdrFreeBSD10 = C.sizeof_struct_if_msghdr_freebsd10
 	sizeofIfMsghdrFreeBSD11 = C.sizeof_struct_if_msghdr_freebsd11
 
+	sizeofIfDataFreeBSD7  = C.sizeof_struct_if_data_freebsd7
+	sizeofIfDataFreeBSD8  = C.sizeof_struct_if_data_freebsd8
+	sizeofIfDataFreeBSD9  = C.sizeof_struct_if_data_freebsd9
+	sizeofIfDataFreeBSD10 = C.sizeof_struct_if_data_freebsd10
+	sizeofIfDataFreeBSD11 = C.sizeof_struct_if_data_freebsd11
+
 	sizeofRtMsghdrFreeBSD10Emu  = C.sizeof_struct_rt_msghdr
 	sizeofRtMetricsFreeBSD10Emu = C.sizeof_struct_rt_metrics
 
@@ -235,4 +241,14 @@ const (
 	sizeofIfMsghdrFreeBSD9Emu  = C.sizeof_struct_if_msghdr_freebsd9
 	sizeofIfMsghdrFreeBSD10Emu = C.sizeof_struct_if_msghdr_freebsd10
 	sizeofIfMsghdrFreeBSD11Emu = C.sizeof_struct_if_msghdr_freebsd11
+
+	sizeofIfDataFreeBSD7Emu  = C.sizeof_struct_if_data_freebsd7
+	sizeofIfDataFreeBSD8Emu  = C.sizeof_struct_if_data_freebsd8
+	sizeofIfDataFreeBSD9Emu  = C.sizeof_struct_if_data_freebsd9
+	sizeofIfDataFreeBSD10Emu = C.sizeof_struct_if_data_freebsd10
+	sizeofIfDataFreeBSD11Emu = C.sizeof_struct_if_data_freebsd11
+
+	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
+	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
+	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
 )
