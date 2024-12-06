@@ -468,6 +468,7 @@ func TestParseFragmentForeignContentTemplates(t *testing.T) {
 	srcs := []string{
 		"<math><html><template><mn><template></template></template>",
 		"<math><math><head><mi><template>",
+		"<svg><head><title><select><input>",
 	}
 	for _, src := range srcs {
 		// The next line shouldn't infinite-loop.
