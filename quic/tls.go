@@ -119,11 +119,7 @@ func (c *Conn) handleCrypto(now time.Time, space numberSpace, off int64, data []
 	default:
 		return errors.New("quic: internal error: received CRYPTO frame in unexpected number space")
 	}
-	err := c.crypto[space].handleCrypto(off, data, func(b []byte) error {
+	return c.crypto[space].handleCrypto(off, data, func(b []byte) error {
 		return c.tls.HandleData(level, b)
 	})
-	if err != nil {
-		return err
-	}
-	return c.handleTLSEvents(now)
 }

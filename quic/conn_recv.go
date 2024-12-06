@@ -285,6 +285,7 @@ func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, sp
 		__01 = packetType0RTT | packetType1RTT
 		___1 = packetType1RTT
 	)
+	hasCrypto := false
 	for len(payload) > 0 {
 		switch payload[0] {
 		case frameTypePadding, frameTypeAck, frameTypeAckECN,
@@ -322,6 +323,7 @@ func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, sp
 			if !frameOK(c, ptype, IH_1) {
 				return
 			}
+			hasCrypto = true
 			n = c.handleCryptoFrame(now, space, payload)
 		case frameTypeNewToken:
 			if !frameOK(c, ptype, ___1) {
@@ -405,6 +407,15 @@ func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, sp
 			return false
 		}
 		payload = payload[n:]
+	}
+	if hasCrypto {
+		// Process TLS events after handling all frames in a packet.
+		// TLS events can cause us to drop state for a number space,
+		// so do that last, to avoid handling frames differently
+		// depending on whether they come before or after a CRYPTO frame.
+		if err := c.handleTLSEvents(now); err != nil {
+			c.abort(now, err)
+		}
 	}
 	return ackEliciting
 }
