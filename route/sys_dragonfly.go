@@ -5,9 +5,8 @@
 package route
 
 import (
+	"syscall"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 func (typ RIBType) parseable() bool { return true }
@@ -50,42 +49,40 @@ func (m *InterfaceMessage) Sys() []Sys {
 
 func probeRoutingStack() (int, map[int]*wireFormat) {
 	var p uintptr
-	rtm := &wireFormat{extOff: 40, bodyOff: unix.SizeofRtMsghdr}
+	rtm := &wireFormat{extOff: 40, bodyOff: sizeofRtMsghdrDragonFlyBSD4}
 	rtm.parse = rtm.parseRouteMessage
-	ifm := &wireFormat{extOff: 16, bodyOff: unix.SizeofIfMsghdr}
+	ifm := &wireFormat{extOff: 16, bodyOff: sizeofIfMsghdrDragonFlyBSD4}
 	ifm.parse = ifm.parseInterfaceMessage
-	ifam := &wireFormat{extOff: unix.SizeofIfmaMsghdr, bodyOff: unix.SizeofIfaMsghdr}
+	ifam := &wireFormat{extOff: sizeofIfaMsghdrDragonFlyBSD4, bodyOff: sizeofIfaMsghdrDragonFlyBSD4}
 	ifam.parse = ifam.parseInterfaceAddrMessage
-	ifmam := &wireFormat{extOff: unix.SizeofIfmaMsghdr, bodyOff: unix.SizeofIfmaMsghdr}
+	ifmam := &wireFormat{extOff: sizeofIfmaMsghdrDragonFlyBSD4, bodyOff: sizeofIfmaMsghdrDragonFlyBSD4}
 	ifmam.parse = ifmam.parseInterfaceMulticastAddrMessage
-	ifanm := &wireFormat{extOff: unix.SizeofIfAnnounceMsghdr, bodyOff: unix.SizeofIfAnnounceMsghdr}
+	ifanm := &wireFormat{extOff: sizeofIfAnnouncemsghdrDragonFlyBSD4, bodyOff: sizeofIfAnnouncemsghdrDragonFlyBSD4}
 	ifanm.parse = ifanm.parseInterfaceAnnounceMessage
 
-	rel, _ := unix.SysctlUint32("kern.osreldate")
-	if rel < 500705 {
+	rel, _ := syscall.SysctlUint32("kern.osreldate")
+	if rel >= 500705 {
 		// https://github.com/DragonFlyBSD/DragonFlyBSD/commit/43a373152df2d405c9940983e584e6a25e76632d
-		// but only the size of struct ifa_msghdr actually changed.
-		// The type is not in current header files,
-		// so we just use constants here.
+		// but only the size of struct ifa_msghdr actually changed
 		rtmVersion = 7
-		ifam.bodyOff = 0x14
+		ifam.bodyOff = sizeofIfaMsghdrDragonFlyBSD58
 	}
 
 	return int(unsafe.Sizeof(p)), map[int]*wireFormat{
-		unix.RTM_ADD:        rtm,
-		unix.RTM_DELETE:     rtm,
-		unix.RTM_CHANGE:     rtm,
-		unix.RTM_GET:        rtm,
-		unix.RTM_LOSING:     rtm,
-		unix.RTM_REDIRECT:   rtm,
-		unix.RTM_MISS:       rtm,
-		unix.RTM_LOCK:       rtm,
-		unix.RTM_RESOLVE:    rtm,
-		unix.RTM_NEWADDR:    ifam,
-		unix.RTM_DELADDR:    ifam,
-		unix.RTM_IFINFO:     ifm,
-		unix.RTM_NEWMADDR:   ifmam,
-		unix.RTM_DELMADDR:   ifmam,
-		unix.RTM_IFANNOUNCE: ifanm,
+		syscall.RTM_ADD:        rtm,
+		syscall.RTM_DELETE:     rtm,
+		syscall.RTM_CHANGE:     rtm,
+		syscall.RTM_GET:        rtm,
+		syscall.RTM_LOSING:     rtm,
+		syscall.RTM_REDIRECT:   rtm,
+		syscall.RTM_MISS:       rtm,
+		syscall.RTM_LOCK:       rtm,
+		syscall.RTM_RESOLVE:    rtm,
+		syscall.RTM_NEWADDR:    ifam,
+		syscall.RTM_DELADDR:    ifam,
+		syscall.RTM_IFINFO:     ifm,
+		syscall.RTM_NEWMADDR:   ifmam,
+		syscall.RTM_DELMADDR:   ifmam,
+		syscall.RTM_IFANNOUNCE: ifanm,
 	}
 }

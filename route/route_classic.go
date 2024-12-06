@@ -8,8 +8,7 @@ package route
 
 import (
 	"runtime"
-
-	"golang.org/x/sys/unix"
+	"syscall"
 )
 
 func (m *RouteMessage) marshal() ([]byte, error) {
@@ -63,7 +62,7 @@ func (w *wireFormat) parseRouteMessage(typ RIBType, b []byte) (Message, error) {
 		extOff:  w.extOff,
 		raw:     b[:l],
 	}
-	errno := unix.Errno(nativeEndian.Uint32(b[28:32]))
+	errno := syscall.Errno(nativeEndian.Uint32(b[28:32]))
 	if errno != 0 {
 		m.Err = errno
 	}

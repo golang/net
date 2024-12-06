@@ -218,6 +218,12 @@ struct if_msghdr_freebsd11 {
 import "C"
 
 const (
+	sizeofIfMsghdrlFreeBSD10        = C.sizeof_struct_if_msghdrl
+	sizeofIfaMsghdrFreeBSD10        = C.sizeof_struct_ifa_msghdr
+	sizeofIfaMsghdrlFreeBSD10       = C.sizeof_struct_ifa_msghdrl
+	sizeofIfmaMsghdrFreeBSD10       = C.sizeof_struct_ifma_msghdr
+	sizeofIfAnnouncemsghdrFreeBSD10 = C.sizeof_struct_if_announcemsghdr
+
 	sizeofRtMsghdrFreeBSD10  = C.sizeof_struct_rt_msghdr
 	sizeofRtMetricsFreeBSD10 = C.sizeof_struct_rt_metrics
 
@@ -232,6 +238,12 @@ const (
 	sizeofIfDataFreeBSD9  = C.sizeof_struct_if_data_freebsd9
 	sizeofIfDataFreeBSD10 = C.sizeof_struct_if_data_freebsd10
 	sizeofIfDataFreeBSD11 = C.sizeof_struct_if_data_freebsd11
+
+	sizeofIfMsghdrlFreeBSD10Emu        = C.sizeof_struct_if_msghdrl
+	sizeofIfaMsghdrFreeBSD10Emu        = C.sizeof_struct_ifa_msghdr
+	sizeofIfaMsghdrlFreeBSD10Emu       = C.sizeof_struct_ifa_msghdrl
+	sizeofIfmaMsghdrFreeBSD10Emu       = C.sizeof_struct_ifma_msghdr
+	sizeofIfAnnouncemsghdrFreeBSD10Emu = C.sizeof_struct_if_announcemsghdr
 
 	sizeofRtMsghdrFreeBSD10Emu  = C.sizeof_struct_rt_msghdr
 	sizeofRtMetricsFreeBSD10Emu = C.sizeof_struct_rt_metrics

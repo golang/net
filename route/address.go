@@ -8,8 +8,7 @@ package route
 
 import (
 	"runtime"
-
-	"golang.org/x/sys/unix"
+	"syscall"
 )
 
 // An Addr represents an address associated with packet routing.
@@ -26,7 +25,7 @@ type LinkAddr struct {
 }
 
 // Family implements the Family method of Addr interface.
-func (a *LinkAddr) Family() int { return unix.AF_LINK }
+func (a *LinkAddr) Family() int { return syscall.AF_LINK }
 
 func (a *LinkAddr) lenAndSpace() (int, int) {
 	l := 8 + len(a.Name) + len(a.Addr)
@@ -43,7 +42,7 @@ func (a *LinkAddr) marshal(b []byte) (int, error) {
 		return 0, errInvalidAddr
 	}
 	b[0] = byte(l)
-	b[1] = unix.AF_LINK
+	b[1] = syscall.AF_LINK
 	if a.Index > 0 {
 		nativeEndian.PutUint16(b[2:4], uint16(a.Index))
 	}
@@ -65,7 +64,7 @@ func parseLinkAddr(b []byte) (Addr, error) {
 	if len(b) < 8 {
 		return nil, errInvalidAddr
 	}
-	_, a, err := parseKernelLinkAddr(unix.AF_LINK, b[4:])
+	_, a, err := parseKernelLinkAddr(syscall.AF_LINK, b[4:])
 	if err != nil {
 		return nil, err
 	}
@@ -125,10 +124,10 @@ type Inet4Addr struct {
 }
 
 // Family implements the Family method of Addr interface.
-func (a *Inet4Addr) Family() int { return unix.AF_INET }
+func (a *Inet4Addr) Family() int { return syscall.AF_INET }
 
 func (a *Inet4Addr) lenAndSpace() (int, int) {
-	return unix.SizeofSockaddrInet4, roundup(unix.SizeofSockaddrInet4)
+	return sizeofSockaddrInet, roundup(sizeofSockaddrInet)
 }
 
 func (a *Inet4Addr) marshal(b []byte) (int, error) {
@@ -137,7 +136,7 @@ func (a *Inet4Addr) marshal(b []byte) (int, error) {
 		return 0, errShortBuffer
 	}
 	b[0] = byte(l)
-	b[1] = unix.AF_INET
+	b[1] = syscall.AF_INET
 	copy(b[4:8], a.IP[:])
 	return ll, nil
 }
@@ -149,10 +148,10 @@ type Inet6Addr struct {
 }
 
 // Family implements the Family method of Addr interface.
-func (a *Inet6Addr) Family() int { return unix.AF_INET6 }
+func (a *Inet6Addr) Family() int { return syscall.AF_INET6 }
 
 func (a *Inet6Addr) lenAndSpace() (int, int) {
-	return unix.SizeofSockaddrInet6, roundup(unix.SizeofSockaddrInet6)
+	return sizeofSockaddrInet6, roundup(sizeofSockaddrInet6)
 }
 
 func (a *Inet6Addr) marshal(b []byte) (int, error) {
@@ -161,7 +160,7 @@ func (a *Inet6Addr) marshal(b []byte) (int, error) {
 		return 0, errShortBuffer
 	}
 	b[0] = byte(l)
-	b[1] = unix.AF_INET6
+	b[1] = syscall.AF_INET6
 	copy(b[8:24], a.IP[:])
 	if a.ZoneID > 0 {
 		nativeEndian.PutUint32(b[24:28], uint32(a.ZoneID))
@@ -176,7 +175,7 @@ func parseInetAddr(af int, b []byte) (Addr, error) {
 		off6 = 8 // offset of in6_addr
 	)
 	switch af {
-	case unix.AF_INET:
+	case syscall.AF_INET:
 		if len(b) < (off4+1) || len(b) < int(b[0]) || b[0] == 0 {
 			return nil, errInvalidAddr
 		}
@@ -188,7 +187,7 @@ func parseInetAddr(af int, b []byte) (Addr, error) {
 		}
 		copy(a.IP[:], b[off4:n])
 		return a, nil
-	case unix.AF_INET6:
+	case syscall.AF_INET6:
 		if len(b) < (off6+1) || len(b) < int(b[0]) || b[0] == 0 {
 			return nil, errInvalidAddr
 		}
@@ -198,7 +197,7 @@ func parseInetAddr(af int, b []byte) (Addr, error) {
 			n = sockAddrLen
 		}
 		a := &Inet6Addr{}
-		if sockAddrLen == unix.SizeofSockaddrInet6 {
+		if sockAddrLen == sizeofSockaddrInet6 {
 			a.ZoneID = int(nativeEndian.Uint32(b[24:28]))
 		}
 		copy(a.IP[:], b[off6:n])
@@ -261,11 +260,11 @@ func parseKernelInetAddr(af int, b []byte) (int, Addr, error) {
 		off6 = 8 // offset of in6_addr
 	)
 	switch {
-	case b[0] == unix.SizeofSockaddrInet6:
+	case b[0] == sizeofSockaddrInet6:
 		a := &Inet6Addr{}
 		copy(a.IP[:], b[off6:off6+16])
 		return int(b[0]), a, nil
-	case af == unix.AF_INET6:
+	case af == syscall.AF_INET6:
 		a := &Inet6Addr{}
 		if l-1 < off6 {
 			copy(a.IP[:], b[1:l])
@@ -273,7 +272,7 @@ func parseKernelInetAddr(af int, b []byte) (int, Addr, error) {
 			copy(a.IP[:], b[l-off6:l])
 		}
 		return int(b[0]), a, nil
-	case b[0] == unix.SizeofSockaddrInet4:
+	case b[0] == sizeofSockaddrInet:
 		a := &Inet4Addr{}
 		copy(a.IP[:], b[off4:off4+4])
 		return int(b[0]), a, nil
@@ -385,15 +384,15 @@ func marshalAddrs(b []byte, as []Addr) (uint, error) {
 }
 
 func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) ([]Addr, error) {
-	var as [unix.RTAX_MAX]Addr
-	af := int(unix.AF_UNSPEC)
-	for i := uint(0); i < unix.RTAX_MAX && len(b) >= roundup(0); i++ {
+	var as [syscall.RTAX_MAX]Addr
+	af := int(syscall.AF_UNSPEC)
+	for i := uint(0); i < syscall.RTAX_MAX && len(b) >= roundup(0); i++ {
 		if attrs&(1<<i) == 0 {
 			continue
 		}
-		if i <= unix.RTAX_BRD {
+		if i <= syscall.RTAX_BRD {
 			switch b[1] {
-			case unix.AF_LINK:
+			case syscall.AF_LINK:
 				a, err := parseLinkAddr(b)
 				if err != nil {
 					return nil, err
@@ -404,7 +403,7 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 					return nil, errMessageTooShort
 				}
 				b = b[l:]
-			case unix.AF_INET, unix.AF_INET6:
+			case syscall.AF_INET, syscall.AF_INET6:
 				// #70528: if the sockaddrlen is 0, no address to parse inside,
 				// skip over the record.
 				if b[0] > 0 {
