@@ -139,3 +139,21 @@ func (s *cryptoStream) sendData(off int64, b []byte) {
 	s.out.copy(off, b)
 	s.outunsent.sub(off, off+int64(len(b)))
 }
+
+// discardKeys is called when the packet protection keys for the stream are dropped.
+func (s *cryptoStream) discardKeys() error {
+	if s.in.end-s.in.start != 0 {
+		// The peer sent some unprocessed CRYPTO data that we're about to discard.
+		// Close the connetion with a TLS unexpected_message alert.
+		// https://www.rfc-editor.org/rfc/rfc5246#section-7.2.2
+		const unexpectedMessage = 10
+		return localTransportError{
+			code:   errTLSBase + unexpectedMessage,
+			reason: "excess crypto data",
+		}
+	}
+	// Discard any unacked (but presumably received) data in our output buffer.
+	s.out.discardBefore(s.out.end)
+	*s = cryptoStream{}
+	return nil
+}

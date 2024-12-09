@@ -216,6 +216,9 @@ func (c *Conn) confirmHandshake(now time.Time) {
 // discardKeys discards unused packet protection keys.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.9
 func (c *Conn) discardKeys(now time.Time, space numberSpace) {
+	if err := c.crypto[space].discardKeys(); err != nil {
+		c.abort(now, err)
+	}
 	switch space {
 	case initialSpace:
 		c.keysInitial.discard()

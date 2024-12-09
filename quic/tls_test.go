@@ -615,3 +615,32 @@ func TestConnAEADLimitReached(t *testing.T) {
 	tc.advance(1 * time.Second)
 	tc.wantIdle("auth failures at limit: conn does not process additional packets")
 }
+
+func TestConnKeysDiscardedWithExcessCryptoData(t *testing.T) {
+	tc := newTestConn(t, serverSide, permissiveTransportParameters)
+	tc.ignoreFrame(frameTypeAck)
+	tc.ignoreFrame(frameTypeNewConnectionID)
+	tc.ignoreFrame(frameTypeCrypto)
+
+	// One byte of excess CRYPTO data, separated from the valid data by a one-byte gap.
+	tc.writeFrames(packetTypeInitial,
+		debugFrameCrypto{
+			off:  int64(len(tc.cryptoDataIn[tls.QUICEncryptionLevelInitial]) + 1),
+			data: []byte{0},
+		})
+	tc.writeFrames(packetTypeInitial,
+		debugFrameCrypto{
+			data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+		})
+
+	// We don't drop the Initial keys and discover the excess data until the client
+	// sends a Handshake packet.
+	tc.writeFrames(packetTypeHandshake,
+		debugFrameCrypto{
+			data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+		})
+	tc.wantFrame("connection closed due to excess Initial CRYPTO data",
+		packetType1RTT, debugFrameConnectionCloseTransport{
+			code: errTLSBase + 10,
+		})
+}
