@@ -836,6 +836,11 @@ func afterHeadIM(p *parser) bool {
 	case DoctypeToken:
 		// Ignore the token.
 		return true
+	case ErrorToken:
+		// Stop parsing.
+		p.parseImpliedToken(StartTagToken, a.Body, a.Body.String())
+		p.framesetOK = true
+		return true
 	}
 
 	p.parseImpliedToken(StartTagToken, a.Body, a.Body.String())
