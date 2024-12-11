@@ -23,10 +23,8 @@ const (
 	sizeofIfaMsghdrNetBSD7        = C.sizeof_struct_ifa_msghdr
 	sizeofIfAnnouncemsghdrNetBSD7 = C.sizeof_struct_if_announcemsghdr
 
-	sizeofRtMsghdrNetBSD7  = C.sizeof_struct_rt_msghdr
-	sizeofRtMetricsNetBSD7 = C.sizeof_struct_rt_metrics
+	sizeofRtMsghdrNetBSD7 = C.sizeof_struct_rt_msghdr
 
-	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
-	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
-	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
+	sizeofSockaddrInet  = C.sizeof_struct_sockaddr_in
+	sizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
 )

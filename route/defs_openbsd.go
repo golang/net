@@ -21,7 +21,6 @@ import "C"
 const (
 	sizeofRtMsghdr = C.sizeof_struct_rt_msghdr
 
-	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
-	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
-	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
+	sizeofSockaddrInet  = C.sizeof_struct_sockaddr_in
+	sizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
 )

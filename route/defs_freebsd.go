@@ -220,7 +220,6 @@ import "C"
 const (
 	sizeofIfMsghdrlFreeBSD10        = C.sizeof_struct_if_msghdrl
 	sizeofIfaMsghdrFreeBSD10        = C.sizeof_struct_ifa_msghdr
-	sizeofIfaMsghdrlFreeBSD10       = C.sizeof_struct_ifa_msghdrl
 	sizeofIfmaMsghdrFreeBSD10       = C.sizeof_struct_ifma_msghdr
 	sizeofIfAnnouncemsghdrFreeBSD10 = C.sizeof_struct_if_announcemsghdr
 
@@ -233,15 +232,7 @@ const (
 	sizeofIfMsghdrFreeBSD10 = C.sizeof_struct_if_msghdr_freebsd10
 	sizeofIfMsghdrFreeBSD11 = C.sizeof_struct_if_msghdr_freebsd11
 
-	sizeofIfDataFreeBSD7  = C.sizeof_struct_if_data_freebsd7
-	sizeofIfDataFreeBSD8  = C.sizeof_struct_if_data_freebsd8
-	sizeofIfDataFreeBSD9  = C.sizeof_struct_if_data_freebsd9
-	sizeofIfDataFreeBSD10 = C.sizeof_struct_if_data_freebsd10
-	sizeofIfDataFreeBSD11 = C.sizeof_struct_if_data_freebsd11
-
-	sizeofIfMsghdrlFreeBSD10Emu        = C.sizeof_struct_if_msghdrl
 	sizeofIfaMsghdrFreeBSD10Emu        = C.sizeof_struct_ifa_msghdr
-	sizeofIfaMsghdrlFreeBSD10Emu       = C.sizeof_struct_ifa_msghdrl
 	sizeofIfmaMsghdrFreeBSD10Emu       = C.sizeof_struct_ifma_msghdr
 	sizeofIfAnnouncemsghdrFreeBSD10Emu = C.sizeof_struct_if_announcemsghdr
 
@@ -254,13 +245,6 @@ const (
 	sizeofIfMsghdrFreeBSD10Emu = C.sizeof_struct_if_msghdr_freebsd10
 	sizeofIfMsghdrFreeBSD11Emu = C.sizeof_struct_if_msghdr_freebsd11
 
-	sizeofIfDataFreeBSD7Emu  = C.sizeof_struct_if_data_freebsd7
-	sizeofIfDataFreeBSD8Emu  = C.sizeof_struct_if_data_freebsd8
-	sizeofIfDataFreeBSD9Emu  = C.sizeof_struct_if_data_freebsd9
-	sizeofIfDataFreeBSD10Emu = C.sizeof_struct_if_data_freebsd10
-	sizeofIfDataFreeBSD11Emu = C.sizeof_struct_if_data_freebsd11
-
-	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
-	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
-	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
+	sizeofSockaddrInet  = C.sizeof_struct_sockaddr_in
+	sizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
 )

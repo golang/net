@@ -47,10 +47,8 @@ const (
 
 	sizeofIfaMsghdrDragonFlyBSD58 = C.sizeof_struct_ifa_msghdr_dfly58
 
-	sizeofRtMsghdrDragonFlyBSD4  = C.sizeof_struct_rt_msghdr
-	sizeofRtMetricsDragonFlyBSD4 = C.sizeof_struct_rt_metrics
+	sizeofRtMsghdrDragonFlyBSD4 = C.sizeof_struct_rt_msghdr
 
-	sizeofSockaddrStorage = C.sizeof_struct_sockaddr_storage
-	sizeofSockaddrInet    = C.sizeof_struct_sockaddr_in
-	sizeofSockaddrInet6   = C.sizeof_struct_sockaddr_in6
+	sizeofSockaddrInet  = C.sizeof_struct_sockaddr_in
+	sizeofSockaddrInet6 = C.sizeof_struct_sockaddr_in6
 )
