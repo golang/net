@@ -664,3 +664,52 @@ func TestConnIDsCleanedUpAfterClose(t *testing.T) {
 		}
 	})
 }
+
+func TestConnIDRetiredConnIDResent(t *testing.T) {
+	tc := newTestConn(t, serverSide)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+	//tc.ignoreFrame(frameTypeRetireConnectionID)
+
+	// Send CID 2, retire 0-1 (negotiated during the handshake).
+	tc.writeFrames(packetType1RTT,
+		debugFrameNewConnectionID{
+			seq:           2,
+			retirePriorTo: 2,
+			connID:        testPeerConnID(2),
+			token:         testPeerStatelessResetToken(2),
+		})
+	tc.wantFrame("retire CID 0", packetType1RTT, debugFrameRetireConnectionID{seq: 0})
+	tc.wantFrame("retire CID 1", packetType1RTT, debugFrameRetireConnectionID{seq: 1})
+
+	// Send CID 3, retire 2.
+	tc.writeFrames(packetType1RTT,
+		debugFrameNewConnectionID{
+			seq:           3,
+			retirePriorTo: 3,
+			connID:        testPeerConnID(3),
+			token:         testPeerStatelessResetToken(3),
+		})
+	tc.wantFrame("retire CID 2", packetType1RTT, debugFrameRetireConnectionID{seq: 2})
+
+	// Acknowledge retirement of CIDs 0-2.
+	// The server should have state for only one CID: 3.
+	tc.writeAckForAll()
+	if got, want := len(tc.conn.connIDState.remote), 1; got != want {
+		t.Fatalf("connection has state for %v connection IDs, want %v", got, want)
+	}
+
+	// Send CID 2 again.
+	// The server should ignore this, since it's already retired the CID.
+	tc.ignoreFrames[frameTypeRetireConnectionID] = false
+	tc.writeFrames(packetType1RTT,
+		debugFrameNewConnectionID{
+			seq:    2,
+			connID: testPeerConnID(2),
+			token:  testPeerStatelessResetToken(2),
+		})
+	if got, want := len(tc.conn.connIDState.remote), 1; got != want {
+		t.Fatalf("connection has state for %v connection IDs, want %v", got, want)
+	}
+	tc.wantIdle("server does not re-retire already retired CID 2")
+}

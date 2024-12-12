@@ -159,6 +159,14 @@ func (s rangeset[T]) numRanges() int {
 	return len(s)
 }
 
+// size returns the size of all ranges in the rangeset.
+func (s rangeset[T]) size() (total T) {
+	for _, r := range s {
+		total += r.size()
+	}
+	return total
+}
+
 // isrange reports if the rangeset covers exactly the range [start, end).
 func (s rangeset[T]) isrange(start, end T) bool {
 	switch len(s) {
