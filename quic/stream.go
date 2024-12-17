@@ -445,10 +445,20 @@ func (s *Stream) flushFastOutputBuffer() {
 // Flush flushes data written to the stream.
 // It does not wait for the peer to acknowledge receipt of the data.
 // Use Close to wait for the peer's acknowledgement.
-func (s *Stream) Flush() {
+func (s *Stream) Flush() error {
+	if s.IsReadOnly() {
+		return errors.New("flush of read-only stream")
+	}
 	s.outgate.lock()
 	defer s.outUnlock()
+	if s.outreset.isSet() {
+		return errors.New("write to reset stream")
+	}
+	if s.outclosed.isSet() {
+		return errors.New("write to closed stream")
+	}
 	s.flushLocked()
+	return nil
 }
 
 func (s *Stream) flushLocked() {

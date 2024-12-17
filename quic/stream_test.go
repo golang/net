@@ -1324,6 +1324,54 @@ func TestStreamFlushExplicit(t *testing.T) {
 	})
 }
 
+func TestStreamFlushClosedStream(t *testing.T) {
+	_, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters)
+	s.Close()
+	if err := s.Flush(); err == nil {
+		t.Errorf("s.Flush of closed stream = nil, want error")
+	}
+}
+
+func TestStreamFlushResetStream(t *testing.T) {
+	_, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters)
+	s.Reset(0)
+	if err := s.Flush(); err == nil {
+		t.Errorf("s.Flush of reset stream = nil, want error")
+	}
+}
+
+func TestStreamFlushStreamAfterPeerStopSending(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters)
+	s.Flush() // create the stream
+	tc.wantFrame("stream created after flush",
+		packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: []byte{},
+		})
+
+	// Peer sends a STOP_SENDING.
+	tc.writeFrames(packetType1RTT, debugFrameStopSending{
+		id: s.id,
+	})
+	if err := s.Flush(); err == nil {
+		t.Errorf("s.Flush of stream reset by peer = nil, want error")
+	}
+}
+
+func TestStreamFlushStreamAfterConnectionClosed(t *testing.T) {
+	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
+		permissiveTransportParameters)
+	tc.writeFrames(packetType1RTT, debugFrameConnectionCloseApplication{
+		code: 0,
+	})
+	if err := s.Flush(); err == nil {
+		t.Errorf("s.Flush of stream on closed connection = nil, want error")
+	}
+}
+
 func TestStreamFlushImplicitExact(t *testing.T) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		const writeBufferSize = 4
