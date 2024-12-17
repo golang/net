@@ -121,8 +121,7 @@ type ApplicationError struct {
 }
 
 func (e *ApplicationError) Error() string {
-	// TODO: Include the Reason string here, but sanitize it first.
-	return fmt.Sprintf("AppError %v", e.Code)
+	return fmt.Sprintf("peer closed connection: %v: %q", e.Code, e.Reason)
 }
 
 // Is reports a match if err is an *ApplicationError with a matching Code.
