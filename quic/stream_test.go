@@ -1361,14 +1361,21 @@ func TestStreamFlushStreamAfterPeerStopSending(t *testing.T) {
 	}
 }
 
-func TestStreamFlushStreamAfterConnectionClosed(t *testing.T) {
+func TestStreamErrorsAfterConnectionClosed(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters)
+	wantErr := &ApplicationError{Code: 42}
 	tc.writeFrames(packetType1RTT, debugFrameConnectionCloseApplication{
-		code: 0,
+		code: wantErr.Code,
 	})
-	if err := s.Flush(); err == nil {
-		t.Errorf("s.Flush of stream on closed connection = nil, want error")
+	if _, err := s.Read(make([]byte, 1)); !errors.Is(err, wantErr) {
+		t.Errorf("s.Read on closed connection = %v, want %v", err, wantErr)
+	}
+	if _, err := s.Write(make([]byte, 1)); !errors.Is(err, wantErr) {
+		t.Errorf("s.Write on closed connection = %v, want %v", err, wantErr)
+	}
+	if err := s.Flush(); !errors.Is(err, wantErr) {
+		t.Errorf("s.Flush on closed connection = %v, want %v", err, wantErr)
 	}
 }
 

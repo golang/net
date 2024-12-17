@@ -254,6 +254,11 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 		s.conn.handleStreamBytesReadOffLoop(bytesRead) // must be done with ingate unlocked
 	}()
 	if s.inresetcode != -1 {
+		if s.inresetcode == streamResetByConnClose {
+			if err := s.conn.finalError(); err != nil {
+				return 0, err
+			}
+		}
 		return 0, fmt.Errorf("stream reset by peer: %w", StreamErrorCode(s.inresetcode))
 	}
 	if s.inclosed.isSet() {
@@ -352,13 +357,9 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 			// write blocked. (Unlike traditional condition variables, gates do not
 			// have spurious wakeups.)
 		}
-		if s.outreset.isSet() {
+		if err := s.writeErrorLocked(); err != nil {
 			s.outUnlock()
-			return n, errors.New("write to reset stream")
-		}
-		if s.outclosed.isSet() {
-			s.outUnlock()
-			return n, errors.New("write to closed stream")
+			return n, err
 		}
 		if len(b) == 0 {
 			break
@@ -451,13 +452,27 @@ func (s *Stream) Flush() error {
 	}
 	s.outgate.lock()
 	defer s.outUnlock()
+	if err := s.writeErrorLocked(); err != nil {
+		return err
+	}
+	s.flushLocked()
+	return nil
+}
+
+// writeErrorLocked returns the error (if any) which should be returned by write operations
+// due to the stream being reset or closed.
+func (s *Stream) writeErrorLocked() error {
 	if s.outreset.isSet() {
+		if s.outresetcode == streamResetByConnClose {
+			if err := s.conn.finalError(); err != nil {
+				return err
+			}
+		}
 		return errors.New("write to reset stream")
 	}
 	if s.outclosed.isSet() {
 		return errors.New("write to closed stream")
 	}
-	s.flushLocked()
 	return nil
 }
 
@@ -605,8 +620,11 @@ func (s *Stream) connHasClosed() {
 	s.outgate.lock()
 	if localClose {
 		s.outclosed.set()
+		s.outreset.set()
+	} else {
+		s.outresetcode = streamResetByConnClose
+		s.outreset.setReceived()
 	}
-	s.outreset.set()
 	s.outUnlock()
 }
 

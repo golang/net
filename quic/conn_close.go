@@ -230,6 +230,17 @@ func (c *Conn) setFinalError(err error) {
 	close(c.lifetime.donec)
 }
 
+// finalError returns the final connection status reported to the user,
+// or nil if a final status has not yet been set.
+func (c *Conn) finalError() error {
+	select {
+	case <-c.lifetime.donec:
+		return c.lifetime.finalErr
+	default:
+	}
+	return nil
+}
+
 func (c *Conn) waitReady(ctx context.Context) error {
 	select {
 	case <-c.lifetime.readyc:
