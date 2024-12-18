@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2/hpack"
+	"golang.org/x/net/internal/gate"
 )
 
 // TestTestClientConn demonstrates usage of testClientConn.
@@ -206,7 +207,7 @@ func (tc *testClientConn) closeWrite() {
 // testRequestBody is a Request.Body for use in tests.
 type testRequestBody struct {
 	tc   *testClientConn
-	gate gate
+	gate gate.Gate
 
 	// At most one of buf or bytes can be set at any given time:
 	buf   bytes.Buffer // specific bytes to read from the body
@@ -218,18 +219,18 @@ type testRequestBody struct {
 func (tc *testClientConn) newRequestBody() *testRequestBody {
 	b := &testRequestBody{
 		tc:   tc,
-		gate: newGate(),
+		gate: gate.New(false),
 	}
 	return b
 }
 
 func (b *testRequestBody) unlock() {
-	b.gate.unlock(b.buf.Len() > 0 || b.bytes > 0 || b.err != nil)
+	b.gate.Unlock(b.buf.Len() > 0 || b.bytes > 0 || b.err != nil)
 }
 
 // Read is called by the ClientConn to read from a request body.
 func (b *testRequestBody) Read(p []byte) (n int, _ error) {
-	if err := b.gate.waitAndLock(context.Background()); err != nil {
+	if err := b.gate.WaitAndLock(context.Background()); err != nil {
 		return 0, err
 	}
 	defer b.unlock()
@@ -258,7 +259,7 @@ func (b *testRequestBody) Close() error {
 // writeBytes adds n arbitrary bytes to the body.
 func (b *testRequestBody) writeBytes(n int) {
 	defer b.tc.sync()
-	b.gate.lock()
+	b.gate.Lock()
 	defer b.unlock()
 	b.bytes += n
 	b.checkWrite()
@@ -268,7 +269,7 @@ func (b *testRequestBody) writeBytes(n int) {
 // Write adds bytes to the body.
 func (b *testRequestBody) Write(p []byte) (int, error) {
 	defer b.tc.sync()
-	b.gate.lock()
+	b.gate.Lock()
 	defer b.unlock()
 	n, err := b.buf.Write(p)
 	b.checkWrite()
@@ -287,7 +288,7 @@ func (b *testRequestBody) checkWrite() {
 // closeWithError sets an error which will be returned by Read.
 func (b *testRequestBody) closeWithError(err error) {
 	defer b.tc.sync()
-	b.gate.lock()
+	b.gate.Lock()
 	defer b.unlock()
 	b.err = err
 }

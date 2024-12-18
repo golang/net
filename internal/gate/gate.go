@@ -1,40 +1,37 @@
 // Copyright 2024 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-package http2
+
+// Package gate contains an alternative condition variable.
+package gate
 
 import "context"
 
-// An gate is a monitor (mutex + condition variable) with one bit of state.
+// A Gate is a monitor (mutex + condition variable) with one bit of state.
 //
 // The condition may be either set or unset.
 // Lock operations may be unconditional, or wait for the condition to be set.
 // Unlock operations record the new state of the condition.
-type gate struct {
+type Gate struct {
 	// When unlocked, exactly one of set or unset contains a value.
 	// When locked, neither chan contains a value.
 	set   chan struct{}
 	unset chan struct{}
 }
 
-// newGate returns a new, unlocked gate with the condition unset.
-func newGate() gate {
-	g := newLockedGate()
-	g.unlock(false)
-	return g
-}
-
-// newLockedGate returns a new, locked gate.
-func newLockedGate() gate {
-	return gate{
+// New returns a new, unlocked gate.
+func New(set bool) Gate {
+	g := Gate{
 		set:   make(chan struct{}, 1),
 		unset: make(chan struct{}, 1),
 	}
+	g.Unlock(set)
+	return g
 }
 
-// lock acquires the gate unconditionally.
+// Lock acquires the gate unconditionally.
 // It reports whether the condition is set.
-func (g *gate) lock() (set bool) {
+func (g *Gate) Lock() (set bool) {
 	select {
 	case <-g.set:
 		return true
@@ -43,9 +40,9 @@ func (g *gate) lock() (set bool) {
 	}
 }
 
-// waitAndLock waits until the condition is set before acquiring the gate.
-// If the context expires, waitAndLock returns an error and does not acquire the gate.
-func (g *gate) waitAndLock(ctx context.Context) error {
+// WaitAndLock waits until the condition is set before acquiring the gate.
+// If the context expires, WaitAndLock returns an error and does not acquire the gate.
+func (g *Gate) WaitAndLock(ctx context.Context) error {
 	select {
 	case <-g.set:
 		return nil
@@ -59,8 +56,8 @@ func (g *gate) waitAndLock(ctx context.Context) error {
 	}
 }
 
-// lockIfSet acquires the gate if and only if the condition is set.
-func (g *gate) lockIfSet() (acquired bool) {
+// LockIfSet acquires the gate if and only if the condition is set.
+func (g *Gate) LockIfSet() (acquired bool) {
 	select {
 	case <-g.set:
 		return true
@@ -69,17 +66,11 @@ func (g *gate) lockIfSet() (acquired bool) {
 	}
 }
 
-// unlock sets the condition and releases the gate.
-func (g *gate) unlock(set bool) {
+// Unlock sets the condition and releases the gate.
+func (g *Gate) Unlock(set bool) {
 	if set {
 		g.set <- struct{}{}
 	} else {
 		g.unset <- struct{}{}
 	}
-}
-
-// unlockFunc sets the condition to the result of f and releases the gate.
-// Useful in defers.
-func (g *gate) unlockFunc(f func() bool) {
-	g.unlock(f())
 }
