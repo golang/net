@@ -73,6 +73,25 @@ func Listen(network, address string, listenConfig *Config) (*Endpoint, error) {
 	return newEndpoint(pc, listenConfig, nil)
 }
 
+// NewEndpoint creates an endpoint using a net.PacketConn as the underlying transport.
+//
+// If the PacketConn is not a *net.UDPConn, the endpoint may be slower and lack
+// access to some features of the network.
+func NewEndpoint(conn net.PacketConn, config *Config) (*Endpoint, error) {
+	var pc packetConn
+	var err error
+	switch conn := conn.(type) {
+	case *net.UDPConn:
+		pc, err = newNetUDPConn(conn)
+	default:
+		pc, err = newNetPacketConn(conn)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return newEndpoint(pc, config, nil)
+}
+
 func newEndpoint(pc packetConn, config *Config, hooks endpointTestHooks) (*Endpoint, error) {
 	e := &Endpoint{
 		listenConfig: config,
