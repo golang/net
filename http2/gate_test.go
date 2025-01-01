@@ -24,7 +24,7 @@ func newGate() gate {
 	return g
 }
 
-// newLocked gate returns a new, locked gate.
+// newLockedGate returns a new, locked gate.
 func newLockedGate() gate {
 	return gate{
 		set:   make(chan struct{}, 1),
@@ -78,7 +78,7 @@ func (g *gate) unlock(set bool) {
 	}
 }
 
-// unlock sets the condition to the result of f and releases the gate.
+// unlockFunc sets the condition to the result of f and releases the gate.
 // Useful in defers.
 func (g *gate) unlockFunc(f func() bool) {
 	g.unlock(f())

@@ -58,7 +58,7 @@ func (w *jsonWriter) writeAttr(a slog.Attr) {
 	w.writeValue(a.Value)
 }
 
-// writeAttr writes a []slog.Attr as an object field.
+// writeAttrsField writes a []slog.Attr as an object field.
 func (w *jsonWriter) writeAttrsField(name string, attrs []slog.Attr) {
 	w.writeName(name)
 	w.writeAttrs(attrs)
@@ -113,7 +113,7 @@ func (w *jsonWriter) writeObject(f func()) {
 	w.buf.WriteByte('}')
 }
 
-// writeObject writes an object-valued object field.
+// writeObjectField writes an object-valued object field.
 // The function f is called to write the contents.
 func (w *jsonWriter) writeObjectField(name string, f func()) {
 	w.writeName(name)

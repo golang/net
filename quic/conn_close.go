@@ -178,7 +178,7 @@ func (c *Conn) sendOK(now time.Time) bool {
 	}
 }
 
-// sendConnectionClose reports that the conn has sent a CONNECTION_CLOSE to the peer.
+// sentConnectionClose reports that the conn has sent a CONNECTION_CLOSE to the peer.
 func (c *Conn) sentConnectionClose(now time.Time) {
 	switch c.lifetime.state {
 	case connStatePeerClosed:

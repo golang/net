@@ -4327,7 +4327,7 @@ func TestCanonicalHeaderCacheGrowth(t *testing.T) {
 	}
 }
 
-// TestServerWriteDoesNotRetainBufferAfterStreamClose checks for access to
+// TestServerWriteDoesNotRetainBufferAfterReturn checks for access to
 // the slice passed to ResponseWriter.Write after Write returns.
 //
 // Terminating the request stream on the client causes Write to return.

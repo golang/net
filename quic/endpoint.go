@@ -448,7 +448,7 @@ func (m *connsMap) updateConnIDs(f func(*connsMap)) {
 	m.updateNeeded.Store(true)
 }
 
-// applyConnIDUpdates is called by the datagram receive loop to update its connection ID map.
+// applyUpdates is called by the datagram receive loop to update its connection ID map.
 func (m *connsMap) applyUpdates() {
 	m.updateMu.Lock()
 	defer m.updateMu.Unlock()

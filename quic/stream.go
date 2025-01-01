@@ -418,7 +418,7 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	return n, nil
 }
 
-// WriteBytes writes a single byte to the stream.
+// WriteByte writes a single byte to the stream.
 func (s *Stream) WriteByte(c byte) error {
 	if s.outbufoff < len(s.outbuf) {
 		s.outbuf[s.outbufoff] = c

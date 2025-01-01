@@ -76,7 +76,7 @@ func (c *synctestNetConn) Write(b []byte) (n int, err error) {
 	return c.rem.write(b)
 }
 
-// IsClosed reports whether the peer has closed its end of the connection.
+// IsClosedByPeer reports whether the peer has closed its end of the connection.
 func (c *synctestNetConn) IsClosedByPeer() bool {
 	if c.autoWait {
 		c.group.Wait()

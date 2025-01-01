@@ -519,7 +519,7 @@ func hashForSuite(suite uint16) (h crypto.Hash, keySize int) {
 	}
 }
 
-// hdkfExpandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
+// hkdfExpandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
 //
 // Copied from crypto/tls/key_schedule.go.
 func hkdfExpandLabel(hash func() hash.Hash, secret []byte, label string, context []byte, length int) []byte {

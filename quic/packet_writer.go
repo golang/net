@@ -47,7 +47,7 @@ func (w *packetWriter) datagram() []byte {
 	return w.b
 }
 
-// packet returns the size of the current packet.
+// packetLen returns the size of the current packet.
 func (w *packetWriter) packetLen() int {
 	return len(w.b[w.pktOff:]) + aeadOverhead
 }
@@ -527,7 +527,7 @@ func (w *packetWriter) appendConnectionCloseTransportFrame(code transportError, 
 	return true
 }
 
-// appendConnectionCloseTransportFrame appends a CONNECTION_CLOSE frame
+// appendConnectionCloseApplicationFrame appends a CONNECTION_CLOSE frame
 // carrying an application protocol error code.
 func (w *packetWriter) appendConnectionCloseApplicationFrame(code uint64, reason string) (added bool) {
 	if w.avail() < 1+sizeVarint(code)+sizeVarint(uint64(len(reason)))+len(reason) {

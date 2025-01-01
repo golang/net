@@ -44,7 +44,7 @@ func consumeVarint(b []byte) (v uint64, n int) {
 	return 0, -1
 }
 
-// consumeVarint64 parses a variable-length integer as an int64.
+// consumeVarintInt64 parses a variable-length integer as an int64.
 func consumeVarintInt64(b []byte) (v int64, n int) {
 	u, n := consumeVarint(b)
 	// QUIC varints are 62-bits large, so this conversion can never overflow.

@@ -436,7 +436,7 @@ func (tc *testConn) write(d *testDatagram) {
 	tc.endpoint.writeDatagram(d)
 }
 
-// writeFrame sends the Conn a datagram containing the given frames.
+// writeFrames sends the Conn a datagram containing the given frames.
 func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 	tc.t.Helper()
 	space := spaceForPacketType(ptype)
