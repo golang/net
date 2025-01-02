@@ -272,6 +272,48 @@ func TestTransport(t *testing.T) {
 	}
 }
 
+func TestTransportFailureErrorForHTTP1Response(t *testing.T) {
+	const expectedHTTP1PayloadHint = "frame header looked like an HTTP/1.1 header"
+
+	ts := httptest.NewServer(http.NewServeMux())
+	t.Cleanup(ts.Close)
+
+	for _, tc := range []struct {
+		name            string
+		maxFrameSize    uint32
+		expectedErrorIs error
+	}{
+		{
+			name:         "with default max frame size",
+			maxFrameSize: 0,
+		},
+		{
+			name:         "with enough frame size to start reading",
+			maxFrameSize: invalidHTTP1LookingFrameHeader.Length + 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &Transport{
+				DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+					return net.Dial(network, addr)
+				},
+				MaxReadFrameSize: tc.maxFrameSize,
+				AllowHTTP:        true,
+			}
+
+			req, err := http.NewRequest("GET", ts.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = tr.RoundTrip(req)
+			if !strings.Contains(err.Error(), expectedHTTP1PayloadHint) {
+				t.Errorf("expected error to contain %q, got %v", expectedHTTP1PayloadHint, err)
+			}
+		})
+	}
+}
+
 func testTransportReusesConns(t *testing.T, useClient, wantSame bool, modReq func(*http.Request)) {
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, r.RemoteAddr)
