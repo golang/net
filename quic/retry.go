@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // AEAD and nonce used to compute the Retry Integrity Tag.
@@ -133,7 +134,7 @@ func (rs *retryState) validateToken(now time.Time, token, srcConnID, dstConnID [
 
 func (rs *retryState) additionalData(srcConnID []byte, addr netip.AddrPort) []byte {
 	var additional []byte
-	additional = appendUint8Bytes(additional, srcConnID)
+	additional = quicwire.AppendUint8Bytes(additional, srcConnID)
 	additional = append(additional, addr.Addr().AsSlice()...)
 	additional = binary.BigEndian.AppendUint16(additional, addr.Port())
 	return additional
@@ -141,7 +142,7 @@ func (rs *retryState) additionalData(srcConnID []byte, addr netip.AddrPort) []by
 
 func (e *Endpoint) validateInitialAddress(now time.Time, p genericLongPacket, peerAddr netip.AddrPort) (origDstConnID []byte, ok bool) {
 	// The retry token is at the start of an Initial packet's data.
-	token, n := consumeUint8Bytes(p.data)
+	token, n := quicwire.ConsumeUint8Bytes(p.data)
 	if n < 0 {
 		// We've already validated that the packet is at least 1200 bytes long,
 		// so there's no way for even a maximum size token to not fit.
@@ -196,12 +197,12 @@ func encodeRetryPacket(originalDstConnID []byte, p retryPacket) []byte {
 	// Create the pseudo-packet (including the original DCID), append the tag,
 	// and return the Retry packet.
 	var b []byte
-	b = appendUint8Bytes(b, originalDstConnID) // Original Destination Connection ID
-	start := len(b)                            // start of the Retry packet
+	b = quicwire.AppendUint8Bytes(b, originalDstConnID) // Original Destination Connection ID
+	start := len(b)                                     // start of the Retry packet
 	b = append(b, headerFormLong|fixedBit|longPacketTypeRetry)
 	b = binary.BigEndian.AppendUint32(b, quicVersion1) // Version
-	b = appendUint8Bytes(b, p.dstConnID)               // Destination Connection ID
-	b = appendUint8Bytes(b, p.srcConnID)               // Source Connection ID
+	b = quicwire.AppendUint8Bytes(b, p.dstConnID)      // Destination Connection ID
+	b = quicwire.AppendUint8Bytes(b, p.srcConnID)      // Source Connection ID
 	b = append(b, p.token...)                          // Token
 	b = retryAEAD.Seal(b, retryNonce, nil, b)          // Retry Integrity Tag
 	return b[start:]
@@ -222,7 +223,7 @@ func parseRetryPacket(b, origDstConnID []byte) (p retryPacket, ok bool) {
 	// Create the pseudo-packet consisting of the original destination connection ID
 	// followed by the Retry packet (less the integrity tag).
 	// Use this to validate the packet integrity tag.
-	pseudo := appendUint8Bytes(nil, origDstConnID)
+	pseudo := quicwire.AppendUint8Bytes(nil, origDstConnID)
 	pseudo = append(pseudo, b[:len(b)-retryIntegrityTagLength]...)
 	wantTag := retryAEAD.Seal(nil, retryNonce, nil, pseudo)
 	if !bytes.Equal(gotTag, wantTag) {

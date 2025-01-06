@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // A Stream is an ordered byte stream.
@@ -585,8 +587,8 @@ func (s *Stream) resetInternal(code uint64, userClosed bool) {
 	if s.outreset.isSet() {
 		return
 	}
-	if code > maxVarint {
-		code = maxVarint
+	if code > quicwire.MaxVarint {
+		code = quicwire.MaxVarint
 	}
 	// We could check here to see if the stream is closed and the
 	// peer has acked all the data and the FIN, but sending an

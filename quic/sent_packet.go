@@ -9,6 +9,8 @@ package quic
 import (
 	"sync"
 	"time"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // A sentPacket tracks state related to an in-flight packet we sent,
@@ -78,12 +80,12 @@ func (sent *sentPacket) appendAckElicitingFrame(frameType byte) {
 }
 
 func (sent *sentPacket) appendInt(v uint64) {
-	sent.b = appendVarint(sent.b, v)
+	sent.b = quicwire.AppendVarint(sent.b, v)
 }
 
 func (sent *sentPacket) appendOffAndSize(start int64, size int) {
-	sent.b = appendVarint(sent.b, uint64(start))
-	sent.b = appendVarint(sent.b, uint64(size))
+	sent.b = quicwire.AppendVarint(sent.b, uint64(start))
+	sent.b = quicwire.AppendVarint(sent.b, uint64(size))
 }
 
 // The next* methods read back information about frames in the packet.
@@ -95,7 +97,7 @@ func (sent *sentPacket) next() (frameType byte) {
 }
 
 func (sent *sentPacket) nextInt() uint64 {
-	v, n := consumeVarint(sent.b[sent.n:])
+	v, n := quicwire.ConsumeVarint(sent.b[sent.n:])
 	sent.n += n
 	return v
 }

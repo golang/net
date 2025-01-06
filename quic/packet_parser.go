@@ -6,6 +6,8 @@
 
 package quic
 
+import "golang.org/x/net/internal/quic/quicwire"
+
 // parseLongHeaderPacket parses a QUIC long header packet.
 //
 // It does not parse Version Negotiation packets.
@@ -34,7 +36,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 	}
 	b = b[1:]
 	// Version (32),
-	p.version, n = consumeUint32(b)
+	p.version, n = quicwire.ConsumeUint32(b)
 	if n < 0 {
 		return longPacket{}, -1
 	}
@@ -46,7 +48,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 
 	// Destination Connection ID Length (8),
 	// Destination Connection ID (0..160),
-	p.dstConnID, n = consumeUint8Bytes(b)
+	p.dstConnID, n = quicwire.ConsumeUint8Bytes(b)
 	if n < 0 || len(p.dstConnID) > maxConnIDLen {
 		return longPacket{}, -1
 	}
@@ -54,7 +56,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 
 	// Source Connection ID Length (8),
 	// Source Connection ID (0..160),
-	p.srcConnID, n = consumeUint8Bytes(b)
+	p.srcConnID, n = quicwire.ConsumeUint8Bytes(b)
 	if n < 0 || len(p.dstConnID) > maxConnIDLen {
 		return longPacket{}, -1
 	}
@@ -64,7 +66,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 	case packetTypeInitial:
 		// Token Length (i),
 		// Token (..),
-		p.extra, n = consumeVarintBytes(b)
+		p.extra, n = quicwire.ConsumeVarintBytes(b)
 		if n < 0 {
 			return longPacket{}, -1
 		}
@@ -77,7 +79,7 @@ func parseLongHeaderPacket(pkt []byte, k fixedKeys, pnumMax packetNumber) (p lon
 	}
 
 	// Length (i),
-	payLen, n := consumeVarint(b)
+	payLen, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return longPacket{}, -1
 	}
@@ -121,14 +123,14 @@ func skipLongHeaderPacket(pkt []byte) int {
 	}
 	if getPacketType(pkt) == packetTypeInitial {
 		// Token length, token.
-		_, nn := consumeVarintBytes(pkt[n:])
+		_, nn := quicwire.ConsumeVarintBytes(pkt[n:])
 		if nn < 0 {
 			return -1
 		}
 		n += nn
 	}
 	// Length, packet number, payload.
-	_, nn := consumeVarintBytes(pkt[n:])
+	_, nn := quicwire.ConsumeVarintBytes(pkt[n:])
 	if nn < 0 {
 		return -1
 	}
@@ -160,20 +162,20 @@ func parse1RTTPacket(pkt []byte, k *updatingKeyPair, dstConnIDLen int, pnumMax p
 func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, n int) {
 	b := frame[1:] // type
 
-	largestAck, n := consumeVarint(b)
+	largestAck, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
 	b = b[n:]
 
-	v, n := consumeVarintInt64(b)
+	v, n := quicwire.ConsumeVarintInt64(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
 	b = b[n:]
 	ackDelay = unscaledAckDelay(v)
 
-	ackRangeCount, n := consumeVarint(b)
+	ackRangeCount, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
@@ -181,7 +183,7 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 
 	rangeMax := packetNumber(largestAck)
 	for i := uint64(0); ; i++ {
-		rangeLen, n := consumeVarint(b)
+		rangeLen, n := quicwire.ConsumeVarint(b)
 		if n < 0 {
 			return 0, 0, -1
 		}
@@ -196,7 +198,7 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 			break
 		}
 
-		gap, n := consumeVarint(b)
+		gap, n := quicwire.ConsumeVarint(b)
 		if n < 0 {
 			return 0, 0, -1
 		}
@@ -209,17 +211,17 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 		return packetNumber(largestAck), ackDelay, len(frame) - len(b)
 	}
 
-	ect0Count, n := consumeVarint(b)
+	ect0Count, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
 	b = b[n:]
-	ect1Count, n := consumeVarint(b)
+	ect1Count, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
 	b = b[n:]
-	ecnCECount, n := consumeVarint(b)
+	ecnCECount, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
 		return 0, 0, -1
 	}
@@ -236,17 +238,17 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 
 func consumeResetStreamFrame(b []byte) (id streamID, code uint64, finalSize int64, n int) {
 	n = 1
-	idInt, nn := consumeVarint(b[n:])
+	idInt, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, 0, -1
 	}
 	n += nn
-	code, nn = consumeVarint(b[n:])
+	code, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, 0, -1
 	}
 	n += nn
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, 0, -1
 	}
@@ -257,12 +259,12 @@ func consumeResetStreamFrame(b []byte) (id streamID, code uint64, finalSize int6
 
 func consumeStopSendingFrame(b []byte) (id streamID, code uint64, n int) {
 	n = 1
-	idInt, nn := consumeVarint(b[n:])
+	idInt, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
 	n += nn
-	code, nn = consumeVarint(b[n:])
+	code, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
@@ -272,13 +274,13 @@ func consumeStopSendingFrame(b []byte) (id streamID, code uint64, n int) {
 
 func consumeCryptoFrame(b []byte) (off int64, data []byte, n int) {
 	n = 1
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, nil, -1
 	}
 	off = int64(v)
 	n += nn
-	data, nn = consumeVarintBytes(b[n:])
+	data, nn = quicwire.ConsumeVarintBytes(b[n:])
 	if nn < 0 {
 		return 0, nil, -1
 	}
@@ -288,7 +290,7 @@ func consumeCryptoFrame(b []byte) (off int64, data []byte, n int) {
 
 func consumeNewTokenFrame(b []byte) (token []byte, n int) {
 	n = 1
-	data, nn := consumeVarintBytes(b[n:])
+	data, nn := quicwire.ConsumeVarintBytes(b[n:])
 	if nn < 0 {
 		return nil, -1
 	}
@@ -302,13 +304,13 @@ func consumeNewTokenFrame(b []byte) (token []byte, n int) {
 func consumeStreamFrame(b []byte) (id streamID, off int64, fin bool, data []byte, n int) {
 	fin = (b[0] & 0x01) != 0
 	n = 1
-	idInt, nn := consumeVarint(b[n:])
+	idInt, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, false, nil, -1
 	}
 	n += nn
 	if b[0]&0x04 != 0 {
-		v, nn := consumeVarint(b[n:])
+		v, nn := quicwire.ConsumeVarint(b[n:])
 		if nn < 0 {
 			return 0, 0, false, nil, -1
 		}
@@ -316,7 +318,7 @@ func consumeStreamFrame(b []byte) (id streamID, off int64, fin bool, data []byte
 		off = int64(v)
 	}
 	if b[0]&0x02 != 0 {
-		data, nn = consumeVarintBytes(b[n:])
+		data, nn = quicwire.ConsumeVarintBytes(b[n:])
 		if nn < 0 {
 			return 0, 0, false, nil, -1
 		}
@@ -333,7 +335,7 @@ func consumeStreamFrame(b []byte) (id streamID, off int64, fin bool, data []byte
 
 func consumeMaxDataFrame(b []byte) (max int64, n int) {
 	n = 1
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, -1
 	}
@@ -343,13 +345,13 @@ func consumeMaxDataFrame(b []byte) (max int64, n int) {
 
 func consumeMaxStreamDataFrame(b []byte) (id streamID, max int64, n int) {
 	n = 1
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
 	n += nn
 	id = streamID(v)
-	v, nn = consumeVarint(b[n:])
+	v, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
@@ -368,7 +370,7 @@ func consumeMaxStreamsFrame(b []byte) (typ streamType, max int64, n int) {
 		return 0, 0, -1
 	}
 	n = 1
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
@@ -381,13 +383,13 @@ func consumeMaxStreamsFrame(b []byte) (typ streamType, max int64, n int) {
 
 func consumeStreamDataBlockedFrame(b []byte) (id streamID, max int64, n int) {
 	n = 1
-	v, nn := consumeVarint(b[n:])
+	v, nn := quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
 	n += nn
 	id = streamID(v)
-	max, nn = consumeVarintInt64(b[n:])
+	max, nn = quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
@@ -397,7 +399,7 @@ func consumeStreamDataBlockedFrame(b []byte) (id streamID, max int64, n int) {
 
 func consumeDataBlockedFrame(b []byte) (max int64, n int) {
 	n = 1
-	max, nn := consumeVarintInt64(b[n:])
+	max, nn := quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, -1
 	}
@@ -412,7 +414,7 @@ func consumeStreamsBlockedFrame(b []byte) (typ streamType, max int64, n int) {
 		typ = uniStream
 	}
 	n = 1
-	max, nn := consumeVarintInt64(b[n:])
+	max, nn := quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, 0, -1
 	}
@@ -423,12 +425,12 @@ func consumeStreamsBlockedFrame(b []byte) (typ streamType, max int64, n int) {
 func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, resetToken statelessResetToken, n int) {
 	n = 1
 	var nn int
-	seq, nn = consumeVarintInt64(b[n:])
+	seq, nn = quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, 0, nil, statelessResetToken{}, -1
 	}
 	n += nn
-	retire, nn = consumeVarintInt64(b[n:])
+	retire, nn = quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, 0, nil, statelessResetToken{}, -1
 	}
@@ -436,7 +438,7 @@ func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, re
 	if seq < retire {
 		return 0, 0, nil, statelessResetToken{}, -1
 	}
-	connID, nn = consumeVarintBytes(b[n:])
+	connID, nn = quicwire.ConsumeVarintBytes(b[n:])
 	if nn < 0 {
 		return 0, 0, nil, statelessResetToken{}, -1
 	}
@@ -455,7 +457,7 @@ func consumeNewConnectionIDFrame(b []byte) (seq, retire int64, connID []byte, re
 func consumeRetireConnectionIDFrame(b []byte) (seq int64, n int) {
 	n = 1
 	var nn int
-	seq, nn = consumeVarintInt64(b[n:])
+	seq, nn = quicwire.ConsumeVarintInt64(b[n:])
 	if nn < 0 {
 		return 0, -1
 	}
@@ -481,18 +483,18 @@ func consumeConnectionCloseTransportFrame(b []byte) (code transportError, frameT
 	n = 1
 	var nn int
 	var codeInt uint64
-	codeInt, nn = consumeVarint(b[n:])
+	codeInt, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, "", -1
 	}
 	code = transportError(codeInt)
 	n += nn
-	frameType, nn = consumeVarint(b[n:])
+	frameType, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, 0, "", -1
 	}
 	n += nn
-	reasonb, nn := consumeVarintBytes(b[n:])
+	reasonb, nn := quicwire.ConsumeVarintBytes(b[n:])
 	if nn < 0 {
 		return 0, 0, "", -1
 	}
@@ -504,12 +506,12 @@ func consumeConnectionCloseTransportFrame(b []byte) (code transportError, frameT
 func consumeConnectionCloseApplicationFrame(b []byte) (code uint64, reason string, n int) {
 	n = 1
 	var nn int
-	code, nn = consumeVarint(b[n:])
+	code, nn = quicwire.ConsumeVarint(b[n:])
 	if nn < 0 {
 		return 0, "", -1
 	}
 	n += nn
-	reasonb, nn := consumeVarintBytes(b[n:])
+	reasonb, nn := quicwire.ConsumeVarintBytes(b[n:])
 	if nn < 0 {
 		return 0, "", -1
 	}

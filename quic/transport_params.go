@@ -10,6 +10,8 @@ import (
 	"encoding/binary"
 	"net/netip"
 	"time"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // transportParameters transferred in the quic_transport_parameters TLS extension.
@@ -77,89 +79,89 @@ const (
 func marshalTransportParameters(p transportParameters) []byte {
 	var b []byte
 	if v := p.originalDstConnID; v != nil {
-		b = appendVarint(b, paramOriginalDestinationConnectionID)
-		b = appendVarintBytes(b, v)
+		b = quicwire.AppendVarint(b, paramOriginalDestinationConnectionID)
+		b = quicwire.AppendVarintBytes(b, v)
 	}
 	if v := uint64(p.maxIdleTimeout / time.Millisecond); v != 0 {
-		b = appendVarint(b, paramMaxIdleTimeout)
-		b = appendVarint(b, uint64(sizeVarint(v)))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramMaxIdleTimeout)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(v)))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.statelessResetToken; v != nil {
-		b = appendVarint(b, paramStatelessResetToken)
-		b = appendVarintBytes(b, v)
+		b = quicwire.AppendVarint(b, paramStatelessResetToken)
+		b = quicwire.AppendVarintBytes(b, v)
 	}
 	if v := p.maxUDPPayloadSize; v != defaultParamMaxUDPPayloadSize {
-		b = appendVarint(b, paramMaxUDPPayloadSize)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramMaxUDPPayloadSize)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxData; v != 0 {
-		b = appendVarint(b, paramInitialMaxData)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxData)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxStreamDataBidiLocal; v != 0 {
-		b = appendVarint(b, paramInitialMaxStreamDataBidiLocal)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxStreamDataBidiLocal)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxStreamDataBidiRemote; v != 0 {
-		b = appendVarint(b, paramInitialMaxStreamDataBidiRemote)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxStreamDataBidiRemote)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxStreamDataUni; v != 0 {
-		b = appendVarint(b, paramInitialMaxStreamDataUni)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxStreamDataUni)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxStreamsBidi; v != 0 {
-		b = appendVarint(b, paramInitialMaxStreamsBidi)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxStreamsBidi)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialMaxStreamsUni; v != 0 {
-		b = appendVarint(b, paramInitialMaxStreamsUni)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramInitialMaxStreamsUni)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.ackDelayExponent; v != defaultParamAckDelayExponent {
-		b = appendVarint(b, paramAckDelayExponent)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramAckDelayExponent)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := uint64(p.maxAckDelay / time.Millisecond); v != defaultParamMaxAckDelayMilliseconds {
-		b = appendVarint(b, paramMaxAckDelay)
-		b = appendVarint(b, uint64(sizeVarint(v)))
-		b = appendVarint(b, v)
+		b = quicwire.AppendVarint(b, paramMaxAckDelay)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(v)))
+		b = quicwire.AppendVarint(b, v)
 	}
 	if p.disableActiveMigration {
-		b = appendVarint(b, paramDisableActiveMigration)
+		b = quicwire.AppendVarint(b, paramDisableActiveMigration)
 		b = append(b, 0) // 0-length value
 	}
 	if p.preferredAddrConnID != nil {
 		b = append(b, paramPreferredAddress)
-		b = appendVarint(b, uint64(4+2+16+2+1+len(p.preferredAddrConnID)+16))
+		b = quicwire.AppendVarint(b, uint64(4+2+16+2+1+len(p.preferredAddrConnID)+16))
 		b = append(b, p.preferredAddrV4.Addr().AsSlice()...)           // 4 bytes
 		b = binary.BigEndian.AppendUint16(b, p.preferredAddrV4.Port()) // 2 bytes
 		b = append(b, p.preferredAddrV6.Addr().AsSlice()...)           // 16 bytes
 		b = binary.BigEndian.AppendUint16(b, p.preferredAddrV6.Port()) // 2 bytes
-		b = appendUint8Bytes(b, p.preferredAddrConnID)                 // 1 byte + len(conn_id)
+		b = quicwire.AppendUint8Bytes(b, p.preferredAddrConnID)        // 1 byte + len(conn_id)
 		b = append(b, p.preferredAddrResetToken...)                    // 16 bytes
 	}
 	if v := p.activeConnIDLimit; v != defaultParamActiveConnIDLimit {
-		b = appendVarint(b, paramActiveConnectionIDLimit)
-		b = appendVarint(b, uint64(sizeVarint(uint64(v))))
-		b = appendVarint(b, uint64(v))
+		b = quicwire.AppendVarint(b, paramActiveConnectionIDLimit)
+		b = quicwire.AppendVarint(b, uint64(quicwire.SizeVarint(uint64(v))))
+		b = quicwire.AppendVarint(b, uint64(v))
 	}
 	if v := p.initialSrcConnID; v != nil {
-		b = appendVarint(b, paramInitialSourceConnectionID)
-		b = appendVarintBytes(b, v)
+		b = quicwire.AppendVarint(b, paramInitialSourceConnectionID)
+		b = quicwire.AppendVarintBytes(b, v)
 	}
 	if v := p.retrySrcConnID; v != nil {
-		b = appendVarint(b, paramRetrySourceConnectionID)
-		b = appendVarintBytes(b, v)
+		b = quicwire.AppendVarint(b, paramRetrySourceConnectionID)
+		b = quicwire.AppendVarintBytes(b, v)
 	}
 	return b
 }
@@ -167,12 +169,12 @@ func marshalTransportParameters(p transportParameters) []byte {
 func unmarshalTransportParams(params []byte) (transportParameters, error) {
 	p := defaultTransportParameters()
 	for len(params) > 0 {
-		id, n := consumeVarint(params)
+		id, n := quicwire.ConsumeVarint(params)
 		if n < 0 {
 			return p, localTransportError{code: errTransportParameter}
 		}
 		params = params[n:]
-		val, n := consumeVarintBytes(params)
+		val, n := quicwire.ConsumeVarintBytes(params)
 		if n < 0 {
 			return p, localTransportError{code: errTransportParameter}
 		}
@@ -184,7 +186,7 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			n = len(val)
 		case paramMaxIdleTimeout:
 			var v uint64
-			v, n = consumeVarint(val)
+			v, n = quicwire.ConsumeVarint(val)
 			// If this is unreasonably large, consider it as no timeout to avoid
 			// time.Duration overflows.
 			if v > 1<<32 {
@@ -198,38 +200,38 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			p.statelessResetToken = val
 			n = 16
 		case paramMaxUDPPayloadSize:
-			p.maxUDPPayloadSize, n = consumeVarintInt64(val)
+			p.maxUDPPayloadSize, n = quicwire.ConsumeVarintInt64(val)
 			if p.maxUDPPayloadSize < 1200 {
 				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramInitialMaxData:
-			p.initialMaxData, n = consumeVarintInt64(val)
+			p.initialMaxData, n = quicwire.ConsumeVarintInt64(val)
 		case paramInitialMaxStreamDataBidiLocal:
-			p.initialMaxStreamDataBidiLocal, n = consumeVarintInt64(val)
+			p.initialMaxStreamDataBidiLocal, n = quicwire.ConsumeVarintInt64(val)
 		case paramInitialMaxStreamDataBidiRemote:
-			p.initialMaxStreamDataBidiRemote, n = consumeVarintInt64(val)
+			p.initialMaxStreamDataBidiRemote, n = quicwire.ConsumeVarintInt64(val)
 		case paramInitialMaxStreamDataUni:
-			p.initialMaxStreamDataUni, n = consumeVarintInt64(val)
+			p.initialMaxStreamDataUni, n = quicwire.ConsumeVarintInt64(val)
 		case paramInitialMaxStreamsBidi:
-			p.initialMaxStreamsBidi, n = consumeVarintInt64(val)
+			p.initialMaxStreamsBidi, n = quicwire.ConsumeVarintInt64(val)
 			if p.initialMaxStreamsBidi > maxStreamsLimit {
 				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramInitialMaxStreamsUni:
-			p.initialMaxStreamsUni, n = consumeVarintInt64(val)
+			p.initialMaxStreamsUni, n = quicwire.ConsumeVarintInt64(val)
 			if p.initialMaxStreamsUni > maxStreamsLimit {
 				return p, localTransportError{code: errTransportParameter}
 			}
 		case paramAckDelayExponent:
 			var v uint64
-			v, n = consumeVarint(val)
+			v, n = quicwire.ConsumeVarint(val)
 			if v > 20 {
 				return p, localTransportError{code: errTransportParameter}
 			}
 			p.ackDelayExponent = int8(v)
 		case paramMaxAckDelay:
 			var v uint64
-			v, n = consumeVarint(val)
+			v, n = quicwire.ConsumeVarint(val)
 			if v >= 1<<14 {
 				return p, localTransportError{code: errTransportParameter}
 			}
@@ -251,7 +253,7 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			)
 			val = val[16+2:]
 			var nn int
-			p.preferredAddrConnID, nn = consumeUint8Bytes(val)
+			p.preferredAddrConnID, nn = quicwire.ConsumeUint8Bytes(val)
 			if nn < 0 {
 				return p, localTransportError{code: errTransportParameter}
 			}
@@ -262,7 +264,7 @@ func unmarshalTransportParams(params []byte) (transportParameters, error) {
 			p.preferredAddrResetToken = val
 			val = nil
 		case paramActiveConnectionIDLimit:
-			p.activeConnIDLimit, n = consumeVarintInt64(val)
+			p.activeConnIDLimit, n = quicwire.ConsumeVarintInt64(val)
 			if p.activeConnIDLimit < 2 {
 				return p, localTransportError{code: errTransportParameter}
 			}

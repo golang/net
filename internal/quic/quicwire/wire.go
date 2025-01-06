@@ -4,20 +4,22 @@
 
 //go:build go1.21
 
-package quic
+// Package quicwire encodes and decode QUIC/HTTP3 wire encoding types,
+// particularly variable-length integers.
+package quicwire
 
 import "encoding/binary"
 
 const (
-	maxVarintSize = 8 // encoded size in bytes
-	maxVarint     = (1 << 62) - 1
+	MaxVarintSize = 8 // encoded size in bytes
+	MaxVarint     = (1 << 62) - 1
 )
 
-// consumeVarint parses a variable-length integer, reporting its length.
+// ConsumeVarint parses a variable-length integer, reporting its length.
 // It returns a negative length upon an error.
 //
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-16
-func consumeVarint(b []byte) (v uint64, n int) {
+func ConsumeVarint(b []byte) (v uint64, n int) {
 	if len(b) < 1 {
 		return 0, -1
 	}
@@ -45,16 +47,16 @@ func consumeVarint(b []byte) (v uint64, n int) {
 }
 
 // consumeVarintInt64 parses a variable-length integer as an int64.
-func consumeVarintInt64(b []byte) (v int64, n int) {
-	u, n := consumeVarint(b)
+func ConsumeVarintInt64(b []byte) (v int64, n int) {
+	u, n := ConsumeVarint(b)
 	// QUIC varints are 62-bits large, so this conversion can never overflow.
 	return int64(u), n
 }
 
-// appendVarint appends a variable-length integer to b.
+// AppendVarint appends a variable-length integer to b.
 //
 // https://www.rfc-editor.org/rfc/rfc9000.html#section-16
-func appendVarint(b []byte, v uint64) []byte {
+func AppendVarint(b []byte, v uint64) []byte {
 	switch {
 	case v <= 63:
 		return append(b, byte(v))
@@ -69,8 +71,8 @@ func appendVarint(b []byte, v uint64) []byte {
 	}
 }
 
-// sizeVarint returns the size of the variable-length integer encoding of f.
-func sizeVarint(v uint64) int {
+// SizeVarint returns the size of the variable-length integer encoding of f.
+func SizeVarint(v uint64) int {
 	switch {
 	case v <= 63:
 		return 1
@@ -85,28 +87,28 @@ func sizeVarint(v uint64) int {
 	}
 }
 
-// consumeUint32 parses a 32-bit fixed-length, big-endian integer, reporting its length.
+// ConsumeUint32 parses a 32-bit fixed-length, big-endian integer, reporting its length.
 // It returns a negative length upon an error.
-func consumeUint32(b []byte) (uint32, int) {
+func ConsumeUint32(b []byte) (uint32, int) {
 	if len(b) < 4 {
 		return 0, -1
 	}
 	return binary.BigEndian.Uint32(b), 4
 }
 
-// consumeUint64 parses a 64-bit fixed-length, big-endian integer, reporting its length.
+// ConsumeUint64 parses a 64-bit fixed-length, big-endian integer, reporting its length.
 // It returns a negative length upon an error.
-func consumeUint64(b []byte) (uint64, int) {
+func ConsumeUint64(b []byte) (uint64, int) {
 	if len(b) < 8 {
 		return 0, -1
 	}
 	return binary.BigEndian.Uint64(b), 8
 }
 
-// consumeUint8Bytes parses a sequence of bytes prefixed with an 8-bit length,
+// ConsumeUint8Bytes parses a sequence of bytes prefixed with an 8-bit length,
 // reporting the total number of bytes consumed.
 // It returns a negative length upon an error.
-func consumeUint8Bytes(b []byte) ([]byte, int) {
+func ConsumeUint8Bytes(b []byte) ([]byte, int) {
 	if len(b) < 1 {
 		return nil, -1
 	}
@@ -118,8 +120,8 @@ func consumeUint8Bytes(b []byte) ([]byte, int) {
 	return b[n:][:size], size + n
 }
 
-// appendUint8Bytes appends a sequence of bytes prefixed by an 8-bit length.
-func appendUint8Bytes(b, v []byte) []byte {
+// AppendUint8Bytes appends a sequence of bytes prefixed by an 8-bit length.
+func AppendUint8Bytes(b, v []byte) []byte {
 	if len(v) > 0xff {
 		panic("uint8-prefixed bytes too large")
 	}
@@ -128,11 +130,11 @@ func appendUint8Bytes(b, v []byte) []byte {
 	return b
 }
 
-// consumeVarintBytes parses a sequence of bytes preceded by a variable-length integer length,
+// ConsumeVarintBytes parses a sequence of bytes preceded by a variable-length integer length,
 // reporting the total number of bytes consumed.
 // It returns a negative length upon an error.
-func consumeVarintBytes(b []byte) ([]byte, int) {
-	size, n := consumeVarint(b)
+func ConsumeVarintBytes(b []byte) ([]byte, int) {
+	size, n := ConsumeVarint(b)
 	if n < 0 {
 		return nil, -1
 	}
@@ -142,9 +144,9 @@ func consumeVarintBytes(b []byte) ([]byte, int) {
 	return b[n:][:size], int(size) + n
 }
 
-// appendVarintBytes appends a sequence of bytes prefixed by a variable-length integer length.
-func appendVarintBytes(b, v []byte) []byte {
-	b = appendVarint(b, uint64(len(v)))
+// AppendVarintBytes appends a sequence of bytes prefixed by a variable-length integer length.
+func AppendVarintBytes(b, v []byte) []byte {
+	b = AppendVarint(b, uint64(len(v)))
 	b = append(b, v...)
 	return b
 }

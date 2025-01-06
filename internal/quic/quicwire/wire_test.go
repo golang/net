@@ -4,7 +4,7 @@
 
 //go:build go1.21
 
-package quic
+package quicwire
 
 import (
 	"bytes"
@@ -32,22 +32,22 @@ func TestConsumeVarint(t *testing.T) {
 		{[]byte{0x25}, 37, 1},
 		{[]byte{0x40, 0x25}, 37, 2},
 	} {
-		got, gotLen := consumeVarint(test.b)
+		got, gotLen := ConsumeVarint(test.b)
 		if got != test.want || gotLen != test.wantLen {
-			t.Errorf("consumeVarint(%x) = %v, %v; want %v, %v", test.b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeVarint(%x) = %v, %v; want %v, %v", test.b, got, gotLen, test.want, test.wantLen)
 		}
 		// Extra data in the buffer is ignored.
 		b := append(test.b, 0)
-		got, gotLen = consumeVarint(b)
+		got, gotLen = ConsumeVarint(b)
 		if got != test.want || gotLen != test.wantLen {
-			t.Errorf("consumeVarint(%x) = %v, %v; want %v, %v", b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeVarint(%x) = %v, %v; want %v, %v", b, got, gotLen, test.want, test.wantLen)
 		}
 		// Short buffer results in an error.
 		for i := 1; i <= len(test.b); i++ {
 			b = test.b[:len(test.b)-i]
-			got, gotLen = consumeVarint(b)
+			got, gotLen = ConsumeVarint(b)
 			if got != 0 || gotLen >= 0 {
-				t.Errorf("consumeVarint(%x) = %v, %v; want 0, -1", b, got, gotLen)
+				t.Errorf("ConsumeVarint(%x) = %v, %v; want 0, -1", b, got, gotLen)
 			}
 		}
 	}
@@ -69,11 +69,11 @@ func TestAppendVarint(t *testing.T) {
 		{15293, []byte{0x7b, 0xbd}},
 		{37, []byte{0x25}},
 	} {
-		got := appendVarint([]byte{}, test.v)
+		got := AppendVarint([]byte{}, test.v)
 		if !bytes.Equal(got, test.want) {
 			t.Errorf("AppendVarint(nil, %v) = %x, want %x", test.v, got, test.want)
 		}
-		if gotLen, wantLen := sizeVarint(test.v), len(got); gotLen != wantLen {
+		if gotLen, wantLen := SizeVarint(test.v), len(got); gotLen != wantLen {
 			t.Errorf("SizeVarint(%v) = %v, want %v", test.v, gotLen, wantLen)
 		}
 	}
@@ -88,8 +88,8 @@ func TestConsumeUint32(t *testing.T) {
 		{[]byte{0x01, 0x02, 0x03, 0x04}, 0x01020304, 4},
 		{[]byte{0x01, 0x02, 0x03}, 0, -1},
 	} {
-		if got, n := consumeUint32(test.b); got != test.want || n != test.wantLen {
-			t.Errorf("consumeUint32(%x) = %v, %v; want %v, %v", test.b, got, n, test.want, test.wantLen)
+		if got, n := ConsumeUint32(test.b); got != test.want || n != test.wantLen {
+			t.Errorf("ConsumeUint32(%x) = %v, %v; want %v, %v", test.b, got, n, test.want, test.wantLen)
 		}
 	}
 }
@@ -103,8 +103,8 @@ func TestConsumeUint64(t *testing.T) {
 		{[]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}, 0x0102030405060708, 8},
 		{[]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}, 0, -1},
 	} {
-		if got, n := consumeUint64(test.b); got != test.want || n != test.wantLen {
-			t.Errorf("consumeUint32(%x) = %v, %v; want %v, %v", test.b, got, n, test.want, test.wantLen)
+		if got, n := ConsumeUint64(test.b); got != test.want || n != test.wantLen {
+			t.Errorf("ConsumeUint32(%x) = %v, %v; want %v, %v", test.b, got, n, test.want, test.wantLen)
 		}
 	}
 }
@@ -120,22 +120,22 @@ func TestConsumeVarintBytes(t *testing.T) {
 		{[]byte{0x04, 0x01, 0x02, 0x03, 0x04}, []byte{0x01, 0x02, 0x03, 0x04}, 5},
 		{[]byte{0x40, 0x04, 0x01, 0x02, 0x03, 0x04}, []byte{0x01, 0x02, 0x03, 0x04}, 6},
 	} {
-		got, gotLen := consumeVarintBytes(test.b)
+		got, gotLen := ConsumeVarintBytes(test.b)
 		if !bytes.Equal(got, test.want) || gotLen != test.wantLen {
-			t.Errorf("consumeVarintBytes(%x) = {%x}, %v; want {%x}, %v", test.b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeVarintBytes(%x) = {%x}, %v; want {%x}, %v", test.b, got, gotLen, test.want, test.wantLen)
 		}
 		// Extra data in the buffer is ignored.
 		b := append(test.b, 0)
-		got, gotLen = consumeVarintBytes(b)
+		got, gotLen = ConsumeVarintBytes(b)
 		if !bytes.Equal(got, test.want) || gotLen != test.wantLen {
-			t.Errorf("consumeVarintBytes(%x) = {%x}, %v; want {%x}, %v", b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeVarintBytes(%x) = {%x}, %v; want {%x}, %v", b, got, gotLen, test.want, test.wantLen)
 		}
 		// Short buffer results in an error.
 		for i := 1; i <= len(test.b); i++ {
 			b = test.b[:len(test.b)-i]
-			got, gotLen := consumeVarintBytes(b)
+			got, gotLen := ConsumeVarintBytes(b)
 			if len(got) > 0 || gotLen > 0 {
-				t.Errorf("consumeVarintBytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
+				t.Errorf("ConsumeVarintBytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
 			}
 		}
 
@@ -147,9 +147,9 @@ func TestConsumeVarintBytesErrors(t *testing.T) {
 		{0x01},
 		{0x40, 0x01},
 	} {
-		got, gotLen := consumeVarintBytes(b)
+		got, gotLen := ConsumeVarintBytes(b)
 		if len(got) > 0 || gotLen > 0 {
-			t.Errorf("consumeVarintBytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
+			t.Errorf("ConsumeVarintBytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
 		}
 	}
 }
@@ -164,22 +164,22 @@ func TestConsumeUint8Bytes(t *testing.T) {
 		{[]byte{0x01, 0x00}, []byte{0x00}, 2},
 		{[]byte{0x04, 0x01, 0x02, 0x03, 0x04}, []byte{0x01, 0x02, 0x03, 0x04}, 5},
 	} {
-		got, gotLen := consumeUint8Bytes(test.b)
+		got, gotLen := ConsumeUint8Bytes(test.b)
 		if !bytes.Equal(got, test.want) || gotLen != test.wantLen {
-			t.Errorf("consumeUint8Bytes(%x) = {%x}, %v; want {%x}, %v", test.b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeUint8Bytes(%x) = {%x}, %v; want {%x}, %v", test.b, got, gotLen, test.want, test.wantLen)
 		}
 		// Extra data in the buffer is ignored.
 		b := append(test.b, 0)
-		got, gotLen = consumeUint8Bytes(b)
+		got, gotLen = ConsumeUint8Bytes(b)
 		if !bytes.Equal(got, test.want) || gotLen != test.wantLen {
-			t.Errorf("consumeUint8Bytes(%x) = {%x}, %v; want {%x}, %v", b, got, gotLen, test.want, test.wantLen)
+			t.Errorf("ConsumeUint8Bytes(%x) = {%x}, %v; want {%x}, %v", b, got, gotLen, test.want, test.wantLen)
 		}
 		// Short buffer results in an error.
 		for i := 1; i <= len(test.b); i++ {
 			b = test.b[:len(test.b)-i]
-			got, gotLen := consumeUint8Bytes(b)
+			got, gotLen := ConsumeUint8Bytes(b)
 			if len(got) > 0 || gotLen > 0 {
-				t.Errorf("consumeUint8Bytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
+				t.Errorf("ConsumeUint8Bytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
 			}
 		}
 
@@ -191,35 +191,35 @@ func TestConsumeUint8BytesErrors(t *testing.T) {
 		{0x01},
 		{0x04, 0x01, 0x02, 0x03},
 	} {
-		got, gotLen := consumeUint8Bytes(b)
+		got, gotLen := ConsumeUint8Bytes(b)
 		if len(got) > 0 || gotLen > 0 {
-			t.Errorf("consumeUint8Bytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
+			t.Errorf("ConsumeUint8Bytes(%x) = {%x}, %v; want {}, -1", b, got, gotLen)
 		}
 	}
 }
 
 func TestAppendUint8Bytes(t *testing.T) {
 	var got []byte
-	got = appendUint8Bytes(got, []byte{})
-	got = appendUint8Bytes(got, []byte{0xaa, 0xbb})
+	got = AppendUint8Bytes(got, []byte{})
+	got = AppendUint8Bytes(got, []byte{0xaa, 0xbb})
 	want := []byte{
 		0x00,
 		0x02, 0xaa, 0xbb,
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("appendUint8Bytes {}, {aabb} = {%x}; want {%x}", got, want)
+		t.Errorf("AppendUint8Bytes {}, {aabb} = {%x}; want {%x}", got, want)
 	}
 }
 
 func TestAppendVarintBytes(t *testing.T) {
 	var got []byte
-	got = appendVarintBytes(got, []byte{})
-	got = appendVarintBytes(got, []byte{0xaa, 0xbb})
+	got = AppendVarintBytes(got, []byte{})
+	got = AppendVarintBytes(got, []byte{0xaa, 0xbb})
 	want := []byte{
 		0x00,
 		0x02, 0xaa, 0xbb,
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("appendVarintBytes {}, {aabb} = {%x}; want {%x}", got, want)
+		t.Errorf("AppendVarintBytes {}, {aabb} = {%x}; want {%x}", got, want)
 	}
 }

@@ -15,6 +15,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
@@ -1522,10 +1524,10 @@ func newRemoteStream(t *testing.T, tc *testConn, styp streamType) *Stream {
 func permissiveTransportParameters(p *transportParameters) {
 	p.initialMaxStreamsBidi = maxStreamsLimit
 	p.initialMaxStreamsUni = maxStreamsLimit
-	p.initialMaxData = maxVarint
-	p.initialMaxStreamDataBidiRemote = maxVarint
-	p.initialMaxStreamDataBidiLocal = maxVarint
-	p.initialMaxStreamDataUni = maxVarint
+	p.initialMaxData = quicwire.MaxVarint
+	p.initialMaxStreamDataBidiRemote = quicwire.MaxVarint
+	p.initialMaxStreamDataBidiLocal = quicwire.MaxVarint
+	p.initialMaxStreamDataUni = quicwire.MaxVarint
 }
 
 func makeTestData(n int) []byte {

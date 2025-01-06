@@ -9,6 +9,8 @@ package quic
 import (
 	"encoding/binary"
 	"fmt"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // packetType is a QUIC packet type.
@@ -196,10 +198,10 @@ func parseVersionNegotiation(pkt []byte) (dstConnID, srcConnID, versions []byte)
 // appendVersionNegotiation appends a Version Negotiation packet to pkt,
 // returning the result.
 func appendVersionNegotiation(pkt, dstConnID, srcConnID []byte, versions ...uint32) []byte {
-	pkt = append(pkt, headerFormLong|fixedBit) // header byte
-	pkt = append(pkt, 0, 0, 0, 0)              // Version (0 for Version Negotiation)
-	pkt = appendUint8Bytes(pkt, dstConnID)     // Destination Connection ID
-	pkt = appendUint8Bytes(pkt, srcConnID)     // Source Connection ID
+	pkt = append(pkt, headerFormLong|fixedBit)      // header byte
+	pkt = append(pkt, 0, 0, 0, 0)                   // Version (0 for Version Negotiation)
+	pkt = quicwire.AppendUint8Bytes(pkt, dstConnID) // Destination Connection ID
+	pkt = quicwire.AppendUint8Bytes(pkt, srcConnID) // Source Connection ID
 	for _, v := range versions {
 		pkt = binary.BigEndian.AppendUint32(pkt, v) // Supported Version
 	}
@@ -243,21 +245,21 @@ func parseGenericLongHeaderPacket(b []byte) (p genericLongPacket, ok bool) {
 	b = b[1:]
 	// Version (32),
 	var n int
-	p.version, n = consumeUint32(b)
+	p.version, n = quicwire.ConsumeUint32(b)
 	if n < 0 {
 		return genericLongPacket{}, false
 	}
 	b = b[n:]
 	// Destination Connection ID Length (8),
 	// Destination Connection ID (0..2048),
-	p.dstConnID, n = consumeUint8Bytes(b)
+	p.dstConnID, n = quicwire.ConsumeUint8Bytes(b)
 	if n < 0 || len(p.dstConnID) > 2048/8 {
 		return genericLongPacket{}, false
 	}
 	b = b[n:]
 	// Source Connection ID Length (8),
 	// Source Connection ID (0..2048),
-	p.srcConnID, n = consumeUint8Bytes(b)
+	p.srcConnID, n = quicwire.ConsumeUint8Bytes(b)
 	if n < 0 || len(p.dstConnID) > 2048/8 {
 		return genericLongPacket{}, false
 	}

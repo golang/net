@@ -8,6 +8,8 @@ package quic
 
 import (
 	"encoding/binary"
+
+	"golang.org/x/net/internal/quic/quicwire"
 )
 
 // A packetWriter constructs QUIC datagrams.
@@ -74,7 +76,7 @@ func (w *packetWriter) startProtectedLongHeaderPacket(pnumMaxAcked packetNumber,
 	hdrSize += 1 + len(p.srcConnID)
 	switch p.ptype {
 	case packetTypeInitial:
-		hdrSize += sizeVarint(uint64(len(p.extra))) + len(p.extra)
+		hdrSize += quicwire.SizeVarint(uint64(len(p.extra))) + len(p.extra)
 	}
 	hdrSize += 2 // length, hardcoded to a 2-byte varint
 	pnumOff := len(w.b) + hdrSize
@@ -127,11 +129,11 @@ func (w *packetWriter) finishProtectedLongHeaderPacket(pnumMaxAcked packetNumber
 	}
 	hdr = append(hdr, headerFormLong|fixedBit|typeBits|byte(pnumLen-1))
 	hdr = binary.BigEndian.AppendUint32(hdr, p.version)
-	hdr = appendUint8Bytes(hdr, p.dstConnID)
-	hdr = appendUint8Bytes(hdr, p.srcConnID)
+	hdr = quicwire.AppendUint8Bytes(hdr, p.dstConnID)
+	hdr = quicwire.AppendUint8Bytes(hdr, p.srcConnID)
 	switch p.ptype {
 	case packetTypeInitial:
-		hdr = appendVarintBytes(hdr, p.extra) // token
+		hdr = quicwire.AppendVarintBytes(hdr, p.extra) // token
 	}
 
 	// Packet length, always encoded as a 2-byte varint.
@@ -270,26 +272,26 @@ func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscale
 		largest    = uint64(seen.max())
 		firstRange = uint64(seen[len(seen)-1].size() - 1)
 	)
-	if w.avail() < 1+sizeVarint(largest)+sizeVarint(uint64(delay))+1+sizeVarint(firstRange) {
+	if w.avail() < 1+quicwire.SizeVarint(largest)+quicwire.SizeVarint(uint64(delay))+1+quicwire.SizeVarint(firstRange) {
 		return false
 	}
 	w.b = append(w.b, frameTypeAck)
-	w.b = appendVarint(w.b, largest)
-	w.b = appendVarint(w.b, uint64(delay))
+	w.b = quicwire.AppendVarint(w.b, largest)
+	w.b = quicwire.AppendVarint(w.b, uint64(delay))
 	// The range count is technically a varint, but we'll reserve a single byte for it
 	// and never add more than 62 ranges (the maximum varint that fits in a byte).
 	rangeCountOff := len(w.b)
 	w.b = append(w.b, 0)
-	w.b = appendVarint(w.b, firstRange)
+	w.b = quicwire.AppendVarint(w.b, firstRange)
 	rangeCount := byte(0)
 	for i := len(seen) - 2; i >= 0; i-- {
 		gap := uint64(seen[i+1].start - seen[i].end - 1)
 		size := uint64(seen[i].size() - 1)
-		if w.avail() < sizeVarint(gap)+sizeVarint(size) || rangeCount > 62 {
+		if w.avail() < quicwire.SizeVarint(gap)+quicwire.SizeVarint(size) || rangeCount > 62 {
 			break
 		}
-		w.b = appendVarint(w.b, gap)
-		w.b = appendVarint(w.b, size)
+		w.b = quicwire.AppendVarint(w.b, gap)
+		w.b = quicwire.AppendVarint(w.b, size)
 		rangeCount++
 	}
 	w.b[rangeCountOff] = rangeCount
@@ -299,34 +301,34 @@ func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscale
 }
 
 func (w *packetWriter) appendNewTokenFrame(token []byte) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(len(token)))+len(token) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(len(token)))+len(token) {
 		return false
 	}
 	w.b = append(w.b, frameTypeNewToken)
-	w.b = appendVarintBytes(w.b, token)
+	w.b = quicwire.AppendVarintBytes(w.b, token)
 	return true
 }
 
 func (w *packetWriter) appendResetStreamFrame(id streamID, code uint64, finalSize int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(id))+sizeVarint(code)+sizeVarint(uint64(finalSize)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(id))+quicwire.SizeVarint(code)+quicwire.SizeVarint(uint64(finalSize)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeResetStream)
-	w.b = appendVarint(w.b, uint64(id))
-	w.b = appendVarint(w.b, code)
-	w.b = appendVarint(w.b, uint64(finalSize))
+	w.b = quicwire.AppendVarint(w.b, uint64(id))
+	w.b = quicwire.AppendVarint(w.b, code)
+	w.b = quicwire.AppendVarint(w.b, uint64(finalSize))
 	w.sent.appendAckElicitingFrame(frameTypeResetStream)
 	w.sent.appendInt(uint64(id))
 	return true
 }
 
 func (w *packetWriter) appendStopSendingFrame(id streamID, code uint64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(id))+sizeVarint(code) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(id))+quicwire.SizeVarint(code) {
 		return false
 	}
 	w.b = append(w.b, frameTypeStopSending)
-	w.b = appendVarint(w.b, uint64(id))
-	w.b = appendVarint(w.b, code)
+	w.b = quicwire.AppendVarint(w.b, uint64(id))
+	w.b = quicwire.AppendVarint(w.b, code)
 	w.sent.appendAckElicitingFrame(frameTypeStopSending)
 	w.sent.appendInt(uint64(id))
 	return true
@@ -337,9 +339,9 @@ func (w *packetWriter) appendStopSendingFrame(id streamID, code uint64) (added b
 // The returned []byte may be smaller than size if the packet cannot hold all the data.
 func (w *packetWriter) appendCryptoFrame(off int64, size int) (_ []byte, added bool) {
 	max := w.avail()
-	max -= 1                        // frame type
-	max -= sizeVarint(uint64(off))  // offset
-	max -= sizeVarint(uint64(size)) // maximum length
+	max -= 1                                 // frame type
+	max -= quicwire.SizeVarint(uint64(off))  // offset
+	max -= quicwire.SizeVarint(uint64(size)) // maximum length
 	if max <= 0 {
 		return nil, false
 	}
@@ -347,8 +349,8 @@ func (w *packetWriter) appendCryptoFrame(off int64, size int) (_ []byte, added b
 		size = max
 	}
 	w.b = append(w.b, frameTypeCrypto)
-	w.b = appendVarint(w.b, uint64(off))
-	w.b = appendVarint(w.b, uint64(size))
+	w.b = quicwire.AppendVarint(w.b, uint64(off))
+	w.b = quicwire.AppendVarint(w.b, uint64(size))
 	start := len(w.b)
 	w.b = w.b[:start+size]
 	w.sent.appendAckElicitingFrame(frameTypeCrypto)
@@ -363,12 +365,12 @@ func (w *packetWriter) appendStreamFrame(id streamID, off int64, size int, fin b
 	typ := uint8(frameTypeStreamBase | streamLenBit)
 	max := w.avail()
 	max -= 1 // frame type
-	max -= sizeVarint(uint64(id))
+	max -= quicwire.SizeVarint(uint64(id))
 	if off != 0 {
-		max -= sizeVarint(uint64(off))
+		max -= quicwire.SizeVarint(uint64(off))
 		typ |= streamOffBit
 	}
-	max -= sizeVarint(uint64(size)) // maximum length
+	max -= quicwire.SizeVarint(uint64(size)) // maximum length
 	if max < 0 || (max == 0 && size > 0) {
 		return nil, false
 	}
@@ -378,11 +380,11 @@ func (w *packetWriter) appendStreamFrame(id streamID, off int64, size int, fin b
 		typ |= streamFinBit
 	}
 	w.b = append(w.b, typ)
-	w.b = appendVarint(w.b, uint64(id))
+	w.b = quicwire.AppendVarint(w.b, uint64(id))
 	if off != 0 {
-		w.b = appendVarint(w.b, uint64(off))
+		w.b = quicwire.AppendVarint(w.b, uint64(off))
 	}
-	w.b = appendVarint(w.b, uint64(size))
+	w.b = quicwire.AppendVarint(w.b, uint64(size))
 	start := len(w.b)
 	w.b = w.b[:start+size]
 	w.sent.appendAckElicitingFrame(typ & (frameTypeStreamBase | streamFinBit))
@@ -392,29 +394,29 @@ func (w *packetWriter) appendStreamFrame(id streamID, off int64, size int, fin b
 }
 
 func (w *packetWriter) appendMaxDataFrame(max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeMaxData)
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(frameTypeMaxData)
 	return true
 }
 
 func (w *packetWriter) appendMaxStreamDataFrame(id streamID, max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(id))+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(id))+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeMaxStreamData)
-	w.b = appendVarint(w.b, uint64(id))
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(id))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(frameTypeMaxStreamData)
 	w.sent.appendInt(uint64(id))
 	return true
 }
 
 func (w *packetWriter) appendMaxStreamsFrame(streamType streamType, max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	var typ byte
@@ -424,35 +426,35 @@ func (w *packetWriter) appendMaxStreamsFrame(streamType streamType, max int64) (
 		typ = frameTypeMaxStreamsUni
 	}
 	w.b = append(w.b, typ)
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(typ)
 	return true
 }
 
 func (w *packetWriter) appendDataBlockedFrame(max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeDataBlocked)
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(frameTypeDataBlocked)
 	return true
 }
 
 func (w *packetWriter) appendStreamDataBlockedFrame(id streamID, max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(id))+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(id))+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeStreamDataBlocked)
-	w.b = appendVarint(w.b, uint64(id))
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(id))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(frameTypeStreamDataBlocked)
 	w.sent.appendInt(uint64(id))
 	return true
 }
 
 func (w *packetWriter) appendStreamsBlockedFrame(typ streamType, max int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(max)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(max)) {
 		return false
 	}
 	var ftype byte
@@ -462,19 +464,19 @@ func (w *packetWriter) appendStreamsBlockedFrame(typ streamType, max int64) (add
 		ftype = frameTypeStreamsBlockedUni
 	}
 	w.b = append(w.b, ftype)
-	w.b = appendVarint(w.b, uint64(max))
+	w.b = quicwire.AppendVarint(w.b, uint64(max))
 	w.sent.appendAckElicitingFrame(ftype)
 	return true
 }
 
 func (w *packetWriter) appendNewConnectionIDFrame(seq, retirePriorTo int64, connID []byte, token [16]byte) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(seq))+sizeVarint(uint64(retirePriorTo))+1+len(connID)+len(token) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(seq))+quicwire.SizeVarint(uint64(retirePriorTo))+1+len(connID)+len(token) {
 		return false
 	}
 	w.b = append(w.b, frameTypeNewConnectionID)
-	w.b = appendVarint(w.b, uint64(seq))
-	w.b = appendVarint(w.b, uint64(retirePriorTo))
-	w.b = appendUint8Bytes(w.b, connID)
+	w.b = quicwire.AppendVarint(w.b, uint64(seq))
+	w.b = quicwire.AppendVarint(w.b, uint64(retirePriorTo))
+	w.b = quicwire.AppendUint8Bytes(w.b, connID)
 	w.b = append(w.b, token[:]...)
 	w.sent.appendAckElicitingFrame(frameTypeNewConnectionID)
 	w.sent.appendInt(uint64(seq))
@@ -482,11 +484,11 @@ func (w *packetWriter) appendNewConnectionIDFrame(seq, retirePriorTo int64, conn
 }
 
 func (w *packetWriter) appendRetireConnectionIDFrame(seq int64) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(seq)) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(seq)) {
 		return false
 	}
 	w.b = append(w.b, frameTypeRetireConnectionID)
-	w.b = appendVarint(w.b, uint64(seq))
+	w.b = quicwire.AppendVarint(w.b, uint64(seq))
 	w.sent.appendAckElicitingFrame(frameTypeRetireConnectionID)
 	w.sent.appendInt(uint64(seq))
 	return true
@@ -515,13 +517,13 @@ func (w *packetWriter) appendPathResponseFrame(data pathChallengeData) (added bo
 // appendConnectionCloseTransportFrame appends a CONNECTION_CLOSE frame
 // carrying a transport error code.
 func (w *packetWriter) appendConnectionCloseTransportFrame(code transportError, frameType uint64, reason string) (added bool) {
-	if w.avail() < 1+sizeVarint(uint64(code))+sizeVarint(frameType)+sizeVarint(uint64(len(reason)))+len(reason) {
+	if w.avail() < 1+quicwire.SizeVarint(uint64(code))+quicwire.SizeVarint(frameType)+quicwire.SizeVarint(uint64(len(reason)))+len(reason) {
 		return false
 	}
 	w.b = append(w.b, frameTypeConnectionCloseTransport)
-	w.b = appendVarint(w.b, uint64(code))
-	w.b = appendVarint(w.b, frameType)
-	w.b = appendVarintBytes(w.b, []byte(reason))
+	w.b = quicwire.AppendVarint(w.b, uint64(code))
+	w.b = quicwire.AppendVarint(w.b, frameType)
+	w.b = quicwire.AppendVarintBytes(w.b, []byte(reason))
 	// We don't record CONNECTION_CLOSE frames in w.sent, since they are never acked or
 	// detected as lost.
 	return true
@@ -530,12 +532,12 @@ func (w *packetWriter) appendConnectionCloseTransportFrame(code transportError, 
 // appendConnectionCloseApplicationFrame appends a CONNECTION_CLOSE frame
 // carrying an application protocol error code.
 func (w *packetWriter) appendConnectionCloseApplicationFrame(code uint64, reason string) (added bool) {
-	if w.avail() < 1+sizeVarint(code)+sizeVarint(uint64(len(reason)))+len(reason) {
+	if w.avail() < 1+quicwire.SizeVarint(code)+quicwire.SizeVarint(uint64(len(reason)))+len(reason) {
 		return false
 	}
 	w.b = append(w.b, frameTypeConnectionCloseApplication)
-	w.b = appendVarint(w.b, code)
-	w.b = appendVarintBytes(w.b, []byte(reason))
+	w.b = quicwire.AppendVarint(w.b, code)
+	w.b = quicwire.AppendVarintBytes(w.b, []byte(reason))
 	// We don't record CONNECTION_CLOSE frames in w.sent, since they are never acked or
 	// detected as lost.
 	return true

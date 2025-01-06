@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/internal/quic/quicwire"
 	"golang.org/x/net/quic/qlog"
 )
 
@@ -736,7 +737,7 @@ func TestFrameDecodeErrors(t *testing.T) {
 		name: "MAX_STREAMS with too many streams",
 		b: func() []byte {
 			// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.11-5.2.1
-			return appendVarint([]byte{frameTypeMaxStreamsBidi}, (1<<60)+1)
+			return quicwire.AppendVarint([]byte{frameTypeMaxStreamsBidi}, (1<<60)+1)
 		}(),
 	}, {
 		name: "NEW_CONNECTION_ID too small",
