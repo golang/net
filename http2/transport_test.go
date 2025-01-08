@@ -5872,6 +5872,9 @@ func TestExtendedConnectClientWithServerSupport(t *testing.T) {
 	pwDone := make(chan struct{})
 	req, _ := http.NewRequest("CONNECT", ts.URL, pr)
 	req.Header.Set(":protocol", "extended-connect")
+	req.Header.Set("X-A", "A")
+	req.Header.Set("X-B", "B")
+	req.Header.Set("X-C", "C")
 	go func() {
 		pw.Write([]byte("hello, extended connect"))
 		pw.Close()
@@ -5905,6 +5908,9 @@ func TestExtendedConnectClientWithoutServerSupport(t *testing.T) {
 	pwDone := make(chan struct{})
 	req, _ := http.NewRequest("CONNECT", ts.URL, pr)
 	req.Header.Set(":protocol", "extended-connect")
+	req.Header.Set("X-A", "A")
+	req.Header.Set("X-B", "B")
+	req.Header.Set("X-C", "C")
 	go func() {
 		pw.Write([]byte("hello, extended connect"))
 		pw.Close()

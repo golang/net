@@ -2088,10 +2088,6 @@ func validateHeaders(hdrs http.Header) string {
 
 var errNilRequestURL = errors.New("http2: Request.URI is nil")
 
-func isNormalConnect(req *http.Request) bool {
-	return req.Method == "CONNECT" && req.Header.Get(":protocol") == ""
-}
-
 // requires cc.wmu be held.
 func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) ([]byte, error) {
 	cc.hbuf.Reset()
@@ -2111,8 +2107,17 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		return nil, errors.New("http2: invalid Host header")
 	}
 
+	// isNormalConnect is true if this is a non-extended CONNECT request.
+	isNormalConnect := false
+	protocol := req.Header.Get(":protocol")
+	if req.Method == "CONNECT" && protocol == "" {
+		isNormalConnect = true
+	} else if protocol != "" && req.Method != "CONNECT" {
+		return nil, errors.New("http2: invalid :protocol header in non-CONNECT request")
+	}
+
 	var path string
-	if !isNormalConnect(req) {
+	if !isNormalConnect {
 		path = req.URL.RequestURI()
 		if !validPseudoPath(path) {
 			orig := path
@@ -2149,9 +2154,12 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 			m = http.MethodGet
 		}
 		f(":method", m)
-		if !isNormalConnect(req) {
+		if !isNormalConnect {
 			f(":path", path)
 			f(":scheme", req.URL.Scheme)
+		}
+		if protocol != "" {
+			f(":protocol", protocol)
 		}
 		if trailers != "" {
 			f("trailer", trailers)
@@ -2208,6 +2216,9 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 						f("cookie", v)
 					}
 				}
+				continue
+			} else if k == ":protocol" {
+				// :protocol pseudo-header was already sent above.
 				continue
 			}
 
