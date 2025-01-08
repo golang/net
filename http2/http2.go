@@ -34,11 +34,19 @@ import (
 )
 
 var (
-	VerboseLogs                    bool
-	logFrameWrites                 bool
-	logFrameReads                  bool
-	inTests                        bool
-	disableExtendedConnectProtocol bool
+	VerboseLogs    bool
+	logFrameWrites bool
+	logFrameReads  bool
+	inTests        bool
+
+	// Enabling extended CONNECT by causes browsers to attempt to use
+	// WebSockets-over-HTTP/2. This results in problems when the server's websocket
+	// package doesn't support extended CONNECT.
+	//
+	// Disable extended CONNECT by default for now.
+	//
+	// Issue #71128.
+	disableExtendedConnectProtocol = true
 )
 
 func init() {
@@ -51,8 +59,8 @@ func init() {
 		logFrameWrites = true
 		logFrameReads = true
 	}
-	if strings.Contains(e, "http2xconnect=0") {
-		disableExtendedConnectProtocol = true
+	if strings.Contains(e, "http2xconnect=1") {
+		disableExtendedConnectProtocol = false
 	}
 }
 

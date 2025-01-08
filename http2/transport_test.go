@@ -5824,7 +5824,7 @@ func TestTransportTLSNextProtoConnImmediateFailureUnused(t *testing.T) {
 }
 
 func TestExtendedConnectClientWithServerSupport(t *testing.T) {
-	disableExtendedConnectProtocol = false
+	setForTest(t, &disableExtendedConnectProtocol, false)
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(":protocol") != "extended-connect" {
 			t.Fatalf("unexpected :protocol header received")
@@ -5860,7 +5860,7 @@ func TestExtendedConnectClientWithServerSupport(t *testing.T) {
 }
 
 func TestExtendedConnectClientWithoutServerSupport(t *testing.T) {
-	disableExtendedConnectProtocol = true
+	setForTest(t, &disableExtendedConnectProtocol, true)
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(w, r.Body)
 	})
