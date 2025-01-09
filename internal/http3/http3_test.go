@@ -7,8 +7,10 @@
 package http3
 
 import (
+	"encoding/hex"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"testing/synctest"
 )
@@ -56,4 +58,18 @@ func (t *cleanupT) done() {
 	for _, f := range slices.Backward(t.cleanups) {
 		f()
 	}
+}
+
+func unhex(s string) []byte {
+	b, err := hex.DecodeString(strings.Map(func(c rune) rune {
+		switch c {
+		case ' ', '\t', '\n':
+			return -1 // ignore
+		}
+		return c
+	}, s))
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

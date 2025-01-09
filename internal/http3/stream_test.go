@@ -263,7 +263,7 @@ func TestStreamDiscardFrame(t *testing.T) {
 	}
 }
 
-func newStreamPair(t *testing.T) (s1, s2 *stream) {
+func newStreamPair(t testing.TB) (s1, s2 *stream) {
 	t.Helper()
 	q1, q2 := newQUICStreamPair(t)
 	return newStream(q1), newStream(q2)
