@@ -7,6 +7,7 @@
 package http3
 
 import (
+	"context"
 	"io"
 
 	"golang.org/x/net/quic"
@@ -22,6 +23,36 @@ type stream struct {
 	// results in an error.
 	// -1 indicates no limit.
 	lim int64
+}
+
+// newConnStream creates a new stream on a connection.
+// It writes the stream header for unidirectional streams.
+//
+// The stream returned by newStream is not flushed,
+// and will not be sent to the peer until the caller calls
+// Flush or writes enough data to the stream.
+func newConnStream(ctx context.Context, qconn *quic.Conn, stype streamType) (*stream, error) {
+	var qs *quic.Stream
+	var err error
+	if stype == streamTypeRequest {
+		// Request streams are bidirectional.
+		qs, err = qconn.NewStream(ctx)
+	} else {
+		// All other streams are unidirectional.
+		qs, err = qconn.NewSendOnlyStream(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	st := &stream{
+		stream: qs,
+		lim:    -1, // no limit
+	}
+	if stype != streamTypeRequest {
+		// Unidirectional stream header.
+		st.writeVarint(int64(stype))
+	}
+	return st, err
 }
 
 func newStream(qs *quic.Stream) *stream {
@@ -104,6 +135,41 @@ func (st *stream) Read(b []byte) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// discardUnknownFrame discards an unknown frame.
+//
+// HTTP/3 requires that unknown frames be ignored on all streams.
+// However, a known frame appearing in an unexpected place is a fatal error,
+// so this returns an error if the frame is one we know.
+func (st *stream) discardUnknownFrame(ftype frameType) error {
+	switch ftype {
+	case frameTypeData,
+		frameTypeHeaders,
+		frameTypeCancelPush,
+		frameTypeSettings,
+		frameTypePushPromise,
+		frameTypeGoaway,
+		frameTypeMaxPushID:
+		return &quic.ApplicationError{
+			Code:   uint64(errH3FrameUnexpected),
+			Reason: "unexpected " + ftype.String() + " frame",
+		}
+	}
+	return st.discardFrame()
+}
+
+// discardFrame discards any remaining data in the current frame and resets the read limit.
+func (st *stream) discardFrame() error {
+	// TODO: Consider adding a *quic.Stream method to discard some amount of data.
+	for range st.lim {
+		_, err := st.stream.ReadByte()
+		if err != nil {
+			return errH3FrameError
+		}
+	}
+	st.lim = -1
+	return nil
 }
 
 // Write writes to the stream.

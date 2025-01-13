@@ -243,6 +243,26 @@ func TestStreamReadByte(t *testing.T) {
 	}
 }
 
+func TestStreamDiscardFrame(t *testing.T) {
+	const typ = 10
+	data := []byte("hello")
+	st1, st2 := newStreamPair(t)
+	st1.writeVarint(typ)              // type
+	st1.writeVarint(int64(len(data))) // size
+	st1.Write(data)                   // data
+	st1.stream.CloseWrite()
+
+	if got, err := st2.readFrameHeader(); err != nil || got != typ {
+		t.Fatalf("st.readFrameHeader() = %v, %v; want %v, nil", got, err, typ)
+	}
+	if err := st2.discardFrame(); err != nil {
+		t.Fatalf("st.discardFrame() = %v", err)
+	}
+	if b, err := io.ReadAll(st2); err != nil || len(b) > 0 {
+		t.Fatalf("after discarding frame, read %x, %v; want EOF", b, err)
+	}
+}
+
 func newStreamPair(t *testing.T) (s1, s2 *stream) {
 	t.Helper()
 	q1, q2 := newQUICStreamPair(t)
