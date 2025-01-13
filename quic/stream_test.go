@@ -568,6 +568,25 @@ func TestStreamReceiveEmptyEOF(t *testing.T) {
 	})
 }
 
+func TestStreamReadByteFromOneByteStream(t *testing.T) {
+	// ReadByte on the only byte of a stream should not return an error.
+	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, styp, permissiveTransportParameters)
+		want := byte(1)
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			data: []byte{want},
+			fin:  true,
+		})
+		if got, err := s.ReadByte(); got != want || err != nil {
+			t.Fatalf("s.ReadByte() = %v, %v; want %v, nil", got, err, want)
+		}
+		if got, err := s.ReadByte(); err != io.EOF {
+			t.Fatalf("s.ReadByte() = %v, %v; want _, EOF", got, err)
+		}
+	})
+}
+
 func finalSizeTest(t *testing.T, wantErr transportError, f func(tc *testConn, sid streamID) (finalSize int64), opts ...any) {
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
 		for _, test := range []struct {

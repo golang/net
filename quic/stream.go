@@ -315,7 +315,7 @@ func (s *Stream) ReadByte() (byte, error) {
 	var b [1]byte
 	n, err := s.Read(b[:])
 	if n > 0 {
-		return b[0], err
+		return b[0], nil
 	}
 	return 0, err
 }
