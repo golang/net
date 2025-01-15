@@ -7,12 +7,59 @@
 package http3
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"golang.org/x/net/internal/httpcommon"
 )
+
+type roundTripState struct {
+	cc *ClientConn
+	st *stream
+
+	// Request body, provided by the caller.
+	onceCloseReqBody sync.Once
+	reqBody          io.ReadCloser
+
+	reqBodyWriter bodyWriter
+
+	// Response.Body, provided to the caller.
+	respBody bodyReader
+
+	errOnce sync.Once
+	err     error
+}
+
+// abort terminates the RoundTrip.
+// It returns the first fatal error encountered by the RoundTrip call.
+func (rt *roundTripState) abort(err error) error {
+	rt.errOnce.Do(func() {
+		rt.err = err
+		switch e := err.(type) {
+		case *connectionError:
+			rt.cc.abort(e)
+		case *streamError:
+			rt.st.stream.CloseRead()
+			rt.st.stream.Reset(uint64(e.code))
+		default:
+			rt.st.stream.CloseRead()
+			rt.st.stream.Reset(uint64(errH3NoError))
+		}
+	})
+	return rt.err
+}
+
+// closeReqBody closes the Request.Body, at most once.
+func (rt *roundTripState) closeReqBody() {
+	if rt.reqBody != nil {
+		rt.onceCloseReqBody.Do(func() {
+			rt.reqBody.Close()
+		})
+	}
+}
 
 // RoundTrip sends a request on the connection.
 func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
@@ -21,17 +68,13 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	if err != nil {
 		return nil, err
 	}
+	rt := &roundTripState{
+		cc: cc,
+		st: st,
+	}
 	defer func() {
-		switch e := err.(type) {
-		case nil:
-		case *connectionError:
-			cc.abort(e)
-		case *streamError:
-			st.stream.CloseRead()
-			st.stream.Reset(uint64(e.code))
-		default:
-			st.stream.CloseRead()
-			st.stream.Reset(uint64(errH3NoError))
+		if err != nil {
+			err = rt.abort(err)
 		}
 	}()
 
@@ -64,7 +107,13 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	}
 
 	if encr.HasBody {
-		// TODO: Send the request body.
+		// TODO: Defer sending the request body when "Expect: 100-continue" is set.
+		rt.reqBody = req.Body
+		rt.reqBodyWriter.st = st
+		rt.reqBodyWriter.remain = httpcommon.ActualContentLength(req)
+		rt.reqBodyWriter.flush = true
+		rt.reqBodyWriter.name = "request"
+		go copyRequestBody(rt)
 	}
 
 	// Read the response headers.
@@ -91,6 +140,8 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			if err != nil {
 				return nil, err
 			}
+			rt.respBody.st = st
+			rt.respBody.remain = contentLength
 			resp := &http.Response{
 				Proto:         "HTTP/3.0",
 				ProtoMajor:    3,
@@ -98,7 +149,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				StatusCode:    statusCode,
 				Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
 				ContentLength: contentLength,
-				Body:          io.NopCloser(nil), // TODO: read the response body
+				Body:          (*transportResponseBody)(rt),
 			}
 			// TODO: Automatic Content-Type: gzip decoding.
 			return resp, nil
@@ -112,6 +163,55 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			}
 		}
 	}
+}
+
+func copyRequestBody(rt *roundTripState) {
+	defer rt.closeReqBody()
+	_, err := io.Copy(&rt.reqBodyWriter, rt.reqBody)
+	if closeErr := rt.reqBodyWriter.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		// Something went wrong writing the body.
+		rt.abort(err)
+	} else {
+		// We wrote the whole body.
+		rt.st.stream.CloseWrite()
+	}
+}
+
+// transportResponseBody is the Response.Body returned by RoundTrip.
+type transportResponseBody roundTripState
+
+// Read is Response.Body.Read.
+func (b *transportResponseBody) Read(p []byte) (n int, err error) {
+	return b.respBody.Read(p)
+}
+
+var errRespBodyClosed = errors.New("response body closed")
+
+// Close is Response.Body.Close.
+// Closing the response body is how the caller signals that they're done with a request.
+func (b *transportResponseBody) Close() error {
+	rt := (*roundTripState)(b)
+	// Close the request body, which should wake up copyRequestBody if it's
+	// currently blocked reading the body.
+	rt.closeReqBody()
+	// Close the request stream, since we're done with the request.
+	// Reset closes the sending half of the stream.
+	rt.st.stream.Reset(uint64(errH3NoError))
+	// respBody.Close is responsible for closing the receiving half.
+	err := rt.respBody.Close()
+	if err == nil {
+		err = errRespBodyClosed
+	}
+	err = rt.abort(err)
+	if err == errRespBodyClosed {
+		// No other errors occurred before closing Response.Body,
+		// so consider this a successful request.
+		return nil
+	}
+	return err
 }
 
 func parseResponseContentLength(method string, statusCode int, h http.Header) (int64, error) {

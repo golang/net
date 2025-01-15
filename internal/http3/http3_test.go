@@ -73,3 +73,10 @@ func unhex(s string) []byte {
 	}
 	return b
 }
+
+// testReader implements io.Reader.
+type testReader struct {
+	readFunc func([]byte) (int, error)
+}
+
+func (r testReader) Read(p []byte) (n int, err error) { return r.readFunc(p) }

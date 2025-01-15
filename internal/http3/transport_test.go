@@ -7,9 +7,11 @@
 package http3
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"reflect"
@@ -284,6 +286,9 @@ func (ts *testQUICStream) wantHeaders(want http.Header) {
 	}
 
 	if want == nil {
+		if err := ts.discardFrame(); err != nil {
+			ts.t.Fatalf("discardFrame: %v", err)
+		}
 		return
 	}
 
@@ -295,6 +300,9 @@ func (ts *testQUICStream) wantHeaders(want http.Header) {
 	})
 	if diff := diffHeaders(got, want); diff != "" {
 		ts.t.Fatalf("unexpected response headers:\n%v", diff)
+	}
+	if err := ts.endFrame(); err != nil {
+		ts.t.Fatalf("endFrame: %v", err)
 	}
 }
 
@@ -320,6 +328,53 @@ func (ts *testQUICStream) writeHeaders(h http.Header) {
 	ts.Write(headers)
 	if err := ts.Flush(); err != nil {
 		ts.t.Fatalf("flushing HEADERS frame: %v", err)
+	}
+}
+
+func (ts *testQUICStream) wantData(want []byte) {
+	ts.t.Helper()
+	synctest.Wait()
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want DATA frame, got error: %v", err)
+	}
+	if ftype != frameTypeData {
+		ts.t.Fatalf("want DATA frame, got: %v", ftype)
+	}
+	got, err := ts.readFrameData()
+	if err != nil {
+		ts.t.Fatalf("error reading DATA frame: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		ts.t.Fatalf("got data: {%x}, want {%x}", got, want)
+	}
+	if err := ts.endFrame(); err != nil {
+		ts.t.Fatalf("endFrame: %v", err)
+	}
+}
+
+func (ts *testQUICStream) wantClosed(reason string) {
+	ts.t.Helper()
+	synctest.Wait()
+	ftype, err := ts.readFrameHeader()
+	if err != io.EOF {
+		ts.t.Fatalf("%v: want io.EOF, got %v %v", reason, ftype, err)
+	}
+}
+
+func (ts *testQUICStream) wantError(want quic.StreamErrorCode) {
+	ts.t.Helper()
+	synctest.Wait()
+	_, err := ts.stream.stream.ReadByte()
+	if err == nil {
+		ts.t.Fatalf("successfully read from stream; want stream error code %v", want)
+	}
+	var got quic.StreamErrorCode
+	if !errors.As(err, &got) {
+		ts.t.Fatalf("stream error = %v; want %v", err, want)
+	}
+	if got != want {
+		ts.t.Fatalf("stream error code = %v; want %v", got, want)
 	}
 }
 
@@ -453,6 +508,7 @@ func (rt *testRoundTrip) err() error {
 
 func (rt *testRoundTrip) wantError(reason string) {
 	rt.t.Helper()
+	synctest.Wait()
 	if !rt.done() {
 		rt.t.Fatalf("%v: RoundTrip is not done; want it to have returned an error", reason)
 	}
