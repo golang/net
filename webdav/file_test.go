@@ -517,12 +517,7 @@ func TestDir(t *testing.T) {
 		t.Skip("see golang.org/issue/11453")
 	}
 
-	td, err := os.MkdirTemp("", "webdav-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(td)
-	testFS(t, Dir(td))
+	testFS(t, Dir(t.TempDir()))
 }
 
 func TestMemFS(t *testing.T) {

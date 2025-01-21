@@ -445,11 +445,7 @@ func main() {
 	if runtime.Compiler == "gccgo" {
 		t.Skip("skipping race test when built with gccgo")
 	}
-	dir, err := os.MkdirTemp("", "testrace")
-	if err != nil {
-		t.Fatalf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	goBinary := filepath.Join(runtime.GOROOT(), "bin", "go")
 	t.Logf("%s version", goBinary)
 	got, err := exec.Command(goBinary, "version").CombinedOutput()
