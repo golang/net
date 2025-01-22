@@ -211,6 +211,13 @@ var proxyForURLTests = []proxyForURLTest{{
 	},
 	req:  "http://www.xn--fsq092h.com",
 	want: "<nil>",
+}, {
+	cfg: httpproxy.Config{
+		NoProxy:   "example.com",
+		HTTPProxy: "proxy",
+	},
+	req:  "http://[1000::%25.example.com]:123",
+	want: "http://proxy",
 },
 }
 
