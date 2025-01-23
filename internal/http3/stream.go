@@ -114,7 +114,7 @@ func (st *stream) ReadByte() (b byte, err error) {
 	}
 	b, err = st.stream.ReadByte()
 	if err != nil {
-		if err == io.EOF {
+		if err == io.EOF && st.lim < 0 {
 			return 0, io.EOF
 		}
 		return 0, errH3FrameError
@@ -125,14 +125,23 @@ func (st *stream) ReadByte() (b byte, err error) {
 // Read reads from the stream.
 func (st *stream) Read(b []byte) (int, error) {
 	n, err := st.stream.Read(b)
-	if err != nil {
-		if err == io.EOF {
-			return 0, io.EOF
-		}
-		return 0, errH3FrameError
+	if e2 := st.recordBytesRead(n); e2 != nil {
+		return 0, e2
 	}
-	if err := st.recordBytesRead(n); err != nil {
-		return 0, err
+	if err == io.EOF {
+		if st.lim == 0 {
+			// EOF at end of frame, ignore.
+			return n, nil
+		} else if st.lim > 0 {
+			// EOF inside frame, error.
+			return 0, errH3FrameError
+		} else {
+			// EOF outside of frame, surface to caller.
+			return n, io.EOF
+		}
+	}
+	if err != nil {
+		return 0, errH3FrameError
 	}
 	return n, nil
 }

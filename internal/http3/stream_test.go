@@ -183,7 +183,7 @@ func TestStreamReadFrameOverflow(t *testing.T) {
 	}
 }
 
-func TestStreamReadFramePartial(t *testing.T) {
+func TestStreamReadFrameHeaderPartial(t *testing.T) {
 	var frame []byte
 	frame = quicwire.AppendVarint(frame, 1000) // type
 	frame = quicwire.AppendVarint(frame, 2000) // size
@@ -199,6 +199,54 @@ func TestStreamReadFramePartial(t *testing.T) {
 		if _, err := st2.readFrameHeader(); err == nil {
 			t.Fatalf("%v/%v bytes of frame available: st.readFrameHeader() succeded; want error", i, len(frame))
 		}
+	}
+}
+
+func TestStreamReadFrameDataPartial(t *testing.T) {
+	st1, st2 := newStreamPair(t)
+	st1.writeVarint(1)          // type
+	st1.writeVarint(100)        // size
+	st1.Write(make([]byte, 50)) // data
+	st1.stream.CloseWrite()
+	if _, err := st2.readFrameHeader(); err != nil {
+		t.Fatalf("st.readFrameHeader() = %v", err)
+	}
+	if n, err := io.ReadAll(st2); err == nil {
+		t.Fatalf("io.ReadAll with partial frame = %v, nil; want error", n)
+	}
+}
+
+func TestStreamReadByteFrameDataPartial(t *testing.T) {
+	st1, st2 := newStreamPair(t)
+	st1.writeVarint(1)   // type
+	st1.writeVarint(100) // size
+	st1.stream.CloseWrite()
+	if _, err := st2.readFrameHeader(); err != nil {
+		t.Fatalf("st.readFrameHeader() = %v", err)
+	}
+	if b, err := st2.ReadByte(); err == nil {
+		t.Fatalf("io.ReadAll with partial frame = %v, nil; want error", b)
+	}
+}
+
+func TestStreamReadFrameDataAtEOF(t *testing.T) {
+	const typ = 10
+	data := []byte("hello")
+	st1, st2 := newStreamPair(t)
+	st1.writeVarint(typ)              // type
+	st1.writeVarint(int64(len(data))) // size
+	if err := st1.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st2.readFrameHeader(); err != nil || got != typ {
+		t.Fatalf("st.readFrameHeader() = %v, %v; want %v, nil", got, err, typ)
+	}
+
+	st1.Write(data)         // data
+	st1.stream.CloseWrite() // end stream
+	got := make([]byte, len(data)+1)
+	if n, err := st2.Read(got); err != nil || n != len(data) || !bytes.Equal(got[:n], data) {
+		t.Fatalf("st.Read() = %v, %v (data=%x); want %v, nil (data=%x)", n, err, got[:n], len(data), data)
 	}
 }
 
