@@ -87,7 +87,10 @@ func (st *stream) readFrameHeader() (ftype frameType, err error) {
 // It returns an error if the entire contents of a frame have not been read.
 func (st *stream) endFrame() error {
 	if st.lim != 0 {
-		return errH3FrameError
+		return &connectionError{
+			code:    errH3FrameError,
+			message: "invalid HTTP/3 frame",
+		}
 	}
 	st.lim = -1
 	return nil
@@ -160,9 +163,9 @@ func (st *stream) discardUnknownFrame(ftype frameType) error {
 		frameTypePushPromise,
 		frameTypeGoaway,
 		frameTypeMaxPushID:
-		return &quic.ApplicationError{
-			Code:   uint64(errH3FrameUnexpected),
-			Reason: "unexpected " + ftype.String() + " frame",
+		return &connectionError{
+			code:    errH3FrameUnexpected,
+			message: "unexpected " + ftype.String() + " frame",
 		}
 	}
 	return st.discardFrame()
@@ -174,7 +177,7 @@ func (st *stream) discardFrame() error {
 	for range st.lim {
 		_, err := st.stream.ReadByte()
 		if err != nil {
-			return errH3FrameError
+			return &streamError{errH3FrameError, err.Error()}
 		}
 	}
 	st.lim = -1
@@ -250,7 +253,10 @@ func (st *stream) recordBytesRead(n int) error {
 	st.lim -= int64(n)
 	if st.lim < 0 {
 		st.stream = nil // panic if we try to read again
-		return errH3FrameError
+		return &connectionError{
+			code:    errH3FrameError,
+			message: "invalid HTTP/3 frame",
+		}
 	}
 	return nil
 }

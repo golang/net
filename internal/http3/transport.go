@@ -148,9 +148,9 @@ func (cc *ClientConn) acceptStreams() {
 			// "Clients MUST treat receipt of a server-initiated bidirectional
 			// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
 			// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
-			cc.qconn.Abort(&quic.ApplicationError{
-				Code:   uint64(errH3StreamCreationError),
-				Reason: "server created bidirectional stream",
+			cc.abort(&connectionError{
+				code:    errH3StreamCreationError,
+				message: "server created bidirectional stream",
 			})
 			return
 		}
@@ -162,9 +162,9 @@ func (cc *ClientConn) handleStream(st *stream) {
 	// Unidirectional stream header: One varint with the stream type.
 	stype, err := st.readVarint()
 	if err != nil {
-		cc.qconn.Abort(&quic.ApplicationError{
-			Code:   uint64(errH3StreamCreationError),
-			Reason: "error reading unidirectional stream header",
+		cc.abort(&connectionError{
+			code:    errH3StreamCreationError,
+			message: "error reading unidirectional stream header",
 		})
 		return
 	}
@@ -190,13 +190,13 @@ func (cc *ClientConn) handleStream(st *stream) {
 		err = nil
 	}
 	if err == io.EOF {
-		err = &quic.ApplicationError{
-			Code:   uint64(errH3ClosedCriticalStream),
-			Reason: streamType(stype).String() + " stream closed",
+		err = &connectionError{
+			code:    errH3ClosedCriticalStream,
+			message: streamType(stype).String() + " stream closed",
 		}
 	}
 	if err != nil {
-		cc.qconn.Abort(err)
+		cc.abort(err)
 	}
 }
 
@@ -205,9 +205,9 @@ func (cc *ClientConn) checkStreamCreation(stype streamType, name string) error {
 	defer cc.mu.Unlock()
 	bit := uint8(1) << stype
 	if cc.streamsCreated&bit != 0 {
-		return &quic.ApplicationError{
-			Code:   uint64(errH3StreamCreationError),
-			Reason: "multiple " + name + " streams created",
+		return &connectionError{
+			code:    errH3StreamCreationError,
+			message: "multiple " + name + " streams created",
 		}
 	}
 	cc.streamsCreated |= bit
@@ -251,9 +251,9 @@ func (cc *ClientConn) handleControlStream(st *stream) error {
 			// greater than currently allowed on the connection,
 			// this MUST be treated as a connection error of type H3_ID_ERROR."
 			// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.3-7
-			return &quic.ApplicationError{
-				Code:   uint64(errH3IDError),
-				Reason: "CANCEL_PUSH received when no MAX_PUSH_ID has been sent",
+			return &connectionError{
+				code:    errH3IDError,
+				message: "CANCEL_PUSH received when no MAX_PUSH_ID has been sent",
 			}
 		case frameTypeGoaway:
 			// TODO: Wait for requests to complete before closing connection.
@@ -293,8 +293,20 @@ func (cc *ClientConn) handlePushStream(*stream) error {
 	// "A client MUST treat receipt of a push stream as a connection error
 	// of type H3_ID_ERROR when no MAX_PUSH_ID frame has been sent [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-4.6-3
-	return &quic.ApplicationError{
-		Code:   uint64(errH3IDError),
-		Reason: "push stream created when no MAX_PUSH_ID has been sent",
+	return &connectionError{
+		code:    errH3IDError,
+		message: "push stream created when no MAX_PUSH_ID has been sent",
+	}
+}
+
+// abort closes the connection with an error.
+func (cc *ClientConn) abort(err error) {
+	if e, ok := err.(*connectionError); ok {
+		cc.qconn.Abort(&quic.ApplicationError{
+			Code:   uint64(e.code),
+			Reason: e.message,
+		})
+	} else {
+		cc.qconn.Abort(err)
 	}
 }

@@ -82,3 +82,23 @@ func (e http3Error) Error() string {
 	}
 	return fmt.Sprintf("H3_ERROR_%v", int(e))
 }
+
+// A streamError is an error which terminates a stream, but not the connection.
+// https://www.rfc-editor.org/rfc/rfc9114.html#section-8-1
+type streamError struct {
+	code    http3Error
+	message string
+}
+
+func (e *streamError) Error() string { return e.message }
+func (e *streamError) Unwrap() error { return e.code }
+
+// A connectionError is an error which results in the entire connection closing.
+// https://www.rfc-editor.org/rfc/rfc9114.html#section-8-2
+type connectionError struct {
+	code    http3Error
+	message string
+}
+
+func (e *connectionError) Error() string { return e.message }
+func (e *connectionError) Unwrap() error { return e.code }

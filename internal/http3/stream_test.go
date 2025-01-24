@@ -8,6 +8,7 @@ package http3
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 
@@ -142,7 +143,7 @@ func TestStreamReadFrameUnderflow(t *testing.T) {
 		t.Fatalf("st.Read() = %v", err)
 	}
 	// We have not consumed the full frame: Error.
-	if err := st2.endFrame(); err != errH3FrameError {
+	if err := st2.endFrame(); !errors.Is(err, errH3FrameError) {
 		t.Fatalf("st.endFrame before end: %v, want errH3FrameError", err)
 	}
 }
@@ -178,7 +179,7 @@ func TestStreamReadFrameOverflow(t *testing.T) {
 	if _, err := st2.readFrameHeader(); err != nil {
 		t.Fatalf("st.readFrameHeader() = %v", err)
 	}
-	if _, err := io.ReadFull(st2, make([]byte, size+1)); err != errH3FrameError {
+	if _, err := io.ReadFull(st2, make([]byte, size+1)); !errors.Is(err, errH3FrameError) {
 		t.Fatalf("st.Read past end of frame: %v, want errH3FrameError", err)
 	}
 }
