@@ -9,10 +9,8 @@ package http3
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"sync"
 
 	"golang.org/x/net/quic"
@@ -99,12 +97,16 @@ type ClientConn struct {
 	// streamsCreated is a bitset of streams created so far.
 	// Bits are 1 << streamType.
 	streamsCreated uint8
+
+	enc qpackEncoder
+	dec qpackDecoder
 }
 
 func newClientConn(ctx context.Context, qconn *quic.Conn) (*ClientConn, error) {
 	cc := &ClientConn{
 		qconn: qconn,
 	}
+	cc.enc.init()
 
 	// Create control stream and send SETTINGS frame.
 	controlStream, err := newConnStream(ctx, cc.qconn, streamTypeControl)
@@ -129,11 +131,6 @@ func (cc *ClientConn) Close() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	return cc.qconn.Wait(ctx)
-}
-
-// RoundTrip sends a request on the connection.
-func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
-	return nil, errors.New("TODO")
 }
 
 func (cc *ClientConn) acceptStreams() {

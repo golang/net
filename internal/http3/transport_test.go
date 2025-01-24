@@ -9,18 +9,22 @@ package http3
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"net/http"
+	"reflect"
+	"slices"
 	"testing"
 	"testing/synctest"
 
+	"golang.org/x/net/internal/quic/quicwire"
 	"golang.org/x/net/quic"
 )
 
 func TestTransportCreatesControlStream(t *testing.T) {
 	runSynctest(t, func(t testing.TB) {
 		tc := newTestClientConn(t)
-		controlStream := tc.wantStream(
-			"client creates control stream",
-			streamTypeControl)
+		controlStream := tc.wantStream(streamTypeControl)
 		controlStream.wantFrameHeader(
 			"client sends SETTINGS frame on control stream",
 			frameTypeSettings)
@@ -228,10 +232,11 @@ func (tq *testQUICConn) wantClosed(reason string, want error) {
 
 // wantStream asserts that a stream of a given type has been created,
 // and returns that stream.
-func (tq *testQUICConn) wantStream(reason string, stype streamType) *testQUICStream {
+func (tq *testQUICConn) wantStream(stype streamType) *testQUICStream {
 	tq.t.Helper()
+	synctest.Wait()
 	if len(tq.streams[stype]) == 0 {
-		tq.t.Fatalf("%v: stream not created", reason)
+		tq.t.Fatalf("expected a %v stream to be created, but none were", stype)
 	}
 	ts := tq.streams[stype][0]
 	tq.streams[stype] = tq.streams[stype][1:]
@@ -256,6 +261,7 @@ func newTestQUICStream(t testing.TB, st *stream) *testQUICStream {
 // wantFrameHeader calls readFrameHeader and asserts that the frame is of a given type.
 func (ts *testQUICStream) wantFrameHeader(reason string, wantType frameType) {
 	ts.t.Helper()
+	synctest.Wait()
 	gotType, err := ts.readFrameHeader()
 	if err != nil {
 		ts.t.Fatalf("%v: failed to read frame header: %v", reason, err)
@@ -263,6 +269,83 @@ func (ts *testQUICStream) wantFrameHeader(reason string, wantType frameType) {
 	if gotType != wantType {
 		ts.t.Fatalf("%v: got frame type %v, want %v", reason, gotType, wantType)
 	}
+}
+
+// wantHeaders reads a HEADERS frame.
+// If want is nil, the contents of the frame are ignored.
+func (ts *testQUICStream) wantHeaders(want http.Header) {
+	ts.t.Helper()
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
+	}
+	if ftype != frameTypeHeaders {
+		ts.t.Fatalf("want HEADERS frame, got: %v", ftype)
+	}
+
+	if want == nil {
+		return
+	}
+
+	got := make(http.Header)
+	var dec qpackDecoder
+	err = dec.decode(ts.stream, func(_ indexType, name, value string) error {
+		got.Add(name, value)
+		return nil
+	})
+	if diff := diffHeaders(got, want); diff != "" {
+		ts.t.Fatalf("unexpected response headers:\n%v", diff)
+	}
+}
+
+func (ts *testQUICStream) encodeHeaders(h http.Header) []byte {
+	ts.t.Helper()
+	var enc qpackEncoder
+	return enc.encode(func(yield func(itype indexType, name, value string)) {
+		names := slices.Collect(maps.Keys(h))
+		slices.Sort(names)
+		for _, k := range names {
+			for _, v := range h[k] {
+				yield(mayIndex, k, v)
+			}
+		}
+	})
+}
+
+func (ts *testQUICStream) writeHeaders(h http.Header) {
+	ts.t.Helper()
+	headers := ts.encodeHeaders(h)
+	ts.writeVarint(int64(frameTypeHeaders))
+	ts.writeVarint(int64(len(headers)))
+	ts.Write(headers)
+	if err := ts.Flush(); err != nil {
+		ts.t.Fatalf("flushing HEADERS frame: %v", err)
+	}
+}
+
+func (ts *testQUICStream) writePushPromise(pushID int64, h http.Header) {
+	ts.t.Helper()
+	headers := ts.encodeHeaders(h)
+	ts.writeVarint(int64(frameTypePushPromise))
+	ts.writeVarint(int64(quicwire.SizeVarint(uint64(pushID)) + len(headers)))
+	ts.writeVarint(pushID)
+	ts.Write(headers)
+	if err := ts.Flush(); err != nil {
+		ts.t.Fatalf("flushing PUSH_PROMISE frame: %v", err)
+	}
+}
+
+func diffHeaders(got, want http.Header) string {
+	// nil and 0-length non-nil are equal.
+	if len(got) == 0 && len(want) == 0 {
+		return ""
+	}
+	// We could do a more sophisticated diff here.
+	// DeepEqual is good enough for now.
+	if reflect.DeepEqual(got, want) {
+		return ""
+	}
+	return fmt.Sprintf("got:  %v\nwant: %v", got, want)
 }
 
 func (ts *testQUICStream) Flush() error {
@@ -316,9 +399,7 @@ func newTestClientConn(t testing.TB) *testClientConn {
 // greet performs initial connection handshaking with the client.
 func (tc *testClientConn) greet() {
 	// Client creates a control stream.
-	clientControlStream := tc.wantStream(
-		"client creates control stream",
-		streamTypeControl)
+	clientControlStream := tc.wantStream(streamTypeControl)
 	clientControlStream.wantFrameHeader(
 		"client sends SETTINGS frame on control stream",
 		frameTypeSettings)
@@ -331,6 +412,76 @@ func (tc *testClientConn) greet() {
 	tc.control.Flush()
 
 	synctest.Wait()
+}
+
+type testRoundTrip struct {
+	t       testing.TB
+	resp    *http.Response
+	respErr error
+}
+
+func (rt *testRoundTrip) done() bool {
+	synctest.Wait()
+	return rt.resp != nil || rt.respErr != nil
+}
+
+func (rt *testRoundTrip) result() (*http.Response, error) {
+	rt.t.Helper()
+	if !rt.done() {
+		rt.t.Fatal("RoundTrip is not done; want it to be")
+	}
+	return rt.resp, rt.respErr
+}
+
+func (rt *testRoundTrip) response() *http.Response {
+	rt.t.Helper()
+	if !rt.done() {
+		rt.t.Fatal("RoundTrip is not done; want it to be")
+	}
+	if rt.respErr != nil {
+		rt.t.Fatalf("RoundTrip returned unexpected error: %v", rt.respErr)
+	}
+	return rt.resp
+}
+
+// err returns the (possibly nil) error result of RoundTrip.
+func (rt *testRoundTrip) err() error {
+	rt.t.Helper()
+	_, err := rt.result()
+	return err
+}
+
+func (rt *testRoundTrip) wantError(reason string) {
+	rt.t.Helper()
+	if !rt.done() {
+		rt.t.Fatalf("%v: RoundTrip is not done; want it to have returned an error", reason)
+	}
+	if rt.respErr == nil {
+		rt.t.Fatalf("%v: RoundTrip succeeded; want it to have returned an error", reason)
+	}
+}
+
+// wantStatus indicates the expected response StatusCode.
+func (rt *testRoundTrip) wantStatus(want int) {
+	rt.t.Helper()
+	if got := rt.response().StatusCode; got != want {
+		rt.t.Fatalf("got response status %v, want %v", got, want)
+	}
+}
+
+func (rt *testRoundTrip) wantHeaders(want http.Header) {
+	rt.t.Helper()
+	if diff := diffHeaders(rt.response().Header, want); diff != "" {
+		rt.t.Fatalf("unexpected response headers:\n%v", diff)
+	}
+}
+
+func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
+	rt := &testRoundTrip{t: tc.t}
+	go func() {
+		rt.resp, rt.respErr = tc.cc.RoundTrip(req)
+	}()
+	return rt
 }
 
 func (tc *testClientConn) newStream(stype streamType) *testQUICStream {
