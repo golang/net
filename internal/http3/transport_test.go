@@ -23,113 +23,6 @@ import (
 	"golang.org/x/net/quic"
 )
 
-func TestTransportCreatesControlStream(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		controlStream := tc.wantStream(streamTypeControl)
-		controlStream.wantFrameHeader(
-			"client sends SETTINGS frame on control stream",
-			frameTypeSettings)
-		controlStream.discardFrame()
-	})
-}
-
-func TestTransportUnknownUnidirectionalStream(t *testing.T) {
-	// "Recipients of unknown stream types MUST either abort reading of the stream
-	// or discard incoming data without further processing."
-	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2-7
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		tc.greet()
-
-		st := tc.newStream(0x21) // reserved stream type
-
-		// The client should send a STOP_SENDING for this stream,
-		// but it should not close the connection.
-		synctest.Wait()
-		if _, err := st.Write([]byte("hello")); err == nil {
-			t.Fatalf("write to send-only stream with an unknown type succeeded; want error")
-		}
-		tc.wantNotClosed("after receiving unknown unidirectional stream type")
-	})
-}
-
-func TestTransportUnknownSettings(t *testing.T) {
-	// "An implementation MUST ignore any [settings] parameter with
-	// an identifier it does not understand."
-	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4-9
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		controlStream := tc.newStream(streamTypeControl)
-		controlStream.writeSettings(0x1f+0x21, 0) // reserved settings type
-		controlStream.Flush()
-		tc.wantNotClosed("after receiving unknown settings")
-	})
-}
-
-func TestTransportInvalidSettings(t *testing.T) {
-	// "These reserved settings MUST NOT be sent, and their receipt MUST
-	// be treated as a connection error of type H3_SETTINGS_ERROR."
-	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4.1-5
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		controlStream := tc.newStream(streamTypeControl)
-		controlStream.writeSettings(0x02, 0) // HTTP/2 SETTINGS_ENABLE_PUSH
-		controlStream.Flush()
-		tc.wantClosed("invalid setting", errH3SettingsError)
-	})
-}
-
-func TestTransportDuplicateStream(t *testing.T) {
-	for _, stype := range []streamType{
-		streamTypeControl,
-		streamTypeEncoder,
-		streamTypeDecoder,
-	} {
-		runSynctestSubtest(t, stype.String(), func(t testing.TB) {
-			tc := newTestClientConn(t)
-			_ = tc.newStream(stype)
-			tc.wantNotClosed("after creating one " + stype.String() + " stream")
-
-			// Opening a second control, encoder, or decoder stream
-			// is a protocol violation.
-			_ = tc.newStream(stype)
-			tc.wantClosed("duplicate stream", errH3StreamCreationError)
-		})
-	}
-}
-
-func TestTransportUnknownFrames(t *testing.T) {
-	for _, stype := range []streamType{
-		streamTypeControl,
-	} {
-		runSynctestSubtest(t, stype.String(), func(t testing.TB) {
-			tc := newTestClientConn(t)
-			tc.greet()
-			st := tc.peerUnidirectionalStream(stype)
-
-			data := "frame content"
-			st.writeVarint(0x1f + 0x21)      // reserved frame type
-			st.writeVarint(int64(len(data))) // size
-			st.Write([]byte(data))
-			st.Flush()
-
-			tc.wantNotClosed("after writing unknown frame")
-		})
-	}
-}
-
-func TestTransportInvalidFrames(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		tc.greet()
-		tc.control.writeVarint(int64(frameTypeData))
-		tc.control.writeVarint(0) // size
-		tc.control.Flush()
-		tc.wantClosed("after writing DATA frame to control stream", errH3FrameUnexpected)
-	})
-}
-
 func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
 	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
@@ -140,23 +33,6 @@ func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 		st := tc.newStream(streamTypeRequest)
 		st.Flush()
 		tc.wantClosed("after server creates bidi stream", errH3StreamCreationError)
-	})
-}
-
-func TestTransportServerCreatesBadUnidirectionalStream(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
-		tc := newTestClientConn(t)
-		tc.greet()
-
-		// Create and close a stream without sending the unidirectional stream header.
-		qs, err := tc.qconn.NewSendOnlyStream(canceledCtx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		st := newTestQUICStream(tc.t, newStream(qs))
-		st.stream.stream.Close()
-
-		tc.wantClosed("after server creates and closes uni stream", errH3StreamCreationError)
 	})
 }
 
@@ -200,6 +76,28 @@ func (tq *testQUICConn) acceptStreams(ctx context.Context) {
 		}
 		tq.streams[stype] = append(tq.streams[stype], newTestQUICStream(tq.t, st))
 	}
+}
+
+func (tq *testQUICConn) newStream(stype streamType) *testQUICStream {
+	tq.t.Helper()
+	var qs *quic.Stream
+	var err error
+	if stype == streamTypeRequest {
+		qs, err = tq.qconn.NewStream(canceledCtx)
+	} else {
+		qs, err = tq.qconn.NewSendOnlyStream(canceledCtx)
+	}
+	if err != nil {
+		tq.t.Fatal(err)
+	}
+	st := newStream(qs)
+	if stype != streamTypeRequest {
+		st.writeVarint(int64(stype))
+		if err := st.Flush(); err != nil {
+			tq.t.Fatal(err)
+		}
+	}
+	return newTestQUICStream(tq.t, st)
 }
 
 // wantNotClosed asserts that the peer has not closed the connectioln.
@@ -405,6 +303,7 @@ func diffHeaders(got, want http.Header) string {
 
 func (ts *testQUICStream) Flush() error {
 	err := ts.stream.Flush()
+	ts.t.Helper()
 	if err != nil {
 		ts.t.Errorf("unexpected error flushing stream: %v", err)
 	}
@@ -538,42 +437,6 @@ func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 		rt.resp, rt.respErr = tc.cc.RoundTrip(req)
 	}()
 	return rt
-}
-
-func (tc *testClientConn) newStream(stype streamType) *testQUICStream {
-	tc.t.Helper()
-	var qs *quic.Stream
-	var err error
-	if stype == streamTypeRequest {
-		qs, err = tc.qconn.NewStream(canceledCtx)
-	} else {
-		qs, err = tc.qconn.NewSendOnlyStream(canceledCtx)
-	}
-	if err != nil {
-		tc.t.Fatal(err)
-	}
-	st := newStream(qs)
-	if stype != streamTypeRequest {
-		st.writeVarint(int64(stype))
-		if err := st.Flush(); err != nil {
-			tc.t.Fatal(err)
-		}
-	}
-	return newTestQUICStream(tc.t, st)
-}
-
-// peerUnidirectionalStream returns the peer-created unidirectional stream with
-// the given type. It produces a fatal error if the peer hasn't created this stream.
-func (tc *testClientConn) peerUnidirectionalStream(stype streamType) *testQUICStream {
-	var st *testQUICStream
-	switch stype {
-	case streamTypeControl:
-		st = tc.control
-	}
-	if st == nil {
-		tc.t.Fatalf("want peer stream of type %v, but not created yet", stype)
-	}
-	return st
 }
 
 // canceledCtx is a canceled Context.
