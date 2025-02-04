@@ -146,4 +146,9 @@ func runConnTest(t *testing.T, f func(testing.TB, *testQUICConn)) {
 		tc := newTestClientConn(t)
 		f(t, tc.testQUICConn)
 	})
+	runSynctestSubtest(t, "server", func(t testing.TB) {
+		ts := newTestServer(t)
+		tc := ts.connect()
+		f(t, tc.testQUICConn)
+	})
 }
