@@ -178,13 +178,13 @@ func parseInetAddr(af int, b []byte) (Addr, error) {
 	)
 	switch af {
 	case syscall.AF_INET:
-		if len(b) < (off4+1) || len(b) < int(b[0]) {
+		if len(b) < int(b[0]) {
 			return nil, errInvalidAddr
 		}
 		sockAddrLen := int(b[0])
 		a := &Inet4Addr{}
 		// sockAddrLen of 0 is valid and represents 0.0.0.0
-		if sockAddrLen != 0 {
+		if sockAddrLen > off4 {
 			// Calculate how many bytes of the address to copy:
 			// either full IPv4 length or the available length.
 			n := off4 + ipv4Len
@@ -195,13 +195,13 @@ func parseInetAddr(af int, b []byte) (Addr, error) {
 		}
 		return a, nil
 	case syscall.AF_INET6:
-		if len(b) < (off6+1) || len(b) < int(b[0]) {
+		if len(b) < int(b[0]) {
 			return nil, errInvalidAddr
 		}
 		sockAddrLen := int(b[0])
 		a := &Inet6Addr{}
 		// sockAddrLen of 0 is valid and represents ::
-		if sockAddrLen != 0 {
+		if sockAddrLen > off6 {
 			n := off6 + ipv6Len
 			if sockAddrLen < n {
 				n = sockAddrLen
