@@ -401,8 +401,8 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 			continue
 		}
 		if i <= syscall.RTAX_BRD {
-			switch b[1] {
-			case syscall.AF_LINK:
+			switch {
+			case b[1] == syscall.AF_LINK:
 				a, err := parseLinkAddr(b)
 				if err != nil {
 					return nil, err
@@ -413,8 +413,10 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 					return nil, errMessageTooShort
 				}
 				b = b[l:]
-			case syscall.AF_INET, syscall.AF_INET6:
-				af = int(b[1])
+			case ((b[1] == syscall.AF_INET || b[1] == syscall.AF_INET6) || ((i == syscall.RTAX_NETMASK || i == syscall.RTAX_GENMASK) && (af == syscall.AF_INET || af == syscall.AF_INET6))):
+				if (i != syscall.RTAX_NETMASK && i != syscall.RTAX_GENMASK) {
+					af = int(b[1])
+				}
 				a, err := parseInetAddr(af, b)
 				if err != nil {
 					return nil, err
