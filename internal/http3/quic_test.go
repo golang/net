@@ -48,22 +48,8 @@ func newQUICEndpointPair(t testing.TB) (e1, e2 *quic.Endpoint) {
 		TLSConfig: testTLSConfig,
 	}
 	tn := &testNet{}
-	pc1 := tn.newPacketConn()
-	e1, err := quic.NewEndpoint(pc1, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		e1.Close(t.Context())
-	})
-	pc2 := tn.newPacketConn()
-	e2, err = quic.NewEndpoint(pc2, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		e2.Close(t.Context())
-	})
+	e1 = tn.newQUICEndpoint(t, config)
+	e2 = tn.newQUICEndpoint(t, config)
 	return e1, e2
 }
 
@@ -119,6 +105,19 @@ func (tn *testNet) newPacketConn() *testPacketConn {
 	}
 	tn.conns[localAddr] = tc
 	return tc
+}
+
+func (tn *testNet) newQUICEndpoint(t testing.TB, config *quic.Config) *quic.Endpoint {
+	t.Helper()
+	pc := tn.newPacketConn()
+	e, err := quic.NewEndpoint(pc, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		e.Close(t.Context())
+	})
+	return e
 }
 
 // connForAddr returns the conn with the given source address.

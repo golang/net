@@ -8,9 +8,7 @@ package http3
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"io"
 	"sync"
 
 	"golang.org/x/net/quic"
@@ -41,31 +39,7 @@ type Transport struct {
 
 func (tr *Transport) init() error {
 	tr.initOnce.Do(func() {
-		if tr.Config == nil {
-			tr.Config = &quic.Config{}
-		}
-
-		// maybeCloneTLSConfig clones the user-provided tls.Config (but only once)
-		// prior to us modifying it.
-		needCloneTLSConfig := true
-		maybeCloneTLSConfig := func() *tls.Config {
-			if needCloneTLSConfig {
-				tr.Config.TLSConfig = tr.Config.TLSConfig.Clone()
-				needCloneTLSConfig = false
-			}
-			return tr.Config.TLSConfig
-		}
-
-		if tr.Config.TLSConfig == nil {
-			tr.Config.TLSConfig = &tls.Config{}
-			needCloneTLSConfig = false
-		}
-		if tr.Config.TLSConfig.MinVersion == 0 {
-			maybeCloneTLSConfig().MinVersion = tls.VersionTLS13
-		}
-		if tr.Config.TLSConfig.NextProtos == nil {
-			maybeCloneTLSConfig().NextProtos = []string{"h3"}
-		}
+		tr.Config = initConfig(tr.Config)
 		if tr.Endpoint == nil {
 			tr.Endpoint, tr.initErr = quic.Listen("udp", ":0", nil)
 		}
@@ -90,13 +64,7 @@ func (tr *Transport) Dial(ctx context.Context, target string) (*ClientConn, erro
 // Multiple goroutines may invoke methods on a ClientConn simultaneously.
 type ClientConn struct {
 	qconn *quic.Conn
-
-	mu sync.Mutex
-
-	// The peer may create exactly one control, encoder, and decoder stream.
-	// streamsCreated is a bitset of streams created so far.
-	// Bits are 1 << streamType.
-	streamsCreated uint8
+	genericConn
 
 	enc qpackEncoder
 	dec qpackDecoder
@@ -116,7 +84,7 @@ func newClientConn(ctx context.Context, qconn *quic.Conn) (*ClientConn, error) {
 	controlStream.writeSettings()
 	controlStream.Flush()
 
-	go cc.acceptStreams()
+	go cc.acceptStreams(qconn, cc)
 	return cc, nil
 }
 
@@ -133,92 +101,7 @@ func (cc *ClientConn) Close() error {
 	return cc.qconn.Wait(ctx)
 }
 
-func (cc *ClientConn) acceptStreams() {
-	for {
-		// Use context.Background: This blocks until a stream is accepted
-		// or the connection closes.
-		st, err := cc.qconn.AcceptStream(context.Background())
-		if err != nil {
-			return // connection closed
-		}
-		if !st.IsReadOnly() {
-			// "Clients MUST treat receipt of a server-initiated bidirectional
-			// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
-			// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
-			cc.abort(&connectionError{
-				code:    errH3StreamCreationError,
-				message: "server created bidirectional stream",
-			})
-			return
-		}
-		go cc.handleStream(newStream(st))
-	}
-}
-
-func (cc *ClientConn) handleStream(st *stream) {
-	// Unidirectional stream header: One varint with the stream type.
-	stype, err := st.readVarint()
-	if err != nil {
-		cc.abort(&connectionError{
-			code:    errH3StreamCreationError,
-			message: "error reading unidirectional stream header",
-		})
-		return
-	}
-	switch streamType(stype) {
-	case streamTypeControl:
-		err = cc.handleControlStream(st)
-	case streamTypePush:
-		err = cc.handlePushStream(st)
-	case streamTypeEncoder:
-		err = cc.handleEncoderStream(st)
-	case streamTypeDecoder:
-		err = cc.handleDecoderStream(st)
-	default:
-		// "Recipients of unknown stream types MUST either abort reading
-		// of the stream or discard incoming data without further processing."
-		// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2-7
-		//
-		// We should send the H3_STREAM_CREATION_ERROR error code,
-		// but the quic package currently doesn't allow setting error codes
-		// for STOP_SENDING frames.
-		// TODO: Should CloseRead take an error code?
-		st.stream.CloseRead()
-		err = nil
-	}
-	if err == io.EOF {
-		err = &connectionError{
-			code:    errH3ClosedCriticalStream,
-			message: streamType(stype).String() + " stream closed",
-		}
-	}
-	if err != nil {
-		cc.abort(err)
-	}
-}
-
-func (cc *ClientConn) checkStreamCreation(stype streamType, name string) error {
-	cc.mu.Lock()
-	defer cc.mu.Unlock()
-	bit := uint8(1) << stype
-	if cc.streamsCreated&bit != 0 {
-		return &connectionError{
-			code:    errH3StreamCreationError,
-			message: "multiple " + name + " streams created",
-		}
-	}
-	cc.streamsCreated |= bit
-	return nil
-}
-
 func (cc *ClientConn) handleControlStream(st *stream) error {
-	if err := cc.checkStreamCreation(streamTypeControl, "control"); err != nil {
-		// "[...] receipt of a second stream claiming to be a control stream
-		// MUST be treated as a connection error of type H3_STREAM_CREATION_ERROR."
-		// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2.1-2
-		return err
-	}
-
 	// "A SETTINGS frame MUST be sent as the first frame of each control stream [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4-2
 	if err := st.readSettings(func(settingsType, settingsValue int64) error {
@@ -265,23 +148,11 @@ func (cc *ClientConn) handleControlStream(st *stream) error {
 }
 
 func (cc *ClientConn) handleEncoderStream(*stream) error {
-	if err := cc.checkStreamCreation(streamTypeEncoder, "encoder"); err != nil {
-		// "Receipt of a second instance of [an encoder stream] MUST
-		// be treated as a connection error of type H3_STREAM_CREATION_ERROR."
-		// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2.1-2
-		return err
-	}
 	// TODO
 	return nil
 }
 
 func (cc *ClientConn) handleDecoderStream(*stream) error {
-	if err := cc.checkStreamCreation(streamTypeDecoder, "decoder"); err != nil {
-		// "Receipt of a second instance of [a decoder stream] MUST
-		// be treated as a connection error of type H3_STREAM_CREATION_ERROR."
-		// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2.1-2
-		return err
-	}
 	// TODO
 	return nil
 }
@@ -294,6 +165,16 @@ func (cc *ClientConn) handlePushStream(*stream) error {
 		code:    errH3IDError,
 		message: "push stream created when no MAX_PUSH_ID has been sent",
 	}
+}
+
+func (cc *ClientConn) handleRequestStream(st *stream) {
+	// "Clients MUST treat receipt of a server-initiated bidirectional
+	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
+	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
+	cc.abort(&connectionError{
+		code:    errH3StreamCreationError,
+		message: "server created bidirectional stream",
+	})
 }
 
 // abort closes the connection with an error.
