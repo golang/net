@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http/httptrace"
+	"net/textproto"
 	"net/url"
 	"sort"
 	"strconv"
@@ -376,5 +377,81 @@ func shouldSendReqContentLength(method string, contentLength int64) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// ServerRequestParam is parameters to NewServerRequest.
+type ServerRequestParam struct {
+	Method                  string
+	Scheme, Authority, Path string
+	Protocol                string
+	Header                  map[string][]string
+}
+
+// ServerRequestResult is the result of NewServerRequest.
+type ServerRequestResult struct {
+	// Various http.Request fields.
+	URL        *url.URL
+	RequestURI string
+	Trailer    map[string][]string
+
+	NeedsContinue bool // client provided an "Expect: 100-continue" header
+
+	// If the request should be rejected, this is a short string suitable for passing
+	// to the http2 package's CountError function.
+	// It might be a bit odd to return errors this way rather than returing an error,
+	// but this ensures we don't forget to include a CountError reason.
+	InvalidReason string
+}
+
+func NewServerRequest(rp ServerRequestParam) ServerRequestResult {
+	needsContinue := httpguts.HeaderValuesContainsToken(rp.Header["Expect"], "100-continue")
+	if needsContinue {
+		delete(rp.Header, "Expect")
+	}
+	// Merge Cookie headers into one "; "-delimited value.
+	if cookies := rp.Header["Cookie"]; len(cookies) > 1 {
+		rp.Header["Cookie"] = []string{strings.Join(cookies, "; ")}
+	}
+
+	// Setup Trailers
+	var trailer map[string][]string
+	for _, v := range rp.Header["Trailer"] {
+		for _, key := range strings.Split(v, ",") {
+			key = textproto.CanonicalMIMEHeaderKey(textproto.TrimString(key))
+			switch key {
+			case "Transfer-Encoding", "Trailer", "Content-Length":
+				// Bogus. (copy of http1 rules)
+				// Ignore.
+			default:
+				if trailer == nil {
+					trailer = make(map[string][]string)
+				}
+				trailer[key] = nil
+			}
+		}
+	}
+	delete(rp.Header, "Trailer")
+	var url_ *url.URL
+	var requestURI string
+	if rp.Method == "CONNECT" && rp.Protocol == "" {
+		url_ = &url.URL{Host: rp.Authority}
+		requestURI = rp.Authority // mimic HTTP/1 server behavior
+	} else {
+		var err error
+		url_, err = url.ParseRequestURI(rp.Path)
+		if err != nil {
+			return ServerRequestResult{
+				InvalidReason: "bad_path",
+			}
+		}
+		requestURI = rp.Path
+	}
+
+	return ServerRequestResult{
+		URL:           url_,
+		NeedsContinue: needsContinue,
+		RequestURI:    requestURI,
+		Trailer:       trailer,
 	}
 }
