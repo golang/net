@@ -186,6 +186,11 @@ func (c *Conn) RemoteAddr() netip.AddrPort {
 	return c.peerAddr
 }
 
+// ConnectionState returns basic TLS details about the connection.
+func (c *Conn) ConnectionState() tls.ConnectionState {
+	return c.tls.ConnectionState()
+}
+
 // confirmHandshake is called when the handshake is confirmed.
 // https://www.rfc-editor.org/rfc/rfc9001#section-4.1.2
 func (c *Conn) confirmHandshake(now time.Time) {
