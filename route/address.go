@@ -420,7 +420,7 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 				}
 				b = b[l:]
 			case isInet(int(b[1])) || (isMask(i) && isInet(af)):
-				if !isMask(i){
+				if (!isMask(i) || isInet(int(b[1]))) {
 					af = int(b[1])
 				}
 				a, err := parseInetAddr(af, b)
