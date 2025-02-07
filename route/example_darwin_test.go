@@ -14,8 +14,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// This example demonstrates how to parse a response to RTM_GET request.
 func ExampleParseRIB() {
-	// This example demonstrates how to parse a response to RTM_GET request.
 	fd, err := unix.Socket(unix.AF_ROUTE, unix.SOCK_RAW, unix.AF_UNSPEC)
 	if err != nil {
 		return
