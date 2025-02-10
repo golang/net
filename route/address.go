@@ -396,13 +396,19 @@ func marshalAddrs(b []byte, as []Addr) (uint, error) {
 func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) ([]Addr, error) {
 	var as [syscall.RTAX_MAX]Addr
 	af := int(syscall.AF_UNSPEC)
+	isInet := func(fam int) bool {
+		return fam == syscall.AF_INET || fam == syscall.AF_INET6
+	}
+	isMask := func(addrType uint) bool {
+		return addrType == syscall.RTAX_NETMASK || addrType == syscall.RTAX_GENMASK
+	}
 	for i := uint(0); i < syscall.RTAX_MAX && len(b) >= roundup(0); i++ {
 		if attrs&(1<<i) == 0 {
 			continue
 		}
 		if i <= syscall.RTAX_BRD {
-			switch b[1] {
-			case syscall.AF_LINK:
+			switch {
+			case b[1] == syscall.AF_LINK:
 				a, err := parseLinkAddr(b)
 				if err != nil {
 					return nil, err
@@ -413,8 +419,10 @@ func parseAddrs(attrs uint, fn func(int, []byte) (int, Addr, error), b []byte) (
 					return nil, errMessageTooShort
 				}
 				b = b[l:]
-			case syscall.AF_INET, syscall.AF_INET6:
-				af = int(b[1])
+			case isInet(int(b[1])) || (isMask(i) && isInet(af)):
+				if isInet(int(b[1])) {
+					af = int(b[1])
+				}
 				a, err := parseInetAddr(af, b)
 				if err != nil {
 					return nil, err
