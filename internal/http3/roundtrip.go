@@ -82,10 +82,19 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	st.stream.SetReadContext(req.Context())
 	st.stream.SetWriteContext(req.Context())
 
+	contentLength := actualContentLength(req)
+
 	var encr httpcommon.EncodeHeadersResult
 	headers := cc.enc.encode(func(yield func(itype indexType, name, value string)) {
-		encr, err = httpcommon.EncodeHeaders(httpcommon.EncodeHeadersParam{
-			Request:               req,
+		encr, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
+			Request: httpcommon.Request{
+				URL:                 req.URL,
+				Method:              req.Method,
+				Host:                req.Host,
+				Header:              req.Header,
+				Trailer:             req.Trailer,
+				ActualContentLength: contentLength,
+			},
 			AddGzipHeader:         false, // TODO: add when appropriate
 			PeerMaxHeaderListSize: 0,
 			DefaultUserAgent:      "Go-http-client/3",
@@ -110,7 +119,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		// TODO: Defer sending the request body when "Expect: 100-continue" is set.
 		rt.reqBody = req.Body
 		rt.reqBodyWriter.st = st
-		rt.reqBodyWriter.remain = httpcommon.ActualContentLength(req)
+		rt.reqBodyWriter.remain = contentLength
 		rt.reqBodyWriter.flush = true
 		rt.reqBodyWriter.name = "request"
 		go copyRequestBody(rt)
@@ -163,6 +172,18 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			}
 		}
 	}
+}
+
+// actualContentLength returns a sanitized version of req.ContentLength,
+// where 0 actually means zero (not unknown) and -1 means unknown.
+func actualContentLength(req *http.Request) int64 {
+	if req.Body == nil || req.Body == http.NoBody {
+		return 0
+	}
+	if req.ContentLength != 0 {
+		return req.ContentLength
+	}
+	return -1
 }
 
 func copyRequestBody(rt *roundTripState) {

@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"golang.org/x/net/http2/hpack"
-	"golang.org/x/net/internal/httpcommon"
 )
 
 var (
@@ -569,6 +568,45 @@ func randString(n int) string {
 		b[i] = byte(rnd.Intn(256))
 	}
 	return string(b)
+}
+
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) { panic("unexpected Read") }
+func (panicReader) Close() error             { panic("unexpected Close") }
+
+func TestActualContentLength(t *testing.T) {
+	tests := []struct {
+		req  *http.Request
+		want int64
+	}{
+		// Verify we don't read from Body:
+		0: {
+			req:  &http.Request{Body: panicReader{}},
+			want: -1,
+		},
+		// nil Body means 0, regardless of ContentLength:
+		1: {
+			req:  &http.Request{Body: nil, ContentLength: 5},
+			want: 0,
+		},
+		// ContentLength is used if set.
+		2: {
+			req:  &http.Request{Body: panicReader{}, ContentLength: 5},
+			want: 5,
+		},
+		// http.NoBody means 0, not -1.
+		3: {
+			req:  &http.Request{Body: http.NoBody},
+			want: 0,
+		},
+	}
+	for i, tt := range tests {
+		got := actualContentLength(tt.req)
+		if got != tt.want {
+			t.Errorf("test[%d]: got %d; want %d", i, got, tt.want)
+		}
+	}
 }
 
 func TestTransportBody(t *testing.T) {
@@ -1405,12 +1443,9 @@ func TestTransportChecksRequestHeaderListSize(t *testing.T) {
 		}
 	}
 	headerListSizeForRequest := func(req *http.Request) (size uint64) {
-		_, err := httpcommon.EncodeHeaders(httpcommon.EncodeHeadersParam{
-			Request:               req,
-			AddGzipHeader:         true,
-			PeerMaxHeaderListSize: 0xffffffffffffffff,
-			DefaultUserAgent:      defaultUserAgent,
-		}, func(name, value string) {
+		const addGzipHeader = true
+		const peerMaxHeaderListSize = 0xffffffffffffffff
+		_, err := encodeRequestHeaders(req, addGzipHeader, peerMaxHeaderListSize, func(name, value string) {
 			hf := hpack.HeaderField{Name: name, Value: value}
 			size += uint64(hf.Size())
 		})
@@ -2808,11 +2843,10 @@ func TestTransportRequestPathPseudo(t *testing.T) {
 	for i, tt := range tests {
 		hbuf := &bytes.Buffer{}
 		henc := hpack.NewEncoder(hbuf)
-		_, err := httpcommon.EncodeHeaders(httpcommon.EncodeHeadersParam{
-			Request:               tt.req,
-			AddGzipHeader:         false,
-			PeerMaxHeaderListSize: 0xffffffffffffffff,
-		}, func(name, value string) {
+
+		const addGzipHeader = false
+		const peerMaxHeaderListSize = 0xffffffffffffffff
+		_, err := encodeRequestHeaders(tt.req, addGzipHeader, peerMaxHeaderListSize, func(name, value string) {
 			henc.WriteField(hpack.HeaderField{Name: name, Value: value})
 		})
 		hdrs := hbuf.Bytes()

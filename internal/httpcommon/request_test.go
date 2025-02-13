@@ -6,6 +6,7 @@ package httpcommon
 
 import (
 	"cmp"
+	"context"
 	"io"
 	"net/http"
 	"slices"
@@ -27,9 +28,9 @@ func TestEncodeHeaders(t *testing.T) {
 	}{{
 		name: "simple request",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				return must(http.NewRequest("GET", "https://example.tld/", nil))
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -47,12 +48,12 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "host set from URL",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Host = ""
 				req.URL.Host = "example.tld"
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -70,11 +71,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "chunked transfer-encoding",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Transfer-Encoding", "chunked") // ignored
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -92,11 +93,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "connection close",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Connection", "close")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -114,11 +115,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "connection keep-alive",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Connection", "keep-alive")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -136,9 +137,9 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "normal connect",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				return must(http.NewRequest("CONNECT", "https://example.tld/", nil))
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -154,11 +155,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "extended connect",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("CONNECT", "https://example.tld/", nil))
 				req.Header.Set(":protocol", "foo")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -177,13 +178,13 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "trailers",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Trailer = make(http.Header)
 				req.Trailer.Set("a", "1")
 				req.Trailer.Set("b", "2")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -202,11 +203,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "override user-agent",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("User-Agent", "GopherTron 9000")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -224,11 +225,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "disable user-agent",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header["User-Agent"] = nil
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -245,11 +246,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "ignore host header",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Host", "gophers.tld/") // ignored
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -267,11 +268,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "crumble cookie header",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Cookie", "a=b; b=c; c=d")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -293,9 +294,9 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with nil body",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				return must(http.NewRequest("POST", "https://example.tld/", nil))
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -314,9 +315,9 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with NoBody",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				return must(http.NewRequest("POST", "https://example.tld/", http.NoBody))
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -335,12 +336,12 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with Content-Length",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				type reader struct{ io.ReadCloser }
 				req := must(http.NewRequest("POST", "https://example.tld/", reader{}))
 				req.ContentLength = 10
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -359,11 +360,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with unknown Content-Length",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				type reader struct{ io.ReadCloser }
 				req := must(http.NewRequest("POST", "https://example.tld/", reader{}))
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -381,11 +382,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "explicit accept-encoding",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Accept-Encoding", "deflate")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -403,9 +404,9 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "head request",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				return must(http.NewRequest("HEAD", "https://example.tld/", nil))
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -422,11 +423,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "range request",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("HEAD", "https://example.tld/", nil))
 				req.Header.Set("Range", "bytes=0-10")
 				return req
-			}(),
+			}),
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -444,11 +445,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}} {
 		t.Run(test.name, func(t *testing.T) {
 			var gotHeaders []header
-			if IsRequestGzip(test.in.Request, test.disableCompression) {
+			if IsRequestGzip(test.in.Request.Method, test.in.Request.Header, test.disableCompression) {
 				test.in.AddGzipHeader = true
 			}
 
-			got, err := EncodeHeaders(test.in, func(name, value string) {
+			got, err := EncodeHeaders(context.Background(), test.in, func(name, value string) {
 				gotHeaders = append(gotHeaders, header{name, value})
 			})
 			if err != nil {
@@ -490,151 +491,151 @@ func TestEncodeHeaderErrors(t *testing.T) {
 	}{{
 		name: "URL is nil",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.URL = nil
 				return req
-			}(),
+			}),
 		},
 		want: "URL is nil",
 	}, {
 		name: "upgrade header is set",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Upgrade", "foo")
 				return req
-			}(),
+			}),
 		},
 		want: "Upgrade",
 	}, {
 		name: "unsupported transfer-encoding header",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Transfer-Encoding", "identity")
 				return req
-			}(),
+			}),
 		},
 		want: "Transfer-Encoding",
 	}, {
 		name: "unsupported connection header",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("Connection", "x")
 				return req
-			}(),
+			}),
 		},
 		want: "Connection",
 	}, {
 		name: "invalid host",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Host = "\x00.tld"
 				return req
-			}(),
+			}),
 		},
 		want: "Host",
 	}, {
 		name: "protocol header is set",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set(":protocol", "foo")
 				return req
-			}(),
+			}),
 		},
 		want: ":protocol",
 	}, {
 		name: "invalid path",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.URL.Path = "no_leading_slash"
 				return req
-			}(),
+			}),
 		},
 		want: "path",
 	}, {
 		name: "invalid header name",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("x\ny", "foo")
 				return req
-			}(),
+			}),
 		},
 		want: "header",
 	}, {
 		name: "invalid header value",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("x", "foo\nbar")
 				return req
-			}(),
+			}),
 		},
 		want: "header",
 	}, {
 		name: "invalid trailer",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Trailer = make(http.Header)
 				req.Trailer.Set("x\ny", "foo")
 				return req
-			}(),
+			}),
 		},
 		want: "trailer",
 	}, {
 		name: "transfer-encoding trailer",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Trailer = make(http.Header)
 				req.Trailer.Set("Transfer-Encoding", "chunked")
 				return req
-			}(),
+			}),
 		},
 		want: "Trailer",
 	}, {
 		name: "trailer trailer",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Trailer = make(http.Header)
 				req.Trailer.Set("Trailer", "chunked")
 				return req
-			}(),
+			}),
 		},
 		want: "Trailer",
 	}, {
 		name: "content-length trailer",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Trailer = make(http.Header)
 				req.Trailer.Set("Content-Length", "0")
 				return req
-			}(),
+			}),
 		},
 		want: "Trailer",
 	}, {
 		name: "too many headers",
 		in: EncodeHeadersParam{
-			Request: func() *http.Request {
+			Request: newReq(func() *http.Request {
 				req := must(http.NewRequest("GET", "https://example.tld/", nil))
 				req.Header.Set("X-Foo", strings.Repeat("x", 1000))
 				return req
-			}(),
+			}),
 			PeerMaxHeaderListSize: 1000,
 		},
 		want: "limit",
 	}} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := EncodeHeaders(test.in, func(name, value string) {})
+			_, err := EncodeHeaders(context.Background(), test.in, func(name, value string) {})
 			if err == nil {
 				t.Fatalf("EncodeHeaders = nil, want %q", test.want)
 			}
@@ -645,48 +646,27 @@ func TestEncodeHeaderErrors(t *testing.T) {
 	}
 }
 
+func newReq(f func() *http.Request) Request {
+	req := f()
+	contentLength := req.ContentLength
+	if req.Body == nil || req.Body == http.NoBody {
+		contentLength = 0
+	} else if contentLength == 0 {
+		contentLength = -1
+	}
+	return Request{
+		Header:              req.Header,
+		Trailer:             req.Trailer,
+		URL:                 req.URL,
+		Host:                req.Host,
+		Method:              req.Method,
+		ActualContentLength: contentLength,
+	}
+}
+
 func must[T any](v T, err error) T {
 	if err != nil {
 		panic(err)
 	}
 	return v
-}
-
-type panicReader struct{}
-
-func (panicReader) Read([]byte) (int, error) { panic("unexpected Read") }
-func (panicReader) Close() error             { panic("unexpected Close") }
-
-func TestActualContentLength(t *testing.T) {
-	tests := []struct {
-		req  *http.Request
-		want int64
-	}{
-		// Verify we don't read from Body:
-		0: {
-			req:  &http.Request{Body: panicReader{}},
-			want: -1,
-		},
-		// nil Body means 0, regardless of ContentLength:
-		1: {
-			req:  &http.Request{Body: nil, ContentLength: 5},
-			want: 0,
-		},
-		// ContentLength is used if set.
-		2: {
-			req:  &http.Request{Body: panicReader{}, ContentLength: 5},
-			want: 5,
-		},
-		// http.NoBody means 0, not -1.
-		3: {
-			req:  &http.Request{Body: http.NoBody},
-			want: 0,
-		},
-	}
-	for i, tt := range tests {
-		got := ActualContentLength(tt.req)
-		if got != tt.want {
-			t.Errorf("test[%d]: got %d; want %d", i, got, tt.want)
-		}
-	}
 }
