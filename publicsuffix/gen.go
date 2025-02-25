@@ -21,6 +21,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -29,7 +30,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -62,38 +63,12 @@ var (
 	maxLo         uint32
 )
 
-func max(a, b int) int {
-	if a < b {
-		return b
-	}
-	return a
-}
-
-func u32max(a, b uint32) uint32 {
-	if a < b {
-		return b
-	}
-	return a
-}
-
 const (
 	nodeTypeNormal     = 0
 	nodeTypeException  = 1
 	nodeTypeParentOnly = 2
 	numNodeType        = 3
 )
-
-func nodeTypeStr(n int) string {
-	switch n {
-	case nodeTypeNormal:
-		return "+"
-	case nodeTypeException:
-		return "!"
-	case nodeTypeParentOnly:
-		return "o"
-	}
-	panic("unreachable")
-}
 
 const (
 	defaultURL   = "https://publicsuffix.org/list/effective_tld_names.dat"
@@ -251,7 +226,7 @@ func main1() error {
 	for label := range labelsMap {
 		labelsList = append(labelsList, label)
 	}
-	sort.Strings(labelsList)
+	slices.Sort(labelsList)
 
 	combinedText = combineText(labelsList)
 	if combinedText == "" {
@@ -509,15 +484,13 @@ func (n *node) child(label string) *node {
 		icann:    true,
 	}
 	n.children = append(n.children, c)
-	sort.Sort(byLabel(n.children))
+	slices.SortFunc(n.children, byLabel)
 	return c
 }
 
-type byLabel []*node
-
-func (b byLabel) Len() int           { return len(b) }
-func (b byLabel) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b byLabel) Less(i, j int) bool { return b[i].label < b[j].label }
+func byLabel(a, b *node) int {
+	return strings.Compare(a.label, b.label)
+}
 
 var nextNodesIndex int
 
@@ -557,7 +530,7 @@ func assignIndexes(n *node) error {
 		n.childrenIndex = len(childrenEncoding)
 		lo := uint32(n.firstChild)
 		hi := lo + uint32(len(n.children))
-		maxLo, maxHi = u32max(maxLo, lo), u32max(maxHi, hi)
+		maxLo, maxHi = max(maxLo, lo), max(maxHi, hi)
 		if lo >= 1<<childrenBitsLo {
 			return fmt.Errorf("children lo %d is too large, or childrenBitsLo is too small", lo)
 		}
@@ -586,20 +559,6 @@ func printNodeLabel(w io.Writer, n *node) error {
 	return nil
 }
 
-func icannStr(icann bool) string {
-	if icann {
-		return "I"
-	}
-	return " "
-}
-
-func wildcardStr(wildcard bool) string {
-	if wildcard {
-		return "*"
-	}
-	return " "
-}
-
 // combineText combines all the strings in labelsList to form one giant string.
 // Overlapping strings will be merged: "arpa" and "parliament" could yield
 // "arparliament".
@@ -616,18 +575,15 @@ func combineText(labelsList []string) string {
 	return text
 }
 
-type byLength []string
-
-func (s byLength) Len() int           { return len(s) }
-func (s byLength) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s byLength) Less(i, j int) bool { return len(s[i]) < len(s[j]) }
+func byLength(a, b string) int {
+	return cmp.Compare(len(a), len(b))
+}
 
 // removeSubstrings returns a copy of its input with any strings removed
 // that are substrings of other provided strings.
 func removeSubstrings(input []string) []string {
-	// Make a copy of input.
-	ss := append(make([]string, 0, len(input)), input...)
-	sort.Sort(byLength(ss))
+	ss := slices.Clone(input)
+	slices.SortFunc(ss, byLength)
 
 	for i, shortString := range ss {
 		// For each string, only consider strings higher than it in sort order, i.e.
@@ -641,7 +597,7 @@ func removeSubstrings(input []string) []string {
 	}
 
 	// Remove the empty strings.
-	sort.Strings(ss)
+	slices.Sort(ss)
 	for len(ss) > 0 && ss[0] == "" {
 		ss = ss[1:]
 	}
