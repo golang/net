@@ -1032,6 +1032,26 @@ func TestServer_Request_Reject_Pseudo_Unknown(t *testing.T) {
 	})
 }
 
+func TestServer_Request_Reject_Authority_Userinfo(t *testing.T) {
+	// "':authority' MUST NOT include the deprecated userinfo subcomponent
+	// for "http" or "https" schemed URIs."
+	// https://www.rfc-editor.org/rfc/rfc9113.html#section-8.3.1-2.3.8
+	testRejectRequest(t, func(st *serverTester) {
+		var buf bytes.Buffer
+		enc := hpack.NewEncoder(&buf)
+		enc.WriteField(hpack.HeaderField{Name: ":authority", Value: "userinfo@example.tld"})
+		enc.WriteField(hpack.HeaderField{Name: ":method", Value: "GET"})
+		enc.WriteField(hpack.HeaderField{Name: ":path", Value: "/"})
+		enc.WriteField(hpack.HeaderField{Name: ":scheme", Value: "https"})
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      1, // clients send odd numbers
+			BlockFragment: buf.Bytes(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	})
+}
+
 func testRejectRequest(t *testing.T, send func(*serverTester)) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("server request made it to handler; should've been rejected")

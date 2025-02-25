@@ -432,6 +432,16 @@ func NewServerRequest(rp ServerRequestParam) ServerRequestResult {
 		}
 	}
 	delete(rp.Header, "Trailer")
+
+	// "':authority' MUST NOT include the deprecated userinfo subcomponent
+	// for "http" or "https" schemed URIs."
+	// https://www.rfc-editor.org/rfc/rfc9113.html#section-8.3.1-2.3.8
+	if strings.IndexByte(rp.Authority, '@') != -1 && (rp.Scheme == "http" || rp.Scheme == "https") {
+		return ServerRequestResult{
+			InvalidReason: "userinfo_in_authority",
+		}
+	}
+
 	var url_ *url.URL
 	var requestURI string
 	if rp.Method == "CONNECT" && rp.Protocol == "" {
