@@ -19,7 +19,7 @@ type streamHandler interface {
 	handlePushStream(*stream) error
 	handleEncoderStream(*stream) error
 	handleDecoderStream(*stream) error
-	handleRequestStream(*stream)
+	handleRequestStream(*stream) error
 	abort(error)
 }
 
@@ -43,7 +43,7 @@ func (c *genericConn) acceptStreams(qconn *quic.Conn, h streamHandler) {
 		if st.IsReadOnly() {
 			go c.handleUnidirectionalStream(newStream(st), h)
 		} else {
-			go h.handleRequestStream(newStream(st))
+			go c.handleRequestStream(newStream(st), h)
 		}
 	}
 }
@@ -81,7 +81,6 @@ func (c *genericConn) handleUnidirectionalStream(st *stream, h streamHandler) {
 		// but the quic package currently doesn't allow setting error codes
 		// for STOP_SENDING frames.
 		// TODO: Should CloseRead take an error code?
-		st.stream.CloseRead()
 		err = nil
 	}
 	if err == io.EOF {
@@ -90,8 +89,26 @@ func (c *genericConn) handleUnidirectionalStream(st *stream, h streamHandler) {
 			message: streamType(stype).String() + " stream closed",
 		}
 	}
-	if err != nil {
+	c.handleStreamError(st, h, err)
+}
+
+func (c *genericConn) handleRequestStream(st *stream, h streamHandler) {
+	c.handleStreamError(st, h, h.handleRequestStream(st))
+}
+
+func (c *genericConn) handleStreamError(st *stream, h streamHandler, err error) {
+	switch err := err.(type) {
+	case *connectionError:
 		h.abort(err)
+	case nil:
+		st.stream.CloseRead()
+		st.stream.CloseWrite()
+	case *streamError:
+		st.stream.CloseRead()
+		st.stream.Reset(uint64(err.code))
+	default:
+		st.stream.CloseRead()
+		st.stream.Reset(uint64(errH3InternalError))
 	}
 }
 

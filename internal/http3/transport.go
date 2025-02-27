@@ -167,14 +167,14 @@ func (cc *ClientConn) handlePushStream(*stream) error {
 	}
 }
 
-func (cc *ClientConn) handleRequestStream(st *stream) {
+func (cc *ClientConn) handleRequestStream(st *stream) error {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
 	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
-	cc.abort(&connectionError{
+	return &connectionError{
 		code:    errH3StreamCreationError,
 		message: "server created bidirectional stream",
-	})
+	}
 }
 
 // abort closes the connection with an error.

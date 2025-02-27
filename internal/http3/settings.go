@@ -8,7 +8,6 @@ package http3
 
 import (
 	"golang.org/x/net/internal/quic/quicwire"
-	"golang.org/x/net/quic"
 )
 
 const (
@@ -39,9 +38,9 @@ func (st *stream) writeSettings(settings ...int64) {
 func (st *stream) readSettings(f func(settingType, value int64) error) error {
 	frameType, err := st.readFrameHeader()
 	if err != nil || frameType != frameTypeSettings {
-		return &quic.ApplicationError{
-			Code:   uint64(errH3MissingSettings),
-			Reason: "settings not sent on control stream",
+		return &connectionError{
+			code:    errH3MissingSettings,
+			message: "settings not sent on control stream",
 		}
 	}
 	for st.lim > 0 {
@@ -59,9 +58,9 @@ func (st *stream) readSettings(f func(settingType, value int64) error) error {
 		// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4.1-5
 		switch settingsType {
 		case 0x02, 0x03, 0x04, 0x05:
-			return &quic.ApplicationError{
-				Code:   uint64(errH3SettingsError),
-				Reason: "use of reserved setting",
+			return &connectionError{
+				code:    errH3SettingsError,
+				message: "use of reserved setting",
 			}
 		}
 

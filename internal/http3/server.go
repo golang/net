@@ -86,18 +86,7 @@ func newServerConn(qconn *quic.Conn) {
 	controlStream.writeSettings()
 	controlStream.Flush()
 
-	// Accept streams on the connection.
-	for {
-		st, err := sc.qconn.AcceptStream(context.Background())
-		if err != nil {
-			return // connection closed
-		}
-		if st.IsReadOnly() {
-			go sc.handleUnidirectionalStream(newStream(st), sc)
-		} else {
-			go sc.handleRequestStream(newStream(st))
-		}
-	}
+	sc.acceptStreams(sc.qconn, sc)
 }
 
 func (sc *serverConn) handleControlStream(st *stream) error {
@@ -165,9 +154,9 @@ func (sc *serverConn) handlePushStream(*stream) error {
 	}
 }
 
-func (sc *serverConn) handleRequestStream(st *stream) {
+func (sc *serverConn) handleRequestStream(st *stream) error {
 	// TODO
-	return
+	return nil
 }
 
 // abort closes the connection with an error.
