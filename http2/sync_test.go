@@ -24,9 +24,10 @@ type synctestGroup struct {
 }
 
 type goroutine struct {
-	id     int
-	parent int
-	state  string
+	id      int
+	parent  int
+	state   string
+	syscall bool
 }
 
 // newSynctest creates a new group with the synthetic clock set the provided time.
@@ -76,6 +77,14 @@ func (g *synctestGroup) Wait() {
 			return
 		}
 		runtime.Gosched()
+		if runtime.GOOS == "js" {
+			// When GOOS=js, we appear to need to time.Sleep to make progress
+			// on some syscalls. In particular, without this sleep
+			// writing to stdout (including via t.Log) can block forever.
+			for range 10 {
+				time.Sleep(1)
+			}
+		}
 	}
 }
 
@@ -87,6 +96,9 @@ func (g *synctestGroup) idle() bool {
 		if !g.gids[gr.id] && !g.gids[gr.parent] {
 			continue
 		}
+		if gr.syscall {
+			return false
+		}
 		// From runtime/runtime2.go.
 		switch gr.state {
 		case "IO wait":
@@ -97,9 +109,6 @@ func (g *synctestGroup) idle() bool {
 		case "chan receive":
 		case "chan send":
 		case "sync.Cond.Wait":
-		case "sync.Mutex.Lock":
-		case "sync.RWMutex.RLock":
-		case "sync.RWMutex.Lock":
 		default:
 			return false
 		}
@@ -138,6 +147,10 @@ func stacks(all bool) []goroutine {
 			panic(fmt.Errorf("3 unparsable goroutine stack:\n%s", gs))
 		}
 		state, rest, ok := strings.Cut(rest, "]")
+		isSyscall := false
+		if strings.Contains(rest, "\nsyscall.") {
+			isSyscall = true
+		}
 		var parent int
 		_, rest, ok = strings.Cut(rest, "\ncreated by ")
 		if ok && strings.Contains(rest, " in goroutine ") {
@@ -155,9 +168,10 @@ func stacks(all bool) []goroutine {
 			}
 		}
 		goroutines = append(goroutines, goroutine{
-			id:     id,
-			parent: parent,
-			state:  state,
+			id:      id,
+			parent:  parent,
+			state:   state,
+			syscall: isSyscall,
 		})
 	}
 	return goroutines
@@ -290,4 +304,26 @@ func (tm *fakeTimer) Stop() bool {
 	_, stopped := tm.g.timers[tm]
 	delete(tm.g.timers, tm)
 	return stopped
+}
+
+// TestSynctestLogs verifies that t.Log works,
+// in particular that the GOOS=js workaround in synctestGroup.Wait is working.
+// (When GOOS=js, writing to stdout can hang indefinitely if some goroutine loops
+// calling runtime.Gosched; see Wait for the workaround.)
+func TestSynctestLogs(t *testing.T) {
+	g := newSynctest(time.Now())
+	donec := make(chan struct{})
+	go func() {
+		g.Join()
+		for range 100 {
+			t.Logf("logging a long line")
+		}
+		close(donec)
+	}()
+	g.Wait()
+	select {
+	case <-donec:
+	default:
+		panic("done")
+	}
 }
