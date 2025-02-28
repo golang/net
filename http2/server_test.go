@@ -2814,6 +2814,8 @@ func testServerWritesTrailers(t *testing.T, withFlush bool) {
 		w.Header().Set("Trailer", "should not be included; Forbidden by RFC 7230 4.1.2")
 		return nil
 	}, func(st *serverTester) {
+		// Ignore errors from writing invalid trailers.
+		st.h1server.ErrorLog = log.New(io.Discard, "", 0)
 		getSlash(st)
 		st.wantHeaders(wantHeader{
 			streamID:  1,
