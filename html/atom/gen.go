@@ -540,6 +540,7 @@ var attributes = []string{
 	"scope",
 	"scoped",
 	"seamless",
+	"search",
 	"selected",
 	"shape",
 	"size",

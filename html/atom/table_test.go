@@ -315,6 +315,7 @@ var testAtomList = []string{
 	"scoped",
 	"script",
 	"seamless",
+	"search",
 	"section",
 	"select",
 	"selected",
