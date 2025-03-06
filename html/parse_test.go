@@ -475,6 +475,21 @@ func TestParseFragmentForeignContentTemplates(t *testing.T) {
 	}
 }
 
+func TestSearchTagClosesP(t *testing.T) {
+	data := `<p>Unclosed paragraph<search>Search content</search>`
+	node, err := Parse(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("Error parsing HTML: %v", err)
+	}
+	var buf bytes.Buffer
+	Render(&buf, node)
+	output := buf.String()
+	expected := `<html><head></head><body><p>Unclosed paragraph</p><search>Search content</search></body></html>`
+	if output != expected {
+		t.Errorf("Expected %q, but got %q", expected, output)
+	}
+}
+
 func BenchmarkParser(b *testing.B) {
 	buf, err := os.ReadFile("testdata/go1.html")
 	if err != nil {
