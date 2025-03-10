@@ -289,7 +289,7 @@ func TestTransportFailureErrorForHTTP1Response(t *testing.T) {
 		},
 		{
 			name:         "with enough frame size to start reading",
-			maxFrameSize: invalidHTTP1LookingFrameHeader.Length + 1,
+			maxFrameSize: invalidHTTP1LookingFrameHeader().Length + 1,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
