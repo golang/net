@@ -22,6 +22,11 @@ func (r *recordingProxy) Dial(network, addr string) (net.Conn, error) {
 	return nil, errors.New("recordingProxy")
 }
 
+func (r *recordingProxy) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	r.addrs = append(r.addrs, addr)
+	return nil, errors.New("recordingProxy")
+}
+
 func TestPerHost(t *testing.T) {
 	for _, test := range []struct {
 		config  string   // passed to PerHost.AddFromString
