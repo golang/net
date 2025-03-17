@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd netbsd openbsd
+//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 
 package route
 
 import (
 	"reflect"
+	"syscall"
 	"testing"
 )
 
@@ -20,7 +21,7 @@ type parseAddrsTest struct {
 
 var parseAddrsLittleEndianTests = []parseAddrsTest{
 	{
-		sysRTA_DST | sysRTA_GATEWAY | sysRTA_NETMASK | sysRTA_BRD,
+		syscall.RTA_DST | syscall.RTA_GATEWAY | syscall.RTA_NETMASK | syscall.RTA_BRD,
 		parseKernelInetAddr,
 		[]byte{
 			0x38, 0x12, 0x0, 0x0, 0xff, 0xff, 0xff, 0x0,
@@ -57,7 +58,7 @@ var parseAddrsLittleEndianTests = []parseAddrsTest{
 		},
 	},
 	{
-		sysRTA_NETMASK | sysRTA_IFP | sysRTA_IFA,
+		syscall.RTA_NETMASK | syscall.RTA_IFP | syscall.RTA_IFA,
 		parseKernelInetAddr,
 		[]byte{
 			0x7, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0x0,

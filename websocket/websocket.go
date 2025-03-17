@@ -5,11 +5,11 @@
 // Package websocket implements a client and server for the WebSocket protocol
 // as specified in RFC 6455.
 //
-// This package currently lacks some features found in alternative
+// This package currently lacks some features found in an alternative
 // and more actively maintained WebSocket packages:
 //
-//     https://godoc.org/github.com/gorilla/websocket
-//     https://godoc.org/nhooyr.io/websocket
+//   - [github.com/gorilla/websocket]
+//   - [github.com/coder/websocket]
 package websocket // import "golang.org/x/net/websocket"
 
 import (
@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -209,7 +208,7 @@ again:
 	n, err = ws.frameReader.Read(msg)
 	if err == io.EOF {
 		if trailer := ws.frameReader.TrailerReader(); trailer != nil {
-			io.Copy(ioutil.Discard, trailer)
+			io.Copy(io.Discard, trailer)
 		}
 		ws.frameReader = nil
 		goto again
@@ -331,7 +330,7 @@ func (cd Codec) Receive(ws *Conn, v interface{}) (err error) {
 	ws.rio.Lock()
 	defer ws.rio.Unlock()
 	if ws.frameReader != nil {
-		_, err = io.Copy(ioutil.Discard, ws.frameReader)
+		_, err = io.Copy(io.Discard, ws.frameReader)
 		if err != nil {
 			return err
 		}
@@ -363,7 +362,7 @@ again:
 		return ErrFrameTooLarge
 	}
 	payloadType := frame.PayloadType()
-	data, err := ioutil.ReadAll(frame)
+	data, err := io.ReadAll(frame)
 	if err != nil {
 		return err
 	}
@@ -416,7 +415,6 @@ Trivial usage:
 	// send binary frame
 	data = []byte{0, 1, 2}
 	websocket.Message.Send(ws, data)
-
 */
 var Message = Codec{marshal, unmarshal}
 

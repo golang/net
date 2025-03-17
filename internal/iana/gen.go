@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build ignore
+//go:build ignore
 
 //go:generate go run gen.go
 
@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"go/format"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -69,7 +68,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := ioutil.WriteFile("const.go", b, 0644); err != nil {
+	if err := os.WriteFile("const.go", b, 0644); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

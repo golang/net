@@ -24,7 +24,7 @@ type ifList struct {
 
 // parseIfHeader parses the "If: foo bar" HTTP header. The httpHeader string
 // should omit the "If:" prefix and have any "\r\n"s collapsed to a " ", as is
-// returned by req.Header.Get("If") for a http.Request req.
+// returned by req.Header.Get("If") for an http.Request req.
 func parseIfHeader(httpHeader string) (h ifHeader, ok bool) {
 	s := strings.TrimSpace(httpHeader)
 	switch tokenType, _, _ := lex(s); tokenType {

@@ -14,24 +14,13 @@ import (
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 	"golang.org/x/net/nettest"
+	"golang.org/x/sys/cpu"
 )
 
 // A virtualMachine is a BPF virtual machine which can process an
 // input packet against a BPF program and render a verdict.
 type virtualMachine interface {
 	Run(in []byte) (int, error)
-}
-
-// canUseOSVM indicates if the OS BPF VM is available on this platform.
-func canUseOSVM() bool {
-	// OS BPF VM can only be used on platforms where x/net/ipv4 supports
-	// attaching a BPF program to a socket.
-	switch runtime.GOOS {
-	case "linux":
-		return true
-	}
-
-	return false
 }
 
 // All BPF tests against both the Go VM and OS VM are assumed to
@@ -55,11 +44,10 @@ func testVM(t *testing.T, filter []bpf.Instruction) (virtualMachine, func(), err
 		t: t,
 	}
 
-	// If available, add the OS VM for tests which verify that both the Go
-	// VM and OS VM have exactly the same output for the same input program
-	// and packet.
+	// For linux with a little endian CPU, the Go VM and OS VM have exactly the
+	// same output for the same input program and packet. Compare both.
 	done := func() {}
-	if canUseOSVM() {
+	if runtime.GOOS == "linux" && !cpu.IsBigEndian {
 		osVM, osVMDone := testOSVM(t, filter)
 		done = func() { osVMDone() }
 		mvm.osVM = osVM

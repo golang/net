@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/ipv6"
@@ -20,7 +21,7 @@ import (
 
 func BenchmarkReadWriteUnicast(b *testing.B) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		b.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -71,7 +72,7 @@ func BenchmarkReadWriteUnicast(b *testing.B) {
 
 func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		b.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -219,13 +220,13 @@ func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 
 func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
-	if !nettest.SupportsIPv6() {
-		t.Skip("ipv6 is not supported")
+	ifi, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
+	if err != nil {
+		t.Skip("ipv6 is not enabled for loopback interface")
 	}
-
 	c, err := nettest.NewLocalPacketListener("udp6")
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +236,6 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	defer p.Close()
 
 	dst := c.LocalAddr()
-	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
 
@@ -246,16 +246,31 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var firstError sync.Once
+	fatalf := func(format string, args ...interface{}) {
+		// On the first error, close the PacketConn to unblock the remaining
+		// goroutines. Suppress any further errors, which may occur simply due to
+		// closing the PacketConn.
+		first := false
+		firstError.Do(func() {
+			first = true
+			p.Close()
+		})
+		if first {
+			t.Helper()
+			t.Errorf(format, args...)
+		}
+		runtime.Goexit()
+	}
+
 	var wg sync.WaitGroup
 	reader := func() {
 		defer wg.Done()
 		rb := make([]byte, 128)
 		if n, cm, _, err := p.ReadFrom(rb); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		} else if !bytes.Equal(rb[:n], wb) {
-			t.Errorf("got %v; want %v", rb[:n], wb)
-			return
+			fatalf("got %v; want %v", rb[:n], wb)
 		} else {
 			s := cm.String()
 			if strings.Contains(s, ",") {
@@ -273,15 +288,24 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
-		if n, err := p.WriteTo(wb, &cm, dst); err != nil {
-			t.Error(err)
-			return
-		} else if n != len(wb) {
-			t.Errorf("got %d; want %d", n, len(wb))
-			return
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, &cm, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(wb) {
+				fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
 	}
 
@@ -303,7 +327,7 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
@@ -356,8 +380,6 @@ func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 }
 
 func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, data []byte, dst net.Addr, batch bool) {
-	t.Helper()
-
 	ifi, _ := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 
@@ -368,23 +390,37 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, 
 		t.Fatal(err)
 	}
 
+	var firstError sync.Once
+	fatalf := func(format string, args ...interface{}) {
+		// On the first error, close the PacketConn to unblock the remaining
+		// goroutines. Suppress any further errors, which may occur simply due to
+		// closing the PacketConn.
+		first := false
+		firstError.Do(func() {
+			first = true
+			p.Close()
+		})
+		if first {
+			t.Helper()
+			t.Errorf(format, args...)
+		}
+		runtime.Goexit()
+	}
+
 	var wg sync.WaitGroup
 	reader := func() {
 		defer wg.Done()
 		b := make([]byte, 128)
 		n, cm, _, err := p.ReadFrom(b)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if !bytes.Equal(b[:n], data) {
-			t.Errorf("got %#v; want %#v", b[:n], data)
-			return
+			fatalf("got %#v; want %#v", b[:n], data)
 		}
 		s := cm.String()
 		if strings.Contains(s, ",") {
-			t.Errorf("should be space-separated values: %s", s)
-			return
+			fatalf("should be space-separated values: %s", s)
 		}
 	}
 	batchReader := func() {
@@ -397,27 +433,22 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, 
 		}
 		n, err := p.ReadBatch(ms, 0)
 		if err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		if n != len(ms) {
-			t.Errorf("got %d; want %d", n, len(ms))
-			return
+			fatalf("got %d; want %d", n, len(ms))
 		}
 		var cm ipv6.ControlMessage
 		if err := cm.Parse(ms[0].OOB[:ms[0].NN]); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		b := ms[0].Buffers[0][:ms[0].N]
 		if !bytes.Equal(b, data) {
-			t.Errorf("got %#v; want %#v", b, data)
-			return
+			fatalf("got %#v; want %#v", b, data)
 		}
 		s := cm.String()
 		if strings.Contains(s, ",") {
-			t.Errorf("should be space-separated values: %s", s)
-			return
+			fatalf("should be space-separated values: %s", s)
 		}
 	}
 	writer := func(toggle bool) {
@@ -431,17 +462,24 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, 
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
-		n, err := p.WriteTo(data, &cm, dst)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if n != len(data) {
-			t.Errorf("got %d; want %d", n, len(data))
-			return
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(data, &cm, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(data) {
+				fatalf("got %d; want %d", n, len(data))
+			}
+			break
 		}
 	}
 	batchWriter := func(toggle bool) {
@@ -455,8 +493,7 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, 
 			cm.IfIndex = ifi.Index
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
-			t.Error(err)
-			return
+			fatalf("%v", err)
 		}
 		ms := []ipv6.Message{
 			{
@@ -465,18 +502,25 @@ func testPacketConnConcurrentReadWriteUnicast(t *testing.T, p *ipv6.PacketConn, 
 				Addr:    dst,
 			},
 		}
-		n, err := p.WriteBatch(ms, 0)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if n != len(ms) {
-			t.Errorf("got %d; want %d", n, len(ms))
-			return
-		}
-		if ms[0].N != len(data) {
-			t.Errorf("got %d; want %d", ms[0].N, len(data))
-			return
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteBatch(ms, 0)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				fatalf("%v", err)
+			}
+			if n != len(ms) {
+				fatalf("got %d; want %d", n, len(ms))
+			}
+			if ms[0].N != len(data) {
+				fatalf("got %d; want %d", ms[0].N, len(data))
+			}
+			break
 		}
 	}
 

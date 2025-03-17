@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows zos
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows || zos
 
 package ipv4_test
 
 import (
+	"errors"
 	"os"
 	"syscall"
+
+	"golang.org/x/net/ipv4"
 )
 
 func protocolNotSupported(err error) bool {
@@ -27,5 +30,5 @@ func protocolNotSupported(err error) bool {
 			}
 		}
 	}
-	return false
+	return errors.Is(err, ipv4.ErrNotImplemented)
 }

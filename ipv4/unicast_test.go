@@ -20,7 +20,7 @@ import (
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	// Skip this check on z/OS since net.Interfaces() does not return loopback, however
@@ -50,18 +50,25 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			t.Fatal(err)
 		}
 		p.SetTTL(i + 1)
-		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, nil, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				t.Fatal(err)
+			}
+			if n != len(wb) {
+				t.Fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
-		if n, err := p.WriteTo(wb, nil, dst); err != nil {
-			t.Fatal(err)
-		} else if n != len(wb) {
-			t.Fatalf("got %v; want %v", n, len(wb))
-		}
+
 		rb := make([]byte, 128)
-		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
-		}
 		if n, _, _, err := p.ReadFrom(rb); err != nil {
 			t.Fatal(err)
 		} else if !bytes.Equal(rb[:n], wb) {
@@ -71,10 +78,6 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 }
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -121,25 +124,27 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatal(err)
 		}
 		p.SetTTL(i + 1)
-		if err := p.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
+
+		backoff := time.Millisecond
+		for {
+			n, err := p.WriteTo(wb, nil, dst)
+			if err != nil {
+				if n == 0 && isENOBUFS(err) {
+					time.Sleep(backoff)
+					backoff *= 2
+					continue
+				}
+				t.Fatal(err)
+			}
+			if n != len(wb) {
+				t.Fatalf("got %d; want %d", n, len(wb))
+			}
+			break
 		}
-		if n, err := p.WriteTo(wb, nil, dst); err != nil {
-			t.Fatal(err)
-		} else if n != len(wb) {
-			t.Fatalf("got %v; want %v", n, len(wb))
-		}
+
 		rb := make([]byte, 128)
 	loop:
-		if err := p.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
-		}
 		if n, _, _, err := p.ReadFrom(rb); err != nil {
-			switch runtime.GOOS {
-			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
-				t.Logf("not supported on %s", runtime.GOOS)
-				continue
-			}
 			t.Fatal(err)
 		} else {
 			m, err := icmp.ParseMessage(iana.ProtocolICMP, rb[:n])
@@ -158,10 +163,6 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 }
 
 func TestRawConnReadWriteUnicastICMP(t *testing.T) {
-	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
-		t.Skipf("not supported on %s", runtime.GOOS)
-	}
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -213,23 +214,12 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			}
 			t.Fatal(err)
 		}
-		if err := r.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
-		}
 		if err := r.WriteTo(wh, wb, nil); err != nil {
 			t.Fatal(err)
 		}
 		rb := make([]byte, ipv4.HeaderLen+128)
 	loop:
-		if err := r.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-			t.Fatal(err)
-		}
 		if _, b, _, err := r.ReadFrom(rb); err != nil {
-			switch runtime.GOOS {
-			case "darwin", "ios": // older darwin kernels have some limitation on receiving icmp packet through raw socket
-				t.Logf("not supported on %s", runtime.GOOS)
-				continue
-			}
 			t.Fatal(err)
 		} else {
 			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)

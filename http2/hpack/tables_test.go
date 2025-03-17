@@ -207,6 +207,12 @@ func TestStaticTable(t *testing.T) {
 		if got, want := staticTable.ents[i-1].Value, m[3]; got != want {
 			t.Errorf("header index %d value = %q; want %q", i, got, want)
 		}
+		if got, want := staticTable.ents[i-1].Sensitive, false; got != want {
+			t.Errorf("header index %d sensitive = %t; want %t", i, got, want)
+		}
+		if got, want := strconv.Itoa(int(staticTable.byNameValue[pairNameValue{name: m[2], value: m[3]}])), m[1]; got != want {
+			t.Errorf("header by name %s value %s index = %s; want %s", m[2], m[3], got, want)
+		}
 	}
 	if err := bs.Err(); err != nil {
 		t.Error(err)

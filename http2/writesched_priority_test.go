@@ -387,6 +387,29 @@ func TestPriorityPopFrom533Tree(t *testing.T) {
 	}
 }
 
+// #49741 RST_STREAM and Control frames should have more priority than data
+// frames to avoid blocking streams caused by clients not able to drain the
+// queue.
+func TestPriorityRSTFrames(t *testing.T) {
+	ws := defaultPriorityWriteScheduler()
+	ws.OpenStream(1, OpenStreamOptions{})
+
+	sc := &serverConn{maxFrameSize: 16}
+	st1 := &stream{id: 1, sc: sc}
+
+	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 16), false}, st1, nil})
+	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 16), false}, st1, nil})
+	ws.Push(makeWriteRSTStream(1))
+	// No flow-control bytes available.
+	wr, ok := ws.Pop()
+	if !ok {
+		t.Fatalf("Pop should work for control frames and not be limited by flow control")
+	}
+	if _, ok := wr.write.(StreamError); !ok {
+		t.Fatal("expected RST stream frames first", wr)
+	}
+}
+
 func TestPriorityPopFromLinearTree(t *testing.T) {
 	ws := defaultPriorityWriteScheduler()
 	ws.OpenStream(1, OpenStreamOptions{})
@@ -537,5 +560,39 @@ func TestPriorityRstStreamOnNonOpenStreams(t *testing.T) {
 
 	if err := checkPopAll(ws, []uint32{1, 2}); err != nil {
 		t.Error(err)
+	}
+}
+
+// https://go.dev/issue/66514
+func TestPriorityIssue66514(t *testing.T) {
+	addDep := func(ws *priorityWriteScheduler, child uint32, parent uint32) {
+		ws.AdjustStream(child, PriorityParam{
+			StreamDep: parent,
+			Exclusive: false,
+			Weight:    16,
+		})
+	}
+
+	validateDepTree := func(ws *priorityWriteScheduler, id uint32, t *testing.T) {
+		for n := ws.nodes[id]; n != nil; n = n.parent {
+			if n.parent == nil {
+				if n.id != uint32(0) {
+					t.Errorf("detected nodes not parented to 0")
+				}
+			}
+		}
+	}
+
+	ws := NewPriorityWriteScheduler(nil).(*priorityWriteScheduler)
+
+	// Root entry
+	addDep(ws, uint32(1), uint32(0))
+	addDep(ws, uint32(3), uint32(1))
+	addDep(ws, uint32(5), uint32(1))
+
+	for id := uint32(7); id < uint32(100); id += uint32(4) {
+		addDep(ws, id, id-uint32(4))
+		addDep(ws, id+uint32(2), id-uint32(4))
+		validateDepTree(ws, id, t)
 	}
 }

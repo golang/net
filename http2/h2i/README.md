@@ -25,7 +25,7 @@ Later:
 ## Installation
 
 ```
-$ go get golang.org/x/net/http2/h2i
+$ go install golang.org/x/net/http2/h2i@latest
 $ h2i <host>
 ```
 

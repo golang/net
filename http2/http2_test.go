@@ -6,12 +6,12 @@ package http2
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"net/http"
-	"os/exec"
-	"strconv"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -81,44 +81,6 @@ func encodeHeaderNoImplicit(t *testing.T, headers ...string) []byte {
 	return buf.Bytes()
 }
 
-// Verify that curl has http2.
-func requireCurl(t *testing.T) {
-	out, err := dockerLogs(curl(t, "--version"))
-	if err != nil {
-		t.Skipf("failed to determine curl features; skipping test")
-	}
-	if !strings.Contains(string(out), "HTTP2") {
-		t.Skip("curl doesn't support HTTP2; skipping test")
-	}
-}
-
-func curl(t *testing.T, args ...string) (container string) {
-	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "gohttp2/curl"}, args...)...).Output()
-	if err != nil {
-		t.Skipf("Failed to run curl in docker: %v, %s", err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// Verify that h2load exists.
-func requireH2load(t *testing.T) {
-	out, err := dockerLogs(h2load(t, "--version"))
-	if err != nil {
-		t.Skipf("failed to probe h2load; skipping test: %s", out)
-	}
-	if !strings.Contains(string(out), "h2load nghttp2/") {
-		t.Skipf("h2load not present; skipping test. (Output=%q)", out)
-	}
-}
-
-func h2load(t *testing.T, args ...string) (container string) {
-	out, err := exec.Command("docker", append([]string{"run", "-d", "--net=host", "--entrypoint=/usr/local/bin/h2load", "gohttp2/curl"}, args...)...).Output()
-	if err != nil {
-		t.Skipf("Failed to run h2load in docker: %v, %s", err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
 type puppetCommand struct {
 	fn   func(w http.ResponseWriter, r *http.Request)
 	done chan<- bool
@@ -146,27 +108,6 @@ func (p *handlerPuppet) do(fn func(http.ResponseWriter, *http.Request)) {
 	done := make(chan bool)
 	p.ch <- puppetCommand{fn, done}
 	<-done
-}
-func dockerLogs(container string) ([]byte, error) {
-	out, err := exec.Command("docker", "wait", container).CombinedOutput()
-	if err != nil {
-		return out, err
-	}
-	exitStatus, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return out, errors.New("unexpected exit status from docker wait")
-	}
-	out, err = exec.Command("docker", "logs", container).CombinedOutput()
-	exec.Command("docker", "rm", container).Run()
-	if err == nil && exitStatus != 0 {
-		err = fmt.Errorf("exit status %d: %s", exitStatus, out)
-	}
-	return out, err
-}
-
-func kill(container string) {
-	exec.Command("docker", "kill", container).Run()
-	exec.Command("docker", "rm", container).Run()
 }
 
 func cleanDate(res *http.Response) {
@@ -287,4 +228,75 @@ func TestConfigureServerIdleTimeout_Go18(t *testing.T) {
 			t.Errorf("s2.IdleTimeout = %v; want %v", s2.IdleTimeout, timeout)
 		}
 	}
+}
+
+var forbiddenStringsFunctions = map[string]bool{
+	// Functions that use Unicode-aware case folding.
+	"EqualFold":      true,
+	"Title":          true,
+	"ToLower":        true,
+	"ToLowerSpecial": true,
+	"ToTitle":        true,
+	"ToTitleSpecial": true,
+	"ToUpper":        true,
+	"ToUpperSpecial": true,
+
+	// Functions that use Unicode-aware spaces.
+	"Fields":    true,
+	"TrimSpace": true,
+}
+
+// TestNoUnicodeStrings checks that nothing in net/http uses the Unicode-aware
+// strings and bytes package functions. HTTP is mostly ASCII based, and doing
+// Unicode-aware case folding or space stripping can introduce vulnerabilities.
+func TestNoUnicodeStrings(t *testing.T) {
+	re := regexp.MustCompile(`(strings|bytes).([A-Za-z]+)`)
+	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if path == "h2i" || path == "h2c" {
+			return filepath.SkipDir
+		}
+		if !strings.HasSuffix(path, ".go") ||
+			strings.HasSuffix(path, "_test.go") ||
+			path == "ascii.go" || info.IsDir() {
+			return nil
+		}
+
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for lineNum, line := range strings.Split(string(contents), "\n") {
+			for _, match := range re.FindAllStringSubmatch(line, -1) {
+				if !forbiddenStringsFunctions[match[2]] {
+					continue
+				}
+				t.Errorf("disallowed call to %s at %s:%d", match[0], path, lineNum+1)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setForTest sets *p = v, and restores its original value in t.Cleanup.
+func setForTest[T any](t *testing.T, p *T, v T) {
+	orig := *p
+	t.Cleanup(func() {
+		*p = orig
+	})
+	*p = v
+}
+
+// must returns v if err is nil, or panics otherwise.
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

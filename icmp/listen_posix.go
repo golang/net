@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows
 
 package icmp
 
@@ -28,6 +28,7 @@ const sysIP_STRIPHDR = 0x17 // for now only darwin supports this option
 // Currently only Darwin and Linux support this.
 //
 // Examples:
+//
 //	ListenPacket("udp4", "192.168.0.1")
 //	ListenPacket("udp4", "0.0.0.0")
 //	ListenPacket("udp6", "fe80::1%en0")
@@ -37,6 +38,7 @@ const sysIP_STRIPHDR = 0x17 // for now only darwin supports this option
 // followed by a colon and an ICMP protocol number or name.
 //
 // Examples:
+//
 //	ListenPacket("ip4:icmp", "192.168.0.1")
 //	ListenPacket("ip4:1", "0.0.0.0")
 //	ListenPacket("ip6:ipv6-icmp", "fe80::1%en0")

@@ -14,8 +14,9 @@ func TestRandomScheduler(t *testing.T) {
 	ws.Push(makeWriteHeadersRequest(2))
 	ws.Push(makeWriteNonStreamRequest())
 	ws.Push(makeWriteNonStreamRequest())
+	ws.Push(makeWriteRSTStream(1))
 
-	// Pop all frames. Should get the non-stream requests first,
+	// Pop all frames. Should get the non-stream and RST stream requests first,
 	// followed by the stream requests in any order.
 	var order []FrameWriteRequest
 	for {
@@ -26,11 +27,14 @@ func TestRandomScheduler(t *testing.T) {
 		order = append(order, wr)
 	}
 	t.Logf("got frames: %v", order)
-	if len(order) != 6 {
+	if len(order) != 7 {
 		t.Fatalf("got %d frames, expected 6", len(order))
 	}
 	if order[0].StreamID() != 0 || order[1].StreamID() != 0 {
 		t.Fatal("expected non-stream frames first", order[0], order[1])
+	}
+	if _, ok := order[2].write.(StreamError); !ok {
+		t.Fatal("expected RST stream frames first", order[2])
 	}
 	got := make(map[uint32]bool)
 	for _, wr := range order[2:] {

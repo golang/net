@@ -81,6 +81,7 @@ func TestMemPS(t *testing.T) {
 				{Space: "DAV:", Local: "displayname"},
 				{Space: "DAV:", Local: "supportedlock"},
 				{Space: "DAV:", Local: "getlastmodified"},
+				{Space: "DAV:", Local: "lockdiscovery"},
 			},
 		}, {
 			op:   "propname",
@@ -93,6 +94,7 @@ func TestMemPS(t *testing.T) {
 				{Space: "DAV:", Local: "getcontenttype"},
 				{Space: "DAV:", Local: "getetag"},
 				{Space: "DAV:", Local: "supportedlock"},
+				{Space: "DAV:", Local: "lockdiscovery"},
 			},
 		}},
 	}, {
@@ -115,7 +117,11 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "supportedlock"},
 					InnerXML: []byte(lockEntry),
-				}},
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "lockdiscovery"},
+					InnerXML: []byte(""),
+				},
+				},
 			}},
 		}, {
 			op:   "allprop",
@@ -141,6 +147,9 @@ func TestMemPS(t *testing.T) {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
 				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "lockdiscovery"},
+					InnerXML: []byte(""),
+				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "supportedlock"},
 					InnerXML: []byte(lockEntry),
 				}},
@@ -149,8 +158,8 @@ func TestMemPS(t *testing.T) {
 			op:   "allprop",
 			name: "/file",
 			pnames: []xml.Name{
-				{"DAV:", "resourcetype"},
-				{"foo", "bar"},
+				{Space: "DAV:", Local: "resourcetype"},
+				{Space: "foo", Local: "bar"},
 			},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
@@ -172,6 +181,9 @@ func TestMemPS(t *testing.T) {
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "getetag"},
 					InnerXML: nil, // Calculated during test.
+				}, {
+					XMLName:  xml.Name{Space: "DAV:", Local: "lockdiscovery"},
+					InnerXML: []byte(""),
 				}, {
 					XMLName:  xml.Name{Space: "DAV:", Local: "supportedlock"},
 					InnerXML: []byte(lockEntry),
@@ -188,7 +200,7 @@ func TestMemPS(t *testing.T) {
 		propOp: []propOp{{
 			op:     "propfind",
 			name:   "/dir",
-			pnames: []xml.Name{{"DAV:", "resourcetype"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "resourcetype"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -199,7 +211,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:     "propfind",
 			name:   "/file",
-			pnames: []xml.Name{{"DAV:", "resourcetype"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "resourcetype"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -214,7 +226,7 @@ func TestMemPS(t *testing.T) {
 		propOp: []propOp{{
 			op:     "propfind",
 			name:   "/dir",
-			pnames: []xml.Name{{"DAV:", "getcontentlanguage"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "getcontentlanguage"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -224,7 +236,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:     "propfind",
 			name:   "/dir",
-			pnames: []xml.Name{{"DAV:", "creationdate"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "creationdate"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -238,7 +250,7 @@ func TestMemPS(t *testing.T) {
 		propOp: []propOp{{
 			op:     "propfind",
 			name:   "/dir",
-			pnames: []xml.Name{{"DAV:", "getetag"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "getetag"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{
@@ -248,7 +260,7 @@ func TestMemPS(t *testing.T) {
 		}, {
 			op:     "propfind",
 			name:   "/file",
-			pnames: []xml.Name{{"DAV:", "getetag"}},
+			pnames: []xml.Name{{Space: "DAV:", Local: "getetag"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusOK,
 				Props: []Property{{
@@ -466,6 +478,7 @@ func TestMemPS(t *testing.T) {
 				{Space: "DAV:", Local: "getetag"},
 				{Space: "DAV:", Local: "supportedlock"},
 				{Space: "foo", Local: "bar"},
+				{Space: "DAV:", Local: "lockdiscovery"},
 			},
 		}},
 	}, {
@@ -493,7 +506,7 @@ func TestMemPS(t *testing.T) {
 		propOp: []propOp{{
 			op:     "propfind",
 			name:   "/dir",
-			pnames: []xml.Name{{"foo:", "bar"}},
+			pnames: []xml.Name{{Space: "foo:", Local: "bar"}},
 			wantPropstats: []Propstat{{
 				Status: http.StatusNotFound,
 				Props: []Property{{

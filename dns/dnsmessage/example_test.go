@@ -12,25 +12,17 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
-func mustNewName(name string) dnsmessage.Name {
-	n, err := dnsmessage.NewName(name)
-	if err != nil {
-		panic(err)
-	}
-	return n
-}
-
 func ExampleParser() {
 	msg := dnsmessage.Message{
 		Header: dnsmessage.Header{Response: true, Authoritative: true},
 		Questions: []dnsmessage.Question{
 			{
-				Name:  mustNewName("foo.bar.example.com."),
+				Name:  dnsmessage.MustNewName("foo.bar.example.com."),
 				Type:  dnsmessage.TypeA,
 				Class: dnsmessage.ClassINET,
 			},
 			{
-				Name:  mustNewName("bar.example.com."),
+				Name:  dnsmessage.MustNewName("bar.example.com."),
 				Type:  dnsmessage.TypeA,
 				Class: dnsmessage.ClassINET,
 			},
@@ -38,7 +30,7 @@ func ExampleParser() {
 		Answers: []dnsmessage.Resource{
 			{
 				Header: dnsmessage.ResourceHeader{
-					Name:  mustNewName("foo.bar.example.com."),
+					Name:  dnsmessage.MustNewName("foo.bar.example.com."),
 					Type:  dnsmessage.TypeA,
 					Class: dnsmessage.ClassINET,
 				},
@@ -46,7 +38,7 @@ func ExampleParser() {
 			},
 			{
 				Header: dnsmessage.ResourceHeader{
-					Name:  mustNewName("bar.example.com."),
+					Name:  dnsmessage.MustNewName("bar.example.com."),
 					Type:  dnsmessage.TypeA,
 					Class: dnsmessage.ClassINET,
 				},

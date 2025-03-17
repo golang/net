@@ -4,13 +4,16 @@
 
 package route
 
-import "testing"
+import (
+	"syscall"
+	"testing"
+)
 
 func TestFetchAndParseRIBOnDarwin(t *testing.T) {
-	for _, typ := range []RIBType{sysNET_RT_FLAGS, sysNET_RT_DUMP2, sysNET_RT_IFLIST2} {
+	for _, typ := range []RIBType{syscall.NET_RT_FLAGS, syscall.NET_RT_DUMP2, syscall.NET_RT_IFLIST2} {
 		var lastErr error
 		var ms []Message
-		for _, af := range []int{sysAF_UNSPEC, sysAF_INET, sysAF_INET6} {
+		for _, af := range []int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 			rs, err := fetchAndParseRIB(af, typ)
 			if err != nil {
 				lastErr = err

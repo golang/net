@@ -4,6 +4,8 @@
 
 // Package dict implements the Dictionary Server Protocol
 // as defined in RFC 2229.
+//
+// The dict package is frozen and is not accepting new features.
 package dict // import "golang.org/x/net/dict"
 
 import (
@@ -138,7 +140,7 @@ func (c *Client) Define(dict, word string) ([]*Defn, error) {
 	return def, err
 }
 
-// Fields returns the fields in s.
+// fields returns the fields in s.
 // Fields are space separated unquoted words
 // or quoted with single or double quote.
 func fields(s string) ([]string, error) {

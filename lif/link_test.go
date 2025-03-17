@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build solaris
+//go:build solaris
 
 package lif
 
 import (
 	"fmt"
+	"syscall"
 	"testing"
 )
 
@@ -23,7 +24,7 @@ type linkPack struct {
 func linkPacks() ([]linkPack, error) {
 	var lastErr error
 	var lps []linkPack
-	for _, af := range [...]int{sysAF_UNSPEC, sysAF_INET, sysAF_INET6} {
+	for _, af := range [...]int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 		lls, err := Links(af, "")
 		if err != nil {
 			lastErr = err

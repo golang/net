@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd netbsd openbsd
+//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 
 package route
 
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"time"
+	"syscall"
 )
 
 func (m *RouteMessage) String() string {
@@ -176,13 +176,13 @@ type addrFamily int
 
 func (af addrFamily) String() string {
 	switch af {
-	case sysAF_UNSPEC:
+	case syscall.AF_UNSPEC:
 		return "unspec"
-	case sysAF_LINK:
+	case syscall.AF_LINK:
 		return "link"
-	case sysAF_INET:
+	case syscall.AF_INET:
 		return "inet4"
-	case sysAF_INET6:
+	case syscall.AF_INET6:
 		return "inet6"
 	default:
 		return fmt.Sprintf("%d", af)
@@ -281,24 +281,24 @@ func (as addrs) String() string {
 
 func (as addrs) match(attrs addrAttrs) error {
 	var ts addrAttrs
-	af := sysAF_UNSPEC
+	af := syscall.AF_UNSPEC
 	for i := range as {
 		if as[i] != nil {
 			ts |= 1 << uint(i)
 		}
 		switch as[i].(type) {
 		case *Inet4Addr:
-			if af == sysAF_UNSPEC {
-				af = sysAF_INET
+			if af == syscall.AF_UNSPEC {
+				af = syscall.AF_INET
 			}
-			if af != sysAF_INET {
+			if af != syscall.AF_INET {
 				return fmt.Errorf("got %v; want %v", addrs(as), addrFamily(af))
 			}
 		case *Inet6Addr:
-			if af == sysAF_UNSPEC {
-				af = sysAF_INET6
+			if af == syscall.AF_UNSPEC {
+				af = syscall.AF_INET6
 			}
-			if af != sysAF_INET6 {
+			if af != syscall.AF_INET6 {
 				return fmt.Errorf("got %v; want %v", addrs(as), addrFamily(af))
 			}
 		}
@@ -310,15 +310,7 @@ func (as addrs) match(attrs addrAttrs) error {
 }
 
 func fetchAndParseRIB(af int, typ RIBType) ([]Message, error) {
-	var err error
-	var b []byte
-	for i := 0; i < 3; i++ {
-		if b, err = FetchRIB(af, typ, 0); err != nil {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		break
-	}
+	b, err := FetchRIB(af, typ, 0)
 	if err != nil {
 		return nil, fmt.Errorf("%v %d %v", addrFamily(af), typ, err)
 	}

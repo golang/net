@@ -28,13 +28,8 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 }
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
-	switch os.Getenv("GO_BUILDER_NAME") {
-	case "openbsd-amd64-68", "openbsd-386-68", "openbsd-arm-jsing", "openbsd-arm64-jsing", "openbsd-mips64-jsing":
-		t.Skip(`this test is currently failing on OpenBSD 6.8 builders with "raw-read udp6: i/o timeout" ` +
-			`and needs investigation, see golang.org/issue/42064`)
-	}
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
@@ -105,15 +100,25 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 				}
 				t.Fatal(err)
 			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-				t.Fatal(err)
-			}
 			cm.HopLimit = i + 1
-			if n, err := p.WriteTo(wb, &cm, &grp); err != nil {
-				t.Fatal(err)
-			} else if n != len(wb) {
-				t.Fatal(err)
+
+			backoff := time.Millisecond
+			for {
+				n, err := p.WriteTo(wb, &cm, &grp)
+				if err != nil {
+					if n == 0 && isENOBUFS(err) {
+						time.Sleep(backoff)
+						backoff *= 2
+						continue
+					}
+					t.Fatal(err)
+				}
+				if n != len(wb) {
+					t.Fatalf("wrote %v bytes; want %v", n, len(wb))
+				}
+				break
 			}
+
 			rb := make([]byte, 128)
 			if n, _, _, err := p.ReadFrom(rb); err != nil {
 				t.Fatal(err)
@@ -139,7 +144,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			`and needs investigation, see golang.org/issue/42064`)
 	}
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !nettest.SupportsIPv6() {
@@ -243,9 +248,6 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 					t.Logf("not supported on %s", runtime.GOOS)
 					continue
 				}
-				t.Fatal(err)
-			}
-			if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 				t.Fatal(err)
 			}
 			cm.HopLimit = i + 1

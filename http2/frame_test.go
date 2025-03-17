@@ -312,6 +312,23 @@ func TestWriteHeaders(t *testing.T) {
 				headerFragBuf: []byte("abc"),
 			},
 		},
+		{
+			"zero length",
+			HeadersFrameParam{
+				StreamID: 42,
+				Priority: PriorityParam{},
+			},
+			"\x00\x00\x00\x01\x00\x00\x00\x00*",
+			&HeadersFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 42,
+					Type:     FrameHeaders,
+					Length:   0,
+				},
+				Priority: PriorityParam{},
+			},
+		},
 	}
 	for _, tt := range tests {
 		fr, buf := testFramer()
@@ -1051,7 +1068,7 @@ func TestMetaFrameHeader(t *testing.T) {
 			name:          "invalid_field_value",
 			w:             func(f *Framer) { write(f, encodeHeaderRaw(t, "key", "bad_null\x00")) },
 			want:          streamError(1, ErrCodeProtocol),
-			wantErrReason: "invalid header field value \"bad_null\\x00\"",
+			wantErrReason: `invalid header field value for "key"`,
 		},
 	}
 	for i, tt := range tests {

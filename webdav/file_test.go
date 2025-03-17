@@ -9,7 +9,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -518,12 +517,7 @@ func TestDir(t *testing.T) {
 		t.Skip("see golang.org/issue/11453")
 	}
 
-	td, err := ioutil.TempDir("", "webdav-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(td)
-	testFS(t, Dir(td))
+	testFS(t, Dir(t.TempDir()))
 }
 
 func TestMemFS(t *testing.T) {
@@ -711,11 +705,11 @@ func TestMemFile(t *testing.T) {
 			default:
 				t.Fatalf("test case #%d %q: invalid seek whence", i, tc)
 			case "set":
-				whence = os.SEEK_SET
+				whence = io.SeekStart
 			case "cur":
-				whence = os.SEEK_CUR
+				whence = io.SeekCurrent
 			case "end":
-				whence = os.SEEK_END
+				whence = io.SeekEnd
 			}
 			offset, err := strconv.Atoi(parts[1])
 			if err != nil {
@@ -758,7 +752,7 @@ func TestMemFile(t *testing.T) {
 			if err != nil {
 				t.Fatalf("test case #%d %q: OpenFile: %v", i, tc, err)
 			}
-			gotBytes, err := ioutil.ReadAll(g)
+			gotBytes, err := io.ReadAll(g)
 			if err != nil {
 				t.Fatalf("test case #%d %q: ReadAll: %v", i, tc, err)
 			}

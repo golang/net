@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd netbsd openbsd
+//go:build darwin || dragonfly || freebsd || netbsd || openbsd
 
 package route
 
@@ -14,10 +14,10 @@ import (
 )
 
 func TestFetchAndParseRIB(t *testing.T) {
-	for _, typ := range []RIBType{sysNET_RT_DUMP, sysNET_RT_IFLIST} {
+	for _, typ := range []RIBType{syscall.NET_RT_DUMP, syscall.NET_RT_IFLIST} {
 		var lastErr error
 		var ms []Message
-		for _, af := range []int{sysAF_UNSPEC, sysAF_INET, sysAF_INET6} {
+		for _, af := range []int{syscall.AF_UNSPEC, syscall.AF_INET, syscall.AF_INET6} {
 			rs, err := fetchAndParseRIB(af, typ)
 			if err != nil {
 				lastErr = err
@@ -48,7 +48,7 @@ var (
 func init() {
 	// We need to keep rtmonSock alive to avoid treading on
 	// recycled socket descriptors.
-	rtmonSock, rtmonErr = syscall.Socket(sysAF_ROUTE, sysSOCK_RAW, sysAF_UNSPEC)
+	rtmonSock, rtmonErr = syscall.Socket(syscall.AF_ROUTE, syscall.SOCK_RAW, syscall.AF_UNSPEC)
 }
 
 // TestMonitorAndParseRIB leaks a worker goroutine and a socket
@@ -144,60 +144,60 @@ func TestParseRIBWithFuzz(t *testing.T) {
 }
 
 func TestRouteMessage(t *testing.T) {
-	s, err := syscall.Socket(sysAF_ROUTE, sysSOCK_RAW, sysAF_UNSPEC)
+	s, err := syscall.Socket(syscall.AF_ROUTE, syscall.SOCK_RAW, syscall.AF_UNSPEC)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer syscall.Close(s)
 
 	var ms []RouteMessage
-	for _, af := range []int{sysAF_INET, sysAF_INET6} {
-		if _, err := fetchAndParseRIB(af, sysNET_RT_DUMP); err != nil {
+	for _, af := range []int{syscall.AF_INET, syscall.AF_INET6} {
+		if _, err := fetchAndParseRIB(af, syscall.NET_RT_DUMP); err != nil {
 			t.Log(err)
 			continue
 		}
 		switch af {
-		case sysAF_INET:
+		case syscall.AF_INET:
 			ms = append(ms, []RouteMessage{
 				{
-					Type: sysRTM_GET,
+					Type: syscall.RTM_GET,
 					Addrs: []Addr{
-						sysRTAX_DST:     &Inet4Addr{IP: [4]byte{127, 0, 0, 1}},
-						sysRTAX_GATEWAY: nil,
-						sysRTAX_NETMASK: nil,
-						sysRTAX_GENMASK: nil,
-						sysRTAX_IFP:     &LinkAddr{},
-						sysRTAX_IFA:     &Inet4Addr{},
-						sysRTAX_AUTHOR:  nil,
-						sysRTAX_BRD:     &Inet4Addr{},
+						syscall.RTAX_DST:     &Inet4Addr{IP: [4]byte{127, 0, 0, 1}},
+						syscall.RTAX_GATEWAY: nil,
+						syscall.RTAX_NETMASK: nil,
+						syscall.RTAX_GENMASK: nil,
+						syscall.RTAX_IFP:     &LinkAddr{},
+						syscall.RTAX_IFA:     &Inet4Addr{},
+						syscall.RTAX_AUTHOR:  nil,
+						syscall.RTAX_BRD:     &Inet4Addr{},
 					},
 				},
 				{
-					Type: sysRTM_GET,
+					Type: syscall.RTM_GET,
 					Addrs: []Addr{
-						sysRTAX_DST: &Inet4Addr{IP: [4]byte{127, 0, 0, 1}},
+						syscall.RTAX_DST: &Inet4Addr{IP: [4]byte{127, 0, 0, 1}},
 					},
 				},
 			}...)
-		case sysAF_INET6:
+		case syscall.AF_INET6:
 			ms = append(ms, []RouteMessage{
 				{
-					Type: sysRTM_GET,
+					Type: syscall.RTM_GET,
 					Addrs: []Addr{
-						sysRTAX_DST:     &Inet6Addr{IP: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
-						sysRTAX_GATEWAY: nil,
-						sysRTAX_NETMASK: nil,
-						sysRTAX_GENMASK: nil,
-						sysRTAX_IFP:     &LinkAddr{},
-						sysRTAX_IFA:     &Inet6Addr{},
-						sysRTAX_AUTHOR:  nil,
-						sysRTAX_BRD:     &Inet6Addr{},
+						syscall.RTAX_DST:     &Inet6Addr{IP: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+						syscall.RTAX_GATEWAY: nil,
+						syscall.RTAX_NETMASK: nil,
+						syscall.RTAX_GENMASK: nil,
+						syscall.RTAX_IFP:     &LinkAddr{},
+						syscall.RTAX_IFA:     &Inet6Addr{},
+						syscall.RTAX_AUTHOR:  nil,
+						syscall.RTAX_BRD:     &Inet6Addr{},
 					},
 				},
 				{
-					Type: sysRTM_GET,
+					Type: syscall.RTM_GET,
 					Addrs: []Addr{
-						sysRTAX_DST: &Inet6Addr{IP: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+						syscall.RTAX_DST: &Inet6Addr{IP: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
 					},
 				},
 			}...)
