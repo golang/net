@@ -63,6 +63,9 @@ type h2cHandler struct {
 // The first request on an h2c connection is read entirely into memory before
 // the Handler is called. To limit the memory consumed by this request, wrap
 // the result of NewHandler in an http.MaxBytesHandler.
+//
+// NewHandler supports both HTTP/1.1 upgrade (RFC 7540, section 3.2)
+// and HTTP/2 with prior knowledge (RFC 7540, section 3.4).
 func NewHandler(h http.Handler, s *http2.Server) http.Handler {
 	return &h2cHandler{
 		Handler: h,
