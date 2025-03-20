@@ -63,12 +63,11 @@ func TestFind(t *testing.T) {
 
 func TestICANN(t *testing.T) {
 	testCases := map[string]bool{
-		"foo.org":            true,
-		"foo.co.uk":          true,
-		"foo.dyndns.org":     false,
-		"foo.go.dyndns.org":  false,
-		"foo.blogspot.co.uk": false,
-		"foo.intranet":       false,
+		"foo.org":           true,
+		"foo.co.uk":         true,
+		"foo.dyndns.org":    false,
+		"foo.go.dyndns.org": false,
+		"foo.intranet":      false,
 	}
 	for domain, want := range testCases {
 		_, got := PublicSuffix(domain)
@@ -111,16 +110,12 @@ var publicSuffixTestCases = []struct {
 	// net.ar
 	// org.ar
 	// tur.ar
-	// blogspot.com.ar (in the PRIVATE DOMAIN section).
 	{"ar", "ar", true},
 	{"www.ar", "ar", true},
 	{"nic.ar", "ar", true},
 	{"www.nic.ar", "ar", true},
 	{"com.ar", "com.ar", true},
 	{"www.com.ar", "com.ar", true},
-	{"blogspot.com.ar", "blogspot.com.ar", false},                 // PRIVATE DOMAIN.
-	{"www.blogspot.com.ar", "blogspot.com.ar", false},             // PRIVATE DOMAIN.
-	{"www.xxx.yyy.zzz.blogspot.com.ar", "blogspot.com.ar", false}, // PRIVATE DOMAIN.
 	{"logspot.com.ar", "com.ar", true},
 	{"zlogspot.com.ar", "com.ar", true},
 	{"zblogspot.com.ar", "com.ar", true},
@@ -170,20 +165,13 @@ var publicSuffixTestCases = []struct {
 	// game.tw
 	// ebiz.tw
 	// club.tw
-	// 網路.tw (xn--zf0ao64a.tw)
-	// 組織.tw (xn--uc0atv.tw)
-	// 商業.tw (xn--czrw28b.tw)
-	// blogspot.tw
+	// 台灣.tw (xn--kpry57d.tw)
 	{"tw", "tw", true},
 	{"aaa.tw", "tw", true},
 	{"www.aaa.tw", "tw", true},
 	{"xn--czrw28b.aaa.tw", "tw", true},
 	{"edu.tw", "edu.tw", true},
 	{"www.edu.tw", "edu.tw", true},
-	{"xn--czrw28b.edu.tw", "edu.tw", true},
-	{"xn--czrw28b.tw", "xn--czrw28b.tw", true},
-	{"www.xn--czrw28b.tw", "xn--czrw28b.tw", true},
-	{"xn--uc0atv.xn--czrw28b.tw", "xn--czrw28b.tw", true},
 	{"xn--kpry57d.tw", "tw", true},
 
 	// The .uk rules are:
@@ -199,7 +187,6 @@ var publicSuffixTestCases = []struct {
 	// plc.uk
 	// police.uk
 	// *.sch.uk
-	// blogspot.co.uk (in the PRIVATE DOMAIN section).
 	{"uk", "uk", true},
 	{"aaa.uk", "uk", true},
 	{"www.aaa.uk", "uk", true},
@@ -210,9 +197,6 @@ var publicSuffixTestCases = []struct {
 	{"www.sch.uk", "www.sch.uk", true},
 	{"co.uk", "co.uk", true},
 	{"www.co.uk", "co.uk", true},
-	{"blogspot.co.uk", "blogspot.co.uk", false}, // PRIVATE DOMAIN.
-	{"blogspot.nic.uk", "uk", true},
-	{"blogspot.sch.uk", "blogspot.sch.uk", true},
 
 	// The .рф rules are
 	// рф (xn--p1ai)
@@ -322,10 +306,10 @@ func TestNumICANNRules(t *testing.T) {
 	// Check the last ICANN and first Private rules. If the underlying public
 	// suffix list changes, we may need to update these hard-coded checks.
 	if got, want := rules[numICANNRules-1], "zuerich"; got != want {
-		t.Errorf("last ICANN rule: got %q, wawnt %q", got, want)
+		t.Errorf("last ICANN rule: got %q, want %q", got, want)
 	}
-	if got, want := rules[numICANNRules], "cc.ua"; got != want {
-		t.Errorf("first Private rule: got %q, wawnt %q", got, want)
+	if got, want := rules[numICANNRules], "co.krd"; got != want {
+		t.Errorf("first Private rule: got %q, want %q", got, want)
 	}
 }
 

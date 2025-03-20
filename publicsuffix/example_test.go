@@ -42,7 +42,6 @@ func ExamplePublicSuffix_manager() {
 		"foo.org",
 		"foo.co.uk",
 		"foo.dyndns.org",
-		"foo.blogspot.co.uk",
 		"cromulent",
 	}
 
@@ -88,6 +87,5 @@ func ExamplePublicSuffix_manager() {
 	// >                  foo.org             org  is  ICANN Managed
 	// >                foo.co.uk           co.uk  is  ICANN Managed
 	// >           foo.dyndns.org      dyndns.org  is  Privately Managed
-	// >       foo.blogspot.co.uk  blogspot.co.uk  is  Privately Managed
 	// >                cromulent       cromulent  is  Unmanaged
 }
