@@ -161,6 +161,9 @@ type testConn struct {
 	peerConnID        []byte                         // source conn id of peer's packets
 	peerNextPacketNum [numberSpaceCount]packetNumber // next packet number to use
 
+	// Maximum packet number received from the conn.
+	pnumMax [numberSpaceCount]packetNumber
+
 	// Datagrams, packets, and frames sent by the conn,
 	// but not yet processed by the test.
 	sentDatagrams [][]byte
@@ -845,6 +848,7 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			}
 		case packetTypeInitial, packetTypeHandshake:
 			var k fixedKeys
+			var pnumMax packetNumber
 			if tc == nil {
 				if ptype == packetTypeInitial {
 					p, _ := parseGenericLongHeaderPacket(buf)
@@ -856,17 +860,26 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 				switch ptype {
 				case packetTypeInitial:
 					k = tc.keysInitial.r
+					pnumMax = tc.pnumMax[initialSpace]
 				case packetTypeHandshake:
 					k = tc.keysHandshake.r
+					pnumMax = tc.pnumMax[handshakeSpace]
 				}
 			}
 			if !k.isSet() {
 				t.Fatalf("reading %v packet with no read key", ptype)
 			}
-			var pnumMax packetNumber // TODO: Track packet numbers.
 			p, n := parseLongHeaderPacket(buf, k, pnumMax)
 			if n < 0 {
 				t.Fatalf("packet parse error")
+			}
+			if tc != nil {
+				switch ptype {
+				case packetTypeInitial:
+					tc.pnumMax[initialSpace] = max(pnumMax, p.num)
+				case packetTypeHandshake:
+					tc.pnumMax[handshakeSpace] = max(pnumMax, p.num)
+				}
 			}
 			frames, err := parseTestFrames(t, p.payload)
 			if err != nil {
@@ -891,7 +904,10 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			if tc == nil || !tc.rkeyAppData.hdr.isSet() {
 				t.Fatalf("reading 1-RTT packet with no read key")
 			}
-			var pnumMax packetNumber // TODO: Track packet numbers.
+			var pnumMax packetNumber
+			if tc != nil {
+				pnumMax = tc.pnumMax[appDataSpace]
+			}
 			pnumOff := 1 + len(tc.peerConnID)
 			// Try unprotecting the packet with the first maxTestKeyPhases keys.
 			var phase int
@@ -913,6 +929,9 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			}
 			if err != nil {
 				t.Fatalf("1-RTT packet payload parse error")
+			}
+			if tc != nil {
+				tc.pnumMax[appDataSpace] = max(pnumMax, pnum)
 			}
 			frames, err := parseTestFrames(t, pay)
 			if err != nil {
