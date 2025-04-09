@@ -315,6 +315,11 @@ func (c *lossState) receiveAckEnd(now time.Time, log *slog.Logger, space numberS
 func (c *lossState) discardPackets(space numberSpace, log *slog.Logger, lossf func(numberSpace, *sentPacket, packetFate)) {
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
+		if sent.acked || sent.lost {
+			// This should not be possible, since we only discard packets
+			// in spaces which have never received an ack, but check anyway.
+			continue
+		}
 		sent.lost = true
 		c.cc.packetDiscarded(sent)
 		lossf(numberSpace(space), sent, packetLost)
@@ -330,6 +335,9 @@ func (c *lossState) discardKeys(now time.Time, log *slog.Logger, space numberSpa
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.4
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
+		if sent.acked || sent.lost {
+			continue
+		}
 		c.cc.packetDiscarded(sent)
 	}
 	c.spaces[space].discard()
