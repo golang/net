@@ -242,9 +242,7 @@ func TestStreamsWriteQueueFairness(t *testing.T) {
 		if p == nil {
 			break
 		}
-		tc.writeFrames(packetType1RTT, debugFrameAck{
-			ranges: []i64range[packetNumber]{{0, p.num}},
-		})
+		tc.writeAckForLatest()
 		for _, f := range p.frames {
 			sf, ok := f.(debugFrameStream)
 			if !ok {

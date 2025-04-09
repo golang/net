@@ -421,15 +421,10 @@ func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, sp
 func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) int {
 	c.loss.receiveAckStart()
 	largest, ackDelay, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
-		if end > c.loss.nextNumber(space) {
-			// Acknowledgement of a packet we never sent.
-			c.abort(now, localTransportError{
-				code:   errProtocolViolation,
-				reason: "acknowledgement for unsent packet",
-			})
+		if err := c.loss.receiveAckRange(now, space, rangeIndex, start, end, c.handleAckOrLoss); err != nil {
+			c.abort(now, err)
 			return
 		}
-		c.loss.receiveAckRange(now, space, rangeIndex, start, end, c.handleAckOrLoss)
 	})
 	// Prior to receiving the peer's transport parameters, we cannot
 	// interpret the ACK Delay field because we don't know the ack_delay_exponent

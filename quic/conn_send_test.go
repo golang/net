@@ -66,7 +66,11 @@ func TestSendPacketNumberSize(t *testing.T) {
 	// current packet and the max acked one is sufficiently large.
 	for want := maxAcked + 1; want < maxAcked+0x100; want++ {
 		p := recvPing()
-		if p.num != want {
+		if p.num == want+1 {
+			// The conn skipped a packet number
+			// (defense against optimistic ACK attacks).
+			want++
+		} else if p.num != want {
 			t.Fatalf("received packet number %v, want %v", p.num, want)
 		}
 		gotPnumLen := int(p.header&0x03) + 1

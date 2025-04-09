@@ -38,9 +38,10 @@ type sentPacket struct {
 type sentPacketState uint8
 
 const (
-	sentPacketSent  = sentPacketState(iota) // sent but neither acked nor lost
-	sentPacketAcked                         // acked
-	sentPacketLost                          // declared lost
+	sentPacketSent   = sentPacketState(iota) // sent but neither acked nor lost
+	sentPacketAcked                          // acked
+	sentPacketLost                           // declared lost
+	sentPacketUnsent                         // never sent
 )
 
 var sentPool = sync.Pool{

@@ -178,6 +178,15 @@ func (c *lossState) nextNumber(space numberSpace) packetNumber {
 	return c.spaces[space].nextNum
 }
 
+// skipPacketNumber skips a packet number as a defense against optimistic ACK attacks.
+func (c *lossState) skipNumber(now time.Time, space numberSpace) {
+	sent := newSentPacket()
+	sent.num = c.spaces[space].nextNum
+	sent.time = now
+	sent.state = sentPacketUnsent
+	c.spaces[space].add(sent)
+}
+
 // packetSent records a sent packet.
 func (c *lossState) packetSent(now time.Time, log *slog.Logger, space numberSpace, sent *sentPacket) {
 	sent.time = now
@@ -230,17 +239,20 @@ func (c *lossState) receiveAckStart() {
 
 // receiveAckRange processes a range within an ACK frame.
 // The ackf function is called for each newly-acknowledged packet.
-func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex int, start, end packetNumber, ackf func(numberSpace, *sentPacket, packetFate)) {
+func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex int, start, end packetNumber, ackf func(numberSpace, *sentPacket, packetFate)) error {
 	// Limit our range to the intersection of the ACK range and
 	// the in-flight packets we have state for.
 	if s := c.spaces[space].start(); start < s {
 		start = s
 	}
 	if e := c.spaces[space].end(); end > e {
-		end = e
+		return localTransportError{
+			code:   errProtocolViolation,
+			reason: "acknowledgement for unsent packet",
+		}
 	}
 	if start >= end {
-		return
+		return nil
 	}
 	if rangeIndex == 0 {
 		// If the latest packet in the ACK frame is newly-acked,
@@ -252,6 +264,12 @@ func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex
 	}
 	for pnum := start; pnum < end; pnum++ {
 		sent := c.spaces[space].num(pnum)
+		if sent.state == sentPacketUnsent {
+			return localTransportError{
+				code:   errProtocolViolation,
+				reason: "acknowledgement for unsent packet",
+			}
+		}
 		if sent.state != sentPacketSent {
 			continue
 		}
@@ -266,6 +284,7 @@ func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex
 			c.ackFrameContainsAckEliciting = true
 		}
 	}
+	return nil
 }
 
 // receiveAckEnd finishes processing an ack frame.

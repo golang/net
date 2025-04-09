@@ -6,10 +6,12 @@ package quic
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/netip"
 	"time"
 )
@@ -24,6 +26,7 @@ type Conn struct {
 	testHooks connTestHooks
 	peerAddr  netip.AddrPort
 	localAddr netip.AddrPort
+	prng      *rand.Rand
 
 	msgc  chan any
 	donec chan struct{} // closed when conn loop exits
@@ -36,6 +39,7 @@ type Conn struct {
 	loss        lossState
 	streams     streamsState
 	path        pathState
+	skip        skipState
 
 	// Packet protection keys, CRYPTO streams, and TLS state.
 	keysInitial   fixedKeyPair
@@ -136,6 +140,14 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 		}
 	}
 
+	// A per-conn ChaCha8 PRNG is probably more than we need,
+	// but at least it's fairly small.
+	var seed [32]byte
+	if _, err := cryptorand.Read(seed[:]); err != nil {
+		panic(err)
+	}
+	c.prng = rand.New(rand.NewChaCha8(seed))
+
 	// TODO: PMTU discovery.
 	c.logConnectionStarted(cids.originalDstConnID, peerAddr)
 	c.keysAppData.init()
@@ -143,6 +155,7 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 	c.streamsInit()
 	c.lifetimeInit()
 	c.restartIdleTimer(now)
+	c.skip.init(c)
 
 	if err := c.startTLS(now, initialConnID, peerHostname, transportParameters{
 		initialSrcConnID:               c.connIDState.srcConnID(),

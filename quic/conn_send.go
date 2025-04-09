@@ -142,6 +142,10 @@ func (c *Conn) maybeSend(now time.Time) (next time.Time) {
 			}
 			if sent := c.w.finish1RTTPacket(pnum, pnumMaxAcked, dstConnID, &c.keysAppData); sent != nil {
 				c.packetSent(now, appDataSpace, sent)
+				if c.skip.shouldSkip(pnum + 1) {
+					c.loss.skipNumber(now, appDataSpace)
+					c.skip.updateNumberSkip(c)
+				}
 			}
 		}
 
