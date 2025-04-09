@@ -246,20 +246,20 @@ func (c *lossState) receiveAckRange(now time.Time, space numberSpace, rangeIndex
 		// If the latest packet in the ACK frame is newly-acked,
 		// record the RTT in c.ackFrameRTT.
 		sent := c.spaces[space].num(end - 1)
-		if !sent.acked {
+		if sent.state == sentPacketSent {
 			c.ackFrameRTT = max(0, now.Sub(sent.time))
 		}
 	}
 	for pnum := start; pnum < end; pnum++ {
 		sent := c.spaces[space].num(pnum)
-		if sent.acked || sent.lost {
+		if sent.state != sentPacketSent {
 			continue
 		}
 		// This is a newly-acknowledged packet.
 		if pnum > c.spaces[space].maxAcked {
 			c.spaces[space].maxAcked = pnum
 		}
-		sent.acked = true
+		sent.state = sentPacketAcked
 		c.cc.packetAcked(now, sent)
 		ackf(space, sent, packetAcked)
 		if sent.ackEliciting {
@@ -315,12 +315,12 @@ func (c *lossState) receiveAckEnd(now time.Time, log *slog.Logger, space numberS
 func (c *lossState) discardPackets(space numberSpace, log *slog.Logger, lossf func(numberSpace, *sentPacket, packetFate)) {
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
-		if sent.acked || sent.lost {
+		if sent.state != sentPacketSent {
 			// This should not be possible, since we only discard packets
 			// in spaces which have never received an ack, but check anyway.
 			continue
 		}
-		sent.lost = true
+		sent.state = sentPacketLost
 		c.cc.packetDiscarded(sent)
 		lossf(numberSpace(space), sent, packetLost)
 	}
@@ -335,7 +335,7 @@ func (c *lossState) discardKeys(now time.Time, log *slog.Logger, space numberSpa
 	// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.4
 	for i := 0; i < c.spaces[space].size; i++ {
 		sent := c.spaces[space].nth(i)
-		if sent.acked || sent.lost {
+		if sent.state != sentPacketSent {
 			continue
 		}
 		c.cc.packetDiscarded(sent)
@@ -362,7 +362,7 @@ func (c *lossState) detectLoss(now time.Time, lossf func(numberSpace, *sentPacke
 	for space := numberSpace(0); space < numberSpaceCount; space++ {
 		for i := 0; i < c.spaces[space].size; i++ {
 			sent := c.spaces[space].nth(i)
-			if sent.lost || sent.acked {
+			if sent.state != sentPacketSent {
 				continue
 			}
 			// RFC 9002 Section 6.1 states that a packet is only declared lost if it
@@ -378,13 +378,13 @@ func (c *lossState) detectLoss(now time.Time, lossf func(numberSpace, *sentPacke
 			case sent.num <= c.spaces[space].maxAcked && !sent.time.After(lossTime):
 				// Time threshold
 				// https://www.rfc-editor.org/rfc/rfc9002.html#section-6.1.2
-				sent.lost = true
+				sent.state = sentPacketLost
 				lossf(space, sent, packetLost)
 				if sent.inFlight {
 					c.cc.packetLost(now, space, sent, &c.rtt)
 				}
 			}
-			if !sent.lost {
+			if sent.state != sentPacketLost {
 				break
 			}
 		}

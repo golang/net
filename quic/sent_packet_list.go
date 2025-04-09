@@ -67,7 +67,7 @@ func (s *sentPacketList) num(num packetNumber) *sentPacket {
 func (s *sentPacketList) clean() {
 	for s.size > 0 {
 		sent := s.p[s.off]
-		if !sent.acked && !sent.lost {
+		if sent.state == sentPacketSent {
 			return
 		}
 		sent.recycle()

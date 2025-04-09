@@ -19,10 +19,9 @@ type sentPacket struct {
 	time  time.Time // time sent
 	ptype packetType
 
+	state        sentPacketState
 	ackEliciting bool // https://www.rfc-editor.org/rfc/rfc9002.html#section-2-3.4.1
 	inFlight     bool // https://www.rfc-editor.org/rfc/rfc9002.html#section-2-3.6.1
-	acked        bool // ack has been received
-	lost         bool // packet is presumed lost
 
 	// Frames sent in the packet.
 	//
@@ -35,6 +34,14 @@ type sentPacket struct {
 	b []byte
 	n int // read offset into b
 }
+
+type sentPacketState uint8
+
+const (
+	sentPacketSent  = sentPacketState(iota) // sent but neither acked nor lost
+	sentPacketAcked                         // acked
+	sentPacketLost                          // declared lost
+)
 
 var sentPool = sync.Pool{
 	New: func() any {
