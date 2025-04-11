@@ -161,10 +161,3 @@ func TestExpectedErrorRate(t *testing.T) {
 		checkNear(t, ts.Latest(2, buckets), min(float64(i), 3600), 600)
 	}
 }
-
-func min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
