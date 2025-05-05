@@ -309,9 +309,9 @@ func lookupBucket(fam string, b int) *traceBucket {
 	return f.Buckets[b]
 }
 
-type contextKeyT string
+type contextKeyT struct{}
 
-var contextKey = contextKeyT("golang.org/x/net/trace.Trace")
+var contextKey contextKeyT
 
 // Trace represents an active request.
 type Trace interface {
