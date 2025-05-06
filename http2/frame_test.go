@@ -1258,3 +1258,21 @@ func TestSettingsDuplicates(t *testing.T) {
 	}
 
 }
+
+func TestTypeFrameParser(t *testing.T) {
+	if len(frameNames) != len(frameParsers) {
+		t.Errorf("expected len(frameNames)=%d to equal len(frameParsers)=%d",
+			len(frameNames), len(frameParsers))
+	}
+
+	// typeFrameParser() for an unknown type returns a function that returns UnknownFrame
+	unknownFrameType := FrameType(FrameContinuation + 1)
+	unknownParser := typeFrameParser(unknownFrameType)
+	frame, err := unknownParser(nil, FrameHeader{}, nil, nil)
+	if err != nil {
+		t.Errorf("unknownParser() must not return an error: %v", err)
+	}
+	if _, isUnknown := frame.(*UnknownFrame); !isUnknown {
+		t.Errorf("expected UnknownFrame, got %T", frame)
+	}
+}
