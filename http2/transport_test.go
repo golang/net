@@ -4509,10 +4509,6 @@ func newCloseChecker(r io.ReadCloser) *closeChecker {
 	return &closeChecker{r, make(chan struct{})}
 }
 
-func newStaticCloseChecker(body string) *closeChecker {
-	return newCloseChecker(io.NopCloser(strings.NewReader("body")))
-}
-
 func (rc *closeChecker) Read(b []byte) (n int, err error) {
 	select {
 	default:
