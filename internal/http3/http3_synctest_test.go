@@ -7,6 +7,7 @@
 package http3
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -14,9 +15,16 @@ import (
 
 // runSynctest runs f in a synctest.Run bubble.
 // It arranges for t.Cleanup functions to run within the bubble.
+// TODO: Replace with synctest.Test, which handles all this properly.
 func runSynctest(t *testing.T, f func(t testing.TB)) {
 	synctest.Run(func() {
-		ct := &cleanupT{T: t}
+		// Create a context within the bubble, rather than using t.Context.
+		ctx, cancel := context.WithCancel(context.Background())
+		ct := &cleanupT{
+			T:      t,
+			ctx:    ctx,
+			cancel: cancel,
+		}
 		defer ct.done()
 		f(ct)
 	})
@@ -33,6 +41,8 @@ func runSynctestSubtest(t *testing.T, name string, f func(t testing.TB)) {
 // Used to execute cleanup functions within a synctest bubble.
 type cleanupT struct {
 	*testing.T
+	ctx      context.Context
+	cancel   context.CancelFunc
 	cleanups []func()
 }
 
@@ -41,7 +51,13 @@ func (t *cleanupT) Cleanup(f func()) {
 	t.cleanups = append(t.cleanups, f)
 }
 
+// Context replaces T.Context.
+func (t *cleanupT) Context() context.Context {
+	return t.ctx
+}
+
 func (t *cleanupT) done() {
+	t.cancel()
 	for _, f := range slices.Backward(t.cleanups) {
 		f()
 	}
