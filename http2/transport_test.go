@@ -127,7 +127,7 @@ func TestIdleConnTimeout(t *testing.T) {
 				tr.IdleConnTimeout = test.idleConnTimeout
 			})
 			var tc *testClientConn
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
 				rt := tt.roundTrip(req)
 
@@ -411,7 +411,7 @@ func testTransportGetGotConnHooks(t *testing.T, useClient bool) {
 		getConns int32
 		gotConns int32
 	)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		trace := &httptrace.ClientTrace{
 			GetConn: func(hostport string) {
 				atomic.AddInt32(&getConns, 1)
