@@ -116,7 +116,7 @@ func parseUintBytes(s []byte, base int, bitSize int) (n uint64, err error) {
 	cutoff = cutoff64(base)
 	maxVal = 1<<uint(bitSize) - 1
 
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		var v byte
 		d := s[i]
 		switch {
