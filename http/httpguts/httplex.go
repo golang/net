@@ -197,7 +197,7 @@ func ValidHeaderFieldName(v string) bool {
 	if len(v) == 0 {
 		return false
 	}
-	for i := 0; i < len(v); i++ {
+	for i := range len(v) {
 		if !isTokenTable[v[i]] {
 			return false
 		}
@@ -218,7 +218,7 @@ func ValidHostHeader(h string) bool {
 	// But we're going to be much more lenient for now and just
 	// search for any byte that's not a valid byte in any of those
 	// expressions.
-	for i := 0; i < len(h); i++ {
+	for i := range len(h) {
 		if !validHostByte[h[i]] {
 			return false
 		}
@@ -301,7 +301,7 @@ var validHostByte = [256]bool{
 // This function does not (yet?) properly handle the rejection of
 // strings that begin or end with SP or HTAB.
 func ValidHeaderFieldValue(v string) bool {
-	for i := 0; i < len(v); i++ {
+	for i := range len(v) {
 		b := v[i]
 		if isCTL(b) && !isLWS(b) {
 			return false
@@ -311,7 +311,7 @@ func ValidHeaderFieldValue(v string) bool {
 }
 
 func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] >= utf8.RuneSelf {
 			return false
 		}
