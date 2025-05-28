@@ -44,7 +44,20 @@ func NewConfig(server, origin string) (config *Config, err error) {
 func NewClient(config *Config, rwc io.ReadWriteCloser) (ws *Conn, err error) {
 	br := bufio.NewReader(rwc)
 	bw := bufio.NewWriter(rwc)
-	err = hybiClientHandshake(config, br, bw)
+	_, err = hybiClientHandshake(config, br, bw)
+	if err != nil {
+		return
+	}
+	buf := bufio.NewReadWriter(br, bw)
+	ws = newHybiClientConn(config, buf, rwc)
+	return
+}
+
+// NewClient2 creates a new WebSocket client connection over rwc.
+func NewClient2(config *Config, rwc io.ReadWriteCloser) (ws *Conn, resp *http.Response, err error) {
+	br := bufio.NewReader(rwc)
+	bw := bufio.NewWriter(rwc)
+	resp, err = hybiClientHandshake(config, br, bw)
 	if err != nil {
 		return
 	}
