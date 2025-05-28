@@ -771,7 +771,7 @@ func (f *SettingsFrame) IsAck() bool {
 
 func (f *SettingsFrame) Value(id SettingID) (v uint32, ok bool) {
 	f.checkValid()
-	for i := 0; i < f.NumSettings(); i++ {
+	for i := range f.NumSettings() {
 		if s := f.Setting(i); s.ID == id {
 			return s.Val, true
 		}
@@ -800,7 +800,7 @@ func (f *SettingsFrame) HasDuplicates() bool {
 	// If it's small enough (the common case), just do the n^2
 	// thing and avoid a map allocation.
 	if num < 10 {
-		for i := 0; i < num; i++ {
+		for i := range num {
 			idi := f.Setting(i).ID
 			for j := i + 1; j < num; j++ {
 				idj := f.Setting(j).ID
@@ -812,7 +812,7 @@ func (f *SettingsFrame) HasDuplicates() bool {
 		return false
 	}
 	seen := map[SettingID]bool{}
-	for i := 0; i < num; i++ {
+	for i := range num {
 		id := f.Setting(i).ID
 		if seen[id] {
 			return true
@@ -826,7 +826,7 @@ func (f *SettingsFrame) HasDuplicates() bool {
 // It stops and returns the first error.
 func (f *SettingsFrame) ForeachSetting(fn func(Setting) error) error {
 	f.checkValid()
-	for i := 0; i < f.NumSettings(); i++ {
+	for i := range f.NumSettings() {
 		if err := fn(f.Setting(i)); err != nil {
 			return err
 		}
