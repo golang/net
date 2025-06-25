@@ -908,7 +908,7 @@ func benchmarkTokenizer(b *testing.B, level int) {
 				// not unescape &lt; to <, or lower-case tag names and attribute keys.
 				z.Raw()
 			case lowLevel:
-				// Caling z.Text, z.TagName and z.TagAttr returns []byte values
+				// Calling z.Text, z.TagName and z.TagAttr returns []byte values
 				// whose contents may change on the next call to z.Next.
 				switch tt {
 				case TextToken, CommentToken, DoctypeToken:

@@ -32,7 +32,7 @@ func (ss *skipState) init(c *Conn) {
 	ss.updateNumberSkip(c)
 }
 
-// shouldSkipAfter returns whether we should skip the given packet number.
+// shouldSkip returns whether we should skip the given packet number.
 func (ss *skipState) shouldSkip(num packetNumber) bool {
 	return ss.skip == num
 }

@@ -125,7 +125,7 @@ func TestRoundTripResponseContentLength(t *testing.T) {
 		},
 		wantContentLength: -1,
 	}, {
-		name: "unparseable",
+		name: "unparsable",
 		respHeader: http.Header{
 			":status":        []string{"200"},
 			"content-length": []string{"1 1"},
@@ -185,7 +185,7 @@ func TestRoundTripMalformedResponses(t *testing.T) {
 			":status": []string{"200", "204"},
 		},
 	}, {
-		name: "unparseable :status",
+		name: "unparsable :status",
 		respHeader: http.Header{
 			":status": []string{"frogpants"},
 		},

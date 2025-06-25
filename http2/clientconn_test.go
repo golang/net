@@ -332,7 +332,7 @@ func (tc *testClientConn) greet(settings ...Setting) {
 // makeHeaderBlockFragment encodes headers in a form suitable for inclusion
 // in a HEADERS or CONTINUATION frame.
 //
-// It takes a list of alernating names and values.
+// It takes a list of alternating names and values.
 func (tc *testClientConn) makeHeaderBlockFragment(s ...string) []byte {
 	if len(s)%2 != 0 {
 		tc.t.Fatalf("uneven list of header name/value pairs")

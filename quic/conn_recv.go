@@ -147,7 +147,7 @@ func (c *Conn) handle1RTT(now time.Time, dgram *datagram, buf []byte) int {
 	p, err := parse1RTTPacket(buf, &c.keysAppData, connIDLen, pnumMax)
 	if err != nil {
 		// A localTransportError terminates the connection.
-		// Other errors indicate an unparseable packet, but otherwise may be ignored.
+		// Other errors indicate an unparsable packet, but otherwise may be ignored.
 		if _, ok := err.(localTransportError); ok {
 			c.abort(now, err)
 		}

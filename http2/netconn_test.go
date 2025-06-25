@@ -100,7 +100,7 @@ func (c *synctestNetConn) LocalAddr() net.Addr {
 	return c.loc.addr
 }
 
-// LocalAddr returns the (fake) remote network address.
+// RemoteAddr returns the (fake) remote network address.
 func (c *synctestNetConn) RemoteAddr() net.Addr {
 	return c.rem.addr
 }
@@ -301,7 +301,7 @@ func (h *synctestNetConnHalf) setWriteError(err error) {
 	}
 }
 
-// deadlineContext converts a changable deadline (as in net.Conn.SetDeadline) into a Context.
+// deadlineContext converts a changeable deadline (as in net.Conn.SetDeadline) into a Context.
 type deadlineContext struct {
 	mu     sync.Mutex
 	ctx    context.Context

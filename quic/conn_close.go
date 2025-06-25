@@ -109,7 +109,7 @@ func (c *Conn) setState(now time.Time, state connState) {
 	}
 }
 
-// confirmHandshake is called when the TLS handshake completes.
+// handshakeDone is called when the TLS handshake completes.
 func (c *Conn) handshakeDone() {
 	close(c.lifetime.readyc)
 }

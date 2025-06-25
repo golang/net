@@ -4297,7 +4297,7 @@ func TestTransportBodyRewindRace(t *testing.T) {
 	for i := 0; i < clients; i++ {
 		req, err := http.NewRequest("POST", ts.URL, bytes.NewBufferString("abcdef"))
 		if err != nil {
-			t.Fatalf("unexpect new request error: %v", err)
+			t.Fatalf("unexpected new request error: %v", err)
 		}
 
 		go func() {
@@ -4336,7 +4336,7 @@ func TestTransportServerResetStreamAtHeaders(t *testing.T) {
 
 	req, err := http.NewRequest("POST", ts.URL, errorReader{io.EOF})
 	if err != nil {
-		t.Fatalf("unexpect new request error: %v", err)
+		t.Fatalf("unexpected new request error: %v", err)
 	}
 	req.ContentLength = 0 // so transport is tempted to sniff it
 	req.Header.Set("Expect", "100-continue")

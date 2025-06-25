@@ -150,7 +150,7 @@ type testConn struct {
 	// CRYPTO data produced by the conn's QUICConn is placed in
 	// cryptoDataOut.
 	//
-	// The peerTLSConn is is a QUICConn representing the peer.
+	// The peerTLSConn is a QUICConn representing the peer.
 	// CRYPTO data produced by the conn is written to peerTLSConn,
 	// and data produced by peerTLSConn is placed in cryptoDataIn.
 	cryptoDataOut map[tls.QUICEncryptionLevel][]byte
@@ -1095,7 +1095,7 @@ func (tc *testConnHooks) handleTLSEvent(e tls.QUICEvent) {
 		case tls.QUICTransportParameters:
 			p, err := unmarshalTransportParams(e.Data)
 			if err != nil {
-				tc.t.Logf("sent unparseable transport parameters %x %v", e.Data, err)
+				tc.t.Logf("sent unparsable transport parameters %x %v", e.Data, err)
 			} else {
 				tc.sentTransportParameters = &p
 			}
@@ -1171,7 +1171,7 @@ func testPeerStatelessResetToken(seq int64) statelessResetToken {
 
 // canceledContext returns a canceled Context.
 //
-// Functions which take a context preference progress over cancelation.
+// Functions which take a context preference progress over cancellation.
 // For example, a read with a canceled context will return data if any is available.
 // Tests use canceled contexts to perform non-blocking operations.
 func canceledContext() context.Context {
