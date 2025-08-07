@@ -40,8 +40,7 @@ import (
 
 var (
 	extNet        = flag.Bool("extnet", false, "do external network tests")
-	transportHost = flag.String("transporthost", "http2.golang.org", "hostname to use for TestTransport")
-	insecure      = flag.Bool("insecure", false, "insecure TLS dials") // TODO: dead code. remove?
+	transportHost = flag.String("transporthost", "go.dev", "hostname to use for TestTransport")
 )
 
 var tlsConfigInsecure = &tls.Config{InsecureSkipVerify: true}
