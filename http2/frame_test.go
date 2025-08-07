@@ -985,7 +985,7 @@ func TestMetaFrameHeader(t *testing.T) {
 			w: func(f *Framer) {
 				var he hpackEncoder
 				var pairs = []string{":method", "GET", ":path", "/"}
-				for i := 0; i < 100; i++ {
+				for range 100 {
 					pairs = append(pairs, "foo", "bar")
 				}
 				all := he.encodeHeaderRaw(t, pairs...)
@@ -1129,21 +1129,21 @@ func TestSetReuseFrames(t *testing.T) {
 	// SetReuseFrames only currently implements reuse of DataFrames.
 	firstDf := readAndVerifyDataFrame("ABC", 3, fr, buf, t)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		df := readAndVerifyDataFrame("XYZ", 3, fr, buf, t)
 		if df != firstDf {
 			t.Errorf("Expected Framer to return references to the same DataFrame. Have %v and %v", &df, &firstDf)
 		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		df := readAndVerifyDataFrame("", 0, fr, buf, t)
 		if df != firstDf {
 			t.Errorf("Expected Framer to return references to the same DataFrame. Have %v and %v", &df, &firstDf)
 		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		df := readAndVerifyDataFrame("HHH", 3, fr, buf, t)
 		if df != firstDf {
 			t.Errorf("Expected Framer to return references to the same DataFrame. Have %v and %v", &df, &firstDf)
@@ -1158,7 +1158,7 @@ func TestSetReuseFramesMoreThanOnce(t *testing.T) {
 	firstDf := readAndVerifyDataFrame("ABC", 3, fr, buf, t)
 	fr.SetReuseFrames()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		df := readAndVerifyDataFrame("XYZ", 3, fr, buf, t)
 		// SetReuseFrames should be idempotent
 		fr.SetReuseFrames()
