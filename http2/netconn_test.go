@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25 || goexperiment.synctest
+
 package http2
 
 import (
@@ -14,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"sync"
+	"testing/synctest"
 	"time"
 )
 
@@ -23,13 +26,13 @@ import (
 // Unlike net.Pipe, the connection is not synchronous.
 // Writes are made to a buffer, and return immediately.
 // By default, the buffer size is unlimited.
-func synctestNetPipe(group *synctestGroup) (r, w *synctestNetConn) {
+func synctestNetPipe() (r, w *synctestNetConn) {
 	s1addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:8000"))
 	s2addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:8001"))
 	s1 := newSynctestNetConnHalf(s1addr)
 	s2 := newSynctestNetConnHalf(s2addr)
-	r = &synctestNetConn{group: group, loc: s1, rem: s2}
-	w = &synctestNetConn{group: group, loc: s2, rem: s1}
+	r = &synctestNetConn{loc: s1, rem: s2}
+	w = &synctestNetConn{loc: s2, rem: s1}
 	r.peer = w
 	w.peer = r
 	return r, w
@@ -37,8 +40,6 @@ func synctestNetPipe(group *synctestGroup) (r, w *synctestNetConn) {
 
 // A synctestNetConn is one endpoint of the connection created by synctestNetPipe.
 type synctestNetConn struct {
-	group *synctestGroup
-
 	// local and remote connection halves.
 	// Each half contains a buffer.
 	// Reads pull from the local buffer, and writes push to the remote buffer.
@@ -54,7 +55,7 @@ type synctestNetConn struct {
 // Read reads data from the connection.
 func (c *synctestNetConn) Read(b []byte) (n int, err error) {
 	if c.autoWait {
-		c.group.Wait()
+		synctest.Wait()
 	}
 	return c.loc.read(b)
 }
@@ -63,7 +64,7 @@ func (c *synctestNetConn) Read(b []byte) (n int, err error) {
 // without consuming its contents.
 func (c *synctestNetConn) Peek() []byte {
 	if c.autoWait {
-		c.group.Wait()
+		synctest.Wait()
 	}
 	return c.loc.peek()
 }
@@ -71,7 +72,7 @@ func (c *synctestNetConn) Peek() []byte {
 // Write writes data to the connection.
 func (c *synctestNetConn) Write(b []byte) (n int, err error) {
 	if c.autoWait {
-		defer c.group.Wait()
+		defer synctest.Wait()
 	}
 	return c.rem.write(b)
 }
@@ -79,7 +80,7 @@ func (c *synctestNetConn) Write(b []byte) (n int, err error) {
 // IsClosedByPeer reports whether the peer has closed its end of the connection.
 func (c *synctestNetConn) IsClosedByPeer() bool {
 	if c.autoWait {
-		c.group.Wait()
+		synctest.Wait()
 	}
 	return c.loc.isClosedByPeer()
 }
@@ -89,7 +90,7 @@ func (c *synctestNetConn) Close() error {
 	c.loc.setWriteError(errors.New("connection closed by peer"))
 	c.rem.setReadError(io.EOF)
 	if c.autoWait {
-		c.group.Wait()
+		synctest.Wait()
 	}
 	return nil
 }
@@ -113,13 +114,13 @@ func (c *synctestNetConn) SetDeadline(t time.Time) error {
 
 // SetReadDeadline sets the read deadline for the connection.
 func (c *synctestNetConn) SetReadDeadline(t time.Time) error {
-	c.loc.rctx.setDeadline(c.group, t)
+	c.loc.rctx.setDeadline(t)
 	return nil
 }
 
 // SetWriteDeadline sets the write deadline for the connection.
 func (c *synctestNetConn) SetWriteDeadline(t time.Time) error {
-	c.rem.wctx.setDeadline(c.group, t)
+	c.rem.wctx.setDeadline(t)
 	return nil
 }
 
@@ -305,7 +306,7 @@ type deadlineContext struct {
 	mu     sync.Mutex
 	ctx    context.Context
 	cancel context.CancelCauseFunc
-	timer  timer
+	timer  *time.Timer
 }
 
 // context returns a Context which expires when the deadline does.
@@ -319,7 +320,7 @@ func (t *deadlineContext) context() context.Context {
 }
 
 // setDeadline sets the current deadline.
-func (t *deadlineContext) setDeadline(group *synctestGroup, deadline time.Time) {
+func (t *deadlineContext) setDeadline(deadline time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	// If t.ctx is non-nil and t.cancel is nil, then t.ctx was canceled
@@ -335,7 +336,7 @@ func (t *deadlineContext) setDeadline(group *synctestGroup, deadline time.Time) 
 		// No deadline.
 		return
 	}
-	if !deadline.After(group.Now()) {
+	if !deadline.After(time.Now()) {
 		// Deadline has already expired.
 		t.cancel(os.ErrDeadlineExceeded)
 		t.cancel = nil
@@ -343,11 +344,11 @@ func (t *deadlineContext) setDeadline(group *synctestGroup, deadline time.Time) 
 	}
 	if t.timer != nil {
 		// Reuse existing deadline timer.
-		t.timer.Reset(deadline.Sub(group.Now()))
+		t.timer.Reset(deadline.Sub(time.Now()))
 		return
 	}
 	// Create a new timer to cancel the context at the deadline.
-	t.timer = group.AfterFunc(deadline.Sub(group.Now()), func() {
+	t.timer = time.AfterFunc(deadline.Sub(time.Now()), func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		t.cancel(os.ErrDeadlineExceeded)

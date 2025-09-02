@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25 || goexperiment.synctest
+
 package http2
 
 import (
@@ -17,7 +19,8 @@ import (
 	"time"
 )
 
-func TestServer_Push_Success(t *testing.T) {
+func TestServer_Push_Success(t *testing.T) { synctestTest(t, testServer_Push_Success) }
+func testServer_Push_Success(t testing.TB) {
 	const (
 		mainBody   = "<html>index page</html>"
 		pushedBody = "<html>pushed page</html>"
@@ -242,7 +245,8 @@ func TestServer_Push_Success(t *testing.T) {
 	}
 }
 
-func TestServer_Push_SuccessNoRace(t *testing.T) {
+func TestServer_Push_SuccessNoRace(t *testing.T) { synctestTest(t, testServer_Push_SuccessNoRace) }
+func testServer_Push_SuccessNoRace(t testing.TB) {
 	// Regression test for issue #18326. Ensure the request handler can mutate
 	// pushed request headers without racing with the PUSH_PROMISE write.
 	errc := make(chan error, 2)
@@ -287,6 +291,9 @@ func TestServer_Push_SuccessNoRace(t *testing.T) {
 }
 
 func TestServer_Push_RejectRecursivePush(t *testing.T) {
+	synctestTest(t, testServer_Push_RejectRecursivePush)
+}
+func testServer_Push_RejectRecursivePush(t testing.TB) {
 	// Expect two requests, but might get three if there's a bug and the second push succeeds.
 	errc := make(chan error, 3)
 	handler := func(w http.ResponseWriter, r *http.Request) error {
@@ -323,6 +330,11 @@ func TestServer_Push_RejectRecursivePush(t *testing.T) {
 }
 
 func testServer_Push_RejectSingleRequest(t *testing.T, doPush func(http.Pusher, *http.Request) error, settings ...Setting) {
+	synctestTest(t, func(t testing.TB) {
+		testServer_Push_RejectSingleRequest_Bubble(t, doPush, settings...)
+	})
+}
+func testServer_Push_RejectSingleRequest_Bubble(t testing.TB, doPush func(http.Pusher, *http.Request) error, settings ...Setting) {
 	// Expect one request, but might get two if there's a bug and the push succeeds.
 	errc := make(chan error, 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -426,6 +438,9 @@ func TestServer_Push_RejectForbiddenHeader(t *testing.T) {
 }
 
 func TestServer_Push_StateTransitions(t *testing.T) {
+	synctestTest(t, testServer_Push_StateTransitions)
+}
+func testServer_Push_StateTransitions(t testing.TB) {
 	const body = "foo"
 
 	gotPromise := make(chan bool)
@@ -479,6 +494,9 @@ func TestServer_Push_StateTransitions(t *testing.T) {
 }
 
 func TestServer_Push_RejectAfterGoAway(t *testing.T) {
+	synctestTest(t, testServer_Push_RejectAfterGoAway)
+}
+func testServer_Push_RejectAfterGoAway(t testing.TB) {
 	var readyOnce sync.Once
 	ready := make(chan struct{})
 	errc := make(chan error, 2)
@@ -518,7 +536,8 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	}
 }
 
-func TestServer_Push_Underflow(t *testing.T) {
+func TestServer_Push_Underflow(t *testing.T) { synctestTest(t, testServer_Push_Underflow) }
+func testServer_Push_Underflow(t testing.TB) {
 	// Test for #63511: Send several requests which generate PUSH_PROMISE responses,
 	// verify they all complete successfully.
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {

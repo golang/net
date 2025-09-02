@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25 || goexperiment.synctest
+
 package http2
 
 import (
@@ -68,7 +70,7 @@ func (w twriter) Write(p []byte) (n int, err error) {
 }
 
 // like encodeHeader, but don't add implicit pseudo headers.
-func encodeHeaderNoImplicit(t *testing.T, headers ...string) []byte {
+func encodeHeaderNoImplicit(t testing.TB, headers ...string) []byte {
 	var buf bytes.Buffer
 	enc := hpack.NewEncoder(&buf)
 	for len(headers) > 0 {
@@ -299,4 +301,12 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// synctestSubtest starts a subtest and runs f in a synctest bubble within it.
+func synctestSubtest(t *testing.T, name string, f func(testing.TB)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		synctestTest(t, f)
+	})
 }
