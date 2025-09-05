@@ -567,24 +567,16 @@ func (st *serverTester) bodylessReq1(headers ...string) {
 	})
 }
 
-func (st *serverTester) wantFlowControlConsumed(streamID, consumed int32) {
+func (st *serverTester) wantConnFlowControlConsumed(consumed int32) {
 	conf := configFromServer(st.sc.hs, st.sc.srv)
-	var initial int32
-	if streamID == 0 {
-		initial = conf.MaxUploadBufferPerConnection
-	} else {
-		initial = conf.MaxUploadBufferPerStream
-	}
 	donec := make(chan struct{})
 	st.sc.sendServeMsg(func(sc *serverConn) {
 		defer close(donec)
 		var avail int32
-		if streamID == 0 {
-			avail = sc.inflow.avail + sc.inflow.unsent
-		} else {
-		}
+		initial := conf.MaxUploadBufferPerConnection
+		avail = sc.inflow.avail + sc.inflow.unsent
 		if got, want := initial-avail, consumed; got != want {
-			st.t.Errorf("stream %v flow control consumed: %v, want %v", streamID, got, want)
+			st.t.Errorf("connection flow control consumed: %v, want %v", got, want)
 		}
 	})
 	<-donec
@@ -804,7 +796,7 @@ func testServer_Request_Post_Body_ContentLength_TooSmall(t testing.TB) {
 			// Return flow control bytes back, since the data handler closed
 			// the stream.
 			st.wantRSTStream(1, ErrCodeProtocol)
-			st.wantFlowControlConsumed(0, 0)
+			st.wantConnFlowControlConsumed(0)
 		})
 }
 
@@ -2527,7 +2519,7 @@ func testServer_NoCrash_HandlerClose_Then_ClientClose(t testing.TB) {
 
 		// We should have our flow control bytes back,
 		// since the handler didn't get them.
-		st.wantFlowControlConsumed(0, 0)
+		st.wantConnFlowControlConsumed(0)
 
 		// Set up a bunch of machinery to record the panic we saw
 		// previously.
@@ -3966,7 +3958,7 @@ func testServer_Rejects_TooSmall(t testing.TB) {
 		})
 		st.writeData(1, true, []byte("12345"))
 		st.wantRSTStream(1, ErrCodeProtocol)
-		st.wantFlowControlConsumed(0, 0)
+		st.wantConnFlowControlConsumed(0)
 	})
 }
 
