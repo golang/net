@@ -287,7 +287,7 @@ func TestNoUnicodeStrings(t *testing.T) {
 }
 
 // setForTest sets *p = v, and restores its original value in t.Cleanup.
-func setForTest[T any](t *testing.T, p *T, v T) {
+func setForTest[T any](t testing.TB, p *T, v T) {
 	orig := *p
 	t.Cleanup(func() {
 		*p = orig

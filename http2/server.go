@@ -390,6 +390,9 @@ func (o *ServeConnOpts) handler() http.Handler {
 //
 // The opts parameter is optional. If nil, default values are used.
 func (s *Server) ServeConn(c net.Conn, opts *ServeConnOpts) {
+	if opts == nil {
+		opts = &ServeConnOpts{}
+	}
 	s.serveConn(c, opts, nil)
 }
 
