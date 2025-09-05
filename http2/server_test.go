@@ -4290,8 +4290,7 @@ func TestServerWindowUpdateOnBodyClose(t *testing.T) {
 func testServerWindowUpdateOnBodyClose(t testing.TB) {
 	const windowSize = 65535 * 2
 	content := make([]byte, windowSize)
-	blockCh := make(chan bool)
-	errc := make(chan error, 1)
+	errc := make(chan error)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		buf := make([]byte, 4)
 		n, err := io.ReadFull(r.Body, buf)
@@ -4303,8 +4302,7 @@ func testServerWindowUpdateOnBodyClose(t testing.TB) {
 			errc <- fmt.Errorf("too few bytes read: %d", n)
 			return
 		}
-		blockCh <- true
-		<-blockCh
+		r.Body.Close()
 		errc <- nil
 	}, func(s *Server) {
 		s.MaxUploadBufferPerConnection = windowSize
@@ -4323,9 +4321,9 @@ func testServerWindowUpdateOnBodyClose(t testing.TB) {
 		EndHeaders: true,
 	})
 	st.writeData(1, false, content[:windowSize/2])
-	<-blockCh
-	st.stream(1).body.CloseWithError(io.EOF)
-	blockCh <- true
+	if err := <-errc; err != nil {
+		t.Fatal(err)
+	}
 
 	// Wait for flow control credit for the portion of the request written so far.
 	increments := windowSize / 2
@@ -4345,10 +4343,6 @@ func testServerWindowUpdateOnBodyClose(t testing.TB) {
 	// Writing data after the stream is reset immediately returns flow control credit.
 	st.writeData(1, false, content[windowSize/2:])
 	st.wantWindowUpdate(0, windowSize/2)
-
-	if err := <-errc; err != nil {
-		t.Error(err)
-	}
 }
 
 func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
