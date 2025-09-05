@@ -3624,53 +3624,45 @@ func TestAuthorityAddr(t *testing.T) {
 // Issue 20448: stop allocating for DATA frames' payload after
 // Response.Body.Close is called.
 func TestTransportAllocationsAfterResponseBodyClose(t *testing.T) {
-	megabyteZero := make([]byte, 1<<20)
+	synctestTest(t, testTransportAllocationsAfterResponseBodyClose)
+}
+func testTransportAllocationsAfterResponseBodyClose(t testing.TB) {
+	tc := newTestClientConn(t)
+	tc.greet()
 
-	writeErr := make(chan error, 1)
+	// Send request.
+	req, _ := http.NewRequest("PUT", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
 
-	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.(http.Flusher).Flush()
-		var sum int64
-		for i := 0; i < 100; i++ {
-			n, err := w.Write(megabyteZero)
-			sum += int64(n)
-			if err != nil {
-				writeErr <- err
-				return
-			}
-		}
-		t.Logf("wrote all %d bytes", sum)
-		writeErr <- nil
+	// Receive response with some body.
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  false,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
 	})
+	tc.writeData(rt.streamID(), false, make([]byte, 64))
+	tc.wantIdle()
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-	c := &http.Client{Transport: tr}
-	res, err := c.Get(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Client reads a byte of the body, and then closes it.
+	respBody := rt.response().Body
 	var buf [1]byte
-	if _, err := res.Body.Read(buf[:]); err != nil {
+	if _, err := respBody.Read(buf[:]); err != nil {
 		t.Error(err)
 	}
-	if err := res.Body.Close(); err != nil {
+	if err := respBody.Close(); err != nil {
 		t.Error(err)
 	}
+	tc.wantFrameType(FrameRSTStream)
 
-	trb, ok := res.Body.(transportResponseBody)
-	if !ok {
-		t.Fatalf("res.Body = %T; want transportResponseBody", res.Body)
-	}
-	if trb.cs.bufPipe.b != nil {
-		t.Errorf("response body pipe is still open")
-	}
+	// Server sends more of the body, which is ignored.
+	tc.writeData(rt.streamID(), false, make([]byte, 64))
 
-	gotErr := <-writeErr
-	if gotErr == nil {
-		t.Errorf("Handler unexpectedly managed to write its entire response without getting an error")
-	} else if gotErr != errStreamClosed {
-		t.Errorf("Handler Write err = %v; want errStreamClosed", gotErr)
+	if _, err := respBody.Read(buf[:]); err == nil {
+		t.Error("read from closed body unexpectedly succeeded")
 	}
 }
 
