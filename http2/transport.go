@@ -653,6 +653,7 @@ var (
 	errClientConnUnusable       = errors.New("http2: client conn not usable")
 	errClientConnNotEstablished = errors.New("http2: client conn could not be established")
 	errClientConnGotGoAway      = errors.New("http2: Transport received Server's graceful shutdown GOAWAY")
+	errClientConnForceClosed    = errors.New("http2: client connection force closed via ClientConn.Close")
 )
 
 // shouldRetryRequest is called by RoundTrip when a request fails to get
@@ -1206,8 +1207,7 @@ func (cc *ClientConn) closeForError(err error) {
 //
 // In-flight requests are interrupted. For a graceful shutdown, use Shutdown instead.
 func (cc *ClientConn) Close() error {
-	err := errors.New("http2: client connection force closed via ClientConn.Close")
-	cc.closeForError(err)
+	cc.closeForError(errClientConnForceClosed)
 	return nil
 }
 
