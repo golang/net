@@ -3908,23 +3908,39 @@ func testServerIdleTimeout_AfterRequest(t testing.TB) {
 // See https://github.com/grpc/grpc-go/pull/938
 func TestRequestBodyReadCloseRace(t *testing.T) { synctestTest(t, testRequestBodyReadCloseRace) }
 func testRequestBodyReadCloseRace(t testing.TB) {
-	for i := 0; i < 100; i++ {
-		body := &requestBody{
-			pipe: &pipe{
-				b: new(bytes.Buffer),
-			},
-		}
-		body.pipe.CloseWithError(io.EOF)
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		go r.Body.Close()
+		io.Copy(io.Discard, r.Body)
+	})
+	st.greet()
 
-		done := make(chan bool, 1)
-		buf := make([]byte, 10)
-		go func() {
-			time.Sleep(1 * time.Millisecond)
-			body.Close()
-			done <- true
-		}()
-		body.Read(buf)
-		<-done
+	data := make([]byte, 1024)
+	for i := range 100 {
+		streamID := uint32(1 + (i * 2)) // clients send odd numbers
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: st.encodeHeader(),
+			EndHeaders:    true,
+		})
+		st.writeData(1, false, data)
+
+		for {
+			// Look for a RST_STREAM frame.
+			// Skip over anything else (HEADERS and WINDOW_UPDATE).
+			fr := st.readFrame()
+			if fr == nil {
+				t.Fatalf("got no RSTStreamFrame, want one")
+			}
+			rst, ok := fr.(*RSTStreamFrame)
+			if !ok {
+				continue
+			}
+			// We can get NO or STREAM_CLOSED depending on scheduling.
+			if rst.ErrCode != ErrCodeNo && rst.ErrCode != ErrCodeStreamClosed {
+				t.Fatalf("got RSTStreamFrame with error code %v, want ErrCodeNo or ErrCodeStreamClosed", rst.ErrCode)
+			}
+			break
+		}
 	}
 }
 

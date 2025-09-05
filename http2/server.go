@@ -2555,7 +2555,7 @@ func (b *requestBody) Read(p []byte) (n int, err error) {
 	if err == io.EOF {
 		b.sawEOF = true
 	}
-	if b.conn == nil && inTests {
+	if b.conn == nil {
 		return
 	}
 	b.conn.noteBodyReadFromHandler(b.stream, n, err)
