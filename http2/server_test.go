@@ -2539,7 +2539,7 @@ func testServer_NoCrash_HandlerClose_Then_ClientClose(t testing.TB) {
 
 		// Now force the serve loop to end, via closing the connection.
 		st.cc.Close()
-		<-st.sc.doneServing
+		synctest.Wait()
 
 		panMu.Lock()
 		got := panicVal
