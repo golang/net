@@ -194,6 +194,13 @@ func (tc *testClientConn) closeWrite() {
 	tc.netconn.Close()
 }
 
+// closeWrite causes the net.Conn used by the ClientConn to return a error
+// from Write calls.
+func (tc *testClientConn) closeWriteWithError(err error) {
+	tc.netconn.loc.setReadError(io.EOF)
+	tc.netconn.loc.setWriteError(err)
+}
+
 // testRequestBody is a Request.Body for use in tests.
 type testRequestBody struct {
 	tc   *testClientConn

@@ -4243,35 +4243,28 @@ func TestTransportNewClientConnCloseOnWriteError(t *testing.T) {
 }
 
 func TestTransportRoundtripCloseOnWriteError(t *testing.T) {
-	req, err := http.NewRequest("GET", "https://dummy.tld/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	synctestTest(t, testTransportRoundtripCloseOnWriteError)
+}
+func testTransportRoundtripCloseOnWriteError(t testing.TB) {
+	tc := newTestClientConn(t)
+	tc.greet()
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-	ctx := context.Background()
-	cc, err := tr.dialClientConn(ctx, ts.Listener.Addr().String(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := tc.newRequestBody()
+	body.writeBytes(1)
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", body)
+	rt := tc.roundTrip(req)
 
 	writeErr := errors.New("write error")
-	cc.wmu.Lock()
-	cc.werr = writeErr
-	cc.wmu.Unlock()
+	tc.closeWriteWithError(writeErr)
 
-	_, err = cc.RoundTrip(req)
-	if err != writeErr {
-		t.Fatalf("expected %v, got %v", writeErr, err)
+	body.writeBytes(1)
+	if err := rt.err(); err != writeErr {
+		t.Fatalf("RoundTrip error %v, want %v", err, writeErr)
 	}
 
-	cc.mu.Lock()
-	closed := cc.closed
-	cc.mu.Unlock()
-	if !closed {
-		t.Fatal("expected closed")
+	rt2 := tc.roundTrip(req)
+	if err := rt2.err(); err != errClientConnUnusable {
+		t.Fatalf("RoundTrip error %v, want errClientConnUnusable", err)
 	}
 }
 
