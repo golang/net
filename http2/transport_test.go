@@ -2374,59 +2374,68 @@ func testTransportStreamEndsWhileBodyIsBeingWritten(t testing.TB) {
 	rt.wantStatus(413)
 }
 
-// https://golang.org/issue/15930
-func TestTransportFlowControl(t *testing.T) {
-	const bufLen = 64 << 10
-	var total int64 = 100 << 20 // 100MB
-	if testing.Short() {
-		total = 10 << 20
-	}
-
-	var wrote int64 // updated atomically
-	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		b := make([]byte, bufLen)
-		for wrote < total {
-			n, err := w.Write(b)
-			atomic.AddInt64(&wrote, int64(n))
-			if err != nil {
-				t.Errorf("ResponseWriter.Write error: %v", err)
-				break
-			}
-			w.(http.Flusher).Flush()
+func TestTransportFlowControl(t *testing.T) { synctestTest(t, testTransportFlowControl) }
+func testTransportFlowControl(t testing.TB) {
+	const maxBuffer = 64 << 10 // 64KiB
+	tc := newTestClientConn(t, func(tr *http.Transport) {
+		tr.HTTP2 = &http.HTTP2Config{
+			MaxReceiveBufferPerConnection: maxBuffer,
+			MaxReceiveBufferPerStream:     maxBuffer,
+			MaxReadFrameSize:              16 << 20, // 16MiB
 		}
 	})
+	tc.greet()
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-	req, err := http.NewRequest("GET", ts.URL, nil)
-	if err != nil {
-		t.Fatal("NewRequest error:", err)
-	}
-	resp, err := tr.RoundTrip(req)
-	if err != nil {
-		t.Fatal("RoundTrip error:", err)
-	}
-	defer resp.Body.Close()
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
 
-	var read int64
-	b := make([]byte, bufLen)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  false,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt.wantStatus(200)
+
+	// Server fills up its transmit buffer.
+	// The client does not provide more flow control tokens,
+	// since the data hasn't been consumed by the user.
+	tc.writeData(rt.streamID(), false, make([]byte, maxBuffer))
+	tc.wantIdle()
+
+	// User reads data from the response body.
+	// The client sends more flow control tokens.
+	resp := rt.response()
+	if _, err := io.ReadFull(resp.Body, make([]byte, maxBuffer)); err != nil {
+		t.Fatalf("io.Body.Read: %v", err)
+	}
+	var connTokens, streamTokens uint32
 	for {
-		n, err := resp.Body.Read(b)
-		if err == io.EOF {
+		f := tc.readFrame()
+		if f == nil {
 			break
 		}
-		if err != nil {
-			t.Fatal("Read error:", err)
+		wu, ok := f.(*WindowUpdateFrame)
+		if !ok {
+			t.Fatalf("received unexpected frame %T (want WINDOW_UPDATE)", f)
 		}
-		read += int64(n)
-
-		const max = transportDefaultStreamFlow
-		if w := atomic.LoadInt64(&wrote); -max > read-w || read-w > max {
-			t.Fatalf("Too much data inflight: server wrote %v bytes but client only received %v", w, read)
+		switch wu.StreamID {
+		case 0:
+			connTokens += wu.Increment
+		case wu.StreamID:
+			streamTokens += wu.Increment
+		default:
+			t.Fatalf("received unexpected WINDOW_UPDATE for stream %v", wu.StreamID)
 		}
-
-		// Let the server get ahead of the client.
-		time.Sleep(1 * time.Millisecond)
+	}
+	if got, want := connTokens, uint32(maxBuffer); got != want {
+		t.Errorf("transport provided %v bytes of connection WINDOW_UPDATE, want %v", got, want)
+	}
+	if got, want := streamTokens, uint32(maxBuffer); got != want {
+		t.Errorf("transport provided %v bytes of stream WINDOW_UPDATE, want %v", got, want)
 	}
 }
 
