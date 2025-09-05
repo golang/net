@@ -78,6 +78,9 @@ type serverTester struct {
 	sc           *serverConn
 	testConnFramer
 
+	callsMu sync.Mutex
+	calls   []*serverHandlerCall
+
 	// If http2debug!=2, then we capture Frame debug logs that will be written
 	// to t.Log after a test fails. The read and write logs use separate locks
 	// and buffers so we don't accidentally introduce synchronization between
@@ -188,6 +191,10 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 		h1server.ErrorLog = log.New(io.MultiWriter(stderrv(), twriter{t: t, st: st}, &st.serverLogBuf), "", log.LstdFlags)
 	}
 
+	if handler == nil {
+		handler = serverTesterHandler{st}.ServeHTTP
+	}
+
 	t.Cleanup(func() {
 		st.Close()
 		time.Sleep(goAwayTimeout) // give server time to shut down
@@ -224,6 +231,50 @@ type netConnWithConnectionState struct {
 
 func (c *netConnWithConnectionState) ConnectionState() tls.ConnectionState {
 	return c.state
+}
+
+type serverTesterHandler struct {
+	st *serverTester
+}
+
+func (h serverTesterHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	call := &serverHandlerCall{
+		w:   w,
+		req: req,
+		ch:  make(chan func()),
+	}
+	h.st.t.Cleanup(call.exit)
+	h.st.callsMu.Lock()
+	h.st.calls = append(h.st.calls, call)
+	h.st.callsMu.Unlock()
+	for f := range call.ch {
+		f()
+	}
+}
+
+// serverHandlerCall is a call to the server handler's ServeHTTP method.
+type serverHandlerCall struct {
+	w         http.ResponseWriter
+	req       *http.Request
+	closeOnce sync.Once
+	ch        chan func()
+}
+
+// do executes f in the handler's goroutine.
+func (call *serverHandlerCall) do(f func(http.ResponseWriter, *http.Request)) {
+	donec := make(chan struct{})
+	call.ch <- func() {
+		defer close(donec)
+		f(call.w, call.req)
+	}
+	<-donec
+}
+
+// exit causes the handler to return.
+func (call *serverHandlerCall) exit() {
+	call.closeOnce.Do(func() {
+		close(call.ch)
+	})
 }
 
 // newServerTesterWithRealConn creates a test server listening on a localhost port.
@@ -348,6 +399,19 @@ func (st *serverTester) closeConn() {
 
 func (st *serverTester) addLogFilter(phrase string) {
 	st.logFilter = append(st.logFilter, phrase)
+}
+
+func (st *serverTester) nextHandlerCall() *serverHandlerCall {
+	st.t.Helper()
+	synctest.Wait()
+	st.callsMu.Lock()
+	defer st.callsMu.Unlock()
+	if len(st.calls) == 0 {
+		st.t.Fatal("expected server handler call, got none")
+	}
+	call := st.calls[0]
+	st.calls = st.calls[1:]
+	return call
 }
 
 func (st *serverTester) stream(id uint32) *stream {
@@ -1265,15 +1329,11 @@ func testServer_Handler_Sends_WindowUpdate(t testing.TB) {
 	//
 	// This also needs to be less than MAX_FRAME_SIZE.
 	const windowSize = 65535 * 2
-	puppet := newHandlerPuppet()
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		puppet.act(w, r)
-	}, func(s *Server) {
+	st := newServerTester(t, nil, func(s *Server) {
 		s.MaxUploadBufferPerConnection = windowSize
 		s.MaxUploadBufferPerStream = windowSize
 	})
 	defer st.Close()
-	defer puppet.done()
 
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
@@ -1282,13 +1342,14 @@ func testServer_Handler_Sends_WindowUpdate(t testing.TB) {
 		EndStream:     false, // data coming
 		EndHeaders:    true,
 	})
+	call := st.nextHandlerCall()
 
 	// Write less than half the max window of data and consume it.
 	// The server doesn't return flow control yet, buffering the 1024 bytes to
 	// combine with a future update.
 	data := make([]byte, windowSize)
 	st.writeData(1, false, data[:1024])
-	puppet.do(readBodyHandler(t, string(data[:1024])))
+	call.do(readBodyHandler(t, string(data[:1024])))
 
 	// Write up to the window limit.
 	// The server returns the buffered credit.
@@ -1297,7 +1358,7 @@ func testServer_Handler_Sends_WindowUpdate(t testing.TB) {
 	st.wantWindowUpdate(1, 1024)
 
 	// The handler consumes the data and the server returns credit.
-	puppet.do(readBodyHandler(t, string(data[1024:])))
+	call.do(readBodyHandler(t, string(data[1024:])))
 	st.wantWindowUpdate(0, windowSize-1024)
 	st.wantWindowUpdate(1, windowSize-1024)
 }
@@ -1309,15 +1370,11 @@ func TestServer_Handler_Sends_WindowUpdate_Padding(t *testing.T) {
 }
 func testServer_Handler_Sends_WindowUpdate_Padding(t testing.TB) {
 	const windowSize = 65535 * 2
-	puppet := newHandlerPuppet()
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		puppet.act(w, r)
-	}, func(s *Server) {
+	st := newServerTester(t, nil, func(s *Server) {
 		s.MaxUploadBufferPerConnection = windowSize
 		s.MaxUploadBufferPerStream = windowSize
 	})
 	defer st.Close()
-	defer puppet.done()
 
 	st.greet()
 	st.writeHeaders(HeadersFrameParam{
@@ -1326,6 +1383,7 @@ func testServer_Handler_Sends_WindowUpdate_Padding(t testing.TB) {
 		EndStream:     false,
 		EndHeaders:    true,
 	})
+	call := st.nextHandlerCall()
 
 	// Write half a window of data, with some padding.
 	// The server doesn't return the padding yet, buffering the 5 bytes to combine
@@ -1337,7 +1395,7 @@ func testServer_Handler_Sends_WindowUpdate_Padding(t testing.TB) {
 	// The handler consumes the body.
 	// The server returns flow control for the body and padding
 	// (4 bytes of padding + 1 byte of length).
-	puppet.do(readBodyHandler(t, string(data)))
+	call.do(readBodyHandler(t, string(data)))
 	st.wantWindowUpdate(0, uint32(len(data)+1+len(pad)))
 	st.wantWindowUpdate(1, uint32(len(data)+1+len(pad)))
 }

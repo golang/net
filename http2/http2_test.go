@@ -83,35 +83,6 @@ func encodeHeaderNoImplicit(t testing.TB, headers ...string) []byte {
 	return buf.Bytes()
 }
 
-type puppetCommand struct {
-	fn   func(w http.ResponseWriter, r *http.Request)
-	done chan<- bool
-}
-
-type handlerPuppet struct {
-	ch chan puppetCommand
-}
-
-func newHandlerPuppet() *handlerPuppet {
-	return &handlerPuppet{
-		ch: make(chan puppetCommand),
-	}
-}
-
-func (p *handlerPuppet) act(w http.ResponseWriter, r *http.Request) {
-	for cmd := range p.ch {
-		cmd.fn(w, r)
-		cmd.done <- true
-	}
-}
-
-func (p *handlerPuppet) done() { close(p.ch) }
-func (p *handlerPuppet) do(fn func(http.ResponseWriter, *http.Request)) {
-	done := make(chan bool)
-	p.ch <- puppetCommand{fn, done}
-	<-done
-}
-
 func cleanDate(res *http.Response) {
 	if d := res.Header["Date"]; len(d) == 1 {
 		d[0] = "XXX"
