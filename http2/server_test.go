@@ -2367,16 +2367,14 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	synctestTest(t, testServer_Rejects_Too_Many_Streams)
 }
 func testServer_Rejects_Too_Many_Streams(t testing.TB) {
-	const testPath = "/some/path"
-
 	inHandler := make(chan uint32)
 	leaveHandler := make(chan bool)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		id := w.(*responseWriter).rws.stream.id
-		inHandler <- id
-		if id == 1+(defaultMaxStreams+1)*2 && r.URL.Path != testPath {
-			t.Errorf("decoded final path as %q; want %q", r.URL.Path, testPath)
+		var streamID uint32
+		if _, err := fmt.Sscanf(r.URL.Path, "/%d", &streamID); err != nil {
+			t.Errorf("parsing %q: %v", r.URL.Path, err)
 		}
+		inHandler <- streamID
 		<-leaveHandler
 	})
 	defer st.Close()
@@ -2391,12 +2389,14 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 		defer func() { nextStreamID += 2 }()
 		return nextStreamID
 	}
-	sendReq := func(id uint32, headers ...string) {
+	sendReq := func(id uint32) {
 		st.writeHeaders(HeadersFrameParam{
-			StreamID:      id,
-			BlockFragment: st.encodeHeader(headers...),
-			EndStream:     true,
-			EndHeaders:    true,
+			StreamID: id,
+			BlockFragment: st.encodeHeader(
+				":path", fmt.Sprintf("/%v", id),
+			),
+			EndStream:  true,
+			EndHeaders: true,
 		})
 	}
 	for i := 0; i < defaultMaxStreams; i++ {
@@ -2413,7 +2413,7 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 	// (It's also sent as a CONTINUATION, to verify we still track the decoder context,
 	// even if we're rejecting it)
 	rejectID := streamID()
-	headerBlock := st.encodeHeader(":path", testPath)
+	headerBlock := st.encodeHeader(":path", fmt.Sprintf("/%v", rejectID))
 	frag1, frag2 := headerBlock[:3], headerBlock[3:]
 	st.writeHeaders(HeadersFrameParam{
 		StreamID:      rejectID,
@@ -2437,7 +2437,7 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 
 	// And now another stream should be able to start:
 	goodID := streamID()
-	sendReq(goodID, ":path", testPath)
+	sendReq(goodID)
 	if got := <-inHandler; got != goodID {
 		t.Errorf("Got stream %d; want %d", got, goodID)
 	}
