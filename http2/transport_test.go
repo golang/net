@@ -28,7 +28,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -2341,46 +2340,38 @@ func (b neverEnding) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// golang.org/issue/15425: test that a handler closing the request
-// body doesn't terminate the stream to the peer. (It just stops
-// readability from the handler's side, and eventually the client
-// runs out of flow control tokens)
-func TestTransportHandlerBodyClose(t *testing.T) {
-	const bodySize = 10 << 20
-	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		r.Body.Close()
-		io.Copy(w, io.LimitReader(neverEnding('A'), bodySize))
+// #15425: Transport goroutine leak while the transport is still trying to
+// write its body after the stream has completed.
+func TestTransportStreamEndsWhileBodyIsBeingWritten(t *testing.T) {
+	synctestTest(t, testTransportStreamEndsWhileBodyIsBeingWritten)
+}
+func testTransportStreamEndsWhileBodyIsBeingWritten(t testing.TB) {
+	body := "this is the client request body"
+	const windowSize = 10 // less than len(body)
+
+	tc := newTestClientConn(t)
+	tc.greet(Setting{SettingInitialWindowSize, windowSize})
+
+	// Client sends a request, and as much body as fits into the stream window.
+	req, _ := http.NewRequest("PUT", "https://dummy.tld/", strings.NewReader(body))
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
+	tc.wantData(wantData{
+		streamID:  rt.streamID(),
+		endStream: false,
+		size:      windowSize,
 	})
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
-	g0 := runtime.NumGoroutine()
-
-	const numReq = 10
-	for i := 0; i < numReq; i++ {
-		req, err := http.NewRequest("POST", ts.URL, struct{ io.Reader }{io.LimitReader(neverEnding('A'), bodySize)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		n, err := io.Copy(io.Discard, res.Body)
-		res.Body.Close()
-		if n != bodySize || err != nil {
-			t.Fatalf("req#%d: Copy = %d, %v; want %d, nil", i, n, err, bodySize)
-		}
-	}
-	tr.CloseIdleConnections()
-
-	if !waitCondition(5*time.Second, 100*time.Millisecond, func() bool {
-		gd := runtime.NumGoroutine() - g0
-		return gd < numReq/2
-	}) {
-		t.Errorf("appeared to leak goroutines")
-	}
+	// Server responds without permitting the rest of the body to be sent.
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt.streamID(),
+		EndHeaders: true,
+		EndStream:  true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "413",
+		),
+	})
+	rt.wantStatus(413)
 }
 
 // https://golang.org/issue/15930

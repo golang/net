@@ -5066,3 +5066,60 @@ func testServerPingResponded(t testing.TB) {
 	st.advance(2 * time.Second)
 	st.wantIdle()
 }
+
+// golang.org/issue/15425: test that a handler closing the request
+// body doesn't terminate the stream to the peer. (It just stops
+// readability from the handler's side, and eventually the client
+// runs out of flow control tokens)
+func TestServerSendDataAfterRequestBodyClose(t *testing.T) {
+	synctestTest(t, testServerSendDataAfterRequestBodyClose)
+}
+func testServerSendDataAfterRequestBodyClose(t testing.TB) {
+	st := newServerTester(t, nil)
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: st.encodeHeader(),
+		EndStream:     false,
+		EndHeaders:    true,
+	})
+
+	// Handler starts writing the response body.
+	call := st.nextHandlerCall()
+	call.do(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte("one"))
+		http.NewResponseController(w).Flush()
+	})
+	st.wantFrameType(FrameHeaders)
+	st.wantData(wantData{
+		streamID:  1,
+		endStream: false,
+		data:      []byte("one"),
+	})
+	st.wantIdle()
+
+	// Handler closes the request body.
+	// This is not observable by the client.
+	call.do(func(w http.ResponseWriter, req *http.Request) {
+		req.Body.Close()
+	})
+	st.wantIdle()
+
+	// The client can still send request data, which is discarded.
+	st.writeData(1, false, []byte("client-sent data"))
+	st.wantIdle()
+
+	// Handler can still write more response body,
+	// which is sent to the client.
+	call.do(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte("two"))
+		http.NewResponseController(w).Flush()
+	})
+	st.wantData(wantData{
+		streamID:  1,
+		endStream: false,
+		data:      []byte("two"),
+	})
+	st.wantIdle()
+}
