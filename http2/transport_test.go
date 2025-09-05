@@ -2904,17 +2904,20 @@ func TestTransportRequestPathPseudo(t *testing.T) {
 // golang.org/issue/17071 -- don't sniff the first byte of the request body
 // before we've determined that the ClientConn is usable.
 func TestRoundTripDoesntConsumeRequestBodyEarly(t *testing.T) {
+	synctestTest(t, testRoundTripDoesntConsumeRequestBodyEarly)
+}
+func testRoundTripDoesntConsumeRequestBodyEarly(t testing.TB) {
+	tc := newTestClientConn(t)
+	tc.greet()
+	tc.closeWrite()
+
 	const body = "foo"
 	req, _ := http.NewRequest("POST", "http://foo.com/", io.NopCloser(strings.NewReader(body)))
-	cc := &ClientConn{
-		closed:      true,
-		reqHeaderMu: make(chan struct{}, 1),
-		t:           &Transport{},
+	rt := tc.roundTrip(req)
+	if err := rt.err(); err != errClientConnNotEstablished {
+		t.Fatalf("RoundTrip = %v; want errClientConnNotEstablished", err)
 	}
-	_, err := cc.RoundTrip(req)
-	if err != errClientConnUnusable {
-		t.Fatalf("RoundTrip = %v; want errClientConnUnusable", err)
-	}
+
 	slurp, err := io.ReadAll(req.Body)
 	if err != nil {
 		t.Errorf("ReadAll = %v", err)
