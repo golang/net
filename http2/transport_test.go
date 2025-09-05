@@ -1359,7 +1359,7 @@ func headerListSize(h http.Header) (size uint32) {
 // space for an empty "Pad-Headers" key, then adds as many copies of
 // filler as possible. Any remaining bytes necessary to push the
 // header list size up to limit are added to h["Pad-Headers"].
-func padHeaders(t *testing.T, h http.Header, limit uint64, filler string) {
+func padHeaders(t testing.TB, h http.Header, limit uint64, filler string) {
 	if limit > 0xffffffff {
 		t.Fatalf("padHeaders: refusing to pad to more than 2^32-1 bytes. limit = %v", limit)
 	}
@@ -1452,61 +1452,35 @@ func TestPadHeaders(t *testing.T) {
 }
 
 func TestTransportChecksRequestHeaderListSize(t *testing.T) {
-	ts := newTestServer(t,
-		func(w http.ResponseWriter, r *http.Request) {
-			// Consume body & force client to send
-			// trailers before writing response.
-			// io.ReadAll returns non-nil err for
-			// requests that attempt to send greater than
-			// maxHeaderListSize bytes of trailers, since
-			// those requests generate a stream reset.
-			io.ReadAll(r.Body)
-			r.Body.Close()
-		},
-		func(ts *httptest.Server) {
-			ts.Config.MaxHeaderBytes = 16 << 10
-		},
-		optQuiet,
-	)
+	synctestTest(t, testTransportChecksRequestHeaderListSize)
+}
+func testTransportChecksRequestHeaderListSize(t testing.TB) {
+	const peerSize = 16 << 10
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
+	tc := newTestClientConn(t)
+	tc.greet(Setting{SettingMaxHeaderListSize, peerSize})
 
 	checkRoundTrip := func(req *http.Request, wantErr error, desc string) {
-		// Make an arbitrary request to ensure we get the server's
-		// settings frame and initialize peerMaxHeaderListSize.
-		req0, err := http.NewRequest("GET", ts.URL, nil)
-		if err != nil {
-			t.Fatalf("newRequest: NewRequest: %v", err)
+		t.Helper()
+		rt := tc.roundTrip(req)
+		if wantErr != nil {
+			if err := rt.err(); !errors.Is(err, wantErr) {
+				t.Errorf("%v: RoundTrip err = %v; want %v", desc, err, wantErr)
+			}
+			return
 		}
-		res0, err := tr.RoundTrip(req0)
-		if err != nil {
-			t.Errorf("%v: Initial RoundTrip err = %v", desc, err)
-		}
-		res0.Body.Close()
 
-		res, err := tr.RoundTrip(req)
-		if !errors.Is(err, wantErr) {
-			if res != nil {
-				res.Body.Close()
-			}
-			t.Errorf("%v: RoundTrip err = %v; want %v", desc, err, wantErr)
-			return
-		}
-		if err == nil {
-			if res == nil {
-				t.Errorf("%v: response nil; want non-nil.", desc)
-				return
-			}
-			defer res.Body.Close()
-			if res.StatusCode != http.StatusOK {
-				t.Errorf("%v: response status = %v; want %v", desc, res.StatusCode, http.StatusOK)
-			}
-			return
-		}
-		if res != nil {
-			t.Errorf("%v: RoundTrip err = %v but response non-nil", desc, err)
-		}
+		tc.wantFrameType(FrameHeaders)
+		tc.writeHeaders(HeadersFrameParam{
+			StreamID:   rt.streamID(),
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+
+		rt.wantStatus(http.StatusOK)
 	}
 	headerListSizeForRequest := func(req *http.Request) (size uint64) {
 		const addGzipHeader = true
@@ -1526,56 +1500,15 @@ func TestTransportChecksRequestHeaderListSize(t *testing.T) {
 	newRequest := func() *http.Request {
 		// Body must be non-nil to enable writing trailers.
 		body := strings.NewReader("hello")
-		req, err := http.NewRequest("POST", ts.URL, body)
+		req, err := http.NewRequest("POST", "https://example.tld/", body)
 		if err != nil {
 			t.Fatalf("newRequest: NewRequest: %v", err)
 		}
 		return req
 	}
 
-	var (
-		scMu sync.Mutex
-		sc   *serverConn
-	)
-	testHookGetServerConn = func(v *serverConn) {
-		scMu.Lock()
-		defer scMu.Unlock()
-		if sc != nil {
-			panic("testHookGetServerConn called multiple times")
-		}
-		sc = v
-	}
-	defer func() {
-		testHookGetServerConn = nil
-	}()
-
-	// Validate peerMaxHeaderListSize.
-	req := newRequest()
-	checkRoundTrip(req, nil, "Initial request")
-	addr := authorityAddr(req.URL.Scheme, req.URL.Host)
-	cc, err := tr.connPool().GetClientConn(req, addr)
-	if err != nil {
-		t.Fatalf("GetClientConn: %v", err)
-	}
-	cc.mu.Lock()
-	peerSize := cc.peerMaxHeaderListSize
-	cc.mu.Unlock()
-	scMu.Lock()
-	wantSize := uint64(sc.maxHeaderListSize())
-	scMu.Unlock()
-	if peerSize != wantSize {
-		t.Errorf("peerMaxHeaderListSize = %v; want %v", peerSize, wantSize)
-	}
-
-	// Sanity check peerSize. (*serverConn) maxHeaderListSize adds
-	// 320 bytes of padding.
-	wantHeaderBytes := uint64(ts.Config.MaxHeaderBytes) + 320
-	if peerSize != wantHeaderBytes {
-		t.Errorf("peerMaxHeaderListSize = %v; want %v.", peerSize, wantHeaderBytes)
-	}
-
 	// Pad headers & trailers, but stay under peerSize.
-	req = newRequest()
+	req := newRequest()
 	req.Header = make(http.Header)
 	req.Trailer = make(http.Header)
 	filler := strings.Repeat("*", 1024)
