@@ -12,10 +12,9 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"runtime"
 	"strconv"
-	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -497,7 +496,6 @@ func TestServer_Push_RejectAfterGoAway(t *testing.T) {
 	synctestTest(t, testServer_Push_RejectAfterGoAway)
 }
 func testServer_Push_RejectAfterGoAway(t testing.TB) {
-	var readyOnce sync.Once
 	ready := make(chan struct{})
 	errc := make(chan error, 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -513,24 +511,8 @@ func testServer_Push_RejectAfterGoAway(t testing.TB) {
 
 	// Send GOAWAY and wait for it to be processed.
 	st.fr.WriteGoAway(1, ErrCodeNo, nil)
-	go func() {
-		for {
-			select {
-			case <-ready:
-				return
-			default:
-				if runtime.GOARCH == "wasm" {
-					// Work around https://go.dev/issue/65178 to avoid goroutine starvation.
-					runtime.Gosched()
-				}
-			}
-			st.sc.serveMsgCh <- func(loopNum int) {
-				if !st.sc.pushEnabled {
-					readyOnce.Do(func() { close(ready) })
-				}
-			}
-		}
-	}()
+	synctest.Wait()
+	close(ready)
 	if err := <-errc; err != nil {
 		t.Error(err)
 	}
