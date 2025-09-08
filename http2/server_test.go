@@ -3520,9 +3520,10 @@ func testServerContentLengthCanBeDisabled(t testing.TB) {
 }
 
 func disableGoroutineTracking(t testing.TB) {
-	old := DebugGoroutines
-	DebugGoroutines = false
-	t.Cleanup(func() { DebugGoroutines = old })
+	disableDebugGoroutines.Store(true)
+	t.Cleanup(func() {
+		disableDebugGoroutines.Store(false)
+	})
 }
 
 func BenchmarkServer_GetRequest(b *testing.B) {
