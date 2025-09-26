@@ -3475,14 +3475,28 @@ func TestTransportRequestsLowServerLimit(t *testing.T) {
 
 // tests Transport.StrictMaxConcurrentStreams
 func TestTransportRequestsStallAtServerLimit(t *testing.T) {
-	synctestTest(t, testTransportRequestsStallAtServerLimit)
+	synctestSubtest(t, "Transport", func(t testing.TB) {
+		testTransportRequestsStallAtServerLimit(t, func(tr *Transport) {
+			tr.StrictMaxConcurrentStreams = true
+		})
+	})
+	synctestSubtest(t, "HTTP2Config", func(t testing.TB) {
+		// HTTP2Config.StrictMaxConcurrentRequests was added in Go 1.26.
+		h2 := &http.HTTP2Config{}
+		v := reflect.ValueOf(h2).Elem().FieldByName("StrictMaxConcurrentRequests")
+		if !v.IsValid() {
+			t.Skip("HTTP2Config does not contain StrictMaxConcurrentRequests")
+		}
+		v.SetBool(true)
+		testTransportRequestsStallAtServerLimit(t, func(tr *http.Transport) {
+			tr.HTTP2 = h2
+		})
+	})
 }
-func testTransportRequestsStallAtServerLimit(t testing.TB) {
+func testTransportRequestsStallAtServerLimit(t testing.TB, opt any) {
 	const maxConcurrent = 2
 
-	tc := newTestClientConn(t, func(tr *Transport) {
-		tr.StrictMaxConcurrentStreams = true
-	})
+	tc := newTestClientConn(t, opt)
 	tc.greet(Setting{SettingMaxConcurrentStreams, maxConcurrent})
 
 	cancelClientRequest := make(chan struct{})
