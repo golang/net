@@ -517,3 +517,28 @@ func TestIssue70179(t *testing.T) {
 		t.Fatalf("unexpected failure: %v", err)
 	}
 }
+
+func TestDepthLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		succeed bool
+	}{
+		// Not we don't use 512 as the limit here, because the parser will
+		// insert implied <html> and <body> tags, increasing the size of the
+		// stack by two before we start parsing the <dl>.
+		{"above depth limit", strings.Repeat("<dl>", 511), false},
+		{"below depth limit", strings.Repeat("<dl>", 510), true},
+		{"above depth limit, interspersed elements", strings.Repeat("<dl><img />", 511), false},
+		{"closing tags", strings.Repeat("</dl>", 512), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse(strings.NewReader(tc.input))
+			if tc.succeed && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			} else if !tc.succeed && err == nil {
+				t.Errorf("unexpected success")
+			}
+		})
+	}
+}

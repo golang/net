@@ -231,7 +231,14 @@ func (p *parser) addChild(n *Node) {
 	}
 
 	if n.Type == ElementNode {
-		p.oe = append(p.oe, n)
+		p.insertOpenElement(n)
+	}
+}
+
+func (p *parser) insertOpenElement(n *Node) {
+	p.oe = append(p.oe, n)
+	if len(p.oe) > 512 {
+		panic("html: open stack of elements exceeds 512 nodes")
 	}
 }
 
@@ -810,7 +817,7 @@ func afterHeadIM(p *parser) bool {
 			p.im = inFramesetIM
 			return true
 		case a.Base, a.Basefont, a.Bgsound, a.Link, a.Meta, a.Noframes, a.Script, a.Style, a.Template, a.Title:
-			p.oe = append(p.oe, p.head)
+			p.insertOpenElement(p.head)
 			defer p.oe.remove(p.head)
 			return inHeadIM(p)
 		case a.Head:
@@ -2324,9 +2331,13 @@ func (p *parser) parseCurrentToken() {
 	}
 }
 
-func (p *parser) parse() error {
+func (p *parser) parse() (err error) {
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			err = fmt.Errorf("%s", panicErr)
+		}
+	}()
 	// Iterate until EOF. Any other error will cause an early return.
-	var err error
 	for err != io.EOF {
 		// CDATA sections are allowed only in foreign content.
 		n := p.oe.top()
@@ -2354,6 +2365,8 @@ func (p *parser) parse() error {
 // differ from the nesting implied by a naive processing of start and end
 // <tag>s. Conversely, explicit <tag>s in r's data can be silently dropped,
 // with no corresponding node in the resulting tree.
+//
+// Parse will reject HTML that is nested deeper than 512 elements.
 //
 // The input is assumed to be UTF-8 encoded.
 func Parse(r io.Reader) (*Node, error) {
