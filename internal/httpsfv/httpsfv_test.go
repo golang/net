@@ -4,10 +4,241 @@
 package httpsfv
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestConsumeBareInnerList(t *testing.T) {
+	tests := []struct {
+		name          string
+		in            string
+		wantBareItems []string
+		wantParams    []string
+		wantListParam string
+		wantOk        bool
+	}{
+		{
+			name:          "valid inner list without param",
+			in:            `(a b c)`,
+			wantBareItems: []string{"a", "b", "c"},
+			wantParams:    []string{"", "", ""},
+			wantOk:        true,
+		},
+		{
+			name:          "valid inner list with param",
+			in:            `(a;d b c;e)`,
+			wantBareItems: []string{"a", "b", "c"},
+			wantParams:    []string{";d", "", ";e"},
+			wantOk:        true,
+		},
+		{
+			name:          "valid inner list with fake ending parenthesis",
+			in:            `(")";foo=")")`,
+			wantBareItems: []string{`")"`},
+			wantParams:    []string{`;foo=")"`},
+			wantOk:        true,
+		},
+		{
+			name:          "valid inner list with list parameter",
+			in:            `(a b;c); d`,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+			wantOk:        true,
+		},
+		{
+			name:          "valid inner list with more content after",
+			in:            `(a b;c); d, a`,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+			wantOk:        true,
+		},
+		{
+			name:          "invalid inner list",
+			in:            `(a b;c `,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+		},
+	}
+
+	for _, tc := range tests {
+		var gotBareItems, gotParams []string
+		f := func(bareItem, param string) {
+			gotBareItems = append(gotBareItems, bareItem)
+			gotParams = append(gotParams, param)
+		}
+		gotConsumed, gotRest, ok := consumeBareInnerList(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if !slices.Equal(tc.wantBareItems, gotBareItems) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotBareItems, tc.wantBareItems)
+		}
+		if !slices.Equal(tc.wantParams, gotParams) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParams, tc.wantParams)
+		}
+		if gotConsumed+gotRest != tc.in {
+			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, gotConsumed, gotRest, tc.in)
+		}
+	}
+}
+
+func TestParseBareInnerList(t *testing.T) {
+	tests := []struct {
+		name          string
+		in            string
+		wantBareItems []string
+		wantParams    []string
+		wantOk        bool
+	}{
+		{
+			name:          "valid inner list",
+			in:            `(a b;c)`,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+			wantOk:        true,
+		},
+		{
+			name:          "valid inner list with list parameter",
+			in:            `(a b;c); d`,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+		},
+		{
+			name:          "invalid inner list",
+			in:            `(a b;c `,
+			wantBareItems: []string{"a", "b"},
+			wantParams:    []string{"", ";c"},
+		},
+	}
+
+	for _, tc := range tests {
+		var gotBareItems, gotParams []string
+		f := func(bareItem, param string) {
+			gotBareItems = append(gotBareItems, bareItem)
+			gotParams = append(gotParams, param)
+		}
+		ok := ParseBareInnerList(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if !slices.Equal(tc.wantBareItems, gotBareItems) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotBareItems, tc.wantBareItems)
+		}
+		if !slices.Equal(tc.wantParams, gotParams) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParams, tc.wantParams)
+		}
+	}
+}
+
+func TestConsumeItem(t *testing.T) {
+	tests := []struct {
+		name         string
+		in           string
+		wantBareItem string
+		wantParam    string
+		wantOk       bool
+	}{
+		{
+			name:         "valid bare item",
+			in:           `fookey`,
+			wantBareItem: `fookey`,
+			wantOk:       true,
+		},
+		{
+			name:         "valid bare item and param",
+			in:           `fookey; a="123"`,
+			wantBareItem: `fookey`,
+			wantParam:    `; a="123"`,
+			wantOk:       true,
+		},
+		{
+			name:         "valid item with content after",
+			in:           `fookey; a="123", otheritem; otherparam=1`,
+			wantBareItem: `fookey`,
+			wantParam:    `; a="123"`,
+			wantOk:       true,
+		},
+		{
+			name: "invalid just param",
+			in:   `;a="123"`,
+		},
+	}
+
+	for _, tc := range tests {
+		var gotBareItem, gotParam string
+		f := func(bareItem, param string) {
+			gotBareItem = bareItem
+			gotParam = param
+		}
+		gotConsumed, gotRest, ok := consumeItem(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.wantBareItem != gotBareItem {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotBareItem, tc.wantBareItem)
+		}
+		if tc.wantParam != gotParam {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParam, tc.wantParam)
+		}
+		if gotConsumed+gotRest != tc.in {
+			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, gotConsumed, gotRest, tc.in)
+		}
+	}
+}
+
+func TestParseItem(t *testing.T) {
+	tests := []struct {
+		name         string
+		in           string
+		wantBareItem string
+		wantParam    string
+		wantOk       bool
+	}{
+		{
+			name:         "valid bare item",
+			in:           `fookey`,
+			wantBareItem: `fookey`,
+			wantOk:       true,
+		},
+		{
+			name:         "valid bare item and param",
+			in:           `fookey; a="123"`,
+			wantBareItem: `fookey`,
+			wantParam:    `; a="123"`,
+			wantOk:       true,
+		},
+		{
+			name:         "valid item with content after",
+			in:           `fookey; a="123", otheritem; otherparam=1`,
+			wantBareItem: `fookey`,
+			wantParam:    `; a="123"`,
+		},
+		{
+			name: "invalid just param",
+			in:   `;a="123"`,
+		},
+	}
+
+	for _, tc := range tests {
+		var gotBareItem, gotParam string
+		f := func(bareItem, param string) {
+			gotBareItem = bareItem
+			gotParam = param
+		}
+		ok := ParseItem(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.wantBareItem != gotBareItem {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotBareItem, tc.wantBareItem)
+		}
+		if tc.wantParam != gotParam {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParam, tc.wantParam)
+		}
+	}
+}
 
 func TestConsumeParameter(t *testing.T) {
 	tests := []struct {

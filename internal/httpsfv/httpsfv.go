@@ -62,20 +62,94 @@ func countLeftWhitespace(s string) int {
 //   call f() 2 times with the following args:
 //   - member: `123.456`, param: `i`
 //   - member: `("foo" "bar"; lvl=2)`, param: `; lvl=1`
-//
-// - consumeItem(s string, f func(bareItem, param string)) (consumed, rest string, ok bool)
-//   For example, given `"foo"; bar=baz;foo=bar`, ConsumeItem will call f() with
-//   the following args:
-//   - bareItem: `"foo"`, param: `; bar=baz;foo=bar`
-//
-// - consumeInnerList(s string f func(bareItem, param, listParam string)) (consumed, rest string, ok bool)
-//   For example, given `("foo"; a=1;b=2 "bar";baz;lvl=2);lvl=1`, ConsumeInnerList
-//   will call f() 2 times with the following args:
-//   - bareItem: `"foo"`, param: `; a=1;b=2`, listParam: `;lvl=1`
-//   - bareItem: `"bar"`, param: `;baz;lvl=2`, listParam: `;lvl=1`
 
 // TODO(nsh): Implement corresponding parse functions for all consume functions
 // that exists.
+
+// consumeBareInnerList consumes an inner list
+// (https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-inner-list),
+// except for the inner list's top-most parameter.
+// For example, given `(a;b c;d);e`, it will consume only `(a;b c;d)`
+func consumeBareInnerList(s string, f func(bareItem, param string)) (consumed, rest string, ok bool) {
+	if len(s) == 0 || s[0] != '(' {
+		return "", s, false
+	}
+	rest = s[1:]
+	for len(rest) != 0 {
+		var bareItem, param string
+		rest = rest[countLeftWhitespace(rest):]
+		if len(rest) != 0 && rest[0] == ')' {
+			rest = rest[1:]
+			break
+		}
+		if bareItem, rest, ok = consumeBareItem(rest); !ok {
+			return "", s, ok
+		}
+		if param, rest, ok = consumeParameter(rest, nil); !ok {
+			return "", s, ok
+		}
+		if len(rest) == 0 || (rest[0] != ')' && !isSP(rest[0])) {
+			return "", s, false
+		}
+		if f != nil {
+			f(bareItem, param)
+		}
+	}
+	return s[:len(s)-len(rest)], rest, true
+}
+
+// ParseBareInnerList is used to parse a string that represents a bare inner
+// list in an HTTP Structured Field Values.
+//
+// We define a bare inner list as an inner list
+// (https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-inner-list),
+// without the top-most parameter of the inner list. For example, given the
+// inner list `(a;b c;d);e`, the bare inner list would be `(a;b c;d)`.
+//
+// Given a string that represents a bare inner list, it will call the given
+// function using each of the bare item and parameter within the bare inner
+// list. This allows the caller to extract information out of the bare inner
+// list.
+//
+// This function will return once it encounters the end of the bare inner list,
+// or something that is not a bare inner list. If it cannot consume the entire
+// given string, the ok value returned will be false.
+func ParseBareInnerList(s string, f func(bareItem, param string)) (ok bool) {
+	_, rest, ok := consumeBareInnerList(s, f)
+	return rest == "" && ok
+}
+
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-item.
+func consumeItem(s string, f func(bareItem, param string)) (consumed, rest string, ok bool) {
+	var bareItem, param string
+	if bareItem, rest, ok = consumeBareItem(s); !ok {
+		return "", s, ok
+	}
+	if param, rest, ok = consumeParameter(rest, nil); !ok {
+		return "", s, ok
+	}
+	if f != nil {
+		f(bareItem, param)
+	}
+	return s[:len(s)-len(rest)], rest, true
+}
+
+// ParseItem is used to parse a string that represents an item in an HTTP
+// Structured Field Values.
+//
+// Given a string that represents an item, it will call the given function
+// once, with the bare item and the parameter of the item. This allows the
+// caller to extract information out of the parameter.
+//
+// This function will return once it encounters the end of the string, or
+// something that is not an item. If it cannot consume the entire given
+// string, the ok value returned will be false.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-item.
+func ParseItem(s string, f func(bareItem, param string)) (ok bool) {
+	_, rest, ok := consumeItem(s, f)
+	return rest == "" && ok
+}
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#parse-param.
 func consumeParameter(s string, f func(key, val string)) (consumed, rest string, ok bool) {
@@ -87,9 +161,7 @@ func consumeParameter(s string, f func(key, val string)) (consumed, rest string,
 			break
 		}
 		rest = rest[1:]
-		if i := countLeftWhitespace(rest); i > 0 {
-			rest = rest[i:]
-		}
+		rest = rest[countLeftWhitespace(rest):]
 		key, rest, ok = consumeKey(rest)
 		if !ok {
 			return "", s, ok
@@ -122,10 +194,7 @@ func consumeParameter(s string, f func(key, val string)) (consumed, rest string,
 // https://www.rfc-editor.org/rfc/rfc9651.html#parse-param.
 func ParseParameter(s string, f func(key, val string)) (ok bool) {
 	_, rest, ok := consumeParameter(s, f)
-	if rest != "" {
-		return false
-	}
-	return ok
+	return rest == "" && ok
 }
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-key.
@@ -196,7 +265,6 @@ func consumeString(s string) (consumed, rest string, ok bool) {
 	if len(s) == 0 || s[0] != '"' {
 		return "", s, false
 	}
-
 	for i := 1; i < len(s); i++ {
 		switch ch := s[i]; ch {
 		case '\\':
@@ -215,7 +283,6 @@ func consumeString(s string) (consumed, rest string, ok bool) {
 			}
 		}
 	}
-
 	return "", s, false
 }
 
