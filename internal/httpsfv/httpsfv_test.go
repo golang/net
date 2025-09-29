@@ -10,6 +10,73 @@ import (
 	"testing"
 )
 
+func TestParseList(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          string
+		wantMembers []string
+		wantParams  []string
+		wantOk      bool
+	}{
+		{
+			name:        "valid list",
+			in:          `a, b,c`,
+			wantMembers: []string{"a", "b", "c"},
+			wantParams:  []string{"", "", ""},
+			wantOk:      true,
+		},
+		{
+			name:        "valid list with params",
+			in:          `a;foo=bar, b,c; baz=baz`,
+			wantMembers: []string{"a", "b", "c"},
+			wantParams:  []string{";foo=bar", "", "; baz=baz"},
+			wantOk:      true,
+		},
+		{
+			name:        "valid list with fake commas",
+			in:          `a;foo=",", (",")`,
+			wantMembers: []string{"a", `(",")`},
+			wantParams:  []string{`;foo=","`, ""},
+			wantOk:      true,
+		},
+		{
+			name:        "valid list with inner list member",
+			in:          `(a b c); foo, bar;baz`,
+			wantMembers: []string{"(a b c)", "bar"},
+			wantParams:  []string{"; foo", ";baz"},
+			wantOk:      true,
+		},
+		{
+			name:        "invalid list with trailing comma",
+			in:          `a;foo=bar, b,c; baz=baz,`,
+			wantMembers: []string{"a", "b", "c"},
+			wantParams:  []string{";foo=bar", "", "; baz=baz"},
+		},
+		{
+			name: "invalid list with unclosed string",
+			in:   `", b, c,d`,
+		},
+	}
+
+	for _, tc := range tests {
+		var gotMembers, gotParams []string
+		f := func(member, param string) {
+			gotMembers = append(gotMembers, member)
+			gotParams = append(gotParams, param)
+		}
+		ok := ParseList(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if !slices.Equal(tc.wantMembers, gotMembers) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotMembers, tc.wantMembers)
+		}
+		if !slices.Equal(tc.wantParams, gotParams) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParams, tc.wantParams)
+		}
+	}
+}
+
 func TestConsumeBareInnerList(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -233,6 +300,82 @@ func TestParseItem(t *testing.T) {
 		}
 		if tc.wantBareItem != gotBareItem {
 			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotBareItem, tc.wantBareItem)
+		}
+		if tc.wantParam != gotParam {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParam, tc.wantParam)
+		}
+	}
+}
+
+func TestParseDictionary(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        string
+		wantVal   string
+		wantParam string
+		wantOk    bool
+	}{
+		{
+			name:    "valid dictionary with simple value",
+			in:      `a=b, want=foo, c=d`,
+			wantVal: "foo",
+			wantOk:  true,
+		},
+		{
+			name:    "valid dictionary with implicit value",
+			in:      `a, want, c=d`,
+			wantVal: "?1",
+			wantOk:  true,
+		},
+		{
+			name:      "valid dictionary with parameter",
+			in:        `a, want=foo;bar=baz, c=d`,
+			wantVal:   "foo",
+			wantParam: ";bar=baz",
+			wantOk:    true,
+		},
+		{
+			name:      "valid dictionary with inner list",
+			in:        `a, want=(a b c d;e;f);g=h, c=d`,
+			wantVal:   "(a b c d;e;f)",
+			wantParam: ";g=h",
+			wantOk:    true,
+		},
+		{
+			name:      "valid dictionary with fake commas",
+			in:        `a=(";");b=";",want=foo;bar`,
+			wantVal:   "foo",
+			wantParam: ";bar",
+			wantOk:    true,
+		},
+		{
+			name: "invalid dictionary with bad key",
+			in:   `UPPERCASEKEY=BAD, want=foo, c=d`,
+		},
+		{
+			name: "invalid dictionary with trailing comma",
+			in:   `trailing=comma,`,
+		},
+		{
+			name: "invalid dictionary with unclosed string",
+			in:   `a=""",want=foo;bar`,
+		},
+	}
+
+	for _, tc := range tests {
+		var gotVal, gotParam string
+		f := func(key, val, param string) {
+			if key == "want" {
+				gotVal = val
+				gotParam = param
+			}
+		}
+		ok := ParseDictionary(tc.in, f)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.wantVal != gotVal {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotVal, tc.wantVal)
 		}
 		if tc.wantParam != gotParam {
 			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, gotParam, tc.wantParam)

@@ -48,23 +48,55 @@ func countLeftWhitespace(s string) int {
 	return i
 }
 
-// TODO(nsh): Implement other consume functions that will be needed to fully
-// deal with all possible HTTP SFV, specifically:
-// - consumeDictionary(s string, f func(key, val, param string)) (consumed, rest string, ok bool)
-//   For example, given `a=123,b;a="a", i`, ConsumeDictionary will call f() 3 times
-//   with the following args:
-//   - key: `a`, val: `123`, param: ``
-//   - key: `b`, val: ``, param:`;a="a"`
-//   - key: `i`, val: ``, param: ``
-//
-// - consumeList(s string, f func(member, param string)) (consumed, rest string, ok bool)
-//   For example, given `123.456;i, ("foo" "bar"; lvl=2); lvl=1`, ConsumeList will
-//   call f() 2 times with the following args:
-//   - member: `123.456`, param: `i`
-//   - member: `("foo" "bar"; lvl=2)`, param: `; lvl=1`
-
 // TODO(nsh): Implement corresponding parse functions for all consume functions
 // that exists.
+
+// ParseList is used to parse a string that represents a list in an
+// HTTP Structured Field Values.
+//
+// Given a string that represents a list, it will call the given function using
+// each of the members and parameters contained in the list. This allows the
+// caller to extract information out of the list.
+//
+// This function will return once it encounters the end of the string, or
+// something that is not a list. If it cannot consume the entire given
+// string, the ok value returned will be false.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-list.
+func ParseList(s string, f func(member, param string)) (ok bool) {
+	for len(s) != 0 {
+		var member, param string
+		if len(s) != 0 && s[0] == '(' {
+			if member, s, ok = consumeBareInnerList(s, nil); !ok {
+				return ok
+			}
+		} else {
+			if member, s, ok = consumeBareItem(s); !ok {
+				return ok
+			}
+		}
+		if param, s, ok = consumeParameter(s, nil); !ok {
+			return ok
+		}
+		if f != nil {
+			f(member, param)
+		}
+
+		s = s[countLeftWhitespace(s):]
+		if len(s) == 0 {
+			break
+		}
+		if s[0] != ',' {
+			return false
+		}
+		s = s[1:]
+		s = s[countLeftWhitespace(s):]
+		if len(s) == 0 {
+			return false
+		}
+	}
+	return true
+}
 
 // consumeBareInnerList consumes an inner list
 // (https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-inner-list),
@@ -149,6 +181,58 @@ func consumeItem(s string, f func(bareItem, param string)) (consumed, rest strin
 func ParseItem(s string, f func(bareItem, param string)) (ok bool) {
 	_, rest, ok := consumeItem(s, f)
 	return rest == "" && ok
+}
+
+// ParseDictionary is used to parse a string that represents a dictionary in an
+// HTTP Structured Field Values.
+//
+// Given a string that represents a dictionary, it will call the given function
+// using each of the keys, values, and parameters contained in the dictionary.
+// This allows the caller to extract information out of the dictionary.
+//
+// This function will return once it encounters the end of the string, or
+// something that is not a dictionary. If it cannot consume the entire given
+// string, the ok value returned will be false.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-dictionary.
+func ParseDictionary(s string, f func(key, val, param string)) (ok bool) {
+	for len(s) != 0 {
+		var key, val, param string
+		val = "?1" // Default value for empty val is boolean true.
+		if key, s, ok = consumeKey(s); !ok {
+			return ok
+		}
+		if len(s) != 0 && s[0] == '=' {
+			s = s[1:]
+			if len(s) != 0 && s[0] == '(' {
+				if val, s, ok = consumeBareInnerList(s, nil); !ok {
+					return ok
+				}
+			} else {
+				if val, s, ok = consumeBareItem(s); !ok {
+					return ok
+				}
+			}
+		}
+		if param, s, ok = consumeParameter(s, nil); !ok {
+			return ok
+		}
+		if f != nil {
+			f(key, val, param)
+		}
+		s = s[countLeftWhitespace(s):]
+		if len(s) == 0 {
+			break
+		}
+		if s[0] == ',' {
+			s = s[1:]
+		}
+		s = s[countLeftWhitespace(s):]
+		if len(s) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#parse-param.
