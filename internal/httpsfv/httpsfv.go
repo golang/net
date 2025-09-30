@@ -8,6 +8,7 @@ package httpsfv
 
 import (
 	"slices"
+	"unicode/utf8"
 )
 
 func isLCAlpha(b byte) bool {
@@ -46,6 +47,27 @@ func countLeftWhitespace(s string) int {
 		i++
 	}
 	return i
+}
+
+// https://www.rfc-editor.org/rfc/rfc4648#section-8.
+func decOctetHex(ch1, ch2 byte) (ch byte, ok bool) {
+	decBase16 := func(in byte) (out byte, ok bool) {
+		if !isDigit(in) && !(in >= 'a' && in <= 'f') {
+			return 0, false
+		}
+		if isDigit(in) {
+			return in - '0', true
+		}
+		return in - 'a' + 10, true
+	}
+
+	if ch1, ok = decBase16(ch1); !ok {
+		return 0, ok
+	}
+	if ch2, ok = decBase16(ch2); !ok {
+		return 0, ok
+	}
+	return ch1<<4 | ch2, true
 }
 
 // TODO(nsh): Implement corresponding parse functions for all consume functions
@@ -409,14 +431,85 @@ func consumeBoolean(s string) (consumed, rest string, ok bool) {
 	return "", s, false
 }
 
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-date.
+func consumeDate(s string) (consumed, rest string, ok bool) {
+	if len(s) == 0 || s[0] != '@' {
+		return "", s, false
+	}
+	if _, rest, ok = consumeIntegerOrDecimal(s[1:]); !ok {
+		return "", s, ok
+	}
+	consumed = s[:len(s)-len(rest)]
+	if slices.Contains([]byte(consumed), '.') {
+		return "", s, false
+	}
+	return consumed, rest, ok
+}
+
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-display-string.
+func consumeDisplayString(s string) (consumed, rest string, ok bool) {
+	// To prevent excessive allocation, especially when input is large, we
+	// maintain a buffer of 4 bytes to keep track of the last rune we
+	// encounter. This way, we can validate that the display string conforms to
+	// UTF-8 without actually building the whole string.
+	var lastRune [4]byte
+	var runeLen int
+	isPartOfValidRune := func(ch byte) bool {
+		lastRune[runeLen] = ch
+		runeLen++
+		if utf8.FullRune(lastRune[:runeLen]) {
+			r, s := utf8.DecodeRune(lastRune[:runeLen])
+			if r == utf8.RuneError {
+				return false
+			}
+			copy(lastRune[:], lastRune[s:runeLen])
+			runeLen -= s
+			return true
+		}
+		return runeLen <= 4
+	}
+
+	if len(s) <= 1 || s[:2] != `%"` {
+		return "", s, false
+	}
+	i := 2
+	for i < len(s) {
+		ch := s[i]
+		if !isVChar(ch) && !isSP(ch) {
+			return "", s, false
+		}
+		switch ch {
+		case '"':
+			if runeLen > 0 {
+				return "", s, false
+			}
+			return s[:i+1], s[i+1:], true
+		case '%':
+			if i+2 >= len(s) {
+				return "", s, false
+			}
+			if ch, ok = decOctetHex(s[i+1], s[i+2]); !ok {
+				return "", s, ok
+			}
+			if ok = isPartOfValidRune(ch); !ok {
+				return "", s, ok
+			}
+			i += 3
+		default:
+			if ok = isPartOfValidRune(ch); !ok {
+				return "", s, ok
+			}
+			i++
+		}
+	}
+	return "", s, false
+}
+
 // https://www.rfc-editor.org/rfc/rfc9651.html#parse-bare-item.
 func consumeBareItem(s string) (consumed, rest string, ok bool) {
 	if len(s) == 0 {
 		return "", s, false
 	}
-
-	// TODO(nsh): This is currently only up to date with RFC 8941. Implement
-	// Date and Display string for full feature parity with RFC 9651.
 	ch := s[0]
 	switch {
 	case ch == '-' || isDigit(ch):
@@ -429,6 +522,10 @@ func consumeBareItem(s string) (consumed, rest string, ok bool) {
 		return consumeByteSequence(s)
 	case ch == '?':
 		return consumeBoolean(s)
+	case ch == '@':
+		return consumeDate(s)
+	case ch == '%':
+		return consumeDisplayString(s)
 	default:
 		return "", s, false
 	}

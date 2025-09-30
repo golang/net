@@ -832,3 +832,175 @@ func TestConsumeBoolean(t *testing.T) {
 		}
 	}
 }
+
+func TestConsumeDate(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "valid zero date",
+			in:     "@0",
+			want:   "@0",
+			wantOk: true,
+		},
+		{
+			name:   "valid positive date",
+			in:     "@1659578233",
+			want:   "@1659578233",
+			wantOk: true,
+		},
+		{
+			name:   "valid negative date",
+			in:     "@-1659578233",
+			want:   "@-1659578233",
+			wantOk: true,
+		},
+		{
+			name:   "valid large date",
+			in:     "@25340221440",
+			want:   "@25340221440",
+			wantOk: true,
+		},
+		{
+			name:   "valid small date",
+			in:     "@-62135596800",
+			want:   "@-62135596800",
+			wantOk: true,
+		},
+		{
+			name: "invalid decimal date",
+			in:   "@1.2",
+		},
+		{
+			name:   "valid date with more content after",
+			in:     "@1659578233, foo;bar",
+			want:   "@1659578233",
+			wantOk: true,
+		},
+	}
+
+	for _, tc := range tests {
+		got, gotRest, ok := consumeDate(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+		if got+gotRest != tc.in {
+			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, got, gotRest, tc.in)
+		}
+	}
+}
+
+func TestConsumeDisplayString(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "valid ascii string",
+			in:     "%\" !%22#$%25&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\"",
+			want:   "%\" !%22#$%25&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\"",
+			wantOk: true,
+		},
+		{
+			name:   "valid lowercase non-ascii string",
+			in:     `%"f%c3%bc%c3%bc"`,
+			want:   `%"f%c3%bc%c3%bc"`,
+			wantOk: true,
+		},
+		{
+			name: "invalid uppercase non-ascii string",
+			in:   `%"f%C3%BC%C3%BC"`,
+		},
+		{
+			name: "invalid unqouted string",
+			in:   "%foo",
+		},
+		{
+			name: "invalid string missing initial quote",
+			in:   `%foo"`,
+		},
+		{
+			name: "invalid string missing closing quote",
+			in:   `%"foo`,
+		},
+		{
+			name: "invalid tab in string",
+			in:   "%\"\t\"",
+		},
+		{
+			name: "invalid newline in string",
+			in:   "%\"\n\"",
+		},
+		{
+			name: "invalid single quoted string",
+			in:   `%'foo'`,
+		},
+		{
+			name: "invalid string bad escaping",
+			in:   `%\"foo %a"`,
+		},
+		{
+			name:   "valid string with escaped quotes",
+			in:     `%"foo %22bar%22 \\ baz"`,
+			want:   `%"foo %22bar%22 \\ baz"`,
+			wantOk: true,
+		},
+		{
+			name: "invalid sequence id utf-8 string",
+			in:   `%"%a0%a1"`,
+		},
+		{
+			name: "invalid 2 bytes sequence utf-8 string",
+			in:   `%"%c3%28"`,
+		},
+		{
+			name: "invalid 3 bytes sequence utf-8 string",
+			in:   `%"%e2%28%a1"`,
+		},
+		{
+			name: "invalid 4 bytes sequence utf-8 string",
+			in:   `%"%f0%28%8c%28"`,
+		},
+		{
+			name: "invalid hex utf-8 string",
+			in:   `%"%g0%1w"`,
+		},
+		{
+			name:   "valid byte order mark in display string",
+			in:     `%"BOM: %ef%bb%bf"`,
+			want:   `%"BOM: %ef%bb%bf"`,
+			wantOk: true,
+		},
+		{
+			name:   "valid string with content after",
+			in:     `%"foo\nbar", foo;bar`,
+			want:   `%"foo\nbar"`,
+			wantOk: true,
+		},
+		{
+			name: "invalid unfinished 4 bytes rune",
+			in:   `%"%f0%9f%98"`,
+		},
+	}
+
+	for _, tc := range tests {
+		got, gotRest, ok := consumeDisplayString(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+		if got+gotRest != tc.in {
+			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, got, gotRest, tc.in)
+		}
+	}
+}
