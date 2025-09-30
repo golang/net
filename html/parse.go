@@ -136,7 +136,7 @@ func (p *parser) indexOfElementInScope(s scope, matchTags ...a.Atom) int {
 					return -1
 				}
 			default:
-				panic("unreachable")
+				panic(fmt.Sprintf("html: internal error: indexOfElementInScope unknown scope: %d", s))
 			}
 		}
 		switch s {
@@ -179,7 +179,7 @@ func (p *parser) clearStackToContext(s scope) {
 				return
 			}
 		default:
-			panic("unreachable")
+			panic(fmt.Sprintf("html: internal error: clearStackToContext unknown scope: %d", s))
 		}
 	}
 }
@@ -1678,7 +1678,7 @@ func inTableBodyIM(p *parser) bool {
 	return inTableIM(p)
 }
 
-// Section 12.2.6.4.14.
+// Section 13.2.6.4.14.
 func inRowIM(p *parser) bool {
 	switch p.tok.Type {
 	case StartTagToken:
@@ -1690,7 +1690,9 @@ func inRowIM(p *parser) bool {
 			p.im = inCellIM
 			return true
 		case a.Caption, a.Col, a.Colgroup, a.Tbody, a.Tfoot, a.Thead, a.Tr:
-			if p.popUntil(tableScope, a.Tr) {
+			if p.elementInScope(tableScope, a.Tr) {
+				p.clearStackToContext(tableRowScope)
+				p.oe.pop()
 				p.im = inTableBodyIM
 				return false
 			}
@@ -1700,22 +1702,28 @@ func inRowIM(p *parser) bool {
 	case EndTagToken:
 		switch p.tok.DataAtom {
 		case a.Tr:
-			if p.popUntil(tableScope, a.Tr) {
+			if p.elementInScope(tableScope, a.Tr) {
+				p.clearStackToContext(tableRowScope)
+				p.oe.pop()
 				p.im = inTableBodyIM
 				return true
 			}
 			// Ignore the token.
 			return true
 		case a.Table:
-			if p.popUntil(tableScope, a.Tr) {
+			if p.elementInScope(tableScope, a.Tr) {
+				p.clearStackToContext(tableRowScope)
+				p.oe.pop()
 				p.im = inTableBodyIM
 				return false
 			}
 			// Ignore the token.
 			return true
 		case a.Tbody, a.Tfoot, a.Thead:
-			if p.elementInScope(tableScope, p.tok.DataAtom) {
-				p.parseImpliedToken(EndTagToken, a.Tr, a.Tr.String())
+			if p.elementInScope(tableScope, p.tok.DataAtom) && p.elementInScope(tableScope, a.Tr) {
+				p.clearStackToContext(tableRowScope)
+				p.oe.pop()
+				p.im = inTableBodyIM
 				return false
 			}
 			// Ignore the token.
@@ -2222,16 +2230,20 @@ func parseForeignContent(p *parser) bool {
 			p.acknowledgeSelfClosingTag()
 		}
 	case EndTagToken:
+		if strings.EqualFold(p.oe[len(p.oe)-1].Data, p.tok.Data) {
+			p.oe = p.oe[:len(p.oe)-1]
+			return true
+		}
 		for i := len(p.oe) - 1; i >= 0; i-- {
-			if p.oe[i].Namespace == "" {
-				return p.im(p)
-			}
 			if strings.EqualFold(p.oe[i].Data, p.tok.Data) {
 				p.oe = p.oe[:i]
+				return true
+			}
+			if i > 0 && p.oe[i-1].Namespace == "" {
 				break
 			}
 		}
-		return true
+		return p.im(p)
 	default:
 		// Ignore the token.
 	}

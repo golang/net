@@ -251,31 +251,35 @@ func TestParser(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, tf := range testFiles {
-			f, err := os.Open(tf)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer f.Close()
-			r := bufio.NewReader(f)
-
-			for i := 0; ; i++ {
-				ta, err := readParseTest(r)
-				if err == io.EOF {
-					break
-				}
+			t.Run(tf, func(t *testing.T) {
+				f, err := os.Open(tf)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if parseTestBlacklist[ta.text] {
-					continue
-				}
+				defer f.Close()
+				r := bufio.NewReader(f)
 
-				err = testParseCase(ta.text, ta.want, ta.context, ParseOptionEnableScripting(ta.scripting))
+				for i := 0; ; i++ {
+					ta, err := readParseTest(r)
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if parseTestBlacklist[ta.text] {
+						continue
+					}
 
-				if err != nil {
-					t.Errorf("%s test #%d %q, %s", tf, i, ta.text, err)
+					t.Run(fmt.Sprint(i), func(t *testing.T) {
+						err = testParseCase(ta.text, ta.want, ta.context, ParseOptionEnableScripting(ta.scripting))
+
+						if err != nil {
+							t.Errorf("%s test #%d %q, %s", tf, i, ta.text, err)
+						}
+					})
 				}
-			}
+			})
 		}
 	}
 }
@@ -504,5 +508,12 @@ func BenchmarkParser(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Parse(bytes.NewBuffer(buf))
+	}
+}
+
+func TestIssue70179(t *testing.T) {
+	_, err := Parse(strings.NewReader("<table><tbody><svg><td><desc><select></select></tbody>"))
+	if err != nil {
+		t.Fatalf("unexpected failure: %v", err)
 	}
 }
