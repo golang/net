@@ -655,6 +655,106 @@ func TestConsumeIntegerOrDecimal(t *testing.T) {
 	}
 }
 
+func TestParseInteger(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   int64
+		wantOk bool
+	}{
+		{
+			name:   "valid integer",
+			in:     "123456",
+			want:   123456,
+			wantOk: true,
+		},
+		{
+			name: "valid integer with more content after",
+			in:   "123456,12345",
+		},
+		{
+			name:   "valid max integer",
+			in:     "999999999999999",
+			want:   999999999999999,
+			wantOk: true,
+		},
+		{
+			name:   "valid min integer",
+			in:     "-999999999999999",
+			want:   -999999999999999,
+			wantOk: true,
+		},
+		{
+			name: "invalid integer too high",
+			in:   "9999999999999999",
+		},
+		{
+			name: "invalid integer too low",
+			in:   "-9999999999999999",
+		},
+		{
+			name: "invalid integer with fraction",
+			in:   "-123456789012.123",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseInteger(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestParseDecimal(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   float64
+		wantOk bool
+	}{
+		{
+			name:   "valid decimal",
+			in:     "123456.789",
+			want:   123456.789,
+			wantOk: true,
+		},
+		{
+			name: "valid decimal with more content after",
+			in:   "123456.789, 123",
+		},
+		{
+			name: "invalid decimal with no fraction",
+			in:   "123456",
+		},
+		{
+			name: "invalid decimal integer component too long",
+			in:   "1234567890123.1",
+		},
+		{
+			name: "invalid decimal fraction component too long",
+			in:   "1.1234",
+		},
+		{
+			name: "invalid decimal trailing dot",
+			in:   "1.",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseDecimal(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestConsumeString(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -708,6 +808,54 @@ func TestConsumeString(t *testing.T) {
 	}
 }
 
+func TestParseString(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "valid basic string",
+			in:     `"foo bar"`,
+			want:   "foo bar",
+			wantOk: true,
+		},
+		{
+			name: "valid basic string with more content after",
+			in:   `"foo bar", a=3`,
+		},
+		{
+			name:   "valid string with escaped dquote",
+			in:     `"foo bar \""`,
+			want:   `foo bar \"`,
+			wantOk: true,
+		},
+		{
+			name: "invalid string no starting dquote",
+			in:   `foo bar"`,
+		},
+		{
+			name: "invalid string no closing dquote",
+			in:   `"foo bar`,
+		},
+		{
+			name: "invalid string invalid character",
+			in:   string([]byte{'"', 0x00, '"'}),
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseString(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestConsumeToken(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -743,6 +891,46 @@ func TestConsumeToken(t *testing.T) {
 		}
 		if got+gotRest != tc.in {
 			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, got, gotRest, tc.in)
+		}
+	}
+}
+
+func TestParseToken(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "valid token",
+			in:     "a_b-c.d3:f%00/*",
+			want:   "a_b-c.d3:f%00/*",
+			wantOk: true,
+		},
+		{
+			name:   "valid token with uppercase",
+			in:     "FOOBAR",
+			want:   "FOOBAR",
+			wantOk: true,
+		},
+		{
+			name: "valid token with content after",
+			in:   "FOOBAR, foobar",
+		},
+		{
+			name: "invalid token",
+			in:   "0invalid",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseToken(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
 		}
 	}
 }
@@ -794,6 +982,48 @@ func TestConsumeByteSequence(t *testing.T) {
 	}
 }
 
+func TestParseByteSequence(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   []byte
+		wantOk bool
+	}{
+		{
+			name:   "valid byte sequence",
+			in:     ":aGVsbG8gd29ybGQ=:",
+			want:   []byte("aGVsbG8gd29ybGQ="),
+			wantOk: true,
+		},
+		{
+			name: "valid byte sequence with more content after",
+			in:   ":aGVsbG8gd29ybGQ=::aGVsbG8gd29ybGQ=:",
+		},
+		{
+			name: "invalid byte sequence character",
+			in:   ":-:",
+		},
+		{
+			name: "invalid byte sequence opening",
+			in:   "aGVsbG8gd29ybGQ=:",
+		},
+		{
+			name: "invalid byte sequence closing",
+			in:   ":aGVsbG8gd29ybGQ=",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseByteSequence(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if !slices.Equal(tc.want, got) {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestConsumeBoolean(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -829,6 +1059,46 @@ func TestConsumeBoolean(t *testing.T) {
 		}
 		if got+gotRest != tc.in {
 			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, got, gotRest, tc.in)
+		}
+	}
+}
+
+func TestParseBoolean(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   bool
+		wantOk bool
+	}{
+		{
+			name:   "valid boolean false",
+			in:     "?0",
+			want:   false,
+			wantOk: true,
+		},
+		{
+			name:   "valid boolean true",
+			in:     "?1",
+			want:   true,
+			wantOk: true,
+		},
+		{
+			name: "valid boolean with more content after",
+			in:   "?1, a=1",
+		},
+		{
+			name: "invalid boolean",
+			in:   "?2",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseBoolean(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
 		}
 	}
 }

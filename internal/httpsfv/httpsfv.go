@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package httpsfv provide functionality for dealing with HTTP Structured Field
-// Values.
+// Package httpsfv provides functionality for dealing with HTTP Structured
+// Field Values.
 package httpsfv
 
 import (
 	"slices"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -70,15 +72,14 @@ func decOctetHex(ch1, ch2 byte) (ch byte, ok bool) {
 	return ch1<<4 | ch2, true
 }
 
-// TODO(nsh): Implement corresponding parse functions for all consume functions
-// that exists.
+// TODO(nsh): Implement parse functions for date and display string to make
+// this package fully support parsing RFC 9651-compliant HTTP SFV.
 
-// ParseList is used to parse a string that represents a list in an
-// HTTP Structured Field Values.
+// ParseList parses a list from a given HTTP Structured Field Values.
 //
-// Given a string that represents a list, it will call the given function using
-// each of the members and parameters contained in the list. This allows the
-// caller to extract information out of the list.
+// Given an HTTP SFV string that represents a list, it will call the given
+// function using each of the members and parameters contained in the list.
+// This allows the caller to extract information out of the list.
 //
 // This function will return once it encounters the end of the string, or
 // something that is not a list. If it cannot consume the entire given
@@ -123,7 +124,7 @@ func ParseList(s string, f func(member, param string)) (ok bool) {
 // consumeBareInnerList consumes an inner list
 // (https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-inner-list),
 // except for the inner list's top-most parameter.
-// For example, given `(a;b c;d);e`, it will consume only `(a;b c;d)`
+// For example, given `(a;b c;d);e`, it will consume only `(a;b c;d)`.
 func consumeBareInnerList(s string, f func(bareItem, param string)) (consumed, rest string, ok bool) {
 	if len(s) == 0 || s[0] != '(' {
 		return "", s, false
@@ -152,18 +153,18 @@ func consumeBareInnerList(s string, f func(bareItem, param string)) (consumed, r
 	return s[:len(s)-len(rest)], rest, true
 }
 
-// ParseBareInnerList is used to parse a string that represents a bare inner
-// list in an HTTP Structured Field Values.
+// ParseBareInnerList parses a bare inner list from a given HTTP Structured
+// Field Values.
 //
 // We define a bare inner list as an inner list
 // (https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-inner-list),
 // without the top-most parameter of the inner list. For example, given the
 // inner list `(a;b c;d);e`, the bare inner list would be `(a;b c;d)`.
 //
-// Given a string that represents a bare inner list, it will call the given
-// function using each of the bare item and parameter within the bare inner
-// list. This allows the caller to extract information out of the bare inner
-// list.
+// Given an HTTP SFV string that represents a bare inner list, it will call the
+// given function using each of the bare item and parameter within the bare
+// inner list. This allows the caller to extract information out of the bare
+// inner list.
 //
 // This function will return once it encounters the end of the bare inner list,
 // or something that is not a bare inner list. If it cannot consume the entire
@@ -188,12 +189,11 @@ func consumeItem(s string, f func(bareItem, param string)) (consumed, rest strin
 	return s[:len(s)-len(rest)], rest, true
 }
 
-// ParseItem is used to parse a string that represents an item in an HTTP
-// Structured Field Values.
+// ParseItem parses an item from a given HTTP Structured Field Values.
 //
-// Given a string that represents an item, it will call the given function
-// once, with the bare item and the parameter of the item. This allows the
-// caller to extract information out of the parameter.
+// Given an HTTP SFV string that represents an item, it will call the given
+// function once, with the bare item and the parameter of the item. This allows
+// the caller to extract information out of the item.
 //
 // This function will return once it encounters the end of the string, or
 // something that is not an item. If it cannot consume the entire given
@@ -205,12 +205,13 @@ func ParseItem(s string, f func(bareItem, param string)) (ok bool) {
 	return rest == "" && ok
 }
 
-// ParseDictionary is used to parse a string that represents a dictionary in an
-// HTTP Structured Field Values.
+// ParseDictionary parses a dictionary from a given HTTP Structured Field
+// Values.
 //
-// Given a string that represents a dictionary, it will call the given function
-// using each of the keys, values, and parameters contained in the dictionary.
-// This allows the caller to extract information out of the dictionary.
+// Given an HTTP SFV string that represents a dictionary, it will call the
+// given function using each of the keys, values, and parameters contained in
+// the dictionary. This allows the caller to extract information out of the
+// dictionary.
 //
 // This function will return once it encounters the end of the string, or
 // something that is not a dictionary. If it cannot consume the entire given
@@ -286,12 +287,11 @@ func consumeParameter(s string, f func(key, val string)) (consumed, rest string,
 	return s[:len(s)-len(rest)], rest, true
 }
 
-// ParseParameter is used to parse a string that represents a parameter in an
-// HTTP Structured Field Values.
+// ParseParameter parses a parameter from a given HTTP Structured Field Values.
 //
-// Given a string that represents a parameter, it will call the given function
-// using each of the keys and values contained in the parameter. This allows
-// the caller to extract information out of the parameter.
+// Given an HTTP SFV string that represents a parameter, it will call the given
+// function using each of the keys and values contained in the parameter. This
+// allows the caller to extract information out of the parameter.
 //
 // This function will return once it encounters the end of the string, or
 // something that is not a parameter. If it cannot consume the entire given
@@ -366,6 +366,41 @@ func consumeIntegerOrDecimal(s string) (consumed, rest string, ok bool) {
 	return s[:i], s[i:], true
 }
 
+// ParseInteger parses an integer from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid integer. It returns the
+// parsed integer and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-integer-or-decim.
+func ParseInteger(s string) (parsed int64, ok bool) {
+	if _, rest, ok := consumeIntegerOrDecimal(s); !ok || rest != "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, true
+	}
+	return 0, false
+}
+
+// ParseDecimal parses a decimal from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid decimal. It returns the
+// parsed decimal and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-an-integer-or-decim.
+func ParseDecimal(s string) (parsed float64, ok bool) {
+	if _, rest, ok := consumeIntegerOrDecimal(s); !ok || rest != "" {
+		return 0, false
+	}
+	if !strings.Contains(s, ".") {
+		return 0, false
+	}
+	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		return n, true
+	}
+	return 0, false
+}
+
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-string.
 func consumeString(s string) (consumed, rest string, ok bool) {
 	if len(s) == 0 || s[0] != '"' {
@@ -392,6 +427,19 @@ func consumeString(s string) (consumed, rest string, ok bool) {
 	return "", s, false
 }
 
+// ParseString parses a Go string from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid string. It returns the
+// parsed string and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-string.
+func ParseString(s string) (parsed string, ok bool) {
+	if _, rest, ok := consumeString(s); !ok || rest != "" {
+		return "", false
+	}
+	return s[1 : len(s)-1], true
+}
+
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-token
 func consumeToken(s string) (consumed, rest string, ok bool) {
 	if len(s) == 0 || (!isAlpha(s[0]) && s[0] != '*') {
@@ -405,6 +453,19 @@ func consumeToken(s string) (consumed, rest string, ok bool) {
 		i++
 	}
 	return s[:i], s[i:], true
+}
+
+// ParseToken parses a token from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid token. It returns the
+// parsed token and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-token
+func ParseToken(s string) (parsed string, ok bool) {
+	if _, rest, ok := consumeToken(s); !ok || rest != "" {
+		return "", false
+	}
+	return s, true
 }
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-byte-sequence.
@@ -423,12 +484,39 @@ func consumeByteSequence(s string) (consumed, rest string, ok bool) {
 	return "", s, false
 }
 
+// ParseByteSequence parses a byte sequence from a given HTTP Structured Field
+// Values.
+//
+// The entire HTTP SFV string must consist of a valid byte sequence. It returns
+// the parsed byte sequence and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-byte-sequence.
+func ParseByteSequence(s string) (parsed []byte, ok bool) {
+	if _, rest, ok := consumeByteSequence(s); !ok || rest != "" {
+		return nil, false
+	}
+	return []byte(s[1 : len(s)-1]), true
+}
+
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-boolean.
 func consumeBoolean(s string) (consumed, rest string, ok bool) {
 	if len(s) >= 2 && (s[:2] == "?0" || s[:2] == "?1") {
 		return s[:2], s[2:], true
 	}
 	return "", s, false
+}
+
+// ParseBoolean parses a boolean from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid boolean. It returns the
+// parsed boolean and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-boolean.
+func ParseBoolean(s string) (parsed bool, ok bool) {
+	if _, rest, ok := consumeBoolean(s); !ok || rest != "" {
+		return false, false
+	}
+	return s == "?1", true
 }
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-date.
