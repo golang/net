@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -71,9 +72,6 @@ func decOctetHex(ch1, ch2 byte) (ch byte, ok bool) {
 	}
 	return ch1<<4 | ch2, true
 }
-
-// TODO(nsh): Implement parse functions for date and display string to make
-// this package fully support parsing RFC 9651-compliant HTTP SFV.
 
 // ParseList parses a list from a given HTTP Structured Field Values.
 //
@@ -534,6 +532,23 @@ func consumeDate(s string) (consumed, rest string, ok bool) {
 	return consumed, rest, ok
 }
 
+// ParseDate parses a date from a given HTTP Structured Field Values.
+//
+// The entire HTTP SFV string must consist of a valid date. It returns the
+// parsed date and an ok boolean value, indicating success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-date.
+func ParseDate(s string) (parsed time.Time, ok bool) {
+	if _, rest, ok := consumeDate(s); !ok || rest != "" {
+		return time.Time{}, false
+	}
+	if n, ok := ParseInteger(s[1:]); !ok {
+		return time.Time{}, false
+	} else {
+		return time.Unix(n, 0), true
+	}
+}
+
 // https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-display-string.
 func consumeDisplayString(s string) (consumed, rest string, ok bool) {
 	// To prevent excessive allocation, especially when input is large, we
@@ -591,6 +606,36 @@ func consumeDisplayString(s string) (consumed, rest string, ok bool) {
 		}
 	}
 	return "", s, false
+}
+
+// ParseDisplayString parses a display string from a given HTTP Structured
+// Field Values.
+//
+// The entire HTTP SFV string must consist of a valid display string. It
+// returns the parsed display string and an ok boolean value, indicating
+// success or not.
+//
+// https://www.rfc-editor.org/rfc/rfc9651.html#name-parsing-a-display-string.
+func ParseDisplayString(s string) (parsed string, ok bool) {
+	if _, rest, ok := consumeDisplayString(s); !ok || rest != "" {
+		return "", false
+	}
+	// consumeDisplayString() already validates that we have a valid display
+	// string. Therefore, we can just construct the display string, without
+	// validating it again.
+	s = s[2 : len(s)-1]
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '%' {
+			decoded, _ := decOctetHex(s[i+1], s[i+2])
+			b.WriteByte(decoded)
+			i += 3
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String(), true
 }
 
 // https://www.rfc-editor.org/rfc/rfc9651.html#parse-bare-item.

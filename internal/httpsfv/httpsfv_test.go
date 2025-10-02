@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseList(t *testing.T) {
@@ -1166,6 +1167,64 @@ func TestConsumeDate(t *testing.T) {
 	}
 }
 
+func TestParseDate(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   time.Time
+		wantOk bool
+	}{
+		{
+			name:   "valid zero date",
+			in:     "@0",
+			want:   time.Unix(0, 0),
+			wantOk: true,
+		},
+		{
+			name:   "valid positive date",
+			in:     "@1659578233",
+			want:   time.Date(2022, 8, 4, 1, 57, 13, 0, time.UTC).Local(),
+			wantOk: true,
+		},
+		{
+			name:   "valid negative date",
+			in:     "@-1659578233",
+			want:   time.Date(1917, 5, 30, 22, 2, 47, 0, time.UTC).Local(),
+			wantOk: true,
+		},
+		{
+			name:   "valid max date required",
+			in:     "@253402214400",
+			want:   time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC).Local(),
+			wantOk: true,
+		},
+		{
+			name:   "valid min date required",
+			in:     "@-62135596800",
+			want:   time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Local(),
+			wantOk: true,
+		},
+		{
+			name: "invalid date with fraction",
+			in:   "@0.123",
+		},
+		{
+			name: "valid date with more content after",
+			in:   "@0, @0",
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseDate(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestConsumeDisplayString(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1271,6 +1330,110 @@ func TestConsumeDisplayString(t *testing.T) {
 		}
 		if got+gotRest != tc.in {
 			t.Fatalf("test %q: %#v + %#v != %#v", tc.name, got, gotRest, tc.in)
+		}
+	}
+}
+
+func TestParseDisplayString(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOk bool
+	}{
+		{
+			name:   "valid ascii string",
+			in:     "%\" !%22#$%25&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\"",
+			want:   " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+			wantOk: true,
+		},
+		{
+			name:   "valid lowercase non-ascii string",
+			in:     `%"f%c3%bc%c3%bc"`,
+			want:   "füü",
+			wantOk: true,
+		},
+		{
+			name: "invalid uppercase non-ascii string",
+			in:   `%"f%C3%BC%C3%BC"`,
+		},
+		{
+			name: "invalid unqouted string",
+			in:   "%foo",
+		},
+		{
+			name: "invalid string missing initial quote",
+			in:   `%foo"`,
+		},
+		{
+			name: "invalid string missing closing quote",
+			in:   `%"foo`,
+		},
+		{
+			name: "invalid tab in string",
+			in:   "%\"\t\"",
+		},
+		{
+			name: "invalid newline in string",
+			in:   "%\"\n\"",
+		},
+		{
+			name: "invalid single quoted string",
+			in:   `%'foo'`,
+		},
+		{
+			name: "invalid string bad escaping",
+			in:   `%\"foo %a"`,
+		},
+		{
+			name:   "valid string with escaped quotes",
+			in:     "%\"foo %22bar%22 \\ baz\"",
+			want:   "foo \"bar\" \\ baz",
+			wantOk: true,
+		},
+		{
+			name: "invalid sequence id utf-8 string",
+			in:   `%"%a0%a1"`,
+		},
+		{
+			name: "invalid 2 bytes sequence utf-8 string",
+			in:   `%"%c3%28"`,
+		},
+		{
+			name: "invalid 3 bytes sequence utf-8 string",
+			in:   `%"%e2%28%a1"`,
+		},
+		{
+			name: "invalid 4 bytes sequence utf-8 string",
+			in:   `%"%f0%28%8c%28"`,
+		},
+		{
+			name: "invalid hex utf-8 string",
+			in:   `%"%g0%1w"`,
+		},
+		{
+			name:   "valid byte order mark in display string",
+			in:     `%"BOM: %ef%bb%bf"`,
+			want:   "BOM: \uFEFF",
+			wantOk: true,
+		},
+		{
+			name: "valid string with content after",
+			in:   `%"foo\nbar", foo;bar`,
+		},
+		{
+			name: "invalid unfinished 4 bytes rune",
+			in:   `%"%f0%9f%98"`,
+		},
+	}
+
+	for _, tc := range tests {
+		got, ok := ParseDisplayString(tc.in)
+		if ok != tc.wantOk {
+			t.Fatalf("test %q: want ok to be %v, got: %v", tc.name, tc.wantOk, ok)
+		}
+		if tc.want != got {
+			t.Fatalf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tc.name, got, tc.want)
 		}
 	}
 }
