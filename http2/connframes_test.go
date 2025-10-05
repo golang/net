@@ -110,7 +110,7 @@ frame:
 			if typ.Kind() != reflect.Func ||
 				typ.NumIn() != 1 ||
 				typ.NumOut() != 1 ||
-				typ.Out(0) != reflect.TypeOf(true) {
+				typ.Out(0) != reflect.TypeFor[bool]() {
 				tf.t.Fatalf("expected func(*SomeFrame) bool, got %T", f)
 			}
 			if typ.In(0) == reflect.TypeOf(fr) {
