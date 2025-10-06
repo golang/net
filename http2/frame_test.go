@@ -38,7 +38,7 @@ func TestFrameTypeString(t *testing.T) {
 		{FrameData, "DATA"},
 		{FramePing, "PING"},
 		{FrameGoAway, "GOAWAY"},
-		{0xf, "UNKNOWN_FRAME_TYPE_15"},
+		{0x20, "UNKNOWN_FRAME_TYPE_32"},
 	}
 
 	for i, tt := range tests {
@@ -427,6 +427,99 @@ func TestWriteContinuation(t *testing.T) {
 	}
 }
 
+func TestParseRFC9218Priority(t *testing.T) {
+	tests := []struct {
+		name        string
+		priorityStr string
+		want        PriorityParam
+		wantOk      bool
+	}{
+		{
+			name:        "with urgency",
+			priorityStr: "u=0",
+			want: PriorityParam{
+				urgency:     0,
+				incremental: defaultRFC9218Priority.incremental,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with implicit incremental",
+			priorityStr: "i",
+			want: PriorityParam{
+				urgency:     defaultRFC9218Priority.urgency,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with explicit incremental",
+			priorityStr: "i=?1",
+			want: PriorityParam{
+				urgency:     defaultRFC9218Priority.urgency,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with urgency and incremental",
+			priorityStr: "i=?0, u=4",
+			want: PriorityParam{
+				urgency:     4,
+				incremental: 0,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with other valid dictionary data",
+			priorityStr: "some=data;someparam;u=fake, u=1;foo, i;bar",
+			want: PriorityParam{
+				urgency:     1,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "repeated field",
+			priorityStr: "u=1,i,u=5,i=?0",
+			want: PriorityParam{
+				urgency:     5,
+				incremental: 0,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "wrong field type",
+			priorityStr: `u="urgency will be ignored", i`,
+			want: PriorityParam{
+				urgency:     defaultRFC9218Priority.urgency,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "invalid dictionary",
+			priorityStr: `u=1,i, but this is not a valid dictionary"`,
+			want:        defaultRFC9218Priority,
+		},
+		{
+			name:        "out of range value",
+			priorityStr: "u=8",
+			want:        defaultRFC9218Priority,
+			wantOk:      true,
+		},
+	}
+	for _, tt := range tests {
+		got, gotOk := parseRFC9218Priority(tt.priorityStr)
+		if gotOk != tt.wantOk {
+			t.Errorf("test %q: mismatch.\n got ok: %#v\nwant ok: %#v\n", tt.name, got, tt.want)
+		}
+		if got != tt.want {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestWritePriority(t *testing.T) {
 	const streamID = 42
 	tests := []struct {
@@ -481,6 +574,115 @@ func TestWritePriority(t *testing.T) {
 	for _, tt := range tests {
 		fr, _ := testFramer()
 		if err := fr.WritePriority(streamID, tt.priority); err != nil {
+			t.Errorf("test %q: %v", tt.name, err)
+			continue
+		}
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("test %q: failed to read the frame back: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(f, tt.wantFrame) {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, f, tt.wantFrame)
+		}
+	}
+}
+
+func TestWritePriorityUpdate(t *testing.T) {
+	const streamID = 42
+	tests := []struct {
+		name      string
+		priority  string
+		wantFrame *PriorityUpdateFrame
+	}{
+		{
+			name:     "with urgency",
+			priority: "u=0",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   7,
+				},
+				Priority:            "u=0",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with incremental",
+			priority: "i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   5,
+				},
+				Priority:            "i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with urgency and incremental",
+			priority: "u=7,i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   9,
+				},
+				Priority:            "u=7,i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with other fields",
+			priority: "a=123,u=7,i,b;a;b",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   21,
+				},
+				Priority:            "a=123,u=7,i,b;a;b",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with string escapes",
+			priority: "u=\"invalid\" , i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   19,
+				},
+				Priority:            "u=\"invalid\" , i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with empty payload",
+			priority: "",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   4,
+				},
+				Priority:            "",
+				PrioritizedStreamID: streamID,
+			},
+		},
+	}
+	for _, tt := range tests {
+		fr, _ := testFramer()
+		if err := fr.WritePriorityUpdate(streamID, tt.priority); err != nil {
 			t.Errorf("test %q: %v", tt.name, err)
 			continue
 		}
@@ -1268,7 +1470,7 @@ func TestTypeFrameParser(t *testing.T) {
 	}
 
 	// typeFrameParser() for an unknown type returns a function that returns UnknownFrame
-	unknownFrameType := FrameType(FrameContinuation + 1)
+	unknownFrameType := FrameType(FramePriorityUpdate + 1)
 	unknownParser := typeFrameParser(unknownFrameType)
 	frame, err := unknownParser(nil, FrameHeader{}, nil, nil)
 	if err != nil {

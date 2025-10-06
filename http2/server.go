@@ -1623,6 +1623,8 @@ func (sc *serverConn) processFrame(f Frame) error {
 		// A client cannot push. Thus, servers MUST treat the receipt of a PUSH_PROMISE
 		// frame as a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
 		return sc.countError("push_promise", ConnectionError(ErrCodeProtocol))
+	case *PriorityUpdateFrame:
+		return sc.processPriorityUpdate(f)
 	default:
 		sc.vlogf("http2: server ignoring frame: %v", f.Header())
 		return nil
@@ -2186,6 +2188,18 @@ func (sc *serverConn) processPriority(f *PriorityFrame) error {
 		return err
 	}
 	sc.writeSched.AdjustStream(f.StreamID, f.PriorityParam)
+	return nil
+}
+
+func (sc *serverConn) processPriorityUpdate(f *PriorityUpdateFrame) error {
+	if _, ok := sc.writeSched.(*priorityWriteSchedulerRFC9218); !ok {
+		return nil
+	}
+	p, ok := parseRFC9218Priority(f.Priority)
+	if !ok {
+		return sc.countError("unparsable_priority_update", streamError(f.PrioritizedStreamID, ErrCodeProtocol))
+	}
+	sc.writeSched.AdjustStream(f.PrioritizedStreamID, p)
 	return nil
 }
 

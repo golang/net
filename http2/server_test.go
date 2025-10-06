@@ -1765,6 +1765,32 @@ func testServer_Rejects_Priority0(t testing.TB) {
 	st.wantGoAway(0, ErrCodeProtocol)
 }
 
+// PRIORITY_UPDATE only accepts non-zero ID for the prioritized stream ID in
+// its payload.
+func TestServer_Rejects_PriorityUpdate0(t *testing.T) {
+	synctestTest(t, testServer_Rejects_PriorityUpdate0)
+}
+func testServer_Rejects_PriorityUpdate0(t testing.TB) {
+	st := newServerTesterForError(t)
+	st.fr.AllowIllegalWrites = true
+	st.writePriorityUpdate(0, "")
+	st.wantGoAway(0, ErrCodeProtocol)
+}
+
+// PRIORITY_UPDATE with unparsable priority parameters may be rejected.
+func TestServer_Rejects_PriorityUpdateUnparsable(t *testing.T) {
+	synctestTest(t, testServer_Rejects_PriorityUnparsable)
+}
+func testServer_Rejects_PriorityUnparsable(t testing.TB) {
+	st := newServerTester(t, nil, func(s *Server) {
+		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+	})
+	defer st.Close()
+	st.greet()
+	st.writePriorityUpdate(1, "Invalid dictionary: ((((")
+	st.wantRSTStream(1, ErrCodeProtocol)
+}
+
 // No HEADERS frame with a self-dependence.
 func TestServer_Rejects_HeadersSelfDependence(t *testing.T) {
 	synctestTest(t, testServer_Rejects_HeadersSelfDependence)

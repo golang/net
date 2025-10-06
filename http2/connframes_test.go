@@ -404,6 +404,12 @@ func (tf *testConnFramer) writePriority(id uint32, p PriorityParam) {
 	}
 }
 
+func (tf *testConnFramer) writePriorityUpdate(id uint32, p string) {
+	if err := tf.fr.WritePriorityUpdate(id, p); err != nil {
+		tf.t.Fatal(err)
+	}
+}
+
 func (tf *testConnFramer) writeRSTStream(streamID uint32, code ErrCode) {
 	tf.t.Helper()
 	if err := tf.fr.WriteRSTStream(streamID, code); err != nil {

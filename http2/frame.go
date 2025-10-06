@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/http2/hpack"
+	"golang.org/x/net/internal/httpsfv"
 )
 
 const frameHeaderLen = 9
@@ -23,33 +24,36 @@ const frameHeaderLen = 9
 var padZeros = make([]byte, 255) // zeros for padding
 
 // A FrameType is a registered frame type as defined in
-// https://httpwg.org/specs/rfc7540.html#rfc.section.11.2
+// https://httpwg.org/specs/rfc7540.html#rfc.section.11.2 and other future
+// RFCs.
 type FrameType uint8
 
 const (
-	FrameData         FrameType = 0x0
-	FrameHeaders      FrameType = 0x1
-	FramePriority     FrameType = 0x2
-	FrameRSTStream    FrameType = 0x3
-	FrameSettings     FrameType = 0x4
-	FramePushPromise  FrameType = 0x5
-	FramePing         FrameType = 0x6
-	FrameGoAway       FrameType = 0x7
-	FrameWindowUpdate FrameType = 0x8
-	FrameContinuation FrameType = 0x9
+	FrameData           FrameType = 0x0
+	FrameHeaders        FrameType = 0x1
+	FramePriority       FrameType = 0x2
+	FrameRSTStream      FrameType = 0x3
+	FrameSettings       FrameType = 0x4
+	FramePushPromise    FrameType = 0x5
+	FramePing           FrameType = 0x6
+	FrameGoAway         FrameType = 0x7
+	FrameWindowUpdate   FrameType = 0x8
+	FrameContinuation   FrameType = 0x9
+	FramePriorityUpdate FrameType = 0x10
 )
 
 var frameNames = [...]string{
-	FrameData:         "DATA",
-	FrameHeaders:      "HEADERS",
-	FramePriority:     "PRIORITY",
-	FrameRSTStream:    "RST_STREAM",
-	FrameSettings:     "SETTINGS",
-	FramePushPromise:  "PUSH_PROMISE",
-	FramePing:         "PING",
-	FrameGoAway:       "GOAWAY",
-	FrameWindowUpdate: "WINDOW_UPDATE",
-	FrameContinuation: "CONTINUATION",
+	FrameData:           "DATA",
+	FrameHeaders:        "HEADERS",
+	FramePriority:       "PRIORITY",
+	FrameRSTStream:      "RST_STREAM",
+	FrameSettings:       "SETTINGS",
+	FramePushPromise:    "PUSH_PROMISE",
+	FramePing:           "PING",
+	FrameGoAway:         "GOAWAY",
+	FrameWindowUpdate:   "WINDOW_UPDATE",
+	FrameContinuation:   "CONTINUATION",
+	FramePriorityUpdate: "PRIORITY_UPDATE",
 }
 
 func (t FrameType) String() string {
@@ -125,16 +129,17 @@ var flagName = map[FrameType]map[Flags]string{
 type frameParser func(fc *frameCache, fh FrameHeader, countError func(string), payload []byte) (Frame, error)
 
 var frameParsers = [...]frameParser{
-	FrameData:         parseDataFrame,
-	FrameHeaders:      parseHeadersFrame,
-	FramePriority:     parsePriorityFrame,
-	FrameRSTStream:    parseRSTStreamFrame,
-	FrameSettings:     parseSettingsFrame,
-	FramePushPromise:  parsePushPromise,
-	FramePing:         parsePingFrame,
-	FrameGoAway:       parseGoAwayFrame,
-	FrameWindowUpdate: parseWindowUpdateFrame,
-	FrameContinuation: parseContinuationFrame,
+	FrameData:           parseDataFrame,
+	FrameHeaders:        parseHeadersFrame,
+	FramePriority:       parsePriorityFrame,
+	FrameRSTStream:      parseRSTStreamFrame,
+	FrameSettings:       parseSettingsFrame,
+	FramePushPromise:    parsePushPromise,
+	FramePing:           parsePingFrame,
+	FrameGoAway:         parseGoAwayFrame,
+	FrameWindowUpdate:   parseWindowUpdateFrame,
+	FrameContinuation:   parseContinuationFrame,
+	FramePriorityUpdate: parsePriorityUpdateFrame,
 }
 
 func typeFrameParser(t FrameType) frameParser {
@@ -1263,6 +1268,74 @@ func (f *Framer) WritePriority(streamID uint32, p PriorityParam) error {
 	}
 	f.writeUint32(v)
 	f.writeByte(p.Weight)
+	return f.endWrite()
+}
+
+// PriorityUpdateFrame is a PRIORITY_UPDATE frame as described in
+// https://www.rfc-editor.org/rfc/rfc9218.html#name-the-priority_update-frame.
+type PriorityUpdateFrame struct {
+	FrameHeader
+	Priority            string
+	PrioritizedStreamID uint32
+}
+
+func parseRFC9218Priority(s string) (p PriorityParam, ok bool) {
+	p = defaultRFC9218Priority
+	ok = httpsfv.ParseDictionary(s, func(key, val, _ string) {
+		switch key {
+		case "u":
+			if u, ok := httpsfv.ParseInteger(val); ok && u >= 0 && u <= 7 {
+				p.urgency = uint8(u)
+			}
+		case "i":
+			if i, ok := httpsfv.ParseBoolean(val); ok {
+				if i {
+					p.incremental = 1
+				} else {
+					p.incremental = 0
+				}
+			}
+		}
+	})
+	if !ok {
+		return defaultRFC9218Priority, ok
+	}
+	return p, true
+}
+
+func parsePriorityUpdateFrame(_ *frameCache, fh FrameHeader, countError func(string), payload []byte) (Frame, error) {
+	if fh.StreamID != 0 {
+		countError("frame_priority_update_non_zero_stream")
+		return nil, connError{ErrCodeProtocol, "PRIORITY_UPDATE frame with non-zero stream ID"}
+	}
+	if len(payload) < 4 {
+		countError("frame_priority_update_bad_length")
+		return nil, connError{ErrCodeFrameSize, fmt.Sprintf("PRIORITY_UPDATE frame payload size was %d; want at least 4", len(payload))}
+	}
+	v := binary.BigEndian.Uint32(payload[:4])
+	streamID := v & 0x7fffffff // mask off high bit
+	if streamID == 0 {
+		countError("frame_priority_update_prioritizing_zero_stream")
+		return nil, connError{ErrCodeProtocol, "PRIORITY_UPDATE frame with prioritized stream ID of zero"}
+	}
+	return &PriorityUpdateFrame{
+		FrameHeader:         fh,
+		PrioritizedStreamID: streamID,
+		Priority:            string(payload[4:]),
+	}, nil
+}
+
+// WritePriorityUpdate writes a PRIORITY_UPDATE frame.
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility to not call other Write methods concurrently.
+func (f *Framer) WritePriorityUpdate(streamID uint32, priority string) error {
+	if !validStreamID(streamID) && !f.AllowIllegalWrites {
+		return errStreamID
+	}
+	f.startWrite(FramePriorityUpdate, 0, 0)
+	f.writeUint32(streamID)
+	f.writeBytes([]byte(priority))
 	return f.endWrite()
 }
 
