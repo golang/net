@@ -235,3 +235,92 @@ func TestPrioritySchedulerUrgencyAndIncremental(t *testing.T) {
 		t.Fatalf("popped streams %v, want %v", got, want)
 	}
 }
+
+func TestPrioritySchedulerIdempotentUpdate(t *testing.T) {
+	const maxFrameSize = 16
+	sc := &serverConn{maxFrameSize: maxFrameSize}
+	ws := newPriorityWriteSchedulerRFC9128()
+	streams := make([]*stream, 6)
+	for i := range streams {
+		streamID := uint32(i) + 1
+		streams[i] = &stream{
+			id: streamID,
+			sc: sc,
+		}
+		streams[i].flow.add(1 << 20) // arbitrary large value
+		ws.OpenStream(streamID, OpenStreamOptions{
+			priority: PriorityParam{
+				urgency:     7,
+				incremental: 0,
+			},
+		})
+		wr := FrameWriteRequest{
+			write: &writeData{
+				streamID:  streamID,
+				p:         make([]byte, maxFrameSize*(i+1)),
+				endStream: false,
+			},
+			stream: streams[i],
+		}
+		ws.Push(wr)
+	}
+	// Make even-numbered streams incremental and of higher urgency.
+	for i := range streams {
+		streamID := uint32(i) + 1
+		if streamID%2 == 1 {
+			continue
+		}
+		ws.AdjustStream(streamID, PriorityParam{
+			urgency:     0,
+			incremental: 1,
+		})
+	}
+	ws.CloseStream(1)
+	// Repeat the same priority update to ensure idempotency.
+	for i := range streams {
+		streamID := uint32(i) + 1
+		if streamID%2 == 1 {
+			continue
+		}
+		ws.AdjustStream(streamID, PriorityParam{
+			urgency:     0,
+			incremental: 1,
+		})
+	}
+	ws.CloseStream(2)
+	const controlFrames = 2
+	for range controlFrames {
+		ws.Push(makeWriteNonStreamRequest())
+	}
+
+	// We should get the control frames first.
+	for range controlFrames {
+		wr, ok := ws.Pop()
+		if !ok || wr.StreamID() != 0 {
+			t.Fatalf("wr.Pop() = stream %v, %v; want 0, true", wr.StreamID(), ok)
+		}
+	}
+
+	// Each stream should write maxFrameSize bytes until it runs out of data.
+	// We should:
+	// - Get even-numbered streams first that are written in a round-robin
+	// manner as they have higher urgency and are incremental.
+	// - Get odd-numbered streams after that are written one-by-one to
+	// completion as they are of lower urgency and are not incremental.
+	// - Skip stream 1 and 4 that have been closed.
+	want := []uint32{4, 6, 4, 6, 4, 6, 4, 6, 6, 6, 3, 3, 3, 5, 5, 5, 5, 5}
+	var got []uint32
+	for {
+		wr, ok := ws.Pop()
+		if !ok {
+			break
+		}
+		if wr.DataSize() != maxFrameSize {
+			t.Fatalf("wr.Pop() = %v data bytes, want %v", wr.DataSize(), maxFrameSize)
+		}
+		got = append(got, wr.StreamID())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("popped streams %v, want %v", got, want)
+	}
+}
