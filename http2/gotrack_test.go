@@ -11,10 +11,6 @@ import (
 )
 
 func TestGoroutineLock(t *testing.T) {
-	oldDebug := DebugGoroutines
-	DebugGoroutines = true
-	defer func() { DebugGoroutines = oldDebug }()
-
 	g := newGoroutineLock()
 	g.check()
 
