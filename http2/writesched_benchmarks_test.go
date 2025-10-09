@@ -178,3 +178,20 @@ func BenchmarkWriteSchedulerLifetimePriorityRFC9218NonIncremental(b *testing.B) 
 		incremental: 0,
 	})
 }
+
+func BenchmarkWriteQueue(b *testing.B) {
+	var qp writeQueuePool
+	frameCount := 25
+	for b.Loop() {
+		q := qp.get()
+		for range frameCount {
+			q.push(FrameWriteRequest{})
+		}
+		for !q.empty() {
+			// Since we pushed empty frames, consuming 1 byte is enough to
+			// consume the entire frame.
+			q.consume(1)
+		}
+		qp.put(q)
+	}
+}
