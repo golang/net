@@ -2648,6 +2648,7 @@ func unpackSRVResource(msg []byte, off int) (SRVResource, error) {
 // A SVCParamKey is a key for a service parameter.
 type SVCParamKey uint16
 
+// Values defined at https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml#dns-svcparamkeys.
 const (
 	SVCParamMandatory     SVCParamKey = 0
 	SVCParamALPN          SVCParamKey = 1
