@@ -33,7 +33,7 @@ func (c *Conn) startTLS(now time.Time, initialConnID []byte, peerHostname string
 		c.tls = tls.QUICServer(qconfig)
 	}
 	c.tls.SetTransportParameters(marshalTransportParameters(params))
-	// TODO: We don't need or want a context for cancelation here,
+	// TODO: We don't need or want a context for cancellation here,
 	// but users can use a context to plumb values through to hooks defined
 	// in the tls.Config. Pass through a context.
 	if err := c.tls.Start(context.TODO()); err != nil {

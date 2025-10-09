@@ -21,7 +21,7 @@
 //
 // A [Stream] is a QUIC stream, an ordered, reliable byte stream.
 //
-// # Cancelation
+// # Cancellation
 //
 // All blocking operations may be canceled using a context.Context.
 // When performing an operation with a canceled context, the operation

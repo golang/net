@@ -675,7 +675,7 @@ func TestLossPTONotSetWhenLossTimerSet(t *testing.T) {
 	t.Logf("# PTO = smoothed_rtt + max(4*rttvar, 1ms)")
 	test.wantTimeout(999 * time.Millisecond)
 
-	t.Logf("# ack of packet 1 starts loss timer for 0, PTO overidden")
+	t.Logf("# ack of packet 1 starts loss timer for 0, PTO overridden")
 	test.advance(333 * time.Millisecond)
 	test.ack(initialSpace, 0*time.Millisecond, i64range[packetNumber]{1, 2})
 	test.wantAck(initialSpace, 1)

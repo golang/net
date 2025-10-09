@@ -44,7 +44,7 @@ const (
 var tinfoMap = make(map[reflect.Type]*typeInfo)
 var tinfoLock sync.RWMutex
 
-var nameType = reflect.TypeOf(Name{})
+var nameType = reflect.TypeFor[Name]()
 
 // getTypeInfo returns the typeInfo structure with details necessary
 // for marshalling and unmarshalling typ.
@@ -256,13 +256,6 @@ func lookupXMLName(typ reflect.Type) (xmlname *fieldInfo) {
 		break
 	}
 	return nil
-}
-
-func min(a, b int) int {
-	if a <= b {
-		return a
-	}
-	return b
 }
 
 // addFieldInfo adds finfo to tinfo.fields if there are no

@@ -198,7 +198,7 @@ func TestStreamReadFrameHeaderPartial(t *testing.T) {
 		st1.stream.CloseWrite()
 
 		if _, err := st2.readFrameHeader(); err == nil {
-			t.Fatalf("%v/%v bytes of frame available: st.readFrameHeader() succeded; want error", i, len(frame))
+			t.Fatalf("%v/%v bytes of frame available: st.readFrameHeader() succeeded; want error", i, len(frame))
 		}
 	}
 }

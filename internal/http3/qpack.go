@@ -224,7 +224,7 @@ func (st *stream) readPrefixedInt(prefixLen uint8) (firstByte byte, v int64, err
 	return firstByte, v, err
 }
 
-// readPrefixedInt reads an RFC 7541 prefixed integer from st.
+// readPrefixedIntWithByte reads an RFC 7541 prefixed integer from st.
 // The first byte has already been read from the stream.
 func (st *stream) readPrefixedIntWithByte(firstByte byte, prefixLen uint8) (v int64, err error) {
 	prefixMask := (byte(1) << prefixLen) - 1
@@ -285,7 +285,7 @@ func (st *stream) readPrefixedString(prefixLen uint8) (firstByte byte, s string,
 	return firstByte, s, err
 }
 
-// readPrefixedString reads an RFC 7541 string from st.
+// readPrefixedStringWithByte reads an RFC 7541 string from st.
 // The first byte has already been read from the stream.
 func (st *stream) readPrefixedStringWithByte(firstByte byte, prefixLen uint8) (s string, err error) {
 	size, err := st.readPrefixedIntWithByte(firstByte, prefixLen)

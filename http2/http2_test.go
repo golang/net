@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25 || goexperiment.synctest
+
 package http2
 
 import (
@@ -28,7 +30,6 @@ func condSkipFailingTest(t *testing.T) {
 }
 
 func init() {
-	inTests = true
 	DebugGoroutines = true
 	flag.BoolVar(&VerboseLogs, "verboseh2", VerboseLogs, "Verbose HTTP/2 debug logging")
 }
@@ -68,7 +69,7 @@ func (w twriter) Write(p []byte) (n int, err error) {
 }
 
 // like encodeHeader, but don't add implicit pseudo headers.
-func encodeHeaderNoImplicit(t *testing.T, headers ...string) []byte {
+func encodeHeaderNoImplicit(t testing.TB, headers ...string) []byte {
 	var buf bytes.Buffer
 	enc := hpack.NewEncoder(&buf)
 	for len(headers) > 0 {
@@ -79,35 +80,6 @@ func encodeHeaderNoImplicit(t *testing.T, headers ...string) []byte {
 		}
 	}
 	return buf.Bytes()
-}
-
-type puppetCommand struct {
-	fn   func(w http.ResponseWriter, r *http.Request)
-	done chan<- bool
-}
-
-type handlerPuppet struct {
-	ch chan puppetCommand
-}
-
-func newHandlerPuppet() *handlerPuppet {
-	return &handlerPuppet{
-		ch: make(chan puppetCommand),
-	}
-}
-
-func (p *handlerPuppet) act(w http.ResponseWriter, r *http.Request) {
-	for cmd := range p.ch {
-		cmd.fn(w, r)
-		cmd.done <- true
-	}
-}
-
-func (p *handlerPuppet) done() { close(p.ch) }
-func (p *handlerPuppet) do(fn func(http.ResponseWriter, *http.Request)) {
-	done := make(chan bool)
-	p.ch <- puppetCommand{fn, done}
-	<-done
 }
 
 func cleanDate(res *http.Response) {
@@ -285,7 +257,7 @@ func TestNoUnicodeStrings(t *testing.T) {
 }
 
 // setForTest sets *p = v, and restores its original value in t.Cleanup.
-func setForTest[T any](t *testing.T, p *T, v T) {
+func setForTest[T any](t testing.TB, p *T, v T) {
 	orig := *p
 	t.Cleanup(func() {
 		*p = orig
@@ -299,4 +271,12 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// synctestSubtest starts a subtest and runs f in a synctest bubble within it.
+func synctestSubtest(t *testing.T, name string, f func(testing.TB)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		synctestTest(t, f)
+	})
 }

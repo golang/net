@@ -178,7 +178,7 @@ func (c *lossState) nextNumber(space numberSpace) packetNumber {
 	return c.spaces[space].nextNum
 }
 
-// skipPacketNumber skips a packet number as a defense against optimistic ACK attacks.
+// skipNumber skips a packet number as a defense against optimistic ACK attacks.
 func (c *lossState) skipNumber(now time.Time, space numberSpace) {
 	sent := newSentPacket()
 	sent.num = c.spaces[space].nextNum

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
+//go:build go1.25 || goexperiment.synctest
 
 package http2
 
@@ -12,7 +12,8 @@ import (
 	"time"
 )
 
-func TestConfigServerSettings(t *testing.T) {
+func TestConfigServerSettings(t *testing.T) { synctestTest(t, testConfigServerSettings) }
+func testConfigServerSettings(t testing.TB) {
 	config := &http.HTTP2Config{
 		MaxConcurrentStreams:          1,
 		MaxDecoderHeaderTableSize:     1<<20 + 2,
@@ -37,7 +38,8 @@ func TestConfigServerSettings(t *testing.T) {
 	})
 }
 
-func TestConfigTransportSettings(t *testing.T) {
+func TestConfigTransportSettings(t *testing.T) { synctestTest(t, testConfigTransportSettings) }
+func testConfigTransportSettings(t testing.TB) {
 	config := &http.HTTP2Config{
 		MaxConcurrentStreams:          1, // ignored by Transport
 		MaxDecoderHeaderTableSize:     1<<20 + 2,
@@ -60,7 +62,8 @@ func TestConfigTransportSettings(t *testing.T) {
 	tc.wantWindowUpdate(0, uint32(config.MaxReceiveBufferPerConnection))
 }
 
-func TestConfigPingTimeoutServer(t *testing.T) {
+func TestConfigPingTimeoutServer(t *testing.T) { synctestTest(t, testConfigPingTimeoutServer) }
+func testConfigPingTimeoutServer(t testing.TB) {
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 	}, func(s *Server) {
 		s.ReadIdleTimeout = 2 * time.Second
@@ -68,13 +71,14 @@ func TestConfigPingTimeoutServer(t *testing.T) {
 	})
 	st.greet()
 
-	st.advance(2 * time.Second)
+	time.Sleep(2 * time.Second)
 	_ = readFrame[*PingFrame](t, st)
-	st.advance(3 * time.Second)
+	time.Sleep(3 * time.Second)
 	st.wantClosed()
 }
 
-func TestConfigPingTimeoutTransport(t *testing.T) {
+func TestConfigPingTimeoutTransport(t *testing.T) { synctestTest(t, testConfigPingTimeoutTransport) }
+func testConfigPingTimeoutTransport(t testing.TB) {
 	tc := newTestClientConn(t, func(tr *Transport) {
 		tr.ReadIdleTimeout = 2 * time.Second
 		tr.PingTimeout = 3 * time.Second
@@ -85,9 +89,9 @@ func TestConfigPingTimeoutTransport(t *testing.T) {
 	rt := tc.roundTrip(req)
 	tc.wantFrameType(FrameHeaders)
 
-	tc.advance(2 * time.Second)
+	time.Sleep(2 * time.Second)
 	tc.wantFrameType(FramePing)
-	tc.advance(3 * time.Second)
+	time.Sleep(3 * time.Second)
 	err := rt.err()
 	if err == nil {
 		t.Fatalf("expected connection to close")

@@ -17,7 +17,7 @@ func TestQueue(t *testing.T) {
 
 	q := newQueue[int]()
 	if got, err := q.get(nonblocking, nil); err != context.Canceled {
-		t.Fatalf("q.get() = %v, %v, want nil, contex.Canceled", got, err)
+		t.Fatalf("q.get() = %v, %v, want nil, context.Canceled", got, err)
 	}
 
 	if !q.put(1) {
@@ -33,7 +33,7 @@ func TestQueue(t *testing.T) {
 		t.Fatalf("q.get() = %v, %v, want 2, nil", got, err)
 	}
 	if got, err := q.get(nonblocking, nil); err != context.Canceled {
-		t.Fatalf("q.get() = %v, %v, want nil, contex.Canceled", got, err)
+		t.Fatalf("q.get() = %v, %v, want nil, context.Canceled", got, err)
 	}
 
 	go func() {
