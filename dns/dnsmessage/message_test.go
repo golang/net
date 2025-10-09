@@ -363,6 +363,43 @@ func TestResourceNotStarted(t *testing.T) {
 	}
 }
 
+func buildTestSVCBMsg() Message {
+	svcb := &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("svc.example.com."),
+		Params:   make([]SVCParam, 1, 4),
+	}
+	svcb.Params[0] = SVCParam{Key: SVCParamALPN, Value: []byte("h2")}
+
+	https := &HTTPSResource{}
+	https.Priority = 2
+	https.Target = MustNewName("https.example.com.")
+	https.Params = make([]SVCParam, 2, 4)
+	https.Params[0] = SVCParam{Key: SVCParamPort, Value: []byte{0x01, 0xbb}}
+	https.Params[1] = SVCParam{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}}
+
+	return Message{
+		Answers: []Resource{
+			{
+				ResourceHeader{
+					Name:  MustNewName("foo.bar.example.com."),
+					Type:  TypeSVCB,
+					Class: ClassINET,
+				},
+				svcb,
+			},
+			{
+				ResourceHeader{
+					Name:  MustNewName("foo.bar.example.com."),
+					Type:  TypeHTTPS,
+					Class: ClassINET,
+				},
+				https,
+			},
+		},
+	}
+}
+
 func TestDNSPackUnpack(t *testing.T) {
 	wants := []Message{
 		{
@@ -378,6 +415,7 @@ func TestDNSPackUnpack(t *testing.T) {
 			Additionals: []Resource{},
 		},
 		largeTestMsg(),
+		buildTestSVCBMsg(),
 	}
 	for i, want := range wants {
 		b, err := want.Pack()
@@ -390,7 +428,14 @@ func TestDNSPackUnpack(t *testing.T) {
 			t.Fatalf("%d: Message.Unapck() = %v", i, err)
 		}
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("%d: Message.Pack/Unpack() roundtrip: got = %+v, want = %+v", i, &got, &want)
+			t.Errorf("%d: Message.Pack/Unpack() roundtrip: got = %#v, want = %#v", i, &got, &want)
+			if len(got.Answers) > 0 && len(want.Answers) > 0 {
+				if !reflect.DeepEqual(got.Answers[0].Body, want.Answers[0].Body) {
+					t.Errorf("Answer 0 Body mismatch")
+					t.Errorf("got: %#v", got.Answers[0].Body)
+					t.Errorf("want: %#v", want.Answers[0].Body)
+				}
+			}
 		}
 	}
 }
@@ -784,6 +829,14 @@ func TestBuilder(t *testing.T) {
 		case TypeSRV:
 			if err := b.SRVResource(a.Header, *a.Body.(*SRVResource)); err != nil {
 				t.Fatalf("Builder.SRVResource(%#v) = %v", a, err)
+			}
+		case TypeSVCB:
+			if err := b.SVCBResource(a.Header, *a.Body.(*SVCBResource)); err != nil {
+				t.Fatalf("Builder.SVCBResource(%#v) = %v", a, err)
+			}
+		case TypeHTTPS:
+			if err := b.HTTPSResource(a.Header, *a.Body.(*HTTPSResource)); err != nil {
+				t.Fatalf("Builder.HTTPSResource(%#v) = %v", a, err)
 			}
 		case privateUseType:
 			if err := b.UnknownResource(a.Header, *a.Body.(*UnknownResource)); err != nil {
@@ -1185,6 +1238,37 @@ func benchmarkParsingSetup() ([]byte, error) {
 			{
 				ResourceHeader{
 					Name:  name,
+					Type:  TypeSVCB,
+					Class: ClassINET,
+				},
+				&SVCBResource{
+					Priority: 1,
+					Target:   MustNewName("svc.example.com."),
+					Params: []SVCParam{
+						{Key: SVCParamALPN, Value: []byte("h2")},
+					},
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
+					Type:  TypeHTTPS,
+					Class: ClassINET,
+				},
+				&HTTPSResource{
+					SVCBResource{
+						Priority: 2,
+						Target:   MustNewName("https.example.com."),
+						Params: []SVCParam{
+							{Key: SVCParamPort, Value: []byte{0x01, 0xbb}},
+							{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}},
+						},
+					},
+				},
+			},
+			{
+				ResourceHeader{
+					Name:  name,
 					Class: ClassINET,
 				},
 				&AResource{[4]byte{}},
@@ -1261,6 +1345,14 @@ func benchmarkParsing(tb testing.TB, buf []byte) {
 		case TypeNS:
 			if _, err := p.NSResource(); err != nil {
 				tb.Fatal("Parser.NSResource() =", err)
+			}
+		case TypeSVCB:
+			if _, err := p.SVCBResource(); err != nil {
+				tb.Fatal("Parser.SVCBResource() =", err)
+			}
+		case TypeHTTPS:
+			if _, err := p.HTTPSResource(); err != nil {
+				tb.Fatal("Parser.HTTPSResource() =", err)
 			}
 		case TypeOPT:
 			if _, err := p.OPTResource(); err != nil {

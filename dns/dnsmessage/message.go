@@ -33,6 +33,8 @@ const (
 	TypeAAAA  Type = 28
 	TypeSRV   Type = 33
 	TypeOPT   Type = 41
+	TypeSVCB  Type = 64
+	TypeHTTPS Type = 65
 
 	// Question.Type
 	TypeWKS   Type = 11
@@ -53,6 +55,8 @@ var typeNames = map[Type]string{
 	TypeAAAA:  "TypeAAAA",
 	TypeSRV:   "TypeSRV",
 	TypeOPT:   "TypeOPT",
+	TypeSVCB:  "TypeSVCB",
+	TypeHTTPS: "TypeHTTPS",
 	TypeWKS:   "TypeWKS",
 	TypeHINFO: "TypeHINFO",
 	TypeMINFO: "TypeMINFO",
@@ -1000,6 +1004,42 @@ func (p *Parser) SRVResource() (SRVResource, error) {
 	return r, nil
 }
 
+// SVCBResource parses a single SVCBResource.
+//
+// One of the XXXHeader methods must have been called before calling this
+// method.
+func (p *Parser) SVCBResource() (SVCBResource, error) {
+	if !p.resHeaderValid || p.resHeaderType != TypeSVCB {
+		return SVCBResource{}, ErrNotStarted
+	}
+	r, err := unpackSVCBResource(p.msg, p.off, p.resHeaderLength)
+	if err != nil {
+		return SVCBResource{}, err
+	}
+	p.off += int(p.resHeaderLength)
+	p.resHeaderValid = false
+	p.index++
+	return r, nil
+}
+
+// HTTPSResource parses a single HTTPSResource.
+//
+// One of the XXXHeader methods must have been called before calling this
+// method.
+func (p *Parser) HTTPSResource() (HTTPSResource, error) {
+	if !p.resHeaderValid || p.resHeaderType != TypeHTTPS {
+		return HTTPSResource{}, ErrNotStarted
+	}
+	r, err := unpackSVCBResource(p.msg, p.off, p.resHeaderLength)
+	if err != nil {
+		return HTTPSResource{}, err
+	}
+	p.off += int(p.resHeaderLength)
+	p.resHeaderValid = false
+	p.index++
+	return HTTPSResource{r}, nil
+}
+
 // AResource parses a single AResource.
 //
 // One of the XXXHeader methods must have been called before calling this
@@ -1524,6 +1564,54 @@ func (b *Builder) SRVResource(h ResourceHeader, r SRVResource) error {
 	preLen := len(msg)
 	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
 		return &nestedError{"SRVResource body", err}
+	}
+	if err := h.fixLen(msg, lenOff, preLen); err != nil {
+		return err
+	}
+	if err := b.incrementSectionCount(); err != nil {
+		return err
+	}
+	b.msg = msg
+	return nil
+}
+
+// SVCBResource adds a single SVCBResource.
+func (b *Builder) SVCBResource(h ResourceHeader, r SVCBResource) error {
+	if err := b.checkResourceSection(); err != nil {
+		return err
+	}
+	h.Type = r.realType()
+	msg, lenOff, err := h.pack(b.msg, b.compression, b.start)
+	if err != nil {
+		return &nestedError{"ResourceHeader", err}
+	}
+	preLen := len(msg)
+	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
+		return &nestedError{"SVCBResource body", err}
+	}
+	if err := h.fixLen(msg, lenOff, preLen); err != nil {
+		return err
+	}
+	if err := b.incrementSectionCount(); err != nil {
+		return err
+	}
+	b.msg = msg
+	return nil
+}
+
+// HTTPSResource adds a single HTTPSResource.
+func (b *Builder) HTTPSResource(h ResourceHeader, r HTTPSResource) error {
+	if err := b.checkResourceSection(); err != nil {
+		return err
+	}
+	h.Type = r.realType()
+	msg, lenOff, err := h.pack(b.msg, b.compression, b.start)
+	if err != nil {
+		return &nestedError{"ResourceHeader", err}
+	}
+	preLen := len(msg)
+	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
+		return &nestedError{"HTTPSResource body", err}
 	}
 	if err := h.fixLen(msg, lenOff, preLen); err != nil {
 		return err
@@ -2220,6 +2308,16 @@ func unpackResourceBody(msg []byte, off int, hdr ResourceHeader) (ResourceBody, 
 		rb, err = unpackSRVResource(msg, off)
 		r = &rb
 		name = "SRV"
+	case TypeSVCB:
+		var rb SVCBResource
+		rb, err = unpackSVCBResource(msg, off, hdr.Length)
+		r = &rb
+		name = "SVCB"
+	case TypeHTTPS:
+		var rb HTTPSResource
+		rb.SVCBResource, err = unpackSVCBResource(msg, off, hdr.Length)
+		r = &rb
+		name = "HTTPS"
 	case TypeOPT:
 		var rb OPTResource
 		rb, err = unpackOPTResource(msg, off, hdr.Length)
@@ -2545,6 +2643,231 @@ func unpackSRVResource(msg []byte, off int) (SRVResource, error) {
 		return SRVResource{}, &nestedError{"Target", err}
 	}
 	return SRVResource{priority, weight, port, target}, nil
+}
+
+// A SVCParamKey is a key for a service parameter.
+type SVCParamKey uint16
+
+const (
+	SVCParamMandatory     SVCParamKey = 0
+	SVCParamALPN          SVCParamKey = 1
+	SVCParamNoDefaultALPN SVCParamKey = 2
+	SVCParamPort          SVCParamKey = 3
+	SVCParamIPv4Hint      SVCParamKey = 4
+	SVCParamECH           SVCParamKey = 5
+	SVCParamIPv6Hint      SVCParamKey = 6
+	SVCParamDOHPath       SVCParamKey = 7
+	SVCParamOHTTP         SVCParamKey = 8
+	SVCParamTLSSupportedGroups SVCParamKey = 9
+)
+
+var svcParamKeyNames = map[SVCParamKey]string{
+	SVCParamMandatory:     "SVCParamMandatory",
+	SVCParamALPN:          "SVCParamALPN",
+	SVCParamNoDefaultALPN: "SVCParamNoDefaultALPN",
+	SVCParamPort:          "SVCParamPort",
+	SVCParamIPv4Hint:      "SVCParamIPv4Hint",
+	SVCParamECH:           "SVCParamECH",
+	SVCParamIPv6Hint:      "SVCParamIPv6Hint",
+	SVCParamDOHPath:       "SVCParamDOHPath",
+	SVCParamOHTTP:         "SVCParamOHTTP",
+	SVCParamTLSSupportedGroups: "SVCParamTLSSupportedGroups",
+}
+
+// String implements fmt.Stringer.String.
+func (k SVCParamKey) String() string {
+	if n, ok := svcParamKeyNames[k]; ok {
+		return n
+	}
+	return printUint16(uint16(k))
+}
+
+// GoString implements fmt.GoStringer.GoString.
+func (k SVCParamKey) GoString() string {
+	if n, ok := svcParamKeyNames[k]; ok {
+		return "dnsmessage." + n
+	}
+	return printUint16(uint16(k))
+}
+
+// A SVCParam is a service parameter.
+type SVCParam struct {
+	Key   SVCParamKey
+	Value []byte
+}
+
+// GoString implements fmt.GoStringer.GoString.
+func (p SVCParam) GoString() string {
+	return "dnsmessage.SVCParam{" +
+		"Key: " + p.Key.GoString() + ", " +
+		"Value: []byte{" + printByteSlice(p.Value) + "}}"
+}
+
+// An SVCBResource is an SVCB Resource record.
+type SVCBResource struct {
+	Priority uint16
+	Target   Name
+	Params   []SVCParam
+}
+
+func (r *SVCBResource) realType() Type {
+	return TypeSVCB
+}
+
+// GoString implements fmt.GoStringer.GoString.
+func (r *SVCBResource) GoString() string {
+	s := "dnsmessage.SVCBResource{" +
+		"Priority: " + printUint16(r.Priority) + ", " +
+		"Target: " + r.Target.GoString() + ", " +
+		"Params: []dnsmessage.SVCParam{"
+	if len(r.Params) > 0 {
+		s += r.Params[0].GoString()
+		for _, p := range r.Params[1:] {
+			s += ", " + p.GoString()
+		}
+	}
+	return s + "}}"
+}
+
+// GetParam returns a parameter value by key.
+func (r *SVCBResource) GetParam(key SVCParamKey) (value []byte, ok bool) {
+	for i := range r.Params {
+		if r.Params[i].Key == key {
+			return r.Params[i].Value, true
+		}
+	}
+	return nil, false
+}
+
+// SetParam sets a parameter value by key.
+// If value is nil, the parameter is removed.
+// The Params list is kept sorted by key.
+func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
+	i := 0
+	for i < len(r.Params) {
+		if r.Params[i].Key >= key {
+			break
+		}
+		i++
+	}
+
+	if i < len(r.Params) && r.Params[i].Key == key {
+		if value == nil {
+			// Delete.
+			r.Params = append(r.Params[:i], r.Params[i+1:]...)
+		} else {
+			// Update.
+			r.Params[i].Value = value
+		}
+		return
+	}
+	if value == nil {
+		return // nothing to do
+	}
+
+	// Insert.
+	r.Params = append(r.Params, SVCParam{})
+	copy(r.Params[i+1:], r.Params[i:])
+	r.Params[i] = SVCParam{Key: key, Value: value}
+}
+
+// An HTTPSResource is an HTTPS Resource record.
+// It has the same format as the SVCB record.
+type HTTPSResource struct {
+	// Alias for SVCB resource record.
+	SVCBResource
+}
+
+func (r *HTTPSResource) realType() Type {
+	return TypeHTTPS
+}
+
+// GoString implements fmt.GoStringer.GoString.
+func (r *HTTPSResource) GoString() string {
+	return "dnsmessage.HTTPSResource{SVCBResource: " + r.SVCBResource.GoString() + "}"
+}
+
+func (r *SVCBResource) pack(msg []byte, compression map[string]uint16, compressionOff int) ([]byte, error) {
+	oldMsg := msg
+	msg = packUint16(msg, r.Priority)
+	var err error
+	msg, err = r.Target.pack(msg, compression, compressionOff)
+	if err != nil {
+		return oldMsg, &nestedError{"SVCBResource.Target", err}
+	}
+	for _, p := range r.Params {
+		msg = packUint16(msg, uint16(p.Key))
+		msg = packUint16(msg, uint16(len(p.Value)))
+		msg = append(msg, p.Value...)
+	}
+	return msg, nil
+}
+
+func unpackSVCBResource(msg []byte, off int, length uint16) (SVCBResource, error) {
+	r := SVCBResource{}
+	paramsOff := off
+	bodyEnd := off + int(length)
+
+	var err error
+	if r.Priority, paramsOff, err = unpackUint16(msg, paramsOff); err != nil {
+		return SVCBResource{}, &nestedError{"Priority", err}
+	}
+
+	if paramsOff, err = r.Target.unpack(msg, paramsOff); err != nil {
+		return SVCBResource{}, &nestedError{"Target", err}
+	}
+
+	// Two-pass parsing to avoid allocations.
+	// First, count the number of params.
+	n := 0
+	countOff := paramsOff
+	for countOff < bodyEnd {
+		var l uint16
+		if _, countOff, err = unpackUint16(msg, countOff); err != nil {
+			return SVCBResource{}, &nestedError{"param key", err}
+		}
+		if l, countOff, err = unpackUint16(msg, countOff); err != nil {
+			return SVCBResource{}, &nestedError{"param length", err}
+		}
+		if countOff+int(l) > bodyEnd {
+			return SVCBResource{}, errResourceLen
+		}
+		countOff += int(l)
+		n++
+	}
+	if countOff != bodyEnd {
+		return SVCBResource{}, errResourceLen
+	}
+
+	// Second, fill in the params.
+	var onStack [4]SVCParam
+	if n <= len(onStack) {
+		r.Params = onStack[:n]
+	} else {
+		r.Params = make([]SVCParam, n)
+	}
+	off = paramsOff
+	var lastK SVCParamKey
+	for i := 0; i < n; i++ {
+		p := &r.Params[i]
+		var k, l uint16
+		if k, off, err = unpackUint16(msg, off); err != nil {
+			return SVCBResource{}, &nestedError{"param key", err}
+		}
+		p.Key = SVCParamKey(k)
+		if l, off, err = unpackUint16(msg, off); err != nil {
+			return SVCBResource{}, &nestedError{"param length", err}
+		}
+		p.Value = msg[off : off+int(l)]
+		off += int(l)
+
+		if i > 0 && p.Key <= lastK {
+			return SVCBResource{}, errResourceLen
+		}
+		lastK = p.Key
+	}
+
+	return r, nil
 }
 
 // An AResource is an A Resource record.
