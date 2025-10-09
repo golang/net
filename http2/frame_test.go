@@ -825,7 +825,7 @@ func TestReadFrameOrder(t *testing.T) {
 			},
 		},
 		9: {
-			wantErr: "CONTINUATION frame with stream ID 0",
+			wantErr: "unexpected CONTINUATION for stream 0",
 			w: func(f *Framer) {
 				cont(f, 0, true)
 			},
@@ -1276,5 +1276,112 @@ func TestTypeFrameParser(t *testing.T) {
 	}
 	if _, isUnknown := frame.(*UnknownFrame); !isUnknown {
 		t.Errorf("expected UnknownFrame, got %T", frame)
+	}
+}
+
+func TestReadFrameHeaderAndBody(t *testing.T) {
+	fr, _ := testFramer()
+	var streamID uint32 = 1
+	data := []byte("ABC")
+	if err := fr.WriteData(streamID, true, data); err != nil {
+		t.Fatalf("WriteData(%d, true, %q) failed: %v", streamID, data, err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+	wantHeader := FrameHeader{
+		Type:     FrameData,
+		Flags:    FlagDataEndStream,
+		Length:   3,
+		StreamID: 1,
+		valid:    true,
+	}
+	if !fh.Equal(wantHeader) {
+		t.Fatalf("ReadFrameHeader = %+v; want %+v", fh, wantHeader)
+	}
+
+	f, err := fr.ReadFrameForHeader(fh)
+	if err != nil {
+		t.Fatalf("ReadFrameForHeader failed: %v", err)
+	}
+
+	if !fh.Equal(f.Header()) {
+		t.Fatalf("Frame.Header() = %+v; want %+v", f.Header(), fh)
+	}
+
+	df, ok := f.(*DataFrame)
+	if !ok {
+		t.Fatalf("got %T; want *DataFrame", f)
+	}
+	if got, want := df.Data(), data; !bytes.Equal(got, want) {
+		t.Errorf("DataFrame.Data() = %q; want %q", string(got), string(want))
+	}
+	if got, want := df.StreamEnded(), true; got != want {
+		t.Errorf("DataFrame.StreamEnded() = %v; want %v", got, want)
+	}
+}
+
+func TestReadFrameHeaderFrameTooLarge(t *testing.T) {
+	fr, _ := testFramer()
+	fr.SetMaxReadFrameSize(2)
+	if err := fr.WriteData(1, true, []byte("ABC")); err != nil {
+		t.Fatalf("WriteData failed: %v", err)
+	}
+	fh, err := fr.ReadFrameHeader()
+	if gotErr, wantErr := err, ErrFrameTooLarge; gotErr != wantErr {
+		t.Fatalf("ReadFrameHeader returned error %v; want %v", gotErr, wantErr)
+	}
+	if fh.StreamID != 1 {
+		t.Errorf("ReadFrameHeader = %v, %v; want StreamID 1", fh, err)
+	}
+}
+
+func TestReadFrameHeaderBadFrameOrder(t *testing.T) {
+	fr, _ := testFramer()
+	if err := fr.WriteHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: []byte("foo"), // unused, but non-empty
+		EndHeaders:    false,
+	}); err != nil {
+		t.Fatalf("WriteHeaders failed: %v", err)
+	}
+
+	// Write a CONTINUATION frame for stream 2 without first finishing the headers for stream 1.
+	if err := fr.WriteContinuation(2, true, []byte("foo")); err != nil {
+		t.Fatalf("WriteContinuation failed: %v", err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+	if _, err = fr.ReadFrameForHeader(fh); err != nil {
+		t.Fatalf("ReadFrameForHeader failed: %v", err)
+	}
+
+	if _, err := fr.ReadFrameHeader(); err != ConnectionError(ErrCodeProtocol) {
+		t.Fatalf("ReadFrameHeader returned error %v; want ConnectionError(ErrCodeProtocol)", err)
+	}
+}
+
+func TestReadFrameForHeaderUnexpectedEOF(t *testing.T) {
+	fr, b := testFramer()
+	if err := fr.WriteData(1, true, []byte("ABC")); err != nil {
+		t.Fatalf("WriteData failed: %v", err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+
+	// Remove one byte from the body, corrupting the frame body.
+	b.Truncate(b.Len() - 1)
+
+	_, err = fr.ReadFrameForHeader(fh)
+	if err != io.ErrUnexpectedEOF {
+		t.Fatalf("ReadFrameForHeader with short body = %v; want io.ErrUnexpectedEOF", err)
 	}
 }
