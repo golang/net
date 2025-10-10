@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -3862,6 +3863,57 @@ func benchLargeDownloadRoundTrip(b *testing.B, frameSize uint32) {
 		res.Body.Close()
 		if res.StatusCode != http.StatusOK {
 			b.Fatalf("Response code = %v; want %v", res.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+func BenchmarkClientGzip(b *testing.B) {
+	disableGoroutineTracking(b)
+	b.ReportAllocs()
+
+	const responseSize = 1024 * 1024
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := io.CopyN(gz, crand.Reader, responseSize); err != nil {
+		b.Fatal(err)
+	}
+	gz.Close()
+
+	data := buf.Bytes()
+	ts := newTestServer(b,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Write(data)
+		},
+		optQuiet,
+	)
+
+	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+	defer tr.CloseIdleConnections()
+
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			b.Fatalf("RoundTrip err = %v; want nil", err)
+		}
+		if res.StatusCode != http.StatusOK {
+			b.Fatalf("Response code = %v; want %v", res.StatusCode, http.StatusOK)
+		}
+		n, err := io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		if err != nil {
+			b.Fatalf("RoundTrip err = %v; want nil", err)
+		}
+		if n != responseSize {
+			b.Fatalf("RoundTrip expected %d bytes, got %d", responseSize, n)
 		}
 	}
 }
