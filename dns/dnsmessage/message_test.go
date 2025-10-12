@@ -379,6 +379,7 @@ func buildTestSVCBMsg() Message {
 	https.Params[1] = SVCParam{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}}
 
 	return Message{
+		Questions: []Question{},
 		Answers: []Resource{
 			{
 				ResourceHeader{
@@ -397,6 +398,8 @@ func buildTestSVCBMsg() Message {
 				https,
 			},
 		},
+		Authorities: []Resource{},
+		Additionals: []Resource{},
 	}
 }
 
