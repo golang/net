@@ -29,8 +29,9 @@ import (
 //   3.1. Add the unpacking code to unpackResourceBody()
 //   3.2. Implement Parser.<name>Resource()
 
-// A Type is the type of a DNS Resource Record, as defined by IANA
-// (https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4).
+// A Type is the type of a DNS Resource Record, as defined in the [IANA registry].
+//
+// [IANA registry]: https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4
 type Type uint16
 
 const (
