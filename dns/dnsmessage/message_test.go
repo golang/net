@@ -732,16 +732,19 @@ func TestBuilderResourceError(t *testing.T) {
 		name string
 		fn   func(*Builder) error
 	}{
-		{"CNAMEResource", func(b *Builder) error { return b.CNAMEResource(ResourceHeader{}, CNAMEResource{}) }},
-		{"MXResource", func(b *Builder) error { return b.MXResource(ResourceHeader{}, MXResource{}) }},
-		{"NSResource", func(b *Builder) error { return b.NSResource(ResourceHeader{}, NSResource{}) }},
-		{"PTRResource", func(b *Builder) error { return b.PTRResource(ResourceHeader{}, PTRResource{}) }},
-		{"SOAResource", func(b *Builder) error { return b.SOAResource(ResourceHeader{}, SOAResource{}) }},
-		{"TXTResource", func(b *Builder) error { return b.TXTResource(ResourceHeader{}, TXTResource{}) }},
-		{"SRVResource", func(b *Builder) error { return b.SRVResource(ResourceHeader{}, SRVResource{}) }},
+		// Keep it sorted by resource type name.
 		{"AResource", func(b *Builder) error { return b.AResource(ResourceHeader{}, AResource{}) }},
 		{"AAAAResource", func(b *Builder) error { return b.AAAAResource(ResourceHeader{}, AAAAResource{}) }},
+		{"CNAMEResource", func(b *Builder) error { return b.CNAMEResource(ResourceHeader{}, CNAMEResource{}) }},
+		{"HTTPSResource", func(b *Builder) error { return b.HTTPSResource(ResourceHeader{}, HTTPSResource{}) }},
+		{"MXResource", func(b *Builder) error { return b.MXResource(ResourceHeader{}, MXResource{}) }},
+		{"NSResource", func(b *Builder) error { return b.NSResource(ResourceHeader{}, NSResource{}) }},
 		{"OPTResource", func(b *Builder) error { return b.OPTResource(ResourceHeader{}, OPTResource{}) }},
+		{"PTRResource", func(b *Builder) error { return b.PTRResource(ResourceHeader{}, PTRResource{}) }},
+		{"SOAResource", func(b *Builder) error { return b.SOAResource(ResourceHeader{}, SOAResource{}) }},
+		{"SRVResource", func(b *Builder) error { return b.SRVResource(ResourceHeader{}, SRVResource{}) }},
+		{"SVCBResource", func(b *Builder) error { return b.SVCBResource(ResourceHeader{}, SVCBResource{}) }},
+		{"TXTResource", func(b *Builder) error { return b.TXTResource(ResourceHeader{}, TXTResource{}) }},
 		{"UnknownResource", func(b *Builder) error { return b.UnknownResource(ResourceHeader{}, UnknownResource{}) }},
 	}
 
@@ -1238,37 +1241,6 @@ func benchmarkParsingSetup() ([]byte, error) {
 			},
 		},
 		Answers: []Resource{
-			{
-				ResourceHeader{
-					Name:  name,
-					Type:  TypeSVCB,
-					Class: ClassINET,
-				},
-				&SVCBResource{
-					Priority: 1,
-					Target:   MustNewName("svc.example.com."),
-					Params: []SVCParam{
-						{Key: SVCParamALPN, Value: []byte("h2")},
-					},
-				},
-			},
-			{
-				ResourceHeader{
-					Name:  name,
-					Type:  TypeHTTPS,
-					Class: ClassINET,
-				},
-				&HTTPSResource{
-					SVCBResource{
-						Priority: 2,
-						Target:   MustNewName("https.example.com."),
-						Params: []SVCParam{
-							{Key: SVCParamPort, Value: []byte{0x01, 0xbb}},
-							{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}},
-						},
-					},
-				},
-			},
 			{
 				ResourceHeader{
 					Name:  name,
