@@ -122,16 +122,16 @@ const (
 )
 
 var svcParamKeyNames = map[SVCParamKey]string{
-	SVCParamMandatory:          "SVCParamMandatory",
-	SVCParamALPN:               "SVCParamALPN",
-	SVCParamNoDefaultALPN:      "SVCParamNoDefaultALPN",
-	SVCParamPort:               "SVCParamPort",
-	SVCParamIPv4Hint:           "SVCParamIPv4Hint",
-	SVCParamECH:                "SVCParamECH",
-	SVCParamIPv6Hint:           "SVCParamIPv6Hint",
-	SVCParamDOHPath:            "SVCParamDOHPath",
-	SVCParamOHTTP:              "SVCParamOHTTP",
-	SVCParamTLSSupportedGroups: "SVCParamTLSSupportedGroups",
+	SVCParamMandatory:          "Mandatory",
+	SVCParamALPN:               "ALPN",
+	SVCParamNoDefaultALPN:      "NoDefaultALPN",
+	SVCParamPort:               "Port",
+	SVCParamIPv4Hint:           "IPv4Hint",
+	SVCParamECH:                "ECH",
+	SVCParamIPv6Hint:           "IPv6Hint",
+	SVCParamDOHPath:            "DOHPath",
+	SVCParamOHTTP:              "OHTTP",
+	SVCParamTLSSupportedGroups: "TLSSupportedGroups",
 }
 
 // String implements fmt.Stringer.String.
@@ -145,7 +145,7 @@ func (k SVCParamKey) String() string {
 // GoString implements fmt.GoStringer.GoString.
 func (k SVCParamKey) GoString() string {
 	if n, ok := svcParamKeyNames[k]; ok {
-		return "dnsmessage." + n
+		return "dnsmessage.SVCParam" + n
 	}
 	return printUint16(uint16(k))
 }
@@ -153,8 +153,7 @@ func (k SVCParamKey) GoString() string {
 func (r *SVCBResource) pack(msg []byte, compression map[string]uint16, compressionOff int) ([]byte, error) {
 	oldMsg := msg
 	msg = packUint16(msg, r.Priority)
-	var err error
-	msg, err = r.Target.pack(msg, compression, compressionOff)
+	msg, err := r.Target.pack(msg, compression, compressionOff)
 	if err != nil {
 		return oldMsg, &nestedError{"SVCBResource.Target", err}
 	}
@@ -234,7 +233,7 @@ func unpackSVCBResource(msg []byte, off int, length uint16) (SVCBResource, error
 		if copy(valuesBuf, msg[off:off+int(len)]) != int(len) {
 			return SVCBResource{}, &nestedError{"param value", errCalcLen}
 		}
-		p.Value = valuesBuf[:len]
+		p.Value = valuesBuf[:len:len]
 		valuesBuf = valuesBuf[len:]
 		off += int(len)
 	}

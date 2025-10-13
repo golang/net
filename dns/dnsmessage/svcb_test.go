@@ -6,6 +6,7 @@ package dnsmessage
 
 import (
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -70,27 +71,64 @@ func TestSVCBParsingAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runParse := func() {
-		t.Helper()
-		var p Parser
-		if _, err := p.Start(buf); err != nil {
-			t.Fatal("Parser.Start(non-nil) =", err)
-		}
-		err := p.SkipAllQuestions()
-		if err != nil {
-			t.Fatal("Parser.SkipAllQuestions(non-nil) =", err)
-		}
-		if _, err = p.AnswerHeader(); err != nil {
-			t.Fatal("Parser.AnswerHeader(non-nil) =", err)
-		}
-		if _, err = p.SVCBResource(); err != nil {
-			t.Fatal("Parser.SVCBResource(non-nil) =", err)
-		}
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+	mallocs := 0 - memstats.Mallocs
+
+	var p Parser
+	if _, err := p.Start(buf); err != nil {
+		t.Fatal("Parser.Start(non-nil) =", err)
 	}
+	if err := p.SkipAllQuestions(); err != nil {
+		t.Fatal("Parser.SkipAllQuestions(non-nil) =", err)
+	}
+	if _, err = p.AnswerHeader(); err != nil {
+		t.Fatal("Parser.AnswerHeader(non-nil) =", err)
+	}
+	if _, err = p.SVCBResource(); err != nil {
+		t.Fatal("Parser.SVCBResource(non-nil) =", err)
+	}
+
+	runtime.ReadMemStats(&memstats)
+	mallocs += memstats.Mallocs
+
 	// Make sure we have only two allocations: one for the SVCBResource.Params slice, and one
 	// for the SVCParam Values.
-	if allocs := testing.AllocsPerRun(10, runParse); int(allocs) != 2 {
-		t.Errorf("allocations during parsing: got = %.0f, want 2", allocs)
+	if mallocs != 2 {
+		t.Errorf("allocations during parsing: got = %d, want 2", mallocs)
+	}
+}
+
+func TestHTTPSBuildAllocs(t *testing.T) {
+	b := NewBuilder([]byte{}, Header{Response: true, Authoritative: true})
+	b.EnableCompression()
+	if err := b.StartQuestions(); err != nil {
+		t.Fatalf("StartQuestions() = %v", err)
+	}
+	if err := b.Question(Question{Name: MustNewName("foo.bar.example.com."), Type: TypeHTTPS, Class: ClassINET}); err != nil {
+		t.Fatalf("Question() = %v", err)
+	}
+	if err := b.StartAnswers(); err != nil {
+		t.Fatalf("StartAnswers() = %v", err)
+	}
+
+	header := ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeHTTPS, Class: ClassINET, TTL: 300}
+	resource := HTTPSResource{SVCBResource{Priority: 1, Target: MustNewName("svc.example.com.")}}
+
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+	mallocs := 0 - memstats.Mallocs
+
+	err := b.HTTPSResource(header, resource)
+
+	runtime.ReadMemStats(&memstats)
+	mallocs += memstats.Mallocs
+
+	if err != nil {
+		t.Fatalf("SVCBResource() = %v", err)
+	}
+	if mallocs != 1 {
+		t.Fatalf("unexpected allocations: got = %d, want = 1", mallocs)
 	}
 }
 
