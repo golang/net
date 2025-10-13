@@ -93,3 +93,124 @@ func TestSVCBParsingAllocs(t *testing.T) {
 		t.Errorf("allocations during parsing: got = %.0f, want 2", allocs)
 	}
 }
+
+func TestSVCBWireFormat(t *testing.T) {
+	testRecord := func(bytesInput []byte, parsedInput *SVCBResource) {
+		parsedOutput, n, err := unpackResourceBody(bytesInput, 0, ResourceHeader{Type: TypeSVCB, Length: uint16(len(bytesInput))})
+		if err != nil {
+			t.Fatalf("unpackResourceBody() = %v", err)
+		}
+		if n != len(bytesInput) {
+			t.Fatalf("unpacked different amount than packed: got = %d, want = %d", n, len(bytesInput))
+		}
+		if !reflect.DeepEqual(parsedOutput, parsedInput) {
+			t.Fatalf("unpack mismatch: got = %#v, want = %#v", parsedOutput, parsedInput)
+		}
+
+		bytesOutput, err := parsedInput.pack([]byte{}, nil, 0)
+		if err != nil {
+			t.Fatalf("pack() = %v", err)
+		}
+		if !reflect.DeepEqual(bytesOutput, bytesInput) {
+			t.Fatalf("pack mismatch: got = %#v, want = %#v", bytesOutput, bytesInput)
+		}
+	}
+	// Test examples from https://datatracker.ietf.org/doc/html/rfc9460#name-test-vectors
+
+	// Example D.1. Alias Mode
+
+	// Figure 2: AliasMode
+	// example.com.   HTTPS   0 foo.example.com.
+	bytes := []byte{
+		0x00, 0x00, // priority
+		0x03, 0x66, 0x6f, 0x6f, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target: foo.example.com.
+	}
+	parsed := &SVCBResource{
+		Priority: 0,
+		Target:   MustNewName("foo.example.com."),
+		Params:   []SVCParam{},
+	}
+	testRecord(bytes, parsed)
+
+	// Example D.2. Service Mode
+
+	// Figure 3: TargetName Is "."
+	// example.com.   SVCB   1 .
+	bytes = []byte{
+		0x00, 0x01, // priority
+		0x00, // target (root label)
+	}
+	parsed = &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("."),
+		Params:   []SVCParam{},
+	}
+	testRecord(bytes, parsed)
+
+	// Figure 4: Specifies a Port
+	// example.com.   SVCB   16 foo.example.com. port=53
+	bytes = []byte{
+		0x00, 0x10, // priority
+		0x03, 0x66, 0x6f, 0x6f, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target
+		0x00, 0x03, // key 3
+		0x00, 0x02, // length 2
+		0x00, 0x35, // value
+	}
+	parsed = &SVCBResource{
+		Priority: 16,
+		Target:   MustNewName("foo.example.com."),
+		Params:   []SVCParam{{Key: SVCParamPort, Value: []byte{0x00, 0x35}}},
+	}
+	testRecord(bytes, parsed)
+
+	// Figure 5: A Generic Key and Unquoted Value
+	// example.com.   SVCB   1 foo.example.com. key667=hello
+	bytes = []byte{
+		0x00, 0x01, // priority
+		0x03, 0x66, 0x6f, 0x6f, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target
+		0x02, 0x9b, // key 667
+		0x00, 0x05, // length 5
+		0x68, 0x65, 0x6c, 0x6c, 0x6f, // value
+	}
+	parsed = &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("foo.example.com."),
+		Params:   []SVCParam{{Key: 667, Value: []byte("hello")}},
+	}
+	testRecord(bytes, parsed)
+
+	// Figure 6: A Generic Key and Quoted Value with a Decimal Escape
+	// example.com.   SVCB   1 foo.example.com. key667="hello\210qoo"
+	bytes = []byte{
+		0x00, 0x01, // priority
+		0x03, 0x66, 0x6f, 0x6f, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target
+		0x02, 0x9b, // key 667
+		0x00, 0x09, // length 9
+		0x68, 0x65, 0x6c, 0x6c, 0x6f, 0xd2, 0x71, 0x6f, 0x6f, // value
+	}
+	parsed = &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("foo.example.com."),
+		Params:   []SVCParam{{Key: 667, Value: []byte("hello\xd2qoo")}},
+	}
+	testRecord(bytes, parsed)
+
+	// Figure 7: Two Quoted IPv6 Hints
+	// example.com.   SVCB   1 foo.example.com. (
+	//                       ipv6hint="2001:db8::1,2001:db8::53:1"
+	//                       )
+	bytes = []byte{
+		0x00, 0x01, // priority
+		0x03, 0x66, 0x6f, 0x6f, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target
+		0x00, 0x06, // key 6
+		0x00, 0x20, // length 32
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // first address
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x00, 0x01, // second address
+	}
+	parsed = &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("foo.example.com."),
+		Params:   []SVCParam{{Key: SVCParamIPv6Hint, Value: []byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x00, 0x01}}},
+	}
+	testRecord(bytes, parsed)
+}
