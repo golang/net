@@ -67,7 +67,6 @@ func (r *SVCBResource) GetParam(key SVCParamKey) (value []byte, ok bool) {
 }
 
 // SetParam sets a parameter value by key.
-// If value is nil, the parameter is removed.
 // The Params list is kept sorted by key.
 func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
 	i := 0
