@@ -81,9 +81,6 @@ func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
 		r.Params[i].Value = value
 		return
 	}
-	if value == nil {
-		return // nothing to do
-	}
 
 	r.Params = slices.Insert(r.Params, i, SVCParam{Key: key, Value: value})
 }
@@ -205,15 +202,15 @@ func unpackSVCBResource(msg []byte, off int, length uint16) (SVCBResource, error
 	for off < bodyEnd {
 		var key, len uint16
 		if key, off, err = unpackUint16(msg, off); err != nil {
-			return SVCBResource{}, &nestedError{"param key", err}
+			return SVCBResource{}, &nestedError{"Params key", err}
 		}
 		if n > 0 && key <= previousKey {
 			// As per https://www.rfc-editor.org/rfc/rfc9460.html#section-2.2, clients MUST
 			// consider the RR malformed if the SvcParamKeys are not in strictly increasing numeric order
-			return SVCBResource{}, errParamOutOfOrder
+			return SVCBResource{}, &nestedError{"Params", errParamOutOfOrder}
 		}
 		if len, off, err = unpackUint16(msg, off); err != nil {
-			return SVCBResource{}, &nestedError{"param length", err}
+			return SVCBResource{}, &nestedError{"Params value length", err}
 		}
 		if off+int(len) > bodyEnd {
 			return SVCBResource{}, errResourceLen
