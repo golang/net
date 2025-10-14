@@ -363,6 +363,49 @@ func TestResourceNotStarted(t *testing.T) {
 	}
 }
 
+func buildTestSVCBMsg() Message {
+	svcb := &SVCBResource{
+		Priority: 1,
+		Target:   MustNewName("svc.example.com."),
+		Params:   []SVCParam{{Key: SVCParamALPN, Value: []byte("h2")}},
+	}
+
+	https := &HTTPSResource{
+		SVCBResource{
+			Priority: 2,
+			Target:   MustNewName("https.example.com."),
+			Params: []SVCParam{
+				{Key: SVCParamPort, Value: []byte{0x01, 0xbb}},
+				{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}},
+			},
+		},
+	}
+
+	return Message{
+		Questions: []Question{},
+		Answers: []Resource{
+			{
+				ResourceHeader{
+					Name:  MustNewName("foo.bar.example.com."),
+					Type:  TypeSVCB,
+					Class: ClassINET,
+				},
+				svcb,
+			},
+			{
+				ResourceHeader{
+					Name:  MustNewName("foo.bar.example.com."),
+					Type:  TypeHTTPS,
+					Class: ClassINET,
+				},
+				https,
+			},
+		},
+		Authorities: []Resource{},
+		Additionals: []Resource{},
+	}
+}
+
 func TestDNSPackUnpack(t *testing.T) {
 	wants := []Message{
 		{
@@ -378,6 +421,7 @@ func TestDNSPackUnpack(t *testing.T) {
 			Additionals: []Resource{},
 		},
 		largeTestMsg(),
+		buildTestSVCBMsg(),
 	}
 	for i, want := range wants {
 		b, err := want.Pack()
@@ -390,7 +434,14 @@ func TestDNSPackUnpack(t *testing.T) {
 			t.Fatalf("%d: Message.Unapck() = %v", i, err)
 		}
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("%d: Message.Pack/Unpack() roundtrip: got = %+v, want = %+v", i, &got, &want)
+			t.Errorf("%d: Message.Pack/Unpack() roundtrip: got = %#v, want = %#v", i, &got, &want)
+			if len(got.Answers) > 0 && len(want.Answers) > 0 {
+				if !reflect.DeepEqual(got.Answers[0].Body, want.Answers[0].Body) {
+					t.Errorf("Answer 0 Body mismatch")
+					t.Errorf("got: %#v", got.Answers[0].Body)
+					t.Errorf("want: %#v", want.Answers[0].Body)
+				}
+			}
 		}
 	}
 }
@@ -684,16 +735,19 @@ func TestBuilderResourceError(t *testing.T) {
 		name string
 		fn   func(*Builder) error
 	}{
-		{"CNAMEResource", func(b *Builder) error { return b.CNAMEResource(ResourceHeader{}, CNAMEResource{}) }},
-		{"MXResource", func(b *Builder) error { return b.MXResource(ResourceHeader{}, MXResource{}) }},
-		{"NSResource", func(b *Builder) error { return b.NSResource(ResourceHeader{}, NSResource{}) }},
-		{"PTRResource", func(b *Builder) error { return b.PTRResource(ResourceHeader{}, PTRResource{}) }},
-		{"SOAResource", func(b *Builder) error { return b.SOAResource(ResourceHeader{}, SOAResource{}) }},
-		{"TXTResource", func(b *Builder) error { return b.TXTResource(ResourceHeader{}, TXTResource{}) }},
-		{"SRVResource", func(b *Builder) error { return b.SRVResource(ResourceHeader{}, SRVResource{}) }},
+		// Keep it sorted by resource type name.
 		{"AResource", func(b *Builder) error { return b.AResource(ResourceHeader{}, AResource{}) }},
 		{"AAAAResource", func(b *Builder) error { return b.AAAAResource(ResourceHeader{}, AAAAResource{}) }},
+		{"CNAMEResource", func(b *Builder) error { return b.CNAMEResource(ResourceHeader{}, CNAMEResource{}) }},
+		{"HTTPSResource", func(b *Builder) error { return b.HTTPSResource(ResourceHeader{}, HTTPSResource{}) }},
+		{"MXResource", func(b *Builder) error { return b.MXResource(ResourceHeader{}, MXResource{}) }},
+		{"NSResource", func(b *Builder) error { return b.NSResource(ResourceHeader{}, NSResource{}) }},
 		{"OPTResource", func(b *Builder) error { return b.OPTResource(ResourceHeader{}, OPTResource{}) }},
+		{"PTRResource", func(b *Builder) error { return b.PTRResource(ResourceHeader{}, PTRResource{}) }},
+		{"SOAResource", func(b *Builder) error { return b.SOAResource(ResourceHeader{}, SOAResource{}) }},
+		{"SRVResource", func(b *Builder) error { return b.SRVResource(ResourceHeader{}, SRVResource{}) }},
+		{"SVCBResource", func(b *Builder) error { return b.SVCBResource(ResourceHeader{}, SVCBResource{}) }},
+		{"TXTResource", func(b *Builder) error { return b.TXTResource(ResourceHeader{}, TXTResource{}) }},
 		{"UnknownResource", func(b *Builder) error { return b.UnknownResource(ResourceHeader{}, UnknownResource{}) }},
 	}
 
@@ -784,6 +838,14 @@ func TestBuilder(t *testing.T) {
 		case TypeSRV:
 			if err := b.SRVResource(a.Header, *a.Body.(*SRVResource)); err != nil {
 				t.Fatalf("Builder.SRVResource(%#v) = %v", a, err)
+			}
+		case TypeSVCB:
+			if err := b.SVCBResource(a.Header, *a.Body.(*SVCBResource)); err != nil {
+				t.Fatalf("Builder.SVCBResource(%#v) = %v", a, err)
+			}
+		case TypeHTTPS:
+			if err := b.HTTPSResource(a.Header, *a.Body.(*HTTPSResource)); err != nil {
+				t.Fatalf("Builder.HTTPSResource(%#v) = %v", a, err)
 			}
 		case privateUseType:
 			if err := b.UnknownResource(a.Header, *a.Body.(*UnknownResource)); err != nil {
@@ -1261,6 +1323,14 @@ func benchmarkParsing(tb testing.TB, buf []byte) {
 		case TypeNS:
 			if _, err := p.NSResource(); err != nil {
 				tb.Fatal("Parser.NSResource() =", err)
+			}
+		case TypeSVCB:
+			if _, err := p.SVCBResource(); err != nil {
+				tb.Fatal("Parser.SVCBResource() =", err)
+			}
+		case TypeHTTPS:
+			if _, err := p.HTTPSResource(); err != nil {
+				tb.Fatal("Parser.HTTPSResource() =", err)
 			}
 		case TypeOPT:
 			if _, err := p.OPTResource(); err != nil {
