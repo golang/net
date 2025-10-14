@@ -7,7 +7,6 @@ package dnsmessage
 import (
 	"bytes"
 	"reflect"
-	"runtime"
 	"testing"
 )
 
@@ -93,17 +92,6 @@ func TestSVCBParsingAllocs(t *testing.T) {
 	if allocs != 2 {
 		t.Errorf("allocations during parsing: got = %d, want 2", allocs)
 	}
-}
-
-func measureAllocs(f func()) uint64 {
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
-	var memstats runtime.MemStats
-	runtime.ReadMemStats(&memstats)
-	mallocs := 0 - memstats.Mallocs
-	f()
-	runtime.ReadMemStats(&memstats)
-	mallocs += memstats.Mallocs
-	return mallocs
 }
 
 func TestHTTPSBuildAllocs(t *testing.T) {
