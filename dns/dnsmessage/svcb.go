@@ -90,7 +90,7 @@ func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
 func (r *SVCBResource) DeleteParam(key SVCParamKey) bool {
 	for i := range r.Params {
 		if r.Params[i].Key == key {
-			r.Params = append(r.Params[:i], r.Params[i+1:]...)
+			r.Params = slices.Delete(r.Params, i, i+1)
 			return true
 		}
 		if r.Params[i].Key > key {
