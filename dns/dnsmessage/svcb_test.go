@@ -112,9 +112,14 @@ func TestHTTPSBuildAllocs(t *testing.T) {
 
 	// AllocsPerRun runs the function once to "warm up" before running the measurement.
 	// So technically this function is running twice, on different data, which can potentially
-	// make the measurement inaccurate (e.g. by using the name cache the second time), but
-	// in this specific test case that is not a problem.
+	// make the measurement inaccurate (e.g. by using the name cache the second time).
+	// So we make sure we don't run in the warm-up phase.
+	warmUp := true
 	allocs := int(testing.AllocsPerRun(1, func() {
+		if warmUp {
+			warmUp = false
+			return
+		}
 		if err := b.HTTPSResource(header, resource); err != nil {
 			t.Fatalf("HTTPSResource() = %v", err)
 		}
