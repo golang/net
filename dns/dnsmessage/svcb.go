@@ -79,13 +79,7 @@ func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
 	}
 
 	if i < len(r.Params) && r.Params[i].Key == key {
-		if value == nil {
-			// Delete.
-			r.Params = append(r.Params[:i], r.Params[i+1:]...)
-		} else {
-			// Update.
-			r.Params[i].Value = value
-		}
+		r.Params[i].Value = value
 		return
 	}
 	if value == nil {
