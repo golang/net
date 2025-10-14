@@ -100,6 +100,17 @@ func TestSVCBParsingAllocs(t *testing.T) {
 	}
 }
 
+func measureAllocs(f func()) uint64 {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+	mallocs := 0 - memstats.Mallocs
+	f()
+	runtime.ReadMemStats(&memstats)
+	mallocs += memstats.Mallocs
+	return mallocs
+}
+
 func TestHTTPSBuildAllocs(t *testing.T) {
 	b := NewBuilder([]byte{}, Header{Response: true, Authoritative: true})
 	b.EnableCompression()
@@ -116,20 +127,13 @@ func TestHTTPSBuildAllocs(t *testing.T) {
 	header := ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeHTTPS, Class: ClassINET, TTL: 300}
 	resource := HTTPSResource{SVCBResource{Priority: 1, Target: MustNewName("svc.example.com.")}}
 
-	var memstats runtime.MemStats
-	runtime.ReadMemStats(&memstats)
-	mallocs := 0 - memstats.Mallocs
-
-	err := b.HTTPSResource(header, resource)
-
-	runtime.ReadMemStats(&memstats)
-	mallocs += memstats.Mallocs
-
-	if err != nil {
-		t.Fatalf("SVCBResource() = %v", err)
-	}
-	if mallocs != 1 {
-		t.Fatalf("unexpected allocations: got = %d, want = 1", mallocs)
+	allocs := measureAllocs(func() {
+		if err := b.HTTPSResource(header, resource); err != nil {
+			t.Fatalf("HTTPSResource() = %v", err)
+		}
+	})
+	if allocs != 1 {
+		t.Fatalf("unexpected allocations: got = %d, want = 1", allocs)
 	}
 }
 
