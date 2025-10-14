@@ -295,19 +295,18 @@ func (p *Parser) HTTPSResource() (HTTPSResource, error) {
 	return HTTPSResource{svcb}, nil
 }
 
-// SVCBResource adds a single SVCBResource.
-func (b *Builder) SVCBResource(h ResourceHeader, r SVCBResource) error {
+// genericSVCBResource is the generic implementation for adding SVCB-like resources.
+func (b *Builder) genericSVCBResource(h ResourceHeader, r SVCBResource) error {
 	if err := b.checkResourceSection(); err != nil {
 		return err
 	}
-	h.Type = r.realType()
 	msg, lenOff, err := h.pack(b.msg, b.compression, b.start)
 	if err != nil {
 		return &nestedError{"ResourceHeader", err}
 	}
 	preLen := len(msg)
 	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
-		return &nestedError{"SVCBResource body", err}
+		return &nestedError{"ResourceBody", err}
 	}
 	if err := h.fixLen(msg, lenOff, preLen); err != nil {
 		return err
@@ -319,26 +318,14 @@ func (b *Builder) SVCBResource(h ResourceHeader, r SVCBResource) error {
 	return nil
 }
 
+// SVCBResource adds a single SVCBResource.
+func (b *Builder) SVCBResource(h ResourceHeader, r SVCBResource) error {
+	h.Type = r.realType()
+	return b.genericSVCBResource(h, r)
+}
+
 // HTTPSResource adds a single HTTPSResource.
 func (b *Builder) HTTPSResource(h ResourceHeader, r HTTPSResource) error {
-	if err := b.checkResourceSection(); err != nil {
-		return err
-	}
 	h.Type = r.realType()
-	msg, lenOff, err := h.pack(b.msg, b.compression, b.start)
-	if err != nil {
-		return &nestedError{"ResourceHeader", err}
-	}
-	preLen := len(msg)
-	if msg, err = r.pack(msg, b.compression, b.start); err != nil {
-		return &nestedError{"HTTPSResource body", err}
-	}
-	if err := h.fixLen(msg, lenOff, preLen); err != nil {
-		return err
-	}
-	if err := b.incrementSectionCount(); err != nil {
-		return err
-	}
-	b.msg = msg
-	return nil
+	return b.genericSVCBResource(h, r.SVCBResource)
 }
