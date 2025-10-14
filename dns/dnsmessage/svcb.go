@@ -4,6 +4,11 @@
 
 package dnsmessage
 
+import (
+	"slices"
+	"strings"
+)
+
 // An SVCBResource is an SVCB Resource record.
 type SVCBResource struct {
 	Priority uint16
@@ -17,17 +22,19 @@ func (r *SVCBResource) realType() Type {
 
 // GoString implements fmt.GoStringer.GoString.
 func (r *SVCBResource) GoString() string {
-	s := "dnsmessage.SVCBResource{" +
-		"Priority: " + printUint16(r.Priority) + ", " +
-		"Target: " + r.Target.GoString() + ", " +
-		"Params: []dnsmessage.SVCParam{"
+	var b strings.Builder
+	b.WriteString("dnsmessage.SVCBResource{")
+	b.WriteString("Priority: " + printUint16(r.Priority) + ", ")
+	b.WriteString("Target: " + r.Target.GoString() + ", ")
+	b.WriteString("Params: []dnsmessage.SVCParam{")
 	if len(r.Params) > 0 {
-		s += r.Params[0].GoString()
+		b.WriteString(r.Params[0].GoString())
 		for _, p := range r.Params[1:] {
-			s += ", " + p.GoString()
+			b.WriteString(", " + p.GoString())
 		}
 	}
-	return s + "}}"
+	b.WriteString("}}")
+	return b.String()
 }
 
 // An HTTPSResource is an HTTPS Resource record.
@@ -85,10 +92,22 @@ func (r *SVCBResource) SetParam(key SVCParamKey, value []byte) {
 		return // nothing to do
 	}
 
-	// Insert.
-	r.Params = append(r.Params, SVCParam{})
-	copy(r.Params[i+1:], r.Params[i:])
-	r.Params[i] = SVCParam{Key: key, Value: value}
+	r.Params = slices.Insert(r.Params, i, SVCParam{Key: key, Value: value})
+}
+
+// DeleteParam deletes a parameter by key.
+// It returns true if the parameter was present.
+func (r *SVCBResource) DeleteParam(key SVCParamKey) bool {
+	for i := range r.Params {
+		if r.Params[i].Key == key {
+			r.Params = append(r.Params[:i], r.Params[i+1:]...)
+			return true
+		}
+		if r.Params[i].Key > key {
+			break
+		}
+	}
+	return false
 }
 
 // A SVCParam is a service parameter.

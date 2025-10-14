@@ -367,16 +367,19 @@ func buildTestSVCBMsg() Message {
 	svcb := &SVCBResource{
 		Priority: 1,
 		Target:   MustNewName("svc.example.com."),
-		Params:   make([]SVCParam, 1, 4),
+		Params:   []SVCParam{{Key: SVCParamALPN, Value: []byte("h2")}},
 	}
-	svcb.Params[0] = SVCParam{Key: SVCParamALPN, Value: []byte("h2")}
 
-	https := &HTTPSResource{}
-	https.Priority = 2
-	https.Target = MustNewName("https.example.com.")
-	https.Params = make([]SVCParam, 2, 4)
-	https.Params[0] = SVCParam{Key: SVCParamPort, Value: []byte{0x01, 0xbb}}
-	https.Params[1] = SVCParam{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}}
+	https := &HTTPSResource{
+		SVCBResource{
+			Priority: 2,
+			Target:   MustNewName("https.example.com."),
+			Params: []SVCParam{
+				{Key: SVCParamPort, Value: []byte{0x01, 0xbb}},
+				{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}},
+			},
+		},
+	}
 
 	return Message{
 		Questions: []Question{},
