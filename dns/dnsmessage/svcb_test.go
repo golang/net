@@ -5,6 +5,7 @@
 package dnsmessage
 
 import (
+	"bytes"
 	"reflect"
 	"runtime"
 	"testing"
@@ -129,6 +130,49 @@ func TestHTTPSBuildAllocs(t *testing.T) {
 	}
 	if mallocs != 1 {
 		t.Fatalf("unexpected allocations: got = %d, want = 1", mallocs)
+	}
+}
+
+func TestSVCBParams(t *testing.T) {
+	rr := SVCBResource{Priority: 1, Target: MustNewName("svc.example.com.")}
+	if _, ok := rr.GetParam(SVCParamALPN); ok {
+		t.Fatal("GetParam found non-existent param")
+	}
+	rr.SetParam(SVCParamIPv4Hint, []byte{192, 0, 2, 1})
+	inALPN := []byte{0x02, 'h', '2', 0x02, 'h', '3'}
+	rr.SetParam(SVCParamALPN, inALPN)
+
+	// Check sorting of params
+	packed, err := rr.pack([]byte{}, nil, 0)
+	if err != nil {
+		t.Fatal("pack() =", err)
+	}
+	expectedBytes := []byte{
+		0x00, 0x01, // priority
+		0x03, 0x73, 0x76, 0x63, 0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // target
+		0x00, 0x01, // key 1
+		0x00, 0x06, // length 6
+		0x02, 'h', '2', 0x02, 'h', '3', // value
+		0x00, 0x04, // key 4
+		0x00, 0x04, // length 4
+		192, 0, 2, 1, // value
+	}
+	if !reflect.DeepEqual(packed, expectedBytes) {
+		t.Fatalf("pack() produced unexpected output: want = %v, got = %v", expectedBytes, packed)
+	}
+
+	// Check GetParam and DeleteParam.
+	if outALPN, ok := rr.GetParam(SVCParamALPN); !ok || !bytes.Equal(outALPN, inALPN) {
+		t.Fatal("GetParam failed to retrieve set param")
+	}
+	if !rr.DeleteParam(SVCParamALPN) {
+		t.Fatal("DeleteParam failed to remove existing param")
+	}
+	if _, ok := rr.GetParam(SVCParamALPN); ok {
+		t.Fatal("GetParam found deleted param")
+	}
+	if len(rr.Params) != 1 || rr.Params[0].Key != SVCParamIPv4Hint {
+		t.Fatalf("DeleteParam removed wrong param: got = %#v, want = [%#v]", rr.Params, SVCParam{Key: SVCParamIPv4Hint, Value: []byte{192, 0, 2, 1}})
 	}
 }
 
