@@ -72,31 +72,26 @@ func TestSVCBParsingAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var memstats runtime.MemStats
-	runtime.ReadMemStats(&memstats)
-	mallocs := 0 - memstats.Mallocs
-
-	var p Parser
-	if _, err := p.Start(buf); err != nil {
-		t.Fatal("Parser.Start(non-nil) =", err)
-	}
-	if err := p.SkipAllQuestions(); err != nil {
-		t.Fatal("Parser.SkipAllQuestions(non-nil) =", err)
-	}
-	if _, err = p.AnswerHeader(); err != nil {
-		t.Fatal("Parser.AnswerHeader(non-nil) =", err)
-	}
-	if _, err = p.SVCBResource(); err != nil {
-		t.Fatal("Parser.SVCBResource(non-nil) =", err)
-	}
-
-	runtime.ReadMemStats(&memstats)
-	mallocs += memstats.Mallocs
+	allocs := int(testing.AllocsPerRun(1, func() {
+		var p Parser
+		if _, err := p.Start(buf); err != nil {
+			t.Fatal("Parser.Start(non-nil) =", err)
+		}
+		if err := p.SkipAllQuestions(); err != nil {
+			t.Fatal("Parser.SkipAllQuestions(non-nil) =", err)
+		}
+		if _, err = p.AnswerHeader(); err != nil {
+			t.Fatal("Parser.AnswerHeader(non-nil) =", err)
+		}
+		if _, err = p.SVCBResource(); err != nil {
+			t.Fatal("Parser.SVCBResource(non-nil) =", err)
+		}
+	}))
 
 	// Make sure we have only two allocations: one for the SVCBResource.Params slice, and one
 	// for the SVCParam Values.
-	if mallocs != 2 {
-		t.Errorf("allocations during parsing: got = %d, want 2", mallocs)
+	if allocs != 2 {
+		t.Errorf("allocations during parsing: got = %d, want 2", allocs)
 	}
 }
 
