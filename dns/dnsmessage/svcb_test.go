@@ -127,11 +127,15 @@ func TestHTTPSBuildAllocs(t *testing.T) {
 	header := ResourceHeader{Name: MustNewName("foo.bar.example.com."), Type: TypeHTTPS, Class: ClassINET, TTL: 300}
 	resource := HTTPSResource{SVCBResource{Priority: 1, Target: MustNewName("svc.example.com.")}}
 
-	allocs := measureAllocs(func() {
+	// AllocsPerRun runs the function once to "warm up" before running the measurement.
+	// So technically this function is running twice, on different data, which can potentially
+	// make the measurement inaccurate (e.g. by using the name cache the second time), but
+	// in this specific test case that is not a problem.
+	allocs := int(testing.AllocsPerRun(1, func() {
 		if err := b.HTTPSResource(header, resource); err != nil {
 			t.Fatalf("HTTPSResource() = %v", err)
 		}
-	})
+	}))
 	if allocs != 1 {
 		t.Fatalf("unexpected allocations: got = %d, want = 1", allocs)
 	}
