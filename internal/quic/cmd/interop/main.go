@@ -84,7 +84,17 @@ func main() {
 		// "[...] offer only ChaCha20 as a ciphersuite."
 		//
 		// crypto/tls does not support configuring TLS 1.3 ciphersuites,
-		// so we can't support this test.
+		// so we can't support this test on the client.
+		if *listen != "" && len(urls) == 0 {
+			config.TLSConfig.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+				if len(hello.CipherSuites) == 1 && hello.CipherSuites[0] == tls.TLS_CHACHA20_POLY1305_SHA256 {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("this test requires the client to offer only ChaCha20")
+			}
+			basicTest(ctx, config, urls)
+			return
+		}
 	case "transfer":
 		// "The client should use small initial flow control windows
 		// for both stream- and connection-level flow control
