@@ -95,6 +95,9 @@ func main() {
 			basicTest(ctx, config, urls)
 			return
 		}
+	case "ecn":
+		// TODO: We give ECN feedback to the sender, but we don't add our own
+		// ECN marks to outgoing packets.
 	case "transfer":
 		// "The client should use small initial flow control windows
 		// for both stream- and connection-level flow control

@@ -25,6 +25,15 @@ type ackState struct {
 
 	// The number of ack-eliciting packets in seen that we have not yet acknowledged.
 	unackedAckEliciting int
+
+	// Total ECN counters for this packet number space.
+	ecn ecnCounts
+}
+
+type ecnCounts struct {
+	t0 int
+	t1 int
+	ce int
 }
 
 // shouldProcess reports whether a packet should be handled or discarded.
@@ -43,10 +52,10 @@ func (acks *ackState) shouldProcess(num packetNumber) bool {
 }
 
 // receive records receipt of a packet.
-func (acks *ackState) receive(now time.Time, space numberSpace, num packetNumber, ackEliciting bool) {
+func (acks *ackState) receive(now time.Time, space numberSpace, num packetNumber, ackEliciting bool, ecn ecnBits) {
 	if ackEliciting {
 		acks.unackedAckEliciting++
-		if acks.mustAckImmediately(space, num) {
+		if acks.mustAckImmediately(space, num, ecn) {
 			acks.nextAck = now
 		} else if acks.nextAck.IsZero() {
 			// This packet does not need to be acknowledged immediately,
@@ -68,6 +77,15 @@ func (acks *ackState) receive(now time.Time, space numberSpace, num packetNumber
 	acks.seen.add(num, num+1)
 	if num == acks.seen.max() {
 		acks.maxRecvTime = now
+	}
+
+	switch ecn {
+	case ecnECT0:
+		acks.ecn.t0++
+	case ecnECT1:
+		acks.ecn.t1++
+	case ecnCE:
+		acks.ecn.ce++
 	}
 
 	// Limit the total number of ACK ranges by dropping older ranges.
@@ -92,7 +110,7 @@ func (acks *ackState) receive(now time.Time, space numberSpace, num packetNumber
 
 // mustAckImmediately reports whether an ack-eliciting packet must be acknowledged immediately,
 // or whether the ack may be deferred.
-func (acks *ackState) mustAckImmediately(space numberSpace, num packetNumber) bool {
+func (acks *ackState) mustAckImmediately(space numberSpace, num packetNumber, ecn ecnBits) bool {
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.2.1
 	if space != appDataSpace {
 		// "[...] all ack-eliciting Initial and Handshake packets [...]"
@@ -126,6 +144,12 @@ func (acks *ackState) mustAckImmediately(space numberSpace, num packetNumber) bo
 		// highest-numbered ack-eliciting packet: [0, 1) in the above example.
 		// If the range ends just before the packet we are now processing,
 		// there are no gaps. If it does not, there must be a gap.
+		return true
+	}
+	// "[...] packets marked with the ECN Congestion Experienced (CE) codepoint
+	// in the IP header SHOULD be acknowledged immediately [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.2.1-9
+	if ecn == ecnCE {
 		return true
 	}
 	// "[...] SHOULD send an ACK frame after receiving at least two ack-eliciting packets."

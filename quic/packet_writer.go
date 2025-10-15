@@ -262,7 +262,7 @@ func (w *packetWriter) appendPingFrame() (added bool) {
 // to the peer potentially failing to receive an acknowledgement
 // for an older packet during a period of high packet loss or
 // reordering. This may result in unnecessary retransmissions.
-func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscaledAckDelay) (added bool) {
+func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscaledAckDelay, ecn ecnCounts) (added bool) {
 	if len(seen) == 0 {
 		return false
 	}
@@ -270,10 +270,20 @@ func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscale
 		largest    = uint64(seen.max())
 		firstRange = uint64(seen[len(seen)-1].size() - 1)
 	)
-	if w.avail() < 1+quicwire.SizeVarint(largest)+quicwire.SizeVarint(uint64(delay))+1+quicwire.SizeVarint(firstRange) {
+	var ecnLen int
+	ackType := byte(frameTypeAck)
+	if (ecn != ecnCounts{}) {
+		// "Even if an endpoint does not set an ECT field in packets it sends,
+		// the endpoint MUST provide feedback about ECN markings it receives, if
+		// these are accessible."
+		// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.4.1-2
+		ecnLen = quicwire.SizeVarint(uint64(ecn.ce)) + quicwire.SizeVarint(uint64(ecn.t0)) + quicwire.SizeVarint(uint64(ecn.t1))
+		ackType = frameTypeAckECN
+	}
+	if w.avail() < 1+quicwire.SizeVarint(largest)+quicwire.SizeVarint(uint64(delay))+1+quicwire.SizeVarint(firstRange)+ecnLen {
 		return false
 	}
-	w.b = append(w.b, frameTypeAck)
+	w.b = append(w.b, ackType)
 	w.b = quicwire.AppendVarint(w.b, largest)
 	w.b = quicwire.AppendVarint(w.b, uint64(delay))
 	// The range count is technically a varint, but we'll reserve a single byte for it
@@ -285,7 +295,7 @@ func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscale
 	for i := len(seen) - 2; i >= 0; i-- {
 		gap := uint64(seen[i+1].start - seen[i].end - 1)
 		size := uint64(seen[i].size() - 1)
-		if w.avail() < quicwire.SizeVarint(gap)+quicwire.SizeVarint(size) || rangeCount > 62 {
+		if w.avail() < quicwire.SizeVarint(gap)+quicwire.SizeVarint(size)+ecnLen || rangeCount > 62 {
 			break
 		}
 		w.b = quicwire.AppendVarint(w.b, gap)
@@ -293,7 +303,12 @@ func (w *packetWriter) appendAckFrame(seen rangeset[packetNumber], delay unscale
 		rangeCount++
 	}
 	w.b[rangeCountOff] = rangeCount
-	w.sent.appendNonAckElicitingFrame(frameTypeAck)
+	if ackType == frameTypeAckECN {
+		w.b = quicwire.AppendVarint(w.b, uint64(ecn.t0))
+		w.b = quicwire.AppendVarint(w.b, uint64(ecn.t1))
+		w.b = quicwire.AppendVarint(w.b, uint64(ecn.ce))
+	}
+	w.sent.appendNonAckElicitingFrame(ackType)
 	w.sent.appendInt(uint64(seen.max()))
 	return true
 }

@@ -157,25 +157,25 @@ func parse1RTTPacket(pkt []byte, k *updatingKeyPair, dstConnIDLen int, pnumMax p
 // which includes both general parse failures and specific violations of frame
 // constraints.
 
-func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, n int) {
+func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumber)) (largest packetNumber, ackDelay unscaledAckDelay, ecn ecnCounts, n int) {
 	b := frame[1:] // type
 
 	largestAck, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 
 	v, n := quicwire.ConsumeVarintInt64(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 	ackDelay = unscaledAckDelay(v)
 
 	ackRangeCount, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 
@@ -183,12 +183,12 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 	for i := uint64(0); ; i++ {
 		rangeLen, n := quicwire.ConsumeVarint(b)
 		if n < 0 {
-			return 0, 0, -1
+			return 0, 0, ecnCounts{}, -1
 		}
 		b = b[n:]
 		rangeMin := rangeMax - packetNumber(rangeLen)
 		if rangeMin < 0 || rangeMin > rangeMax {
-			return 0, 0, -1
+			return 0, 0, ecnCounts{}, -1
 		}
 		f(int(i), rangeMin, rangeMax+1)
 
@@ -198,7 +198,7 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 
 		gap, n := quicwire.ConsumeVarint(b)
 		if n < 0 {
-			return 0, 0, -1
+			return 0, 0, ecnCounts{}, -1
 		}
 		b = b[n:]
 
@@ -206,32 +206,30 @@ func consumeAckFrame(frame []byte, f func(rangeIndex int, start, end packetNumbe
 	}
 
 	if frame[0] != frameTypeAckECN {
-		return packetNumber(largestAck), ackDelay, len(frame) - len(b)
+		return packetNumber(largestAck), ackDelay, ecnCounts{}, len(frame) - len(b)
 	}
 
 	ect0Count, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 	ect1Count, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 	ecnCECount, n := quicwire.ConsumeVarint(b)
 	if n < 0 {
-		return 0, 0, -1
+		return 0, 0, ecnCounts{}, -1
 	}
 	b = b[n:]
 
-	// TODO: Make use of ECN feedback.
-	// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.3.2
-	_ = ect0Count
-	_ = ect1Count
-	_ = ecnCECount
+	ecn.t0 = int(ect0Count)
+	ecn.t1 = int(ect1Count)
+	ecn.ce = int(ecnCECount)
 
-	return packetNumber(largestAck), ackDelay, len(frame) - len(b)
+	return packetNumber(largestAck), ackDelay, ecn, len(frame) - len(b)
 }
 
 func consumeResetStreamFrame(b []byte) (id streamID, code uint64, finalSize int64, n int) {

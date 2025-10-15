@@ -136,11 +136,12 @@ func (f debugFramePing) LogValue() slog.Value {
 type debugFrameAck struct {
 	ackDelay unscaledAckDelay
 	ranges   []i64range[packetNumber]
+	ecn      ecnCounts
 }
 
 func parseDebugFrameAck(b []byte) (f debugFrameAck, n int) {
 	f.ranges = nil
-	_, f.ackDelay, n = consumeAckFrame(b, func(_ int, start, end packetNumber) {
+	_, f.ackDelay, f.ecn, n = consumeAckFrame(b, func(_ int, start, end packetNumber) {
 		f.ranges = append(f.ranges, i64range[packetNumber]{
 			start: start,
 			end:   end,
@@ -159,11 +160,15 @@ func (f debugFrameAck) String() string {
 	for _, r := range f.ranges {
 		s += fmt.Sprintf(" [%v,%v)", r.start, r.end)
 	}
+
+	if (f.ecn != ecnCounts{}) {
+		s += fmt.Sprintf(" ECN=[%d,%d,%d]", f.ecn.t0, f.ecn.t1, f.ecn.ce)
+	}
 	return s
 }
 
 func (f debugFrameAck) write(w *packetWriter) bool {
-	return w.appendAckFrame(rangeset[packetNumber](f.ranges), f.ackDelay)
+	return w.appendAckFrame(rangeset[packetNumber](f.ranges), f.ackDelay, f.ecn)
 }
 
 func (f debugFrameAck) LogValue() slog.Value {

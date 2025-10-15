@@ -374,7 +374,7 @@ func (c *Conn) appendAckFrame(now time.Time, space numberSpace) bool {
 		return false
 	}
 	d := unscaledAckDelayFromDuration(delay, ackDelayExponent)
-	return c.w.appendAckFrame(seen, d)
+	return c.w.appendAckFrame(seen, d, c.acks[space].ecn)
 }
 
 func (c *Conn) appendConnectionCloseFrame(now time.Time, space numberSpace, err error) {

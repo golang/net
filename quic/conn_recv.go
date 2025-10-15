@@ -124,7 +124,7 @@ func (c *Conn) handleLongHeader(now time.Time, dgram *datagram, ptype packetType
 	}
 	c.connIDState.handlePacket(c, p.ptype, p.srcConnID)
 	ackEliciting := c.handleFrames(now, dgram, ptype, space, p.payload)
-	c.acks[space].receive(now, space, p.num, ackEliciting)
+	c.acks[space].receive(now, space, p.num, ackEliciting, dgram.ecn)
 	if p.ptype == packetTypeHandshake && c.side == serverSide {
 		c.loss.validateClientAddress()
 
@@ -174,7 +174,7 @@ func (c *Conn) handle1RTT(now time.Time, dgram *datagram, buf []byte) int {
 		c.log1RTTPacketReceived(p, buf)
 	}
 	ackEliciting := c.handleFrames(now, dgram, packetType1RTT, appDataSpace, p.payload)
-	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting)
+	c.acks[appDataSpace].receive(now, appDataSpace, p.num, ackEliciting, dgram.ecn)
 	return len(buf)
 }
 
@@ -420,12 +420,15 @@ func (c *Conn) handleFrames(now time.Time, dgram *datagram, ptype packetType, sp
 
 func (c *Conn) handleAckFrame(now time.Time, space numberSpace, payload []byte) int {
 	c.loss.receiveAckStart()
-	largest, ackDelay, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
+	largest, ackDelay, ecn, n := consumeAckFrame(payload, func(rangeIndex int, start, end packetNumber) {
 		if err := c.loss.receiveAckRange(now, space, rangeIndex, start, end, c.handleAckOrLoss); err != nil {
 			c.abort(now, err)
 			return
 		}
 	})
+	// TODO: Make use of ECN feedback.
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.3.2
+	_ = ecn
 	// Prior to receiving the peer's transport parameters, we cannot
 	// interpret the ACK Delay field because we don't know the ack_delay_exponent
 	// to apply.
