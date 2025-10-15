@@ -5,6 +5,7 @@
 package dnsmessage
 
 import (
+	"math"
 	"slices"
 	"strings"
 )
@@ -170,6 +171,9 @@ func (r *SVCBResource) pack(msg []byte, compression map[string]uint16, compressi
 	for i, param := range r.Params {
 		if i > 0 && param.Key <= previousKey {
 			return oldMsg, &nestedError{"SVCBResource.Params", errParamOutOfOrder}
+		}
+		if len(param.Value) > math.MaxUint16 {
+			return oldMsg, &nestedError{"SVCBResource.Params", errTooLongSVCBValue}
 		}
 		msg = packUint16(msg, uint16(param.Key))
 		msg = packUint16(msg, uint16(len(param.Value)))

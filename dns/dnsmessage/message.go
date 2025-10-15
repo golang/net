@@ -291,6 +291,7 @@ var (
 	errNonCanonicalName   = errors.New("name is not in canonical format (it must end with a .)")
 	errStringTooLong      = errors.New("character string exceeds maximum length (255)")
 	errParamOutOfOrder    = errors.New("parameter out of order")
+	errTooLongSVCBValue   = errors.New("value too long (>65535 bytes)")
 )
 
 // Internal constants.

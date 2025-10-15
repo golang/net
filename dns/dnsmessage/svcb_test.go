@@ -6,6 +6,7 @@ package dnsmessage
 
 import (
 	"bytes"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -363,4 +364,30 @@ func TestSVCBWireFormat(t *testing.T) {
 		},
 	}
 	testRecord(bytes, parsed)
+}
+
+func TestSVCBPackLongValue(t *testing.T) {
+	b := NewBuilder(nil, Header{})
+	b.StartQuestions()
+	b.StartAnswers()
+
+	res := SVCBResource{
+		Target: MustNewName("example.com."),
+		Params: []SVCParam{
+			{
+				Key:   SVCParamMandatory,
+				Value: make([]byte, math.MaxUint16+1),
+			},
+		},
+	}
+
+	err := b.SVCBResource(ResourceHeader{Name: MustNewName("example.com.")}, res)
+	if err == nil || err.Error() != "ResourceBody: SVCBResource.Params: value too long (>65535 bytes)" {
+		t.Fatalf(`b.SVCBResource() = %v; want = "ResourceBody: SVCBResource.Params: value too long (>65535 bytes)"`, err)
+	}
+
+	err = b.HTTPSResource(ResourceHeader{Name: MustNewName("example.com.")}, HTTPSResource{res})
+	if err == nil || err.Error() != "ResourceBody: SVCBResource.Params: value too long (>65535 bytes)" {
+		t.Fatalf(`b.HTTPSResource() = %v; want = "ResourceBody: SVCBResource.Params: value too long (>65535 bytes)"`, err)
+	}
 }
