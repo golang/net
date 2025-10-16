@@ -67,7 +67,7 @@ type Conn struct {
 // connTestHooks override conn behavior in tests.
 type connTestHooks interface {
 	// init is called after a conn is created.
-	init()
+	init(first bool)
 
 	// nextMessage is called to request the next event from msgc.
 	// Used to give tests control of the connection event loop.
@@ -177,7 +177,7 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 	}
 
 	if c.testHooks != nil {
-		c.testHooks.init()
+		c.testHooks.init(true)
 	}
 	go c.loop(now)
 	return c, nil

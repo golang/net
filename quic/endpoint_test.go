@@ -22,6 +22,10 @@ func TestConnect(t *testing.T) {
 	newLocalConnPair(t, &Config{}, &Config{})
 }
 
+func TestConnectRetry(t *testing.T) {
+	newLocalConnPair(t, &Config{RequireAddressValidation: true}, &Config{})
+}
+
 func TestConnectDefaultTLSConfig(t *testing.T) {
 	serverConfig := newTestTLSConfigWithMoreDefaults(serverSide)
 	clientConfig := newTestTLSConfigWithMoreDefaults(clientSide)

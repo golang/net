@@ -1001,11 +1001,11 @@ func spaceForPacketType(ptype packetType) numberSpace {
 // testConnHooks implements connTestHooks.
 type testConnHooks testConn
 
-func (tc *testConnHooks) init() {
+func (tc *testConnHooks) init(first bool) {
 	tc.conn.keysAppData.updateAfter = maxPacketNumber // disable key updates
 	tc.keysInitial.r = tc.conn.keysInitial.w
 	tc.keysInitial.w = tc.conn.keysInitial.r
-	if tc.conn.side == serverSide {
+	if first && tc.conn.side == serverSide {
 		tc.endpoint.acceptQueue = append(tc.endpoint.acceptQueue, (*testConn)(tc))
 	}
 }

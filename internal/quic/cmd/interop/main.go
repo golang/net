@@ -114,7 +114,11 @@ func main() {
 	case "resumption":
 		// TODO
 	case "retry":
-		// TODO
+		if *listen != "" && len(urls) == 0 {
+			config.RequireAddressValidation = true
+		}
+		basicTest(ctx, config, urls)
+		return
 	case "versionnegotiation":
 		// "The client should start a connection using
 		// an unsupported version number [...]"

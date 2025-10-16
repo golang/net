@@ -208,10 +208,14 @@ func (c *Conn) handleRetry(now time.Time, pkt []byte) {
 	}
 	c.retryToken = cloneBytes(p.token)
 	c.connIDState.handleRetryPacket(p.srcConnID)
+	c.keysInitial = initialKeys(p.srcConnID, c.side)
 	// We need to resend any data we've already sent in Initial packets.
 	// We must not reuse already sent packet numbers.
 	c.loss.discardPackets(initialSpace, c.log, c.handleAckOrLoss)
 	// TODO: Discard 0-RTT packets as well, once we support 0-RTT.
+	if c.testHooks != nil {
+		c.testHooks.init(false)
+	}
 }
 
 var errVersionNegotiation = errors.New("server does not support QUIC version 1")
