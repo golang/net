@@ -1846,7 +1846,7 @@ func TestDecodeEncode(t *testing.T) {
 	in.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
 <?Target Instruction?>
 <root>
-</root>	
+</root>
 `)
 	dec := NewDecoder(&in)
 	enc := NewEncoder(&out)

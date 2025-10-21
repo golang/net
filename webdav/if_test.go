@@ -134,7 +134,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 7.5.1",
-		`<http://www.example.com/users/f/fielding/index.html> 
+		`<http://www.example.com/users/f/fielding/index.html>
 			(<urn:uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6>)`,
 		ifHeader{
 			lists: []ifList{{
@@ -180,7 +180,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 9.9.6",
-		`(<urn:uuid:fe184f2e-6eec-41d0-c765-01adc56e6bb4>) 
+		`(<urn:uuid:fe184f2e-6eec-41d0-c765-01adc56e6bb4>)
 			(<urn:uuid:e454f3f3-acdc-452a-56c7-00a5c91e4b77>)`,
 		ifHeader{
 			lists: []ifList{{
@@ -205,7 +205,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 10.4.6",
-		`(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2> 
+		`(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>
 			["I am an ETag"])
 			(["I am another ETag"])`,
 		ifHeader{
@@ -223,7 +223,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 10.4.7",
-		`(Not <urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2> 
+		`(Not <urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>
 			<urn:uuid:58f202ac-22cf-11d1-b12d-002035b29092>)`,
 		ifHeader{
 			lists: []ifList{{
@@ -237,7 +237,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 10.4.8",
-		`(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>) 
+		`(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>)
 			(Not <DAV:no-lock>)`,
 		ifHeader{
 			lists: []ifList{{
@@ -253,8 +253,8 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 10.4.9",
-		`</resource1> 
-			(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2> 
+		`</resource1>
+			(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>
 			[W/"A weak ETag"]) (["strong ETag"])`,
 		ifHeader{
 			lists: []ifList{{
@@ -273,7 +273,7 @@ func TestParseIfHeader(t *testing.T) {
 		},
 	}, {
 		"section 10.4.10",
-		`<http://www.example.com/specs/> 
+		`<http://www.example.com/specs/>
 			(<urn:uuid:181d4fae-7d8c-11d0-a765-00a0c91e6bf2>)`,
 		ifHeader{
 			lists: []ifList{{

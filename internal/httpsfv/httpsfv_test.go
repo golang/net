@@ -1249,7 +1249,7 @@ func TestConsumeDisplayString(t *testing.T) {
 			in:   `%"f%C3%BC%C3%BC"`,
 		},
 		{
-			name: "invalid unqouted string",
+			name: "invalid unquoted string",
 			in:   "%foo",
 		},
 		{
@@ -1358,7 +1358,7 @@ func TestParseDisplayString(t *testing.T) {
 			in:   `%"f%C3%BC%C3%BC"`,
 		},
 		{
-			name: "invalid unqouted string",
+			name: "invalid unquoted string",
 			in:   "%foo",
 		},
 		{
