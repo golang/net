@@ -160,10 +160,14 @@ func (k SVCParamKey) GoString() string {
 	return printUint16(uint16(k))
 }
 
-func (r *SVCBResource) pack(msg []byte, compression map[string]uint16, compressionOff int) ([]byte, error) {
+func (r *SVCBResource) pack(msg []byte, _ map[string]uint16, _ int) ([]byte, error) {
 	oldMsg := msg
 	msg = packUint16(msg, r.Priority)
-	msg, err := r.Target.pack(msg, compression, compressionOff)
+	// https://datatracker.ietf.org/doc/html/rfc3597#section-4 prohibits name
+	// compression for RR types that are not "well-known".
+	// https://datatracker.ietf.org/doc/html/rfc9460#section-2.2 explicitly states that
+	// compression of the Target is prohibited, following RFC 3597.
+	msg, err := r.Target.pack(msg, nil, 0)
 	if err != nil {
 		return oldMsg, &nestedError{"SVCBResource.Target", err}
 	}
