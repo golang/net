@@ -2,14 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
 	"crypto/tls"
 	"testing"
+	"testing/synctest"
 )
 
 func TestConnReceiveAckForUnsentPacket(t *testing.T) {
+	synctest.Test(t, testConnReceiveAckForUnsentPacket)
+}
+func testConnReceiveAckForUnsentPacket(t *testing.T) {
 	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.handshake()
 	tc.writeFrames(packetType1RTT,
@@ -27,6 +33,9 @@ func TestConnReceiveAckForUnsentPacket(t *testing.T) {
 // drop state for a number space, and also contains a valid ACK frame for that space,
 // we shouldn't complain about the ACK.
 func TestConnReceiveAckForDroppedSpace(t *testing.T) {
+	synctest.Test(t, testConnReceiveAckForDroppedSpace)
+}
+func testConnReceiveAckForDroppedSpace(t *testing.T) {
 	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.ignoreFrame(frameTypeAck)
 	tc.ignoreFrame(frameTypeNewConnectionID)

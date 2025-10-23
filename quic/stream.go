@@ -236,7 +236,7 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 		s.inbufoff += n
 		return n, nil
 	}
-	if err := s.ingate.waitAndLock(s.inctx, s.conn.testHooks); err != nil {
+	if err := s.ingate.waitAndLock(s.inctx); err != nil {
 		return 0, err
 	}
 	if s.inbufoff > 0 {
@@ -350,7 +350,7 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		if len(b) > 0 && !canWrite {
 			// Our send buffer is full. Wait for the peer to ack some data.
 			s.outUnlock()
-			if err := s.outgate.waitAndLock(s.outctx, s.conn.testHooks); err != nil {
+			if err := s.outgate.waitAndLock(s.outctx); err != nil {
 				return n, err
 			}
 			// Successfully returning from waitAndLockGate means we are no longer

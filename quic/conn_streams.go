@@ -71,7 +71,7 @@ func (c *Conn) streamsCleanup() {
 
 // AcceptStream waits for and returns the next stream created by the peer.
 func (c *Conn) AcceptStream(ctx context.Context) (*Stream, error) {
-	return c.streams.queue.get(ctx, c.testHooks)
+	return c.streams.queue.get(ctx)
 }
 
 // NewStream creates a stream.

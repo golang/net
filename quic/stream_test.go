@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -13,12 +15,13 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"golang.org/x/net/internal/quic/quicwire"
 )
 
 func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		const writeBufferSize = 4
 		tc := newTestConn(t, clientSide, permissiveTransportParameters, func(c *Config) {
@@ -79,7 +82,7 @@ func TestStreamWriteBlockedByOutputBuffer(t *testing.T) {
 }
 
 func TestStreamWriteBlockedByStreamFlowControl(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		tc := newTestConn(t, clientSide, func(p *transportParameters) {
@@ -149,7 +152,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 	// "A sender MUST ignore any MAX_STREAM_DATA [...] frames that
 	// do not increase flow control limits."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.1-9
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		tc := newTestConn(t, clientSide, func(p *transportParameters) {
@@ -218,7 +221,7 @@ func TestStreamIgnoresMaxStreamDataReduction(t *testing.T) {
 }
 
 func TestStreamWriteBlockedByWriteBufferLimit(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 		const maxWriteBuffer = 4
 		tc := newTestConn(t, clientSide, func(p *transportParameters) {
@@ -392,7 +395,7 @@ func TestStreamReceive(t *testing.T) {
 			wantEOF: true,
 		}},
 	}} {
-		testStreamTypes(t, test.name, func(t *testing.T, styp streamType) {
+		testStreamTypesSynctest(t, test.name, func(t *testing.T, styp streamType) {
 			tc := newTestConn(t, serverSide)
 			tc.handshake()
 			sid := newStreamID(clientSide, styp, 0)
@@ -439,7 +442,7 @@ func TestStreamReceive(t *testing.T) {
 }
 
 func TestStreamReceiveExtendsStreamWindow(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		const maxWindowSize = 20
 		ctx := canceledContext()
 		tc := newTestConn(t, serverSide, func(c *Config) {
@@ -484,7 +487,7 @@ func TestStreamReceiveViolatesStreamDataLimit(t *testing.T) {
 	// "A receiver MUST close the connection with an error of type FLOW_CONTROL_ERROR if
 	// the sender violates the advertised [...] stream data limits [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.1-8
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		const maxStreamData = 10
 		for _, test := range []struct {
 			off  int64
@@ -521,7 +524,7 @@ func TestStreamReceiveViolatesStreamDataLimit(t *testing.T) {
 }
 
 func TestStreamReceiveDuplicateDataDoesNotViolateLimits(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		const maxData = 10
 		tc := newTestConn(t, serverSide, func(c *Config) {
 			// TODO: Add connection-level maximum data here as well.
@@ -544,7 +547,7 @@ func TestStreamReceiveEmptyEOF(t *testing.T) {
 	// A stream receives some data, we read a byte of that data
 	// (causing the rest to be pulled into the s.inbuf buffer),
 	// and then we receive a FIN with no additional data.
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp, permissiveTransportParameters)
 		want := []byte{1, 2, 3}
 		tc.writeFrames(packetType1RTT, debugFrameStream{
@@ -568,7 +571,7 @@ func TestStreamReceiveEmptyEOF(t *testing.T) {
 
 func TestStreamReadByteFromOneByteStream(t *testing.T) {
 	// ReadByte on the only byte of a stream should not return an error.
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp, permissiveTransportParameters)
 		want := byte(1)
 		tc.writeFrames(packetType1RTT, debugFrameStream{
@@ -608,7 +611,7 @@ func finalSizeTest(t *testing.T, wantErr transportError, f func(tc *testConn, si
 				})
 			},
 		}} {
-			t.Run(test.name, func(t *testing.T) {
+			synctestSubtest(t, test.name, func(t *testing.T) {
 				tc := newTestConn(t, serverSide, opts...)
 				tc.handshake()
 				sid := newStreamID(clientSide, styp, 0)
@@ -662,7 +665,7 @@ func TestStreamDataBeyondFinalSize(t *testing.T) {
 	// "A receiver SHOULD treat receipt of data at or beyond
 	// the final size as an error of type FINAL_SIZE_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.5-5
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide)
 		tc.handshake()
 		sid := newStreamID(clientSide, styp, 0)
@@ -688,7 +691,7 @@ func TestStreamDataBeyondFinalSize(t *testing.T) {
 }
 
 func TestStreamReceiveUnblocksReader(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide)
 		tc.handshake()
 		want := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
@@ -746,7 +749,7 @@ func TestStreamReceiveUnblocksReader(t *testing.T) {
 // It then sends the returned frame (STREAM, STREAM_DATA_BLOCKED, etc.)
 // to the conn and expects a STREAM_STATE_ERROR.
 func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFrame) {
-	testSides(t, "stream_not_created", func(t *testing.T, side connSide) {
+	testSidesSynctest(t, "stream_not_created", func(t *testing.T, side connSide) {
 		tc := newTestConn(t, side, permissiveTransportParameters)
 		tc.handshake()
 		tc.writeFrames(packetType1RTT, f(newStreamID(side, bidiStream, 0)))
@@ -755,7 +758,7 @@ func testStreamSendFrameInvalidState(t *testing.T, f func(sid streamID) debugFra
 				code: errStreamState,
 			})
 	})
-	testSides(t, "uni_stream", func(t *testing.T, side connSide) {
+	testSidesSynctest(t, "uni_stream", func(t *testing.T, side connSide) {
 		ctx := canceledContext()
 		tc := newTestConn(t, side, permissiveTransportParameters)
 		tc.handshake()
@@ -823,7 +826,7 @@ func TestStreamDataBlockedInvalidState(t *testing.T) {
 // It then sends the returned frame (MAX_STREAM_DATA, STOP_SENDING, etc.)
 // to the conn and expects a STREAM_STATE_ERROR.
 func testStreamReceiveFrameInvalidState(t *testing.T, f func(sid streamID) debugFrame) {
-	testSides(t, "stream_not_created", func(t *testing.T, side connSide) {
+	testSidesSynctest(t, "stream_not_created", func(t *testing.T, side connSide) {
 		tc := newTestConn(t, side)
 		tc.handshake()
 		tc.writeFrames(packetType1RTT, f(newStreamID(side, bidiStream, 0)))
@@ -832,7 +835,7 @@ func testStreamReceiveFrameInvalidState(t *testing.T, f func(sid streamID) debug
 				code: errStreamState,
 			})
 	})
-	testSides(t, "uni_stream", func(t *testing.T, side connSide) {
+	testSidesSynctest(t, "uni_stream", func(t *testing.T, side connSide) {
 		tc := newTestConn(t, side)
 		tc.handshake()
 		tc.writeFrames(packetType1RTT, f(newStreamID(side.peer(), uniStream, 0)))
@@ -873,6 +876,9 @@ func TestStreamMaxStreamDataInvalidState(t *testing.T) {
 }
 
 func TestStreamOffsetTooLarge(t *testing.T) {
+	synctest.Test(t, testStreamOffsetTooLarge)
+}
+func testStreamOffsetTooLarge(t *testing.T) {
 	// "Receipt of a frame that exceeds [2^62-1] MUST be treated as a
 	// connection error of type FRAME_ENCODING_ERROR or FLOW_CONTROL_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.8-9
@@ -894,6 +900,9 @@ func TestStreamOffsetTooLarge(t *testing.T) {
 }
 
 func TestStreamReadFromWriteOnlyStream(t *testing.T) {
+	synctest.Test(t, testStreamReadFromWriteOnlyStream)
+}
+func testStreamReadFromWriteOnlyStream(t *testing.T) {
 	_, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	buf := make([]byte, 10)
 	wantErr := "read from write-only stream"
@@ -903,6 +912,9 @@ func TestStreamReadFromWriteOnlyStream(t *testing.T) {
 }
 
 func TestStreamWriteToReadOnlyStream(t *testing.T) {
+	synctest.Test(t, testStreamWriteToReadOnlyStream)
+}
+func testStreamWriteToReadOnlyStream(t *testing.T) {
 	_, s := newTestConnAndRemoteStream(t, serverSide, uniStream)
 	buf := make([]byte, 10)
 	wantErr := "write to read-only stream"
@@ -912,6 +924,9 @@ func TestStreamWriteToReadOnlyStream(t *testing.T) {
 }
 
 func TestStreamReadFromClosedStream(t *testing.T) {
+	synctest.Test(t, testStreamReadFromClosedStream)
+}
+func testStreamReadFromClosedStream(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, bidiStream, permissiveTransportParameters)
 	s.CloseRead()
 	tc.wantFrame("CloseRead sends a STOP_SENDING frame",
@@ -934,6 +949,9 @@ func TestStreamReadFromClosedStream(t *testing.T) {
 }
 
 func TestStreamCloseReadWithAllDataReceived(t *testing.T) {
+	synctest.Test(t, testStreamCloseReadWithAllDataReceived)
+}
+func testStreamCloseReadWithAllDataReceived(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, bidiStream, permissiveTransportParameters)
 	tc.writeFrames(packetType1RTT, debugFrameStream{
 		id:   s.id,
@@ -950,6 +968,9 @@ func TestStreamCloseReadWithAllDataReceived(t *testing.T) {
 }
 
 func TestStreamWriteToClosedStream(t *testing.T) {
+	synctest.Test(t, testStreamWriteToClosedStream)
+}
+func testStreamWriteToClosedStream(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, permissiveTransportParameters)
 	s.CloseWrite()
 	tc.wantFrame("stream is opened after being closed",
@@ -966,6 +987,9 @@ func TestStreamWriteToClosedStream(t *testing.T) {
 }
 
 func TestStreamResetBlockedStream(t *testing.T) {
+	synctest.Test(t, testStreamResetBlockedStream)
+}
+func testStreamResetBlockedStream(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, permissiveTransportParameters,
 		func(c *Config) {
 			c.MaxStreamWriteBufferSize = 4
@@ -1002,6 +1026,9 @@ func TestStreamResetBlockedStream(t *testing.T) {
 }
 
 func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
+	synctest.Test(t, testStreamWriteMoreThanOnePacketOfData)
+}
+func testStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, func(p *transportParameters) {
 		p.initialMaxStreamsUni = 1
 		p.initialMaxData = 1 << 20
@@ -1038,6 +1065,9 @@ func TestStreamWriteMoreThanOnePacketOfData(t *testing.T) {
 }
 
 func TestStreamCloseWaitsForAcks(t *testing.T) {
+	synctest.Test(t, testStreamCloseWaitsForAcks)
+}
+func testStreamCloseWaitsForAcks(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	data := make([]byte, 100)
 	s.Write(data)
@@ -1071,6 +1101,9 @@ func TestStreamCloseWaitsForAcks(t *testing.T) {
 }
 
 func TestStreamCloseReadOnly(t *testing.T) {
+	synctest.Test(t, testStreamCloseReadOnly)
+}
+func testStreamCloseReadOnly(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, permissiveTransportParameters)
 	if err := s.Close(); err != nil {
 		t.Errorf("s.Close() = %v, want nil", err)
@@ -1103,10 +1136,10 @@ func TestStreamCloseUnblocked(t *testing.T) {
 		name: "stream reset",
 		unblock: func(tc *testConn, s *Stream) {
 			s.Reset(0)
-			tc.wait() // wait for test conn to process the Reset
+			synctest.Wait() // wait for test conn to process the Reset
 		},
 	}} {
-		t.Run(test.name, func(t *testing.T) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 			data := make([]byte, 100)
 			s.Write(data)
@@ -1148,6 +1181,9 @@ func TestStreamCloseUnblocked(t *testing.T) {
 }
 
 func TestStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
+	synctest.Test(t, testStreamCloseWriteWhenBlockedByStreamFlowControl)
+}
+func testStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters,
 		func(p *transportParameters) {
 			//p.initialMaxData = 0
@@ -1185,7 +1221,7 @@ func TestStreamCloseWriteWhenBlockedByStreamFlowControl(t *testing.T) {
 }
 
 func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
 		data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 		tc.writeFrames(packetType1RTT, debugFrameStream{
@@ -1210,7 +1246,7 @@ func TestStreamPeerResetsWithUnreadAndUnsentData(t *testing.T) {
 }
 
 func TestStreamPeerResetWakesBlockedRead(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
 		reader := runAsync(tc, func(ctx context.Context) (int, error) {
 			s.SetReadContext(ctx)
@@ -1231,7 +1267,7 @@ func TestStreamPeerResetWakesBlockedRead(t *testing.T) {
 }
 
 func TestStreamPeerResetFollowedByData(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, styp)
 		tc.writeFrames(packetType1RTT, debugFrameResetStream{
 			id:        s.id,
@@ -1256,6 +1292,9 @@ func TestStreamPeerResetFollowedByData(t *testing.T) {
 }
 
 func TestStreamResetInvalidCode(t *testing.T) {
+	synctest.Test(t, testStreamResetInvalidCode)
+}
+func testStreamResetInvalidCode(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	s.Reset(1 << 62)
 	tc.wantFrame("reset with invalid code sends a RESET_STREAM anyway",
@@ -1268,6 +1307,9 @@ func TestStreamResetInvalidCode(t *testing.T) {
 }
 
 func TestStreamResetReceiveOnly(t *testing.T) {
+	synctest.Test(t, testStreamResetReceiveOnly)
+}
+func testStreamResetReceiveOnly(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream)
 	s.Reset(0)
 	tc.wantIdle("resetting a receive-only stream has no effect")
@@ -1277,7 +1319,7 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 	// "An endpoint that receives a STOP_SENDING frame MUST send a RESET_STREAM frame if
 	// the stream is in the "Ready" or "Send" state."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-3.5-4
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndLocalStream(t, serverSide, styp, permissiveTransportParameters)
 		for i := 0; i < 4; i++ {
 			s.Write([]byte{byte(i)})
@@ -1309,6 +1351,9 @@ func TestStreamPeerStopSendingForActiveStream(t *testing.T) {
 }
 
 func TestStreamReceiveDataBlocked(t *testing.T) {
+	synctest.Test(t, testStreamReceiveDataBlocked)
+}
+func testStreamReceiveDataBlocked(t *testing.T) {
 	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
@@ -1326,7 +1371,7 @@ func TestStreamReceiveDataBlocked(t *testing.T) {
 }
 
 func TestStreamFlushExplicit(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc, s := newTestConnAndLocalStream(t, clientSide, styp, permissiveTransportParameters)
 		want := []byte{0, 1, 2, 3}
 		n, err := s.Write(want)
@@ -1344,6 +1389,9 @@ func TestStreamFlushExplicit(t *testing.T) {
 }
 
 func TestStreamFlushClosedStream(t *testing.T) {
+	synctest.Test(t, testStreamFlushClosedStream)
+}
+func testStreamFlushClosedStream(t *testing.T) {
 	_, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters)
 	s.Close()
@@ -1353,6 +1401,9 @@ func TestStreamFlushClosedStream(t *testing.T) {
 }
 
 func TestStreamFlushResetStream(t *testing.T) {
+	synctest.Test(t, testStreamFlushResetStream)
+}
+func testStreamFlushResetStream(t *testing.T) {
 	_, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters)
 	s.Reset(0)
@@ -1362,6 +1413,9 @@ func TestStreamFlushResetStream(t *testing.T) {
 }
 
 func TestStreamFlushStreamAfterPeerStopSending(t *testing.T) {
+	synctest.Test(t, testStreamFlushStreamAfterPeerStopSending)
+}
+func testStreamFlushStreamAfterPeerStopSending(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters)
 	s.Flush() // create the stream
@@ -1381,6 +1435,9 @@ func TestStreamFlushStreamAfterPeerStopSending(t *testing.T) {
 }
 
 func TestStreamErrorsAfterConnectionClosed(t *testing.T) {
+	synctest.Test(t, testStreamErrorsAfterConnectionClosed)
+}
+func testStreamErrorsAfterConnectionClosed(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters)
 	wantErr := &ApplicationError{Code: 42}
@@ -1399,7 +1456,7 @@ func TestStreamErrorsAfterConnectionClosed(t *testing.T) {
 }
 
 func TestStreamFlushImplicitExact(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		const writeBufferSize = 4
 		tc, s := newTestConnAndLocalStream(t, clientSide, styp,
 			permissiveTransportParameters,
@@ -1429,7 +1486,7 @@ func TestStreamFlushImplicitExact(t *testing.T) {
 }
 
 func TestStreamFlushImplicitLargerThanBuffer(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		const writeBufferSize = 4
 		tc, s := newTestConnAndLocalStream(t, clientSide, styp,
 			permissiveTransportParameters,

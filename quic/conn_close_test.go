@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -9,10 +11,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 func TestConnCloseResponseBackoff(t *testing.T) {
+	synctest.Test(t, testConnCloseResponseBackoff)
+}
+func testConnCloseResponseBackoff(t *testing.T) {
 	tc := newTestConn(t, clientSide, func(c *Config) {
 		clear(c.StatelessResetKey[:])
 	})
@@ -34,18 +40,18 @@ func TestConnCloseResponseBackoff(t *testing.T) {
 	tc.writeFrames(packetType1RTT, debugFramePing{})
 	tc.wantIdle("packets received immediately after CONN_CLOSE receive no response")
 
-	tc.advance(1100 * time.Microsecond)
+	time.Sleep(1100 * time.Microsecond)
 	tc.writeFrames(packetType1RTT, debugFramePing{})
 	tc.wantFrame("receiving packet 1.1ms after CONN_CLOSE generates another CONN_CLOSE",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errNo,
 		})
 
-	tc.advance(1100 * time.Microsecond)
+	time.Sleep(1100 * time.Microsecond)
 	tc.writeFrames(packetType1RTT, debugFramePing{})
 	tc.wantIdle("no response to packet, because CONN_CLOSE backoff is now 2ms")
 
-	tc.advance(1000 * time.Microsecond)
+	time.Sleep(1000 * time.Microsecond)
 	tc.writeFrames(packetType1RTT, debugFramePing{})
 	tc.wantFrame("2ms since last CONN_CLOSE, receiving a packet generates another CONN_CLOSE",
 		packetType1RTT, debugFrameConnectionCloseTransport{
@@ -55,7 +61,7 @@ func TestConnCloseResponseBackoff(t *testing.T) {
 		t.Errorf("conn.Wait() = %v, want still waiting", err)
 	}
 
-	tc.advance(100000 * time.Microsecond)
+	time.Sleep(100000 * time.Microsecond)
 	tc.writeFrames(packetType1RTT, debugFramePing{})
 	tc.wantIdle("drain timer expired, no more responses")
 
@@ -68,6 +74,9 @@ func TestConnCloseResponseBackoff(t *testing.T) {
 }
 
 func TestConnCloseWithPeerResponse(t *testing.T) {
+	synctest.Test(t, testConnCloseWithPeerResponse)
+}
+func testConnCloseWithPeerResponse(t *testing.T) {
 	qr := &qlogRecord{}
 	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
@@ -99,7 +108,7 @@ func TestConnCloseWithPeerResponse(t *testing.T) {
 		t.Errorf("non-blocking conn.Wait() = %v, want %v", err, wantErr)
 	}
 
-	tc.advance(1 * time.Second) // long enough to exit the draining state
+	time.Sleep(1 * time.Second) // long enough to exit the draining state
 	qr.wantEvents(t, jsonEvent{
 		"name": "connectivity:connection_closed",
 		"data": map[string]any{
@@ -109,6 +118,9 @@ func TestConnCloseWithPeerResponse(t *testing.T) {
 }
 
 func TestConnClosePeerCloses(t *testing.T) {
+	synctest.Test(t, testConnClosePeerCloses)
+}
+func testConnClosePeerCloses(t *testing.T) {
 	qr := &qlogRecord{}
 	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
@@ -137,7 +149,7 @@ func TestConnClosePeerCloses(t *testing.T) {
 			reason: "because",
 		})
 
-	tc.advance(1 * time.Second) // long enough to exit the draining state
+	time.Sleep(1 * time.Second) // long enough to exit the draining state
 	qr.wantEvents(t, jsonEvent{
 		"name": "connectivity:connection_closed",
 		"data": map[string]any{
@@ -147,6 +159,9 @@ func TestConnClosePeerCloses(t *testing.T) {
 }
 
 func TestConnCloseReceiveInInitial(t *testing.T) {
+	synctest.Test(t, testConnCloseReceiveInInitial)
+}
+func testConnCloseReceiveInInitial(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.wantFrame("client sends Initial CRYPTO frame",
 		packetTypeInitial, debugFrameCrypto{
@@ -171,6 +186,9 @@ func TestConnCloseReceiveInInitial(t *testing.T) {
 }
 
 func TestConnCloseReceiveInHandshake(t *testing.T) {
+	synctest.Test(t, testConnCloseReceiveInHandshake)
+}
+func testConnCloseReceiveInHandshake(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.ignoreFrame(frameTypeAck)
 	tc.wantFrame("client sends Initial CRYPTO frame",
@@ -204,6 +222,9 @@ func TestConnCloseReceiveInHandshake(t *testing.T) {
 }
 
 func TestConnCloseClosedByEndpoint(t *testing.T) {
+	synctest.Test(t, testConnCloseClosedByEndpoint)
+}
+func testConnCloseClosedByEndpoint(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, clientSide)
 	tc.handshake()
@@ -231,6 +252,9 @@ func testConnCloseUnblocks(t *testing.T, f func(context.Context, *testConn) erro
 }
 
 func TestConnCloseUnblocksAcceptStream(t *testing.T) {
+	synctest.Test(t, testConnCloseUnblocksAcceptStream)
+}
+func testConnCloseUnblocksAcceptStream(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		_, err := tc.conn.AcceptStream(ctx)
 		return err
@@ -238,6 +262,9 @@ func TestConnCloseUnblocksAcceptStream(t *testing.T) {
 }
 
 func TestConnCloseUnblocksNewStream(t *testing.T) {
+	synctest.Test(t, testConnCloseUnblocksNewStream)
+}
+func testConnCloseUnblocksNewStream(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		_, err := tc.conn.NewStream(ctx)
 		return err
@@ -245,6 +272,9 @@ func TestConnCloseUnblocksNewStream(t *testing.T) {
 }
 
 func TestConnCloseUnblocksStreamRead(t *testing.T) {
+	synctest.Test(t, testConnCloseUnblocksStreamRead)
+}
+func testConnCloseUnblocksStreamRead(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
 		s.SetReadContext(ctx)
@@ -255,6 +285,9 @@ func TestConnCloseUnblocksStreamRead(t *testing.T) {
 }
 
 func TestConnCloseUnblocksStreamWrite(t *testing.T) {
+	synctest.Test(t, testConnCloseUnblocksStreamWrite)
+}
+func testConnCloseUnblocksStreamWrite(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
 		s.SetWriteContext(ctx)
@@ -267,6 +300,9 @@ func TestConnCloseUnblocksStreamWrite(t *testing.T) {
 }
 
 func TestConnCloseUnblocksStreamClose(t *testing.T) {
+	synctest.Test(t, testConnCloseUnblocksStreamClose)
+}
+func testConnCloseUnblocksStreamClose(t *testing.T) {
 	testConnCloseUnblocks(t, func(ctx context.Context, tc *testConn) error {
 		s := newLocalStream(t, tc, bidiStream)
 		s.SetWriteContext(ctx)

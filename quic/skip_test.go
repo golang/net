@@ -2,11 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+)
 
 func TestSkipPackets(t *testing.T) {
+	synctest.Test(t, testSkipPackets)
+}
+func testSkipPackets(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 	connWritesPacket := func() {
 		s.WriteByte(0)
@@ -39,6 +47,9 @@ expectSkip:
 }
 
 func TestSkipAckForSkippedPacket(t *testing.T) {
+	synctest.Test(t, testSkipAckForSkippedPacket)
+}
+func testSkipAckForSkippedPacket(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 
 	// Cause the connection to send packets until it skips a packet number.

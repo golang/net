@@ -42,9 +42,9 @@ func (q *queue[T]) put(v T) bool {
 
 // get removes the first item from the queue, blocking until ctx is done, an item is available,
 // or the queue is closed.
-func (q *queue[T]) get(ctx context.Context, testHooks connTestHooks) (T, error) {
+func (q *queue[T]) get(ctx context.Context) (T, error) {
 	var zero T
-	if err := q.gate.waitAndLock(ctx, testHooks); err != nil {
+	if err := q.gate.waitAndLock(ctx); err != nil {
 		return zero, err
 	}
 	defer q.unlock()

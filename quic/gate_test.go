@@ -47,7 +47,7 @@ func TestGateWaitAndLockContext(t *testing.T) {
 		time.Sleep(1 * time.Millisecond)
 		cancel()
 	}()
-	if err := g.waitAndLock(ctx, nil); err != context.Canceled {
+	if err := g.waitAndLock(ctx); err != context.Canceled {
 		t.Errorf("g.waitAndLock() = %v, want context.Canceled", err)
 	}
 	// waitAndLock succeeds
@@ -58,7 +58,7 @@ func TestGateWaitAndLockContext(t *testing.T) {
 		set = true
 		g.unlock(true)
 	}()
-	if err := g.waitAndLock(context.Background(), nil); err != nil {
+	if err := g.waitAndLock(context.Background()); err != nil {
 		t.Errorf("g.waitAndLock() = %v, want nil", err)
 	}
 	if !set {
@@ -66,7 +66,7 @@ func TestGateWaitAndLockContext(t *testing.T) {
 	}
 	g.unlock(true)
 	// waitAndLock succeeds when the gate is set and the context is canceled
-	if err := g.waitAndLock(ctx, nil); err != nil {
+	if err := g.waitAndLock(ctx); err != nil {
 		t.Errorf("g.waitAndLock() = %v, want nil", err)
 	}
 }
@@ -89,5 +89,5 @@ func TestGateUnlockFunc(t *testing.T) {
 		g.lock()
 		defer g.unlockFunc(func() bool { return true })
 	}()
-	g.waitAndLock(context.Background(), nil)
+	g.waitAndLock(context.Background())
 }

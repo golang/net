@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -12,14 +14,16 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/quic/qlog"
 )
 
 func TestQLogHandshake(t *testing.T) {
-	testSides(t, "", func(t *testing.T, side connSide) {
+	testSidesSynctest(t, "", func(t *testing.T, side connSide) {
 		qr := &qlogRecord{}
 		tc := newTestConn(t, side, qr.config)
 		tc.handshake()
@@ -55,6 +59,9 @@ func TestQLogHandshake(t *testing.T) {
 }
 
 func TestQLogPacketFrames(t *testing.T) {
+	synctest.Test(t, testQLogPacketFrames)
+}
+func testQLogPacketFrames(t *testing.T) {
 	qr := &qlogRecord{}
 	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
@@ -111,7 +118,7 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 			tc.ignoreFrame(frameTypeCrypto)
 			tc.ignoreFrame(frameTypeAck)
 			tc.ignoreFrame(frameTypePing)
-			tc.advance(5 * time.Second)
+			time.Sleep(5 * time.Second)
 		},
 	}, {
 		trigger: "idle_timeout",
@@ -122,7 +129,7 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 		},
 		f: func(tc *testConn) {
 			tc.handshake()
-			tc.advance(5 * time.Second)
+			time.Sleep(5 * time.Second)
 		},
 	}, {
 		trigger: "error",
@@ -134,7 +141,7 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 			tc.conn.Abort(nil)
 		},
 	}} {
-		t.Run(test.trigger, func(t *testing.T) {
+		synctestSubtest(t, test.trigger, func(t *testing.T) {
 			qr := &qlogRecord{}
 			tc := newTestConn(t, clientSide, append(test.connOpts, qr.config)...)
 			test.f(tc)
@@ -147,7 +154,7 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 				t.Fatalf("unexpected frame: %v", fr)
 			}
 			tc.wantIdle("connection should be idle while closing")
-			tc.advance(5 * time.Second) // long enough for the drain timer to expire
+			time.Sleep(5 * time.Second) // long enough for the drain timer to expire
 			qr.wantEvents(t, jsonEvent{
 				"name": "connectivity:connection_closed",
 				"data": map[string]any{
@@ -159,6 +166,9 @@ func TestQLogConnectionClosedTrigger(t *testing.T) {
 }
 
 func TestQLogRecovery(t *testing.T) {
+	synctest.Test(t, testQLogRecovery)
+}
+func testQLogRecovery(t *testing.T) {
 	qr := &qlogRecord{}
 	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
 		permissiveTransportParameters, qr.config)
@@ -198,6 +208,9 @@ func TestQLogRecovery(t *testing.T) {
 }
 
 func TestQLogLoss(t *testing.T) {
+	synctest.Test(t, testQLogLoss)
+}
+func testQLogLoss(t *testing.T) {
 	qr := &qlogRecord{}
 	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
 		permissiveTransportParameters, qr.config)
@@ -230,6 +243,9 @@ func TestQLogLoss(t *testing.T) {
 }
 
 func TestQLogPacketDropped(t *testing.T) {
+	synctest.Test(t, testQLogPacketDropped)
+}
+func testQLogPacketDropped(t *testing.T) {
 	qr := &qlogRecord{}
 	tc := newTestConn(t, clientSide, permissiveTransportParameters, qr.config)
 	tc.handshake()
@@ -324,10 +340,13 @@ func jsonPartialEqual(got, want any) (equal bool) {
 
 // A qlogRecord records events.
 type qlogRecord struct {
+	mu sync.Mutex
 	ev []jsonEvent
 }
 
 func (q *qlogRecord) Write(b []byte) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	// This relies on the property that the Handler always makes one Write call per event.
 	if len(b) < 1 || b[0] != 0x1e {
 		panic(fmt.Errorf("trace Write should start with record separator, got %q", string(b)))
@@ -355,6 +374,8 @@ func (q *qlogRecord) config(c *Config) {
 // wantEvents checks that every event in want occurs in the order specified.
 func (q *qlogRecord) wantEvents(t *testing.T, want ...jsonEvent) {
 	t.Helper()
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	got := q.ev
 	if !jsonPartialEqual(got, want) {
 		t.Fatalf("got events:\n%v\n\nwant events:\n%v", got, want)

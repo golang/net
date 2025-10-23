@@ -2,13 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
 	"testing"
+	"testing/synctest"
 )
 
 func TestKeyUpdatePeerUpdates(t *testing.T) {
+	synctest.Test(t, testKeyUpdatePeerUpdates)
+}
+func testKeyUpdatePeerUpdates(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 	tc.ignoreFrames = nil // ignore nothing
@@ -56,6 +62,9 @@ func TestKeyUpdatePeerUpdates(t *testing.T) {
 }
 
 func TestKeyUpdateAcceptPreviousPhaseKeys(t *testing.T) {
+	synctest.Test(t, testKeyUpdateAcceptPreviousPhaseKeys)
+}
+func testKeyUpdateAcceptPreviousPhaseKeys(t *testing.T) {
 	// "An endpoint SHOULD retain old keys for some time after
 	// unprotecting a packet sent using the new keys."
 	// https://www.rfc-editor.org/rfc/rfc9001#section-6.1-8
@@ -112,6 +121,9 @@ func TestKeyUpdateAcceptPreviousPhaseKeys(t *testing.T) {
 }
 
 func TestKeyUpdateRejectPacketFromPriorPhase(t *testing.T) {
+	synctest.Test(t, testKeyUpdateRejectPacketFromPriorPhase)
+}
+func testKeyUpdateRejectPacketFromPriorPhase(t *testing.T) {
 	// "Packets with higher packet numbers MUST be protected with either
 	// the same or newer packet protection keys than packets with lower packet numbers."
 	// https://www.rfc-editor.org/rfc/rfc9001#section-6.4-2
@@ -161,6 +173,9 @@ func TestKeyUpdateRejectPacketFromPriorPhase(t *testing.T) {
 }
 
 func TestKeyUpdateLocallyInitiated(t *testing.T) {
+	synctest.Test(t, testKeyUpdateLocallyInitiated)
+}
+func testKeyUpdateLocallyInitiated(t *testing.T) {
 	const updateAfter = 4 // initiate key update after 1-RTT packet 4
 	tc := newTestConn(t, serverSide)
 	tc.conn.keysAppData.updateAfter = updateAfter

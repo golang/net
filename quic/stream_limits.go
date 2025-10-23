@@ -29,7 +29,7 @@ func (lim *localStreamLimits) init() {
 // open creates a new local stream, blocking until MAX_STREAMS quota is available.
 func (lim *localStreamLimits) open(ctx context.Context, c *Conn) (num int64, err error) {
 	// TODO: Send a STREAMS_BLOCKED when blocked.
-	if err := lim.gate.waitAndLock(ctx, c.testHooks); err != nil {
+	if err := lim.gate.waitAndLock(ctx); err != nil {
 		return 0, err
 	}
 	if lim.opened < 0 {

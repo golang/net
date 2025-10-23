@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -12,10 +14,14 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 func TestStatelessResetClientSendsStatelessResetTokenTransportParameter(t *testing.T) {
+	synctest.Test(t, testStatelessResetClientSendsStatelessResetTokenTransportParameter)
+}
+func testStatelessResetClientSendsStatelessResetTokenTransportParameter(t *testing.T) {
 	// "[The stateless_reset_token] transport parameter MUST NOT be sent by a client [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-18.2-4.6.1
 	resetToken := testPeerStatelessResetToken(0)
@@ -61,6 +67,9 @@ func newDatagramForReset(cid []byte, size int, addr netip.AddrPort) *datagram {
 }
 
 func TestStatelessResetSentSizes(t *testing.T) {
+	synctest.Test(t, testStatelessResetSentSizes)
+}
+func testStatelessResetSentSizes(t *testing.T) {
 	config := &Config{
 		TLSConfig:         newTestTLSConfig(serverSide),
 		StatelessResetKey: testStatelessResetKey,
@@ -126,6 +135,9 @@ func TestStatelessResetSentSizes(t *testing.T) {
 }
 
 func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
+	synctest.Test(t, testStatelessResetSuccessfulNewConnectionID)
+}
+func testStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 	// "[...] Stateless Reset Token field values from [...] NEW_CONNECTION_ID frames [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.3.1-1
 	qr := &qlogRecord{}
@@ -155,7 +167,7 @@ func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 		t.Errorf("conn.Wait() = %v, want errStatelessReset", err)
 	}
 	tc.wantIdle("closed connection is idle in draining")
-	tc.advance(1 * time.Second) // long enough to exit the draining state
+	time.Sleep(1 * time.Second) // long enough to exit the draining state
 	tc.wantIdle("closed connection is idle after draining")
 
 	qr.wantEvents(t, jsonEvent{
@@ -167,6 +179,9 @@ func TestStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 }
 
 func TestStatelessResetSuccessfulTransportParameter(t *testing.T) {
+	synctest.Test(t, testStatelessResetSuccessfulTransportParameter)
+}
+func testStatelessResetSuccessfulTransportParameter(t *testing.T) {
 	// "[...] Stateless Reset Token field values from [...]
 	// the server's transport parameters [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.3.1-1
@@ -229,7 +244,7 @@ func TestStatelessResetSuccessfulPrefix(t *testing.T) {
 		}, testLocalConnID(0)...),
 		size: 100,
 	}} {
-		t.Run(test.name, func(t *testing.T) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			resetToken := testPeerStatelessResetToken(0)
 			tc := newTestConn(t, clientSide, func(p *transportParameters) {
 				p.statelessResetToken = resetToken[:]
@@ -252,6 +267,9 @@ func TestStatelessResetSuccessfulPrefix(t *testing.T) {
 }
 
 func TestStatelessResetRetiredConnID(t *testing.T) {
+	synctest.Test(t, testStatelessResetRetiredConnID)
+}
+func testStatelessResetRetiredConnID(t *testing.T) {
 	// "An endpoint MUST NOT check for any stateless reset tokens [...]
 	// for connection IDs that have been retired."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-10.3.1-3

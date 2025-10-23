@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -9,6 +11,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 // Frames may be retransmitted either when the packet containing the frame is lost, or on PTO.
@@ -19,6 +23,16 @@ func lostFrameTest(t *testing.T, f func(t *testing.T, pto bool)) {
 	})
 	t.Run("pto", func(t *testing.T) {
 		f(t, true)
+	})
+}
+
+func lostFrameTestSynctest(t *testing.T, f func(t *testing.T, pto bool)) {
+	t.Helper()
+	lostFrameTest(t, func(t *testing.T, pto bool) {
+		t.Helper()
+		synctest.Test(t, func(t *testing.T) {
+			f(t, pto)
+		})
 	})
 }
 
@@ -33,7 +47,11 @@ func (tc *testConn) triggerLossOrPTO(ptype packetType, pto bool) {
 		if *testVV {
 			tc.t.Logf("advancing to PTO timer")
 		}
-		tc.advanceTo(tc.conn.loss.timer)
+		var when time.Time
+		tc.conn.runOnLoop(tc.t.Context(), func(now time.Time, conn *Conn) {
+			when = conn.loss.timer
+		})
+		time.Sleep(time.Until(when))
 		return
 	}
 	if *testVV {
@@ -77,7 +95,7 @@ func TestLostResetStreamFrame(t *testing.T) {
 	// "Cancellation of stream transmission, as carried in a RESET_STREAM frame,
 	// is sent until acknowledged or until all stream data is acknowledged by the peer [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.4
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, permissiveTransportParameters)
 		tc.ignoreFrame(frameTypeAck)
 
@@ -106,7 +124,7 @@ func TestLostStopSendingFrame(t *testing.T) {
 	// Technically, we can stop sending a STOP_SENDING frame if the peer sends
 	// us all the data for the stream or resets it. We don't bother tracking this,
 	// however, so we'll keep sending the frame until it is acked. This is harmless.
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, permissiveTransportParameters)
 		tc.ignoreFrame(frameTypeAck)
 
@@ -127,7 +145,7 @@ func TestLostStopSendingFrame(t *testing.T) {
 func TestLostCryptoFrame(t *testing.T) {
 	// "Data sent in CRYPTO frames is retransmitted [...] until all data has been acknowledged."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.1
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc := newTestConn(t, clientSide)
 		tc.ignoreFrame(frameTypeAck)
 
@@ -171,7 +189,7 @@ func TestLostCryptoFrame(t *testing.T) {
 func TestLostStreamFrameEmpty(t *testing.T) {
 	// A STREAM frame opening a stream, but containing no stream data, should
 	// be retransmitted if lost.
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		ctx := canceledContext()
 		tc := newTestConn(t, clientSide, permissiveTransportParameters)
 		tc.handshake()
@@ -203,7 +221,7 @@ func TestLostStreamWithData(t *testing.T) {
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.2
 	//
 	// TODO: Lost stream frame after RESET_STREAM
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 		tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, func(p *transportParameters) {
 			p.initialMaxStreamsUni = 1
@@ -247,6 +265,9 @@ func TestLostStreamWithData(t *testing.T) {
 }
 
 func TestLostStreamPartialLoss(t *testing.T) {
+	synctest.Test(t, testLostStreamPartialLoss)
+}
+func testLostStreamPartialLoss(t *testing.T) {
 	// Conn sends four STREAM packets.
 	// ACKs are received for the packets containing bytes 0 and 2.
 	// The remaining packets are declared lost.
@@ -295,7 +316,7 @@ func TestLostMaxDataFrame(t *testing.T) {
 	// "An updated value is sent in a MAX_DATA frame if the packet
 	// containing the most recently sent MAX_DATA frame is declared lost [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.7
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		const maxWindowSize = 32
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
@@ -340,7 +361,7 @@ func TestLostMaxStreamDataFrame(t *testing.T) {
 	// "[...] an updated value is sent when the packet containing
 	// the most recent MAX_STREAM_DATA frame for a stream is lost"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.8
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		const maxWindowSize = 32
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
@@ -387,7 +408,7 @@ func TestLostMaxStreamDataFrameAfterStreamFinReceived(t *testing.T) {
 	// "An endpoint SHOULD stop sending MAX_STREAM_DATA frames when
 	// the receiving part of the stream enters a "Size Known" or "Reset Recvd" state."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.8
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		const maxWindowSize = 10
 		buf := make([]byte, maxWindowSize)
 		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
@@ -425,7 +446,7 @@ func TestLostMaxStreamsFrameMostRecent(t *testing.T) {
 	// most recent MAX_STREAMS for a stream type frame is declared lost [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.9
 	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
-		lostFrameTest(t, func(t *testing.T, pto bool) {
+		lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 			ctx := canceledContext()
 			tc := newTestConn(t, serverSide, func(c *Config) {
 				c.MaxUniRemoteStreams = 1
@@ -469,6 +490,9 @@ func TestLostMaxStreamsFrameMostRecent(t *testing.T) {
 }
 
 func TestLostMaxStreamsFrameNotMostRecent(t *testing.T) {
+	synctest.Test(t, testLostMaxStreamsFrameNotMostRecent)
+}
+func testLostMaxStreamsFrameNotMostRecent(t *testing.T) {
 	// Send two MAX_STREAMS frames, lose the first one.
 	//
 	// No PTO mode for this test: The ack that causes the first frame
@@ -514,7 +538,7 @@ func TestLostStreamDataBlockedFrame(t *testing.T) {
 	// "A new [STREAM_DATA_BLOCKED] frame is sent if a packet containing
 	// the most recent frame for a scope is lost [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.10
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, func(p *transportParameters) {
 			p.initialMaxStreamsUni = 1
 			p.initialMaxData = 1 << 20
@@ -565,7 +589,7 @@ func TestLostStreamDataBlockedFrameAfterStreamUnblocked(t *testing.T) {
 	// "A new [STREAM_DATA_BLOCKED] frame is sent [...] only while
 	// the endpoint is blocked on the corresponding limit."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.10
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc, s := newTestConnAndLocalStream(t, serverSide, uniStream, func(p *transportParameters) {
 			p.initialMaxStreamsUni = 1
 			p.initialMaxData = 1 << 20
@@ -607,7 +631,7 @@ func TestLostStreamDataBlockedFrameAfterStreamUnblocked(t *testing.T) {
 func TestLostNewConnectionIDFrame(t *testing.T) {
 	// "New connection IDs are [...] retransmitted if the packet containing them is lost."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.13
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc := newTestConn(t, serverSide)
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -637,7 +661,7 @@ func TestLostRetireConnectionIDFrame(t *testing.T) {
 	// "[...] retired connection IDs are [...] retransmitted
 	// if the packet containing them is lost."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-13.3-3.13
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc := newTestConn(t, clientSide)
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -664,7 +688,7 @@ func TestLostRetireConnectionIDFrame(t *testing.T) {
 func TestLostPathResponseFrame(t *testing.T) {
 	// "Responses to path validation using PATH_RESPONSE frames are sent just once."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.12
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc := newTestConn(t, clientSide)
 		tc.handshake()
 		tc.ignoreFrame(frameTypeAck)
@@ -687,7 +711,7 @@ func TestLostPathResponseFrame(t *testing.T) {
 func TestLostHandshakeDoneFrame(t *testing.T) {
 	// "The HANDSHAKE_DONE frame MUST be retransmitted until it is acknowledged."
 	// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.3-3.16
-	lostFrameTest(t, func(t *testing.T, pto bool) {
+	lostFrameTestSynctest(t, func(t *testing.T, pto bool) {
 		tc := newTestConn(t, serverSide)
 		tc.ignoreFrame(frameTypeAck)
 

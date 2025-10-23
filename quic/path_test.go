@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
 	"testing"
+	"testing/synctest"
 )
 
 func TestPathChallengeReceived(t *testing.T) {
@@ -22,30 +25,35 @@ func TestPathChallengeReceived(t *testing.T) {
 		padTo:       1200,
 		wantPadding: 1200,
 	}} {
-		// "The recipient of [a PATH_CHALLENGE] frame MUST generate
-		// a PATH_RESPONSE frame [...] containing the same Data value."
-		// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.17-7
-		tc := newTestConn(t, clientSide)
-		tc.handshake()
-		tc.ignoreFrame(frameTypeAck)
-		data := pathChallengeData{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
-		tc.writeFrames(packetType1RTT, debugFramePathChallenge{
-			data: data,
-		}, debugFramePadding{
-			to: test.padTo,
-		})
-		tc.wantFrame("response to PATH_CHALLENGE",
-			packetType1RTT, debugFramePathResponse{
+		synctestSubtest(t, test.name, func(t *testing.T) {
+			// "The recipient of [a PATH_CHALLENGE] frame MUST generate
+			// a PATH_RESPONSE frame [...] containing the same Data value."
+			// https://www.rfc-editor.org/rfc/rfc9000.html#section-19.17-7
+			tc := newTestConn(t, clientSide)
+			tc.handshake()
+			tc.ignoreFrame(frameTypeAck)
+			data := pathChallengeData{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+			tc.writeFrames(packetType1RTT, debugFramePathChallenge{
 				data: data,
+			}, debugFramePadding{
+				to: test.padTo,
 			})
-		if got, want := tc.lastDatagram.paddedSize, test.wantPadding; got != want {
-			t.Errorf("PATH_RESPONSE expanded to %v bytes, want %v", got, want)
-		}
-		tc.wantIdle("connection is idle")
+			tc.wantFrame("response to PATH_CHALLENGE",
+				packetType1RTT, debugFramePathResponse{
+					data: data,
+				})
+			if got, want := tc.lastDatagram.paddedSize, test.wantPadding; got != want {
+				t.Errorf("PATH_RESPONSE expanded to %v bytes, want %v", got, want)
+			}
+			tc.wantIdle("connection is idle")
+		})
 	}
 }
 
 func TestPathResponseMismatchReceived(t *testing.T) {
+	synctest.Test(t, testPathResponseMismatchReceived)
+}
+func testPathResponseMismatchReceived(t *testing.T) {
 	// "If the content of a PATH_RESPONSE frame does not match the content of
 	// a PATH_CHALLENGE frame previously sent by the endpoint,
 	// the endpoint MAY generate a connection error of type PROTOCOL_VIOLATION."

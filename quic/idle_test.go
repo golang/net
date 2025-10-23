@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
@@ -9,10 +11,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 func TestHandshakeTimeoutExpiresServer(t *testing.T) {
+	synctest.Test(t, testHandshakeTimeoutExpiresServer)
+}
+func testHandshakeTimeoutExpiresServer(t *testing.T) {
 	const timeout = 5 * time.Second
 	tc := newTestConn(t, serverSide, func(c *Config) {
 		c.HandshakeTimeout = timeout
@@ -32,18 +38,18 @@ func TestHandshakeTimeoutExpiresServer(t *testing.T) {
 		packetTypeHandshake, debugFrameCrypto{})
 	tc.writeAckForAll()
 
-	if got, want := tc.timerDelay(), timeout; got != want {
+	if got, want := tc.timeUntilEvent(), timeout; got != want {
 		t.Errorf("connection timer = %v, want %v (handshake timeout)", got, want)
 	}
 
 	// Client sends a packet, but this does not extend the handshake timer.
-	tc.advance(1 * time.Second)
+	time.Sleep(1 * time.Second)
 	tc.writeFrames(packetTypeHandshake, debugFrameCrypto{
 		data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake][:1], // partial data
 	})
 	tc.wantIdle("handshake is not complete")
 
-	tc.advance(timeout - 1*time.Second)
+	time.Sleep(timeout - 1*time.Second)
 	tc.wantFrame("server closes connection after handshake timeout",
 		packetTypeHandshake, debugFrameConnectionCloseTransport{
 			code: errConnectionRefused,
@@ -51,6 +57,9 @@ func TestHandshakeTimeoutExpiresServer(t *testing.T) {
 }
 
 func TestHandshakeTimeoutExpiresClient(t *testing.T) {
+	synctest.Test(t, testHandshakeTimeoutExpiresClient)
+}
+func testHandshakeTimeoutExpiresClient(t *testing.T) {
 	const timeout = 5 * time.Second
 	tc := newTestConn(t, clientSide, func(c *Config) {
 		c.HandshakeTimeout = timeout
@@ -77,10 +86,10 @@ func TestHandshakeTimeoutExpiresClient(t *testing.T) {
 	tc.writeAckForAll()
 	tc.wantIdle("client is waiting for end of handshake")
 
-	if got, want := tc.timerDelay(), timeout; got != want {
+	if got, want := tc.timeUntilEvent(), timeout; got != want {
 		t.Errorf("connection timer = %v, want %v (handshake timeout)", got, want)
 	}
-	tc.advance(timeout)
+	time.Sleep(timeout)
 	tc.wantFrame("client closes connection after handshake timeout",
 		packetTypeHandshake, debugFrameConnectionCloseTransport{
 			code: errConnectionRefused,
@@ -110,7 +119,7 @@ func TestIdleTimeoutExpires(t *testing.T) {
 		wantTimeout:         10 * time.Second,
 	}} {
 		name := fmt.Sprintf("local=%v/peer=%v", test.localMaxIdleTimeout, test.peerMaxIdleTimeout)
-		t.Run(name, func(t *testing.T) {
+		synctestSubtest(t, name, func(t *testing.T) {
 			tc := newTestConn(t, serverSide, func(p *transportParameters) {
 				p.maxIdleTimeout = test.peerMaxIdleTimeout
 			}, func(c *Config) {
@@ -120,13 +129,13 @@ func TestIdleTimeoutExpires(t *testing.T) {
 			if got, want := tc.timeUntilEvent(), test.wantTimeout; got != want {
 				t.Errorf("new conn timeout=%v, want %v (idle timeout)", got, want)
 			}
-			tc.advance(test.wantTimeout - 1)
+			time.Sleep(test.wantTimeout - 1)
 			tc.wantIdle("connection is idle and alive prior to timeout")
 			ctx := canceledContext()
 			if err := tc.conn.Wait(ctx); err != context.Canceled {
 				t.Fatalf("conn.Wait() = %v, want Canceled", err)
 			}
-			tc.advance(1)
+			time.Sleep(1)
 			tc.wantIdle("connection exits after timeout")
 			if err := tc.conn.Wait(ctx); err != errIdleTimeout {
 				t.Fatalf("conn.Wait() = %v, want errIdleTimeout", err)
@@ -154,7 +163,7 @@ func TestIdleTimeoutKeepAlive(t *testing.T) {
 		wantTimeout: 30 * time.Second,
 	}} {
 		name := fmt.Sprintf("idle_timeout=%v/keepalive=%v", test.idleTimeout, test.keepAlive)
-		t.Run(name, func(t *testing.T) {
+		synctestSubtest(t, name, func(t *testing.T) {
 			tc := newTestConn(t, serverSide, func(c *Config) {
 				c.MaxIdleTimeout = test.idleTimeout
 				c.KeepAlivePeriod = test.keepAlive
@@ -163,9 +172,9 @@ func TestIdleTimeoutKeepAlive(t *testing.T) {
 			if got, want := tc.timeUntilEvent(), test.wantTimeout; got != want {
 				t.Errorf("new conn timeout=%v, want %v (keepalive timeout)", got, want)
 			}
-			tc.advance(test.wantTimeout - 1)
+			time.Sleep(test.wantTimeout - 1)
 			tc.wantIdle("connection is idle prior to timeout")
-			tc.advance(1)
+			time.Sleep(1)
 			tc.wantFrameType("keep-alive ping is sent", packetType1RTT,
 				debugFramePing{})
 		})
@@ -173,6 +182,9 @@ func TestIdleTimeoutKeepAlive(t *testing.T) {
 }
 
 func TestIdleLongTermKeepAliveSent(t *testing.T) {
+	synctest.Test(t, testIdleLongTermKeepAliveSent)
+}
+func testIdleLongTermKeepAliveSent(t *testing.T) {
 	// This test examines a connection sitting idle and sending periodic keep-alive pings.
 	const keepAlivePeriod = 30 * time.Second
 	tc := newTestConn(t, clientSide, func(c *Config) {
@@ -191,7 +203,7 @@ func TestIdleLongTermKeepAliveSent(t *testing.T) {
 		if got, want := tc.timeUntilEvent(), keepAlivePeriod; got != want {
 			t.Errorf("i=%v conn timeout=%v, want %v (keepalive timeout)", i, got, want)
 		}
-		tc.advance(keepAlivePeriod)
+		time.Sleep(keepAlivePeriod)
 		tc.wantFrameType("keep-alive ping is sent", packetType1RTT,
 			debugFramePing{})
 		tc.writeAckForAll()
@@ -199,6 +211,9 @@ func TestIdleLongTermKeepAliveSent(t *testing.T) {
 }
 
 func TestIdleLongTermKeepAliveReceived(t *testing.T) {
+	synctest.Test(t, testIdleLongTermKeepAliveReceived)
+}
+func testIdleLongTermKeepAliveReceived(t *testing.T) {
 	// This test examines a connection sitting idle, but receiving periodic peer
 	// traffic to keep the connection alive.
 	const idleTimeout = 30 * time.Second
@@ -207,7 +222,7 @@ func TestIdleLongTermKeepAliveReceived(t *testing.T) {
 	})
 	tc.handshake()
 	for i := 0; i < 10; i++ {
-		tc.advance(idleTimeout - 1*time.Second)
+		time.Sleep(idleTimeout - 1*time.Second)
 		tc.writeFrames(packetType1RTT, debugFramePing{})
 		if got, want := tc.timeUntilEvent(), maxAckDelay-timerGranularity; got != want {
 			t.Errorf("i=%v conn timeout=%v, want %v (max_ack_delay)", i, got, want)

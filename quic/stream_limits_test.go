@@ -2,19 +2,22 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
 import (
 	"context"
 	"crypto/tls"
 	"testing"
+	"testing/synctest"
 )
 
 func TestStreamLimitNewStreamBlocked(t *testing.T) {
 	// "An endpoint that receives a frame with a stream ID exceeding the limit
 	// it has sent MUST treat this as a connection error of type STREAM_LIMIT_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.6-3
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()
 		tc := newTestConn(t, clientSide,
 			permissiveTransportParameters,
@@ -46,7 +49,7 @@ func TestStreamLimitNewStreamBlocked(t *testing.T) {
 func TestStreamLimitMaxStreamsDecreases(t *testing.T) {
 	// "MAX_STREAMS frames that do not increase the stream limit MUST be ignored."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.6-4
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		ctx := canceledContext()
 		tc := newTestConn(t, clientSide,
 			permissiveTransportParameters,
@@ -77,7 +80,7 @@ func TestStreamLimitMaxStreamsDecreases(t *testing.T) {
 }
 
 func TestStreamLimitViolated(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide,
 			func(c *Config) {
 				if styp == bidiStream {
@@ -104,7 +107,7 @@ func TestStreamLimitViolated(t *testing.T) {
 }
 
 func TestStreamLimitImplicitStreams(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide,
 			func(c *Config) {
 				c.MaxBidiRemoteStreams = 1 << 60
@@ -152,7 +155,7 @@ func TestStreamLimitMaxStreamsTransportParameterTooLarge(t *testing.T) {
 	// a value greater than 2^60 [...] the connection MUST be closed
 	// immediately with a connection error of type TRANSPORT_PARAMETER_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.6-2
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide,
 			func(p *transportParameters) {
 				if styp == bidiStream {
@@ -177,7 +180,7 @@ func TestStreamLimitMaxStreamsFrameTooLarge(t *testing.T) {
 	// greater than 2^60 [...] the connection MUST be closed immediately
 	// with a connection error [...] of type FRAME_ENCODING_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-4.6-2
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide)
 		tc.handshake()
 		tc.writeFrames(packetTypeInitial,
@@ -197,7 +200,7 @@ func TestStreamLimitMaxStreamsFrameTooLarge(t *testing.T) {
 }
 
 func TestStreamLimitSendUpdatesMaxStreams(t *testing.T) {
-	testStreamTypes(t, "", func(t *testing.T, styp streamType) {
+	testStreamTypesSynctest(t, "", func(t *testing.T, styp streamType) {
 		tc := newTestConn(t, serverSide, func(c *Config) {
 			if styp == uniStream {
 				c.MaxUniRemoteStreams = 4
@@ -236,6 +239,9 @@ func TestStreamLimitSendUpdatesMaxStreams(t *testing.T) {
 }
 
 func TestStreamLimitStopSendingDoesNotUpdateMaxStreams(t *testing.T) {
+	synctest.Test(t, testStreamLimitStopSendingDoesNotUpdateMaxStreams)
+}
+func testStreamLimitStopSendingDoesNotUpdateMaxStreams(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, bidiStream, func(c *Config) {
 		c.MaxBidiRemoteStreams = 1
 	})

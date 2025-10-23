@@ -2,11 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.25
+
 package quic
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+)
 
 func TestPing(t *testing.T) {
+	synctest.Test(t, testPing)
+}
+func testPing(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.handshake()
 
@@ -22,6 +30,9 @@ func TestPing(t *testing.T) {
 }
 
 func TestAck(t *testing.T) {
+	synctest.Test(t, testAck)
+}
+func testAck(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 
