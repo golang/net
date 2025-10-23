@@ -283,19 +283,14 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 		return false
 	}
 
-	// MAX_STREAM_DATA
-	if !c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto) {
-		return false
-	}
-	if !c.streams.remoteLimit[bidiStream].appendFrame(w, bidiStream, pnum, pto) {
-		return false
-	}
-
 	if pto {
 		return c.appendStreamFramesPTO(w, pnum)
 	}
 	if !c.streams.needSend.Load() {
-		return true
+		// If queueMeta includes newly-finished streams, we may extend the peer's
+		// stream limits. When there are no streams to process, add MAX_STREAMS
+		// frames here. Otherwise, wait until after we've processed queueMeta.
+		return c.appendMaxStreams(w, pnum, pto)
 	}
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
@@ -354,6 +349,12 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 		// If so, put the stream back on a queue.
 		c.queueStreamForSendLocked(s, state)
 	}
+
+	// MAX_STREAMS (possibly triggered by finalization of remote streams above).
+	if !c.appendMaxStreams(w, pnum, pto) {
+		return false
+	}
+
 	// queueData contains streams with flow-controlled frames.
 	for c.streams.queueData.head != nil {
 		avail := c.streams.outflow.avail()
@@ -408,9 +409,12 @@ func (c *Conn) appendStreamFrames(w *packetWriter, pnum packetNumber, pto bool) 
 // It returns true if no more frames need appending,
 // false if not everything fit in the current packet.
 func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
+	const pto = true
+	if !c.appendMaxStreams(w, pnum, pto) {
+		return false
+	}
 	c.streams.sendMu.Lock()
 	defer c.streams.sendMu.Unlock()
-	const pto = true
 	for _, ms := range c.streams.streams {
 		s := ms.s
 		if s == nil {
@@ -430,6 +434,16 @@ func (c *Conn) appendStreamFramesPTO(w *packetWriter, pnum packetNumber) bool {
 		if !outOK {
 			return false
 		}
+	}
+	return true
+}
+
+func (c *Conn) appendMaxStreams(w *packetWriter, pnum packetNumber, pto bool) bool {
+	if !c.streams.remoteLimit[uniStream].appendFrame(w, uniStream, pnum, pto) {
+		return false
+	}
+	if !c.streams.remoteLimit[bidiStream].appendFrame(w, bidiStream, pnum, pto) {
+		return false
 	}
 	return true
 }
