@@ -32,8 +32,8 @@ func (tc *testConn) handshake() {
 	i := 0
 	for {
 		if i == len(dgrams)-1 {
+			want := tc.endpoint.now.Add(maxAckDelay - timerGranularity)
 			if tc.conn.side == clientSide {
-				want := tc.endpoint.now.Add(maxAckDelay - timerGranularity)
 				if !tc.timer.Equal(want) {
 					t.Fatalf("want timer = %v (max_ack_delay), got %v", want, tc.timer)
 				}
@@ -41,7 +41,7 @@ func (tc *testConn) handshake() {
 					t.Fatalf("client unexpectedly sent: %v", got)
 				}
 			}
-			tc.advance(maxAckDelay)
+			tc.advanceTo(want)
 		}
 
 		// Check that we're sending exactly the data we expect.
@@ -209,7 +209,7 @@ func handshakeDatagrams(tc *testConn) (dgrams []*testDatagram) {
 			frames: []debugFrame{
 				debugFrameAck{
 					ackDelay: unscaledAckDelayFromDuration(
-						maxAckDelay, ackDelayExponent),
+						maxAckDelay-timerGranularity, ackDelayExponent),
 					ranges: []i64range[packetNumber]{{0, 2}},
 				},
 			},
