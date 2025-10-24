@@ -548,6 +548,39 @@ func TestPriorityWeights(t *testing.T) {
 	}
 }
 
+func TestPriorityWeightsMinMax(t *testing.T) {
+	ws := defaultPriorityWriteScheduler()
+	ws.OpenStream(1, OpenStreamOptions{})
+	ws.OpenStream(2, OpenStreamOptions{})
+
+	sc := &serverConn{maxFrameSize: 8}
+	st1 := &stream{id: 1, sc: sc}
+	st2 := &stream{id: 2, sc: sc}
+	st1.flow.add(40)
+	st2.flow.add(40)
+
+	// st2 gets 256x the bandwidth of st1 (256 = (255+1)/(0+1)).
+	// The maximum frame size is 8 bytes. The write sequence should be:
+	//   st2, total bytes so far is (st1=0,  st=8)
+	//   st1, total bytes so far is (st1=8,  st=8)
+	//   st2, total bytes so far is (st1=8,  st=16)
+	//   st2, total bytes so far is (st1=8,  st=24)
+	//   st2, total bytes so far is (st1=8,  st=32)
+	//   st2, total bytes so far is (st1=8,  st=40)  // 5x bandwidth
+	//   st1, total bytes so far is (st1=16, st=40)
+	//   st1, total bytes so far is (st1=24, st=40)
+	//   st1, total bytes so far is (st1=32, st=40)
+	//   st1, total bytes so far is (st1=40, st=40)
+	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 40), false}, st1, nil})
+	ws.Push(FrameWriteRequest{&writeData{2, make([]byte, 40), false}, st2, nil})
+	ws.AdjustStream(1, PriorityParam{StreamDep: 0, Weight: 0})
+	ws.AdjustStream(2, PriorityParam{StreamDep: 0, Weight: 255})
+
+	if err := checkPopAll(ws, []uint32{2, 1, 2, 2, 2, 2, 1, 1, 1, 1}); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestPriorityRstStreamOnNonOpenStreams(t *testing.T) {
 	ws := NewPriorityWriteScheduler(&PriorityWriteSchedulerConfig{
 		MaxClosedNodesInTree: 0,
