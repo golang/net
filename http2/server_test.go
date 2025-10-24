@@ -5124,3 +5124,71 @@ func testServerSendDataAfterRequestBodyClose(t testing.TB) {
 	})
 	st.wantIdle()
 }
+
+// This test documents current behavior, rather than ideal behavior that we
+// would necessarily like to see. Refer to go.dev/issues/75936 for details.
+func TestServerRFC7540PrioritySmallPayload(t *testing.T) {
+	synctestTest(t, testServerRFC7540PrioritySmallPayload)
+}
+func testServerRFC7540PrioritySmallPayload(t testing.TB) {
+	endTest := false
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		for !endTest {
+			w.Write([]byte("a"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}, func(s *Server) {
+		s.NewWriteScheduler = func() WriteScheduler {
+			return NewPriorityWriteScheduler(nil)
+		}
+	})
+	if syncConn, ok := st.cc.(*synctestNetConn); ok {
+		syncConn.SetReadBufferSize(1)
+	} else {
+		t.Fatal("Server connection is not synctestNetConn")
+	}
+	defer st.Close()
+	defer func() { endTest = true }()
+	st.greet()
+
+	// Create 5 streams with weight of 0, and another 5 streams with weight of
+	// 255.
+	// Since each stream receives an infinite number of bytes, we should expect
+	// to see that almost all of the response we get are for the streams with
+	// weight of 255.
+	for i := 1; i <= 19; i += 2 {
+		weight := 1
+		if i > 10 {
+			weight = 255
+		}
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      uint32(i),
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+			Priority:      PriorityParam{StreamDep: 0, Weight: uint8(weight)},
+		})
+		synctest.Wait()
+	}
+
+	// In the current implementation however, the response we get are
+	// distributed equally amongst all the streams, regardless of weight.
+	streamWriteCount := make(map[uint32]int)
+	totalWriteCount := 10000
+	for range totalWriteCount {
+		f := st.readFrame()
+		if f == nil {
+			break
+		}
+		streamWriteCount[f.Header().StreamID] += 1
+	}
+	for streamID, writeCount := range streamWriteCount {
+		expectedWriteCount := totalWriteCount / len(streamWriteCount)
+		errorMargin := expectedWriteCount / 100
+		if writeCount >= expectedWriteCount+errorMargin || writeCount <= expectedWriteCount-errorMargin {
+			t.Errorf("Expected stream %v to receive %v±%v writes, got %v", streamID, expectedWriteCount, errorMargin, writeCount)
+		}
+	}
+}
