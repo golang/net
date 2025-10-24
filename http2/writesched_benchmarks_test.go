@@ -152,28 +152,28 @@ func BenchmarkWriteSchedulerLifetimePriorityRFC7540(b *testing.B) {
 }
 
 func BenchmarkWriteSchedulerThroughputPriorityRFC9218Incremental(b *testing.B) {
-	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
+	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		urgency:     defaultRFC9218Priority.urgency,
 		incremental: 1,
 	})
 }
 
 func BenchmarkWriteSchedulerLifetimePriorityRFC9218Incremental(b *testing.B) {
-	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
+	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		urgency:     defaultRFC9218Priority.urgency,
 		incremental: 1,
 	})
 }
 
 func BenchmarkWriteSchedulerThroughputPriorityRFC9218NonIncremental(b *testing.B) {
-	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
+	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		urgency:     defaultRFC9218Priority.urgency,
 		incremental: 0,
 	})
 }
 
 func BenchmarkWriteSchedulerLifetimePriorityRFC9218NonIncremental(b *testing.B) {
-	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
+	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		urgency:     defaultRFC9218Priority.urgency,
 		incremental: 0,
 	})

@@ -12,7 +12,7 @@ import (
 func TestPrioritySchedulerUrgency(t *testing.T) {
 	const maxFrameSize = 16
 	sc := &serverConn{maxFrameSize: maxFrameSize}
-	ws := newPriorityWriteSchedulerRFC9128()
+	ws := newPriorityWriteSchedulerRFC9218()
 	streams := make([]*stream, 5)
 	for i := range streams {
 		streamID := uint32(i) + 1
@@ -83,7 +83,7 @@ func TestPrioritySchedulerUrgency(t *testing.T) {
 func TestPrioritySchedulerIncremental(t *testing.T) {
 	const maxFrameSize = 16
 	sc := &serverConn{maxFrameSize: maxFrameSize}
-	ws := newPriorityWriteSchedulerRFC9128()
+	ws := newPriorityWriteSchedulerRFC9218()
 	streams := make([]*stream, 5)
 	for i := range streams {
 		streamID := uint32(i) + 1
@@ -160,7 +160,7 @@ func TestPrioritySchedulerIncremental(t *testing.T) {
 func TestPrioritySchedulerUrgencyAndIncremental(t *testing.T) {
 	const maxFrameSize = 16
 	sc := &serverConn{maxFrameSize: maxFrameSize}
-	ws := newPriorityWriteSchedulerRFC9128()
+	ws := newPriorityWriteSchedulerRFC9218()
 	streams := make([]*stream, 6)
 	for i := range streams {
 		streamID := uint32(i) + 1
@@ -239,7 +239,7 @@ func TestPrioritySchedulerUrgencyAndIncremental(t *testing.T) {
 func TestPrioritySchedulerIdempotentUpdate(t *testing.T) {
 	const maxFrameSize = 16
 	sc := &serverConn{maxFrameSize: maxFrameSize}
-	ws := newPriorityWriteSchedulerRFC9128()
+	ws := newPriorityWriteSchedulerRFC9218()
 	streams := make([]*stream, 6)
 	for i := range streams {
 		streamID := uint32(i) + 1
