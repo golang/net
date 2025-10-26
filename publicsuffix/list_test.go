@@ -5,6 +5,7 @@
 package publicsuffix
 
 import (
+	"net/netip"
 	"sort"
 	"strings"
 	"testing"
@@ -84,6 +85,11 @@ var publicSuffixTestCases = []struct {
 }{
 	// Empty string.
 	{"", "", false},
+
+	// IP addresses don't have a domain hierarchy
+	{"192.0.2.0", "192.0.2.0", false},
+	{"::ffff:192.0.2.0", "::ffff:192.0.2.0", false},
+	{"2001:db8::", "2001:db8::", false},
 
 	// The .ao rules are:
 	// ao
@@ -332,6 +338,10 @@ type slowPublicSuffixRule struct {
 // This function returns the public suffix, not the registrable domain, and so
 // it stops after step 6.
 func slowPublicSuffix(domain string) (string, bool) {
+	if _, err := netip.ParseAddr(domain); err == nil {
+		return domain, false
+	}
+
 	match := func(rulePart, domainPart string) bool {
 		switch rulePart[0] {
 		case '*':
