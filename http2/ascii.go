@@ -16,7 +16,7 @@ func asciiEqualFold(s, t string) bool {
 	if len(s) != len(t) {
 		return false
 	}
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if lower(s[i]) != lower(t[i]) {
 			return false
 		}
@@ -35,7 +35,7 @@ func lower(b byte) byte {
 // isASCIIPrint returns whether s is ASCII and printable according to
 // https://tools.ietf.org/html/rfc20#section-4.2.
 func isASCIIPrint(s string) bool {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] < ' ' || s[i] > '~' {
 			return false
 		}
