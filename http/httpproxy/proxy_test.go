@@ -394,7 +394,7 @@ func BenchmarkProxyForURL(b *testing.B) {
 		}
 		proxyFunc := cfg.ProxyFunc()
 		b.Run(test.host, func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
+			for range b.N {
 				if au, e := proxyFunc(u); e != nil && test.match == (au != nil) {
 					b.Errorf("useProxy(%v) = %v, want %v", test.host, !test.match, test.match)
 				}
