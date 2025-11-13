@@ -2563,9 +2563,6 @@ func testTransportReturnsUnusedFlowControl(t testing.TB, oneDataFrame bool) {
 			}
 			return true
 		},
-		func(f *PingFrame) bool {
-			return true
-		},
 		func(f *WindowUpdateFrame) bool {
 			if !oneDataFrame && !sentAdditionalData {
 				t.Fatalf("Got WindowUpdateFrame, don't expect one yet")
@@ -5567,6 +5564,8 @@ func TestTransport1xxLimits(t *testing.T) {
 	}
 }
 
+// TestTransportSendPingWithReset verifies that when a request to an unresponsive server
+// is canceled, it continues to consume a concurrency slot until the server responds to a PING.
 func TestTransportSendPingWithReset(t *testing.T) { synctestTest(t, testTransportSendPingWithReset) }
 func testTransportSendPingWithReset(t testing.TB) {
 	tc := newTestClientConn(t, func(tr *Transport) {
@@ -5578,7 +5577,7 @@ func testTransportSendPingWithReset(t testing.TB) {
 
 	// Start several requests.
 	var rts []*testRoundTrip
-	for i := 0; i < maxConcurrent+1; i++ {
+	for i := range maxConcurrent + 1 {
 		req := must(http.NewRequest("GET", "https://dummy.tld/", nil))
 		rt := tc.roundTrip(req)
 		if i >= maxConcurrent {
@@ -5586,25 +5585,17 @@ func testTransportSendPingWithReset(t testing.TB) {
 			continue
 		}
 		tc.wantFrameType(FrameHeaders)
-		tc.writeHeaders(HeadersFrameParam{
-			StreamID:   rt.streamID(),
-			EndHeaders: true,
-			BlockFragment: tc.makeHeaderBlockFragment(
-				":status", "200",
-			),
-		})
-		rt.wantStatus(200)
 		rts = append(rts, rt)
 	}
 
 	// Cancel one request. We send a PING frame along with the RST_STREAM.
-	rts[0].response().Body.Close()
+	rts[0].cancel()
 	tc.wantRSTStream(rts[0].streamID(), ErrCodeCancel)
 	pf := readFrame[*PingFrame](t, tc)
 	tc.wantIdle()
 
 	// Cancel another request. No PING frame, since one is in flight.
-	rts[1].response().Body.Close()
+	rts[1].cancel()
 	tc.wantRSTStream(rts[1].streamID(), ErrCodeCancel)
 	tc.wantIdle()
 
@@ -5613,16 +5604,55 @@ func testTransportSendPingWithReset(t testing.TB) {
 	tc.writePing(true, pf.Data)
 	tc.wantFrameType(FrameHeaders)
 	tc.wantIdle()
+}
 
-	// Receive a byte of data for the remaining stream, which resets our ability
-	// to send pings (see comment on ClientConn.rstStreamPingsBlocked).
-	tc.writeData(rts[2].streamID(), false, []byte{0})
+// TestTransportNoPingAfterResetWithFrames verifies that when a request to a responsive
+// server is canceled (specifically: when frames have been received from the server
+// in the time since the request was first sent), the request is immediately canceled and
+// does not continue to consume a concurrency slot.
+func TestTransportNoPingAfterResetWithFrames(t *testing.T) {
+	synctestTest(t, testTransportNoPingAfterResetWithFrames)
+}
+func testTransportNoPingAfterResetWithFrames(t testing.TB) {
+	tc := newTestClientConn(t, func(tr *Transport) {
+		tr.StrictMaxConcurrentStreams = true
+	})
 
-	// Cancel the last request. We send another PING, since none are in flight.
-	rts[2].response().Body.Close()
-	tc.wantRSTStream(rts[2].streamID(), ErrCodeCancel)
-	tc.wantFrameType(FramePing)
+	const maxConcurrent = 1
+	tc.greet(Setting{SettingMaxConcurrentStreams, maxConcurrent})
+
+	// Start request #1.
+	// The server immediately responds with request headers.
+	req1 := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt1 := tc.roundTrip(req1)
+	tc.wantFrameType(FrameHeaders)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:   rt1.streamID(),
+		EndHeaders: true,
+		BlockFragment: tc.makeHeaderBlockFragment(
+			":status", "200",
+		),
+	})
+	rt1.wantStatus(200)
+
+	// Start request #2.
+	// The connection is at its concurrency limit, so this request is not yet sent.
+	req2 := must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	rt2 := tc.roundTrip(req2)
 	tc.wantIdle()
+
+	// Cancel request #1.
+	// This frees a concurrency slot, and request #2 is sent.
+	rt1.cancel()
+	tc.wantRSTStream(rt1.streamID(), ErrCodeCancel)
+	tc.wantFrameType(FrameHeaders)
+
+	// Cancel request #2.
+	// We send a PING along with the RST_STREAM, since no frames have been received
+	// since this request was sent.
+	rt2.cancel()
+	tc.wantRSTStream(rt2.streamID(), ErrCodeCancel)
+	tc.wantFrameType(FramePing)
 }
 
 // Issue #70505: gRPC gets upset if we send more than 2 pings per HEADERS/DATA frame

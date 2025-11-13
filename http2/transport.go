@@ -376,6 +376,13 @@ type ClientConn struct {
 	// completely unresponsive connection.
 	pendingResets int
 
+	// readBeforeStreamID is the smallest stream ID that has not been followed by
+	// a frame read from the peer. We use this to determine when a request may
+	// have been sent to a completely unresponsive connection:
+	// If the request ID is less than readBeforeStreamID, then we have had some
+	// indication of life on the connection since sending the request.
+	readBeforeStreamID uint32
+
 	// reqHeaderMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
 	// Lock reqmu BEFORE mu or wmu.
@@ -1654,6 +1661,8 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 	}
 	bodyClosed := cs.reqBodyClosed
 	closeOnIdle := cc.singleUse || cc.doNotReuse || cc.t.disableKeepAlives() || cc.goAway != nil
+	// Have we read any frames from the connection since sending this request?
+	readSinceStream := cc.readBeforeStreamID > cs.ID
 	cc.mu.Unlock()
 	if mustCloseBody {
 		cs.reqBody.Close()
@@ -1685,8 +1694,10 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 				//
 				// This could be due to the server becoming unresponsive.
 				// To avoid sending too many requests on a dead connection,
-				// we let the request continue to consume a concurrency slot
-				// until we can confirm the server is still responding.
+				// if we haven't read any frames from the connection since
+				// sending this request, we let it continue to consume
+				// a concurrency slot until we can confirm the server is
+				// still responding.
 				// We do this by sending a PING frame along with the RST_STREAM
 				// (unless a ping is already in flight).
 				//
@@ -1697,7 +1708,7 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 				// because it's short lived and will probably be closed before
 				// we get the ping response.
 				ping := false
-				if !closeOnIdle {
+				if !closeOnIdle && !readSinceStream {
 					cc.mu.Lock()
 					// rstStreamPingsBlocked works around a gRPC behavior:
 					// see comment on the field for details.
@@ -2784,6 +2795,7 @@ func (rl *clientConnReadLoop) streamByID(id uint32, headerOrData bool) *clientSt
 		// See comment on ClientConn.rstStreamPingsBlocked for details.
 		rl.cc.rstStreamPingsBlocked = false
 	}
+	rl.cc.readBeforeStreamID = rl.cc.nextStreamID
 	cs := rl.cc.streams[id]
 	if cs != nil && !cs.readAborted {
 		return cs

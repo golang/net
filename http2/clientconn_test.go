@@ -295,9 +295,12 @@ func (b *testRequestBody) closeWithError(err error) {
 // (Note that the RoundTrip won't complete until response headers are received,
 // the request times out, or some other terminal condition is reached.)
 func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
 	rt := &testRoundTrip{
-		t:     tc.t,
-		donec: make(chan struct{}),
+		t:      tc.t,
+		donec:  make(chan struct{}),
+		cancel: cancel,
 	}
 	tc.roundtrips = append(tc.roundtrips, rt)
 	go func() {
@@ -367,6 +370,7 @@ type testRoundTrip struct {
 	respErr error
 	donec   chan struct{}
 	id      atomic.Uint32
+	cancel  context.CancelFunc
 }
 
 // streamID returns the HTTP/2 stream ID of the request.
