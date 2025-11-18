@@ -381,6 +381,12 @@ type ClientConn struct {
 	// Lock reqmu BEFORE mu or wmu.
 	reqHeaderMu chan struct{}
 
+	// internalStateHook reports state changes back to the net/http.ClientConn.
+	// Note that this is different from the user state hook registered by
+	// net/http.ClientConn.SetStateHook: The internal hook calls ClientConn,
+	// which calls the user hook.
+	internalStateHook func()
+
 	// wmu is held while writing.
 	// Acquire BEFORE mu when holding both, to avoid blocking mu on network writes.
 	// Only acquire both at the same time when changing peer settings.
@@ -710,7 +716,7 @@ func canRetryError(err error) bool {
 
 func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse bool) (*ClientConn, error) {
 	if t.transportTestHooks != nil {
-		return t.newClientConn(nil, singleUse)
+		return t.newClientConn(nil, singleUse, nil)
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -720,7 +726,7 @@ func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse b
 	if err != nil {
 		return nil, err
 	}
-	return t.newClientConn(tconn, singleUse)
+	return t.newClientConn(tconn, singleUse, nil)
 }
 
 func (t *Transport) newTLSConfig(host string) *tls.Config {
@@ -772,10 +778,10 @@ func (t *Transport) expectContinueTimeout() time.Duration {
 }
 
 func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
-	return t.newClientConn(c, t.disableKeepAlives())
+	return t.newClientConn(c, t.disableKeepAlives(), nil)
 }
 
-func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
+func (t *Transport) newClientConn(c net.Conn, singleUse bool, internalStateHook func()) (*ClientConn, error) {
 	conf := configFromTransport(t)
 	cc := &ClientConn{
 		t:                           t,
@@ -797,6 +803,7 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		pings:                       make(map[[8]byte]chan struct{}),
 		reqHeaderMu:                 make(chan struct{}, 1),
 		lastActive:                  time.Now(),
+		internalStateHook:           internalStateHook,
 	}
 	if t.transportTestHooks != nil {
 		t.transportTestHooks.newclientconn(cc)
@@ -1037,10 +1044,7 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 		maxConcurrentOkay = cc.currentRequestCountLocked() < int(cc.maxConcurrentStreams)
 	}
 
-	st.canTakeNewRequest = cc.goAway == nil && !cc.closed && !cc.closing && maxConcurrentOkay &&
-		!cc.doNotReuse &&
-		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < math.MaxInt32 &&
-		!cc.tooIdleLocked()
+	st.canTakeNewRequest = maxConcurrentOkay && cc.isUsableLocked()
 
 	// If this connection has never been used for a request and is closed,
 	// then let it take a request (which will fail).
@@ -1056,6 +1060,31 @@ func (cc *ClientConn) idleStateLocked() (st clientConnIdleState) {
 	return
 }
 
+func (cc *ClientConn) isUsableLocked() bool {
+	return cc.goAway == nil &&
+		!cc.closed &&
+		!cc.closing &&
+		!cc.doNotReuse &&
+		int64(cc.nextStreamID)+2*int64(cc.pendingRequests) < math.MaxInt32 &&
+		!cc.tooIdleLocked()
+}
+
+// canReserveLocked reports whether a net/http.ClientConn can reserve a slot on this conn.
+//
+// This follows slightly different rules than clientConnIdleState.canTakeNewRequest.
+// We only permit reservations up to the conn's concurrency limit.
+// This differs from ClientConn.ReserveNewRequest, which permits reservations
+// past the limit when StrictMaxConcurrentStreams is set.
+func (cc *ClientConn) canReserveLocked() bool {
+	if cc.currentRequestCountLocked() >= int(cc.maxConcurrentStreams) {
+		return false
+	}
+	if !cc.isUsableLocked() {
+		return false
+	}
+	return true
+}
+
 // currentRequestCountLocked reports the number of concurrency slots currently in use,
 // including active streams, reserved slots, and reset streams waiting for acknowledgement.
 func (cc *ClientConn) currentRequestCountLocked() int {
@@ -1065,6 +1094,14 @@ func (cc *ClientConn) currentRequestCountLocked() int {
 func (cc *ClientConn) canTakeNewRequestLocked() bool {
 	st := cc.idleStateLocked()
 	return st.canTakeNewRequest
+}
+
+// availableLocked reports the number of concurrency slots available.
+func (cc *ClientConn) availableLocked() int {
+	if !cc.canTakeNewRequestLocked() {
+		return 0
+	}
+	return max(0, int(cc.maxConcurrentStreams)-cc.currentRequestCountLocked())
 }
 
 // tooIdleLocked reports whether this connection has been been sitting idle
@@ -1091,6 +1128,7 @@ func (cc *ClientConn) closeConn() {
 	t := time.AfterFunc(250*time.Millisecond, cc.forceCloseConn)
 	defer t.Stop()
 	cc.tconn.Close()
+	cc.maybeCallStateHook()
 }
 
 // A tls.Conn.Close can hang for a long time if the peer is unresponsive.
@@ -1693,6 +1731,7 @@ func (cs *clientStream) cleanupWriteRequest(err error) {
 	}
 
 	close(cs.donec)
+	cc.maybeCallStateHook()
 }
 
 // awaitOpenSlotForStreamLocked waits until len(streams) < maxConcurrentStreams.
@@ -2795,6 +2834,7 @@ func (rl *clientConnReadLoop) processSettings(f *SettingsFrame) error {
 
 func (rl *clientConnReadLoop) processSettingsNoWrite(f *SettingsFrame) error {
 	cc := rl.cc
+	defer cc.maybeCallStateHook()
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
@@ -2975,6 +3015,7 @@ func (cc *ClientConn) Ping(ctx context.Context) error {
 func (rl *clientConnReadLoop) processPing(f *PingFrame) error {
 	if f.IsAck() {
 		cc := rl.cc
+		defer cc.maybeCallStateHook()
 		cc.mu.Lock()
 		defer cc.mu.Unlock()
 		// If ack, notify listener if any
@@ -3198,9 +3239,13 @@ func registerHTTPSProtocol(t *http.Transport, rt noDialH2RoundTripper) (err erro
 }
 
 // noDialH2RoundTripper is a RoundTripper which only tries to complete the request
-// if there's already has a cached connection to the host.
+// if there's already a cached connection to the host.
 // (The field is exported so it can be accessed via reflect from net/http; tested
 // by TestNoDialH2RoundTripperType)
+//
+// A noDialH2RoundTripper is registered with http1.Transport.RegisterProtocol,
+// and the http1.Transport can use type assertions to call non-RoundTrip methods on it.
+// This lets us expose, for example, NewClientConn to net/http.
 type noDialH2RoundTripper struct{ *Transport }
 
 func (rt noDialH2RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -3209,6 +3254,85 @@ func (rt noDialH2RoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 		return nil, http.ErrSkipAltProtocol
 	}
 	return res, err
+}
+
+func (rt noDialH2RoundTripper) NewClientConn(conn net.Conn, internalStateHook func()) (http.RoundTripper, error) {
+	tr := rt.Transport
+	cc, err := tr.newClientConn(conn, tr.disableKeepAlives(), internalStateHook)
+	if err != nil {
+		return nil, err
+	}
+
+	// RoundTrip should block when the conn is at its concurrency limit,
+	// not return an error. Setting strictMaxConcurrentStreams enables this.
+	cc.strictMaxConcurrentStreams = true
+
+	return netHTTPClientConn{cc}, nil
+}
+
+// netHTTPClientConn wraps ClientConn and implements the interface net/http expects from
+// the RoundTripper returned by NewClientConn.
+type netHTTPClientConn struct {
+	cc *ClientConn
+}
+
+func (cc netHTTPClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
+	return cc.cc.RoundTrip(req)
+}
+
+func (cc netHTTPClientConn) Close() error {
+	return cc.cc.Close()
+}
+
+func (cc netHTTPClientConn) Err() error {
+	cc.cc.mu.Lock()
+	defer cc.cc.mu.Unlock()
+	if cc.cc.closed {
+		return errors.New("connection closed")
+	}
+	return nil
+}
+
+func (cc netHTTPClientConn) Reserve() error {
+	defer cc.cc.maybeCallStateHook()
+	cc.cc.mu.Lock()
+	defer cc.cc.mu.Unlock()
+	if !cc.cc.canReserveLocked() {
+		return errors.New("connection is unavailable")
+	}
+	cc.cc.streamsReserved++
+	return nil
+}
+
+func (cc netHTTPClientConn) Release() {
+	defer cc.cc.maybeCallStateHook()
+	cc.cc.mu.Lock()
+	defer cc.cc.mu.Unlock()
+	// We don't complain if streamsReserved is 0.
+	//
+	// This is consistent with RoundTrip: both Release and RoundTrip will
+	// consume a reservation iff one exists.
+	if cc.cc.streamsReserved > 0 {
+		cc.cc.streamsReserved--
+	}
+}
+
+func (cc netHTTPClientConn) Available() int {
+	cc.cc.mu.Lock()
+	defer cc.cc.mu.Unlock()
+	return cc.cc.availableLocked()
+}
+
+func (cc netHTTPClientConn) InFlight() int {
+	cc.cc.mu.Lock()
+	defer cc.cc.mu.Unlock()
+	return cc.cc.currentRequestCountLocked()
+}
+
+func (cc *ClientConn) maybeCallStateHook() {
+	if cc.internalStateHook != nil {
+		cc.internalStateHook()
+	}
 }
 
 func (t *Transport) idleConnTimeout() time.Duration {

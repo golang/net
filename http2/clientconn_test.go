@@ -170,7 +170,7 @@ func newTestClientConn(t testing.TB, opts ...any) *testClientConn {
 
 	tt := newTestTransport(t, opts...)
 	const singleUse = false
-	_, err := tt.tr.newClientConn(nil, singleUse)
+	_, err := tt.tr.newClientConn(nil, singleUse, nil)
 	if err != nil {
 		t.Fatalf("newClientConn: %v", err)
 	}
