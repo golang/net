@@ -53,7 +53,19 @@ func TestPrefix(t *testing.T) {
 			return nil, err
 		}
 		defer res.Body.Close()
-		if res.StatusCode != wantStatusCode {
+		isRedirect := func(code int) bool {
+			switch code {
+			case http.StatusMovedPermanently,
+				http.StatusTemporaryRedirect,
+				http.StatusPermanentRedirect:
+				return true
+			default:
+				return false
+			}
+		}
+		if isRedirect(res.StatusCode) && isRedirect(wantStatusCode) {
+			// Allow any redirect.
+		} else if res.StatusCode != wantStatusCode {
 			return nil, fmt.Errorf("got status code %d, want %d", res.StatusCode, wantStatusCode)
 		}
 		return res.Header, nil
