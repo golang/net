@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 
@@ -1618,6 +1619,22 @@ func (mh *MetaHeadersFrame) PseudoFields() []hpack.HeaderField {
 		}
 	}
 	return mh.Fields
+}
+
+func (mh *MetaHeadersFrame) rfc9218Priority() (p PriorityParam, hasIntermediary bool) {
+	var s string
+	for _, field := range mh.Fields {
+		if field.Name == "priority" {
+			s = field.Value
+		}
+		if slices.Contains([]string{"via", "forwarded", "x-forwarded-for"}, field.Name) {
+			hasIntermediary = true
+		}
+	}
+	// No need to check for ok. parseRFC9218Priority will return a default
+	// value if there is no priority field or if the field cannot be parsed.
+	p, _ = parseRFC9218Priority(s)
+	return p, hasIntermediary
 }
 
 func (mh *MetaHeadersFrame) checkPseudos() error {

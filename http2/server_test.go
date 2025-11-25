@@ -24,6 +24,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -5167,7 +5168,7 @@ func testServerRFC7540PrioritySmallPayload(t testing.TB) {
 		}
 	}, func(s *Server) {
 		s.NewWriteScheduler = func() WriteScheduler {
-			return NewPriorityWriteScheduler(nil)
+			return newPriorityWriteSchedulerRFC7540(nil)
 		}
 	})
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
@@ -5216,5 +5217,172 @@ func testServerRFC7540PrioritySmallPayload(t testing.TB) {
 		if writeCount >= expectedWriteCount+errorMargin || writeCount <= expectedWriteCount-errorMargin {
 			t.Errorf("Expected stream %v to receive %v±%v writes, got %v", streamID, expectedWriteCount, errorMargin, writeCount)
 		}
+	}
+}
+
+// This test documents current behavior, rather than ideal behavior that we
+// would necessarily like to see. Refer to go.dev/issues/75936 for details.
+func TestServerRFC9218PrioritySmallPayload(t *testing.T) {
+	synctestTest(t, testServerRFC9218PrioritySmallPayload)
+}
+func testServerRFC9218PrioritySmallPayload(t testing.TB) {
+	endTest := false
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		for !endTest {
+			w.Write([]byte("a"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}, func(s *Server) {
+		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+	})
+	if syncConn, ok := st.cc.(*synctestNetConn); ok {
+		syncConn.SetReadBufferSize(1)
+	} else {
+		t.Fatal("Server connection is not synctestNetConn")
+	}
+	defer st.Close()
+	defer func() { endTest = true }()
+	st.greet()
+
+	// Create 5 streams with urgency of 0, and another 5 streams with urgency
+	// of 7.
+	// Since each stream receives an infinite number of bytes, we should expect
+	// to see that almost all of the response we get are for the streams with
+	// urgency of 0.
+	for i := 1; i <= 19; i += 2 {
+		urgency := uint8(0)
+		if i > 10 {
+			urgency = 7
+		}
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      uint32(i),
+			BlockFragment: st.encodeHeader("priority", fmt.Sprintf("u=%d", urgency)),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+		synctest.Wait()
+	}
+
+	// In the current implementation however, the response we get are
+	// distributed equally amongst all the streams, regardless of weight.
+	streamWriteCount := make(map[uint32]int)
+	totalWriteCount := 10000
+	for range totalWriteCount {
+		f := st.readFrame()
+		if f == nil {
+			break
+		}
+		streamWriteCount[f.Header().StreamID] += 1
+	}
+	for streamID, writeCount := range streamWriteCount {
+		expectedWriteCount := totalWriteCount / len(streamWriteCount)
+		errorMargin := expectedWriteCount / 100
+		if writeCount >= expectedWriteCount+errorMargin || writeCount <= expectedWriteCount-errorMargin {
+			t.Errorf("Expected stream %v to receive %v±%v writes, got %v", streamID, expectedWriteCount, errorMargin, writeCount)
+		}
+	}
+}
+
+func TestServerRFC9218Priority(t *testing.T) {
+	synctestTest(t, testServerRFC9218Priority)
+}
+func testServerRFC9218Priority(t testing.TB) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(slices.Repeat([]byte("a"), 16<<20))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}, func(s *Server) {
+		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+	})
+	defer st.Close()
+	if syncConn, ok := st.cc.(*synctestNetConn); ok {
+		syncConn.SetReadBufferSize(1)
+	} else {
+		t.Fatal("Server connection is not synctestNetConn")
+	}
+	st.sc.flow.add(1 << 30)
+	st.greet()
+
+	// Create 8 streams, where streams with larger ID has lower urgency value
+	// (i.e. more urgent).
+	for i := range 8 {
+		streamID := uint32(i*2 + 1)
+		urgency := 7 - i
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: st.encodeHeader("priority", fmt.Sprintf("u=%d", urgency)),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	synctest.Wait()
+
+	// Keep track of the last frame seen for each stream, indicating that they
+	// are done being processed.
+	lastFrame := make(map[uint32]int)
+	for i := 0; ; i++ {
+		f := st.readFrame()
+		if f == nil {
+			break
+		}
+		lastFrame[f.Header().StreamID] = i
+	}
+	for i := range 7 {
+		streamID := uint32(i*2 + 1)
+		nextStreamID := streamID + 2
+		if lastFrame[streamID] < lastFrame[nextStreamID] {
+			t.Errorf("stream %d finished before stream %d unexpectedly", streamID, nextStreamID)
+		}
+	}
+}
+
+func TestServerRFC9218PriorityIgnoredWhenProxied(t *testing.T) {
+	synctestTest(t, testServerRFC9218PriorityIgnoredWhenProxied)
+}
+func testServerRFC9218PriorityIgnoredWhenProxied(t testing.TB) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(slices.Repeat([]byte("a"), 16<<20))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}, func(s *Server) {
+		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+	})
+	defer st.Close()
+	if syncConn, ok := st.cc.(*synctestNetConn); ok {
+		syncConn.SetReadBufferSize(1)
+	} else {
+		t.Fatal("Server connection is not synctestNetConn")
+	}
+	st.sc.flow.add(1 << 30)
+	st.greet()
+
+	// Create 8 streams, where streams with larger ID has lower urgency value
+	// (i.e. more urgent). These should be ignored since the requests are
+	// coming through a proxy.
+	for i := range 8 {
+		streamID := uint32(i*2 + 1)
+		urgency := 7 - i
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: st.encodeHeader("priority", fmt.Sprintf("u=%d", urgency), "via", "a proxy"),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	synctest.Wait()
+	var streamFrameOrder []uint32
+	for f := st.readFrame(); f != nil; f = st.readFrame() {
+		streamFrameOrder = append(streamFrameOrder, f.Header().StreamID)
+	}
+	// Only check the middle-half of the frame processing order, since the
+	// beginning and end can be not perfectly round-robin (e.g. stream 1 gets
+	// processed a few times while waiting before other streams are opened).
+	half := streamFrameOrder[len(streamFrameOrder)/4 : len(streamFrameOrder)*3/4]
+	if !slices.Equal(slices.Compact(half), half) {
+		t.Errorf("want stream to be processed in round-robin manner when proxied, got: %v", streamFrameOrder)
 	}
 }

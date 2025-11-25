@@ -648,6 +648,22 @@ type serverConn struct {
 
 	// Used by startGracefulShutdown.
 	shutdownOnce sync.Once
+
+	// Used for RFC 9218 prioritization.
+	hasIntermediary bool // connection is done via an intermediary / proxy
+}
+
+func (sc *serverConn) writeSchedIgnoresRFC7540() bool {
+	switch sc.writeSched.(type) {
+	case *priorityWriteSchedulerRFC9218:
+		return true
+	case *randomWriteScheduler:
+		return true
+	case *roundRobinWriteScheduler:
+		return true
+	default:
+		return false
+	}
 }
 
 func (sc *serverConn) maxHeaderListSize() uint32 {
@@ -2075,13 +2091,28 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 	if f.StreamEnded() {
 		initialState = stateHalfClosedRemote
 	}
-	st := sc.newStream(id, 0, initialState)
+
+	initialPriority := defaultRFC9218Priority
+	if _, ok := sc.writeSched.(*priorityWriteSchedulerRFC9218); ok && !sc.hasIntermediary {
+		initialPriority, sc.hasIntermediary = f.rfc9218Priority()
+	}
+	if sc.hasIntermediary {
+		// When a request is sent via an intermediary, we force priority to be
+		// u=3,i. This is essentially a round-robin behavior, and is done to
+		// ensure fairness between, for example, multiple clients using the
+		// same proxy.
+		initialPriority = defaultRFC9218Priority
+		initialPriority.incremental = 1
+	}
+	st := sc.newStream(id, 0, initialState, initialPriority)
 
 	if f.HasPriority() {
 		if err := sc.checkPriority(f.StreamID, f.Priority); err != nil {
 			return err
 		}
-		sc.writeSched.AdjustStream(st.id, f.Priority)
+		if !sc.writeSchedIgnoresRFC7540() {
+			sc.writeSched.AdjustStream(st.id, f.Priority)
+		}
 	}
 
 	rw, req, err := sc.newWriterAndRequest(st, f)
@@ -2122,7 +2153,7 @@ func (sc *serverConn) upgradeRequest(req *http.Request) {
 	sc.serveG.check()
 	id := uint32(1)
 	sc.maxClientStreamID = id
-	st := sc.newStream(id, 0, stateHalfClosedRemote)
+	st := sc.newStream(id, 0, stateHalfClosedRemote, defaultRFC9218Priority)
 	st.reqTrailer = req.Trailer
 	if st.reqTrailer != nil {
 		st.trailer = make(http.Header)
@@ -2187,6 +2218,14 @@ func (sc *serverConn) processPriority(f *PriorityFrame) error {
 	if err := sc.checkPriority(f.StreamID, f.PriorityParam); err != nil {
 		return err
 	}
+	// We need to avoid calling AdjustStream when using the RFC 9218 write
+	// scheduler. Otherwise, incremental's zero value in PriorityParam will
+	// unexpectedly make all streams non-incremental. This causes us to process
+	// streams one-by-one to completion rather than doing it in a round-robin
+	// manner (the historical behavior), which might be unexpected to users.
+	if sc.writeSchedIgnoresRFC7540() {
+		return nil
+	}
 	sc.writeSched.AdjustStream(f.StreamID, f.PriorityParam)
 	return nil
 }
@@ -2203,7 +2242,7 @@ func (sc *serverConn) processPriorityUpdate(f *PriorityUpdateFrame) error {
 	return nil
 }
 
-func (sc *serverConn) newStream(id, pusherID uint32, state streamState) *stream {
+func (sc *serverConn) newStream(id, pusherID uint32, state streamState, priority PriorityParam) *stream {
 	sc.serveG.check()
 	if id == 0 {
 		panic("internal error: cannot create stream with id 0")
@@ -2226,7 +2265,7 @@ func (sc *serverConn) newStream(id, pusherID uint32, state streamState) *stream 
 	}
 
 	sc.streams[id] = st
-	sc.writeSched.OpenStream(st.id, OpenStreamOptions{PusherID: pusherID})
+	sc.writeSched.OpenStream(st.id, OpenStreamOptions{PusherID: pusherID, priority: priority})
 	if st.isPushed() {
 		sc.curPushedStreams++
 	} else {
@@ -3232,7 +3271,7 @@ func (sc *serverConn) startPush(msg *startPushRequest) {
 		// transition to "half closed (remote)" after sending the initial HEADERS, but
 		// we start in "half closed (remote)" for simplicity.
 		// See further comments at the definition of stateHalfClosedRemote.
-		promised := sc.newStream(promisedID, msg.parent.id, stateHalfClosedRemote)
+		promised := sc.newStream(promisedID, msg.parent.id, stateHalfClosedRemote, defaultRFC9218Priority)
 		rw, req, err := sc.newWriterAndRequestNoBody(promised, httpcommon.ServerRequestParam{
 			Method:    msg.method,
 			Scheme:    msg.url.Scheme,
