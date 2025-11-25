@@ -5152,6 +5152,68 @@ func testServerSendDataAfterRequestBodyClose(t testing.TB) {
 	st.wantIdle()
 }
 
+func TestServerSettingNoRFC7540Priorities(t *testing.T) {
+	synctestTest(t, testServerSettingNoRFC7540Priorities)
+}
+func testServerSettingNoRFC7540Priorities(t testing.TB) {
+	tests := []struct {
+		ws                   func() WriteScheduler
+		wantNoRFC7540Setting bool
+	}{
+		{
+			ws: func() WriteScheduler {
+				return newPriorityWriteSchedulerRFC7540(nil)
+			},
+			wantNoRFC7540Setting: false,
+		},
+		{
+			ws:                   newPriorityWriteSchedulerRFC9218,
+			wantNoRFC7540Setting: true,
+		},
+		{
+			ws:                   NewRandomWriteScheduler,
+			wantNoRFC7540Setting: true,
+		},
+		{
+			ws:                   newRoundRobinWriteScheduler,
+			wantNoRFC7540Setting: true,
+		},
+	}
+	for _, tt := range tests {
+		st := newServerTester(t, nil, func(s *Server) {
+			s.NewWriteScheduler = tt.ws
+		})
+		defer st.Close()
+
+		var gotNoRFC7540Setting bool
+		st.greetAndCheckSettings(func(s Setting) error {
+			if s.ID != SettingNoRFC7540Priorities {
+				return nil
+			}
+			gotNoRFC7540Setting = s.Val == 1
+			return nil
+		})
+		if tt.wantNoRFC7540Setting != gotNoRFC7540Setting {
+			t.Errorf("want SETTINGS_NO_RFC7540_PRIORITIES to be %v, got %v", tt.wantNoRFC7540Setting, gotNoRFC7540Setting)
+		}
+	}
+}
+
+func TestServerSettingNoRFC7540PrioritiesInvalid(t *testing.T) {
+	synctestTest(t, testServerSettingNoRFC7540PrioritiesInvalid)
+}
+func testServerSettingNoRFC7540PrioritiesInvalid(t testing.TB) {
+	st := newServerTester(t, nil)
+	defer st.Close()
+
+	st.writePreface()
+	st.writeSettings(Setting{ID: SettingNoRFC7540Priorities, Val: 2})
+	synctest.Wait()
+	st.readFrame() // SETTINGS frame
+	st.readFrame() // WINDOW_UPDATE frame
+	st.wantGoAway(0, ErrCodeProtocol)
+}
+
 // This test documents current behavior, rather than ideal behavior that we
 // would necessarily like to see. Refer to go.dev/issues/75936 for details.
 func TestServerRFC7540PrioritySmallPayload(t *testing.T) {

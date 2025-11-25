@@ -955,6 +955,9 @@ func (sc *serverConn) serve(conf http2Config) {
 	if !disableExtendedConnectProtocol {
 		settings = append(settings, Setting{SettingEnableConnectProtocol, 1})
 	}
+	if sc.writeSchedIgnoresRFC7540() {
+		settings = append(settings, Setting{SettingNoRFC7540Priorities, 1})
+	}
 	sc.writeFrame(FrameWriteRequest{
 		write: settings,
 	})
@@ -1822,6 +1825,10 @@ func (sc *serverConn) processSetting(s Setting) error {
 	case SettingEnableConnectProtocol:
 		// Receipt of this parameter by a server does not
 		// have any impact
+	case SettingNoRFC7540Priorities:
+		if s.Val > 1 {
+			return ConnectionError(ErrCodeProtocol)
+		}
 	default:
 		// Unknown setting: "An endpoint that receives a SETTINGS
 		// frame with any unknown or unsupported identifier MUST
