@@ -439,7 +439,7 @@ func TestParseRFC9218Priority(t *testing.T) {
 			priorityStr: "u=0",
 			want: PriorityParam{
 				urgency:     0,
-				incremental: defaultRFC9218Priority.incremental,
+				incremental: 0,
 			},
 			wantOk: true,
 		},
@@ -447,7 +447,7 @@ func TestParseRFC9218Priority(t *testing.T) {
 			name:        "with implicit incremental",
 			priorityStr: "i",
 			want: PriorityParam{
-				urgency:     defaultRFC9218Priority.urgency,
+				urgency:     3,
 				incremental: 1,
 			},
 			wantOk: true,
@@ -456,7 +456,7 @@ func TestParseRFC9218Priority(t *testing.T) {
 			name:        "with explicit incremental",
 			priorityStr: "i=?1",
 			want: PriorityParam{
-				urgency:     defaultRFC9218Priority.urgency,
+				urgency:     3,
 				incremental: 1,
 			},
 			wantOk: true,
@@ -492,7 +492,7 @@ func TestParseRFC9218Priority(t *testing.T) {
 			name:        "wrong field type",
 			priorityStr: `u="urgency will be ignored", i`,
 			want: PriorityParam{
-				urgency:     defaultRFC9218Priority.urgency,
+				urgency:     3,
 				incremental: 1,
 			},
 			wantOk: true,
@@ -500,17 +500,17 @@ func TestParseRFC9218Priority(t *testing.T) {
 		{
 			name:        "invalid dictionary",
 			priorityStr: `u=1,i, but this is not a valid dictionary"`,
-			want:        defaultRFC9218Priority,
+			want:        defaultRFC9218Priority(true),
 		},
 		{
 			name:        "out of range value",
 			priorityStr: "u=8",
-			want:        defaultRFC9218Priority,
+			want:        defaultRFC9218Priority(true),
 			wantOk:      true,
 		},
 	}
 	for _, tt := range tests {
-		got, gotOk := parseRFC9218Priority(tt.priorityStr)
+		got, gotOk := parseRFC9218Priority(tt.priorityStr, true)
 		if gotOk != tt.wantOk {
 			t.Errorf("test %q: mismatch.\n got ok: %#v\nwant ok: %#v\n", tt.name, got, tt.want)
 		}

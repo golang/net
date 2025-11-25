@@ -1186,9 +1186,34 @@ type PriorityFrame struct {
 	PriorityParam
 }
 
-var defaultRFC9218Priority = PriorityParam{
-	incremental: 0,
-	urgency:     3,
+// defaultRFC9218Priority determines what priority we should use as the default
+// value.
+//
+// According to RFC 9218, by default, streams should be given an urgency of 3
+// and should be non-incremental. However, making streams non-incremental by
+// default would be a huge change to our historical behavior where we would
+// round-robin writes across streams. When streams are non-incremental, we
+// would process streams of the same urgency one-by-one to completion instead.
+//
+// To avoid such a sudden change which might break some HTTP/2 users, this
+// function allows the caller to specify whether they can actually use the
+// default value as specified in RFC 9218. If not, this function will return a
+// priority value where streams are incremental by default instead: effectively
+// a round-robin between stream of the same urgency.
+//
+// As an example, a server might not be able to use the RFC 9218 default value
+// when it's not sure that the client it is serving is aware of RFC 9218.
+func defaultRFC9218Priority(canUseDefault bool) PriorityParam {
+	if canUseDefault {
+		return PriorityParam{
+			urgency:     3,
+			incremental: 0,
+		}
+	}
+	return PriorityParam{
+		urgency:     3,
+		incremental: 1,
+	}
 }
 
 // Note that HTTP/2 has had two different prioritization schemes, and
@@ -1280,8 +1305,8 @@ type PriorityUpdateFrame struct {
 	PrioritizedStreamID uint32
 }
 
-func parseRFC9218Priority(s string) (p PriorityParam, ok bool) {
-	p = defaultRFC9218Priority
+func parseRFC9218Priority(s string, canUseDefault bool) (p PriorityParam, ok bool) {
+	p = defaultRFC9218Priority(canUseDefault)
 	ok = httpsfv.ParseDictionary(s, func(key, val, _ string) {
 		switch key {
 		case "u":
@@ -1299,7 +1324,7 @@ func parseRFC9218Priority(s string) (p PriorityParam, ok bool) {
 		}
 	})
 	if !ok {
-		return defaultRFC9218Priority, ok
+		return defaultRFC9218Priority(canUseDefault), ok
 	}
 	return p, true
 }
@@ -1621,11 +1646,12 @@ func (mh *MetaHeadersFrame) PseudoFields() []hpack.HeaderField {
 	return mh.Fields
 }
 
-func (mh *MetaHeadersFrame) rfc9218Priority() (p PriorityParam, hasIntermediary bool) {
+func (mh *MetaHeadersFrame) rfc9218Priority(priorityAware bool) (p PriorityParam, priorityAwareAfter, hasIntermediary bool) {
 	var s string
 	for _, field := range mh.Fields {
 		if field.Name == "priority" {
 			s = field.Value
+			priorityAware = true
 		}
 		if slices.Contains([]string{"via", "forwarded", "x-forwarded-for"}, field.Name) {
 			hasIntermediary = true
@@ -1633,8 +1659,8 @@ func (mh *MetaHeadersFrame) rfc9218Priority() (p PriorityParam, hasIntermediary 
 	}
 	// No need to check for ok. parseRFC9218Priority will return a default
 	// value if there is no priority field or if the field cannot be parsed.
-	p, _ = parseRFC9218Priority(s)
-	return p, hasIntermediary
+	p, _ = parseRFC9218Priority(s, priorityAware && !hasIntermediary)
+	return p, priorityAware, hasIntermediary
 }
 
 func (mh *MetaHeadersFrame) checkPseudos() error {

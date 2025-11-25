@@ -5386,3 +5386,78 @@ func testServerRFC9218PriorityIgnoredWhenProxied(t testing.TB) {
 		t.Errorf("want stream to be processed in round-robin manner when proxied, got: %v", streamFrameOrder)
 	}
 }
+
+func TestServerRFC9218PriorityAware(t *testing.T) {
+	synctestTest(t, testServerRFC9218PriorityAware)
+}
+func testServerRFC9218PriorityAware(t testing.TB) {
+	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(slices.Repeat([]byte("a"), 16<<20))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}, func(s *Server) {
+		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+	})
+	defer st.Close()
+	if syncConn, ok := st.cc.(*synctestNetConn); ok {
+		syncConn.SetReadBufferSize(1)
+	} else {
+		t.Fatal("Server connection is not synctestNetConn")
+	}
+	st.sc.flow.add(1 << 30)
+	st.greet()
+
+	// When there is no indication that the client is aware of RFC 9218
+	// priority, it should process streams in a round-robin manner.
+	streamCount := 10
+	for i := range streamCount {
+		streamID := uint32(i*2 + 1)
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	synctest.Wait()
+	var streamFrameOrder []uint32
+	for f := st.readFrame(); f != nil; f = st.readFrame() {
+		streamFrameOrder = append(streamFrameOrder, f.Header().StreamID)
+	}
+	// Only check the middle-half of the frame processing order, since the
+	// beginning and end can be not perfectly round-robin (e.g. stream 1 gets
+	// processed a few times while waiting before other streams are opened).
+	half := streamFrameOrder[len(streamFrameOrder)/4 : len(streamFrameOrder)*3/4]
+	if !slices.Equal(slices.Compact(half), half) {
+		t.Errorf("want stream to be processed in round-robin manner when unaware of priority, got: %v", streamFrameOrder)
+	}
+
+	// Send a PRIORITY_UPDATE frame for stream 1 which would have finished by
+	// now. So, this is a no-op, but makes it so that the server is aware that
+	// the client is aware of RFC 9218 priority.
+	st.writePriorityUpdate(1, "")
+	synctest.Wait()
+
+	// Now that the server knows that the client is aware of RFC 9218 priority,
+	// streams should be processed one-by-one to completion when no explicit
+	// priority is given as they all have the same urgency and are
+	// non-incremental.
+	streamFrameOrder = []uint32{}
+	for i := range streamCount {
+		i += streamCount
+		streamID := uint32(i*2 + 1)
+		st.writeHeaders(HeadersFrameParam{
+			StreamID:      streamID,
+			BlockFragment: st.encodeHeader(),
+			EndStream:     true,
+			EndHeaders:    true,
+		})
+	}
+	for f := st.readFrame(); f != nil; f = st.readFrame() {
+		streamFrameOrder = append(streamFrameOrder, f.Header().StreamID)
+	}
+	if !slices.Equal(slices.Compact(half), half) {
+		t.Errorf("want stream to be processed one-by-one to completion when aware of priority, got: %v", streamFrameOrder)
+	}
+}
