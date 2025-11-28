@@ -1977,7 +1977,7 @@ func TestServerRejectsContentLengthWithSignNewRequests(t *testing.T) {
 			}
 			checkReq := func(r *http.Request) {
 				if r.ContentLength != tt.wantCL {
-					t.Fatalf("Got: %q\nWant: %q", r.ContentLength, tt.wantCL)
+					t.Fatalf("Got: %d\nWant: %d", r.ContentLength, tt.wantCL)
 				}
 			}
 			testServerRequest(t, writeReq, checkReq)

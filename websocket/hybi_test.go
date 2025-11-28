@@ -190,7 +190,7 @@ Sec-WebSocket-Version: 13
 		t.Errorf("handshake failed: %v", err)
 	}
 	if code != http.StatusSwitchingProtocols {
-		t.Errorf("status expected %q but got %q", http.StatusSwitchingProtocols, code)
+		t.Errorf("status expected %d but got %d", http.StatusSwitchingProtocols, code)
 	}
 	expectedProtocols := []string{"chat", "superchat"}
 	if fmt.Sprintf("%v", config.Protocol) != fmt.Sprintf("%v", expectedProtocols) {
@@ -239,10 +239,10 @@ Sec-WebSocket-Version: 13
 		t.Errorf("handshake failed: %v", err)
 	}
 	if code != http.StatusSwitchingProtocols {
-		t.Errorf("status expected %q but got %q", http.StatusSwitchingProtocols, code)
+		t.Errorf("status expected %d but got %d", http.StatusSwitchingProtocols, code)
 	}
 	if len(config.Protocol) != 0 {
-		t.Errorf("len(config.Protocol) expected 0, but got %q", len(config.Protocol))
+		t.Errorf("len(config.Protocol) expected 0, but got %d", len(config.Protocol))
 	}
 	b := bytes.NewBuffer([]byte{})
 	bw := bufio.NewWriter(b)
@@ -285,7 +285,7 @@ Sec-WebSocket-Version: 9
 		t.Errorf("handshake expected err %q but got %q", ErrBadWebSocketVersion, err)
 	}
 	if code != http.StatusBadRequest {
-		t.Errorf("status expected %q but got %q", http.StatusBadRequest, code)
+		t.Errorf("status expected %d but got %d", http.StatusBadRequest, code)
 	}
 }
 
@@ -583,7 +583,7 @@ Sec-WebSocket-Version: 13
 		t.Errorf("handshake failed: %v", err)
 	}
 	if code != http.StatusSwitchingProtocols {
-		t.Errorf("status expected %q but got %q", http.StatusSwitchingProtocols, code)
+		t.Errorf("status expected %d but got %d", http.StatusSwitchingProtocols, code)
 	}
 	b := bytes.NewBuffer([]byte{})
 	bw := bufio.NewWriter(b)
