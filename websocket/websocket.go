@@ -134,6 +134,9 @@ type frameReader interface {
 
 	// Len returns total length of the frame, including header and trailer.
 	Len() int
+
+	// FrameDataLength returns data length of the frame.
+	FrameDataLength() int64
 }
 
 // frameReaderFactory is an interface to creates new frame reader.
