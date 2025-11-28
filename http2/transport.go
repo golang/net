@@ -1795,7 +1795,6 @@ func (cc *ClientConn) writeHeaders(streamID uint32, endStream bool, maxFrameSize
 			cc.fr.WriteContinuation(streamID, endHeaders, chunk)
 		}
 	}
-	cc.bw.Flush()
 	return cc.werr
 }
 
