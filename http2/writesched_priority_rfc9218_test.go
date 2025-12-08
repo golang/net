@@ -324,3 +324,66 @@ func TestPrioritySchedulerIdempotentUpdate(t *testing.T) {
 		t.Fatalf("popped streams %v, want %v", got, want)
 	}
 }
+
+func TestPrioritySchedulerBuffersPriorityUpdate(t *testing.T) {
+	const maxFrameSize = 16
+	sc := &serverConn{maxFrameSize: maxFrameSize}
+	ws := newPriorityWriteSchedulerRFC9218()
+
+	// Priorities are adjusted for streams that are not open yet.
+	ws.AdjustStream(1, PriorityParam{urgency: 0})
+	ws.AdjustStream(5, PriorityParam{urgency: 0})
+	for _, streamID := range []uint32{1, 3, 5} {
+		stream := &stream{
+			id: streamID,
+			sc: sc,
+		}
+		stream.flow.add(1 << 20) // arbitrary large value
+		ws.OpenStream(streamID, OpenStreamOptions{
+			priority: PriorityParam{
+				urgency:     7,
+				incremental: 1,
+			},
+		})
+		wr := FrameWriteRequest{
+			write: &writeData{
+				streamID:  streamID,
+				p:         make([]byte, maxFrameSize*(3)),
+				endStream: false,
+			},
+			stream: stream,
+		}
+		ws.Push(wr)
+	}
+
+	const controlFrames = 2
+	for range controlFrames {
+		ws.Push(makeWriteNonStreamRequest())
+	}
+
+	// We should get the control frames first.
+	for range controlFrames {
+		wr, ok := ws.Pop()
+		if !ok || wr.StreamID() != 0 {
+			t.Fatalf("wr.Pop() = stream %v, %v; want 0, true", wr.StreamID(), ok)
+		}
+	}
+
+	// The most recent priority adjustment is buffered and applied. Older ones
+	// are ignored.
+	want := []uint32{5, 5, 5, 1, 3, 1, 3, 1, 3}
+	var got []uint32
+	for {
+		wr, ok := ws.Pop()
+		if !ok {
+			break
+		}
+		if wr.DataSize() != maxFrameSize {
+			t.Fatalf("wr.Pop() = %v data bytes, want %v", wr.DataSize(), maxFrameSize)
+		}
+		got = append(got, wr.StreamID())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("popped streams %v, want %v", got, want)
+	}
+}
