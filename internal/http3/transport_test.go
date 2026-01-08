@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
+//go:build go1.25
 
 package http3
 
@@ -27,7 +27,7 @@ func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
 	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 		st := tc.newStream(streamTypeRequest)

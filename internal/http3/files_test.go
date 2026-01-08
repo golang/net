@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
+//go:build go1.25
 
 package http3
 
@@ -13,13 +13,11 @@ import (
 	"testing"
 )
 
-// TestFiles checks that every file in this package has a build constraint on Go 1.24.
+// TestFiles checks that every test file in this package has a build constraint
+// on Go 1.25. Tests rely on synctest.Test, added in Go 1.25.
 //
-// Package tests rely on testing/synctest, added as an experiment in Go 1.24.
-// When moving internal/http3 to an importable location, we can decide whether
-// to relax the constraint for non-test files.
-//
-// Drop this test when the x/net go.mod depends on 1.24 or newer.
+// TODO(nsh): drop this test and Go 1.25 build contraints once x/net go.mod
+// depends on 1.25 or newer.
 func TestFiles(t *testing.T) {
 	f, err := os.Open(".")
 	if err != nil {
@@ -45,12 +43,10 @@ func TestFiles(t *testing.T) {
 		if name == "doc.go" {
 			continue
 		}
-		if !bytes.Contains(b, []byte("//go:build go1.24")) {
-			t.Errorf("%v: missing constraint on go1.24", name)
-		}
-		if bytes.Contains(b, []byte(`"testing/synctest"`)) &&
-			!bytes.Contains(b, []byte("//go:build go1.24 && goexperiment.synctest")) {
-			t.Errorf("%v: missing constraint on go1.24 && goexperiment.synctest", name)
+		if strings.HasSuffix(name, "_test.go") {
+			if !bytes.Contains(b, []byte("//go:build go1.25")) {
+				t.Errorf("%v: missing constraint on go1.25", name)
+			}
 		}
 	}
 }

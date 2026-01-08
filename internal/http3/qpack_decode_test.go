@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
+//go:build go1.25
 
 package http3
 
@@ -102,7 +102,7 @@ func TestQPACKDecode(t *testing.T) {
 			{mayIndex, "accept-encoding", ""},
 		},
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			st1, st2 := newStreamPair(t)
 			st1.Write(test.enc)
 			st1.Flush()
@@ -176,7 +176,7 @@ func TestQPACKDecodeErrors(t *testing.T) {
 		name: "too high static table index",
 		enc:  unhex("0000ff23ff24"),
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			st1, st2 := newStreamPair(t)
 			st1.Write(test.enc)
 			st1.Flush()

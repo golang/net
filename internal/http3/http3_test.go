@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
+//go:build go1.25
 
 package http3
 
@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"os"
 	"strings"
+	"testing"
+	"testing/synctest"
 )
 
 func init() {
@@ -42,3 +44,10 @@ type testReader struct {
 }
 
 func (r testReader) Read(p []byte) (n int, err error) { return r.readFunc(p) }
+
+// synctestSubtest runs f in a subtest in a synctest.Run bubble.
+func synctestSubtest(t *testing.T, name string, f func(t *testing.T)) {
+	t.Run(name, func(t *testing.T) {
+		synctest.Test(t, f)
+	})
+}

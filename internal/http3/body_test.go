@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
+//go:build go1.25
 
 package http3
 
@@ -256,7 +256,7 @@ func TestReadData(t *testing.T) {
 
 		}
 
-		runSynctestSubtest(t, test.name+"/client", func(t testing.TB) {
+		synctestSubtest(t, test.name+"/client", func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 

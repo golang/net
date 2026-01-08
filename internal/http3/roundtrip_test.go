@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
+//go:build go1.25
 
 package http3
 
@@ -18,7 +18,7 @@ import (
 )
 
 func TestRoundTripSimple(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -44,7 +44,7 @@ func TestRoundTripSimple(t *testing.T) {
 }
 
 func TestRoundTripWithBadHeaders(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -56,7 +56,7 @@ func TestRoundTripWithBadHeaders(t *testing.T) {
 }
 
 func TestRoundTripWithUnknownFrame(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -82,7 +82,7 @@ func TestRoundTripWithInvalidPushPromise(t *testing.T) {
 	// "A client MUST treat receipt of a PUSH_PROMISE frame that contains
 	// a larger push ID than the client has advertised as a connection error of H3_ID_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.5-5
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -155,7 +155,7 @@ func TestRoundTripResponseContentLength(t *testing.T) {
 		},
 		wantContentLength: -1,
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -199,7 +199,7 @@ func TestRoundTripMalformedResponses(t *testing.T) {
 		name:       "no :status",
 		respHeader: http.Header{},
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -218,7 +218,7 @@ func TestRoundTripCrumbledCookiesInResponse(t *testing.T) {
 	// these MUST be concatenated into a single byte string [...]"
 	// using the two-byte delimiter of "; "''
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-4.2.1-2
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -238,7 +238,7 @@ func TestRoundTripCrumbledCookiesInResponse(t *testing.T) {
 }
 
 func TestRoundTripRequestBodySent(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -290,7 +290,7 @@ func TestRoundTripRequestBodyErrors(t *testing.T) {
 			},
 		),
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -323,7 +323,7 @@ func TestRoundTripRequestBodyErrors(t *testing.T) {
 }
 
 func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 

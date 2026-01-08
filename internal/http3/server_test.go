@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
+//go:build go1.25
 
 package http3
 
@@ -19,7 +19,7 @@ func TestServerReceivePushStream(t *testing.T) {
 	// "[...] if a server receives a client-initiated push stream,
 	// this MUST be treated as a connection error of type H3_STREAM_CREATION_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2.2-3
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		ts := newTestServer(t)
 		tc := ts.connect()
 		tc.newStream(streamTypePush)
@@ -28,7 +28,7 @@ func TestServerReceivePushStream(t *testing.T) {
 }
 
 func TestServerCancelPushForUnsentPromise(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		ts := newTestServer(t)
 		tc := ts.connect()
 		tc.greet()
