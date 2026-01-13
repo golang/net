@@ -7,8 +7,10 @@ package http3
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/quic"
 )
 
@@ -57,7 +59,7 @@ func (s *Server) Serve(e *quic.Endpoint) error {
 		if err != nil {
 			return err
 		}
-		go newServerConn(qconn)
+		go newServerConn(qconn, s.Handler)
 	}
 }
 
@@ -67,11 +69,13 @@ type serverConn struct {
 	genericConn // for handleUnidirectionalStream
 	enc         qpackEncoder
 	dec         qpackDecoder
+	handler     http.Handler
 }
 
-func newServerConn(qconn *quic.Conn) {
+func newServerConn(qconn *quic.Conn, handler http.Handler) {
 	sc := &serverConn{
-		qconn: qconn,
+		qconn:   qconn,
+		handler: handler,
 	}
 	sc.enc.init()
 
@@ -152,8 +156,56 @@ func (sc *serverConn) handlePushStream(*stream) error {
 	}
 }
 
+func parseRequest(st *stream) (*http.Request, error) {
+	req := &http.Request{}
+	ftype, err := st.readFrameHeader()
+	if err != nil {
+		return nil, err
+	}
+	if ftype != frameTypeHeaders {
+		return nil, err
+	}
+	req.Header = make(http.Header)
+	var dec qpackDecoder
+	if err := dec.decode(st, func(_ indexType, name, value string) error {
+		switch name {
+		case ":method":
+			req.Method = value
+		case ":scheme":
+			req.URL.Scheme = value
+		case ":path":
+			req.URL.Path = value
+		case ":authority":
+			req.URL.Host = value
+		default:
+			req.Header.Add(name, value)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if err := st.endFrame(); err != nil {
+		return nil, err
+	}
+	req.Body = &bodyReader{
+		st:     st,
+		remain: -1,
+	}
+	return req, nil
+}
+
 func (sc *serverConn) handleRequestStream(st *stream) error {
-	// TODO
+	req, err := parseRequest(st)
+	if err != nil {
+		return err
+	}
+	defer req.Body.Close()
+
+	responseWriter := sc.newResponseWriter(st)
+	defer responseWriter.close()
+
+	// TODO: handle panic coming from the HTTP handler.
+	sc.handler.ServeHTTP(responseWriter, req)
 	return nil
 }
 
@@ -167,4 +219,79 @@ func (sc *serverConn) abort(err error) {
 	} else {
 		sc.qconn.Abort(err)
 	}
+}
+
+type responseWriter struct {
+	st      *stream
+	bw      *bodyWriter
+	mu      sync.Mutex
+	headers http.Header
+	// TODO: support 1xx status
+	wroteHeader bool // Non-1xx header has been (logically) written.
+}
+
+func (sc *serverConn) newResponseWriter(st *stream) *responseWriter {
+	rw := &responseWriter{
+		st:      st,
+		headers: make(http.Header),
+		bw: &bodyWriter{
+			st:     st,
+			remain: -1,
+			flush:  false,
+			name:   "response",
+		},
+	}
+	return rw
+}
+
+func (rw *responseWriter) Header() http.Header {
+	return rw.headers
+}
+
+// Caller must hold rw.mu.
+func (rw *responseWriter) writeHeaderLocked(statusCode int) {
+	// TODO: support trailer header.
+	if rw.wroteHeader {
+		return
+	}
+	enc := &qpackEncoder{}
+	enc.init()
+	encHeaders := enc.encode(func(f func(itype indexType, name, value string)) {
+		f(mayIndex, ":status", strconv.Itoa(statusCode))
+		for name, values := range rw.headers {
+			if !httpguts.ValidHeaderFieldName(name) {
+				continue
+			}
+			for _, val := range values {
+				if !httpguts.ValidHeaderFieldValue(val) {
+					continue
+				}
+				// Issue #71374: Consider supporting never-indexed fields.
+				f(mayIndex, name, val)
+			}
+		}
+	})
+	rw.st.writeVarint(int64(frameTypeHeaders))
+	rw.st.writeVarint(int64(len(encHeaders)))
+	rw.st.Write(encHeaders)
+	rw.wroteHeader = true
+}
+
+func (rw *responseWriter) WriteHeader(statusCode int) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	rw.writeHeaderLocked(statusCode)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	if !rw.wroteHeader {
+		rw.writeHeaderLocked(http.StatusOK)
+	}
+	return rw.bw.Write(b)
+}
+
+func (rw *responseWriter) close() error {
+	return rw.st.stream.Close()
 }

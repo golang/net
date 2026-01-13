@@ -229,6 +229,16 @@ func (ts *testQUICStream) writeHeaders(h http.Header) {
 	}
 }
 
+func (ts *testQUICStream) writeData(b []byte) {
+	ts.t.Helper()
+	ts.writeVarint(int64(frameTypeData))
+	ts.writeVarint(int64(len(b)))
+	ts.Write(b)
+	if err := ts.Flush(); err != nil {
+		ts.t.Fatalf("flushing DATA frame: %v", err)
+	}
+}
+
 func (ts *testQUICStream) wantData(want []byte) {
 	ts.t.Helper()
 	synctest.Wait()

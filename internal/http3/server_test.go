@@ -7,6 +7,8 @@
 package http3
 
 import (
+	"io"
+	"net/http"
 	"net/netip"
 	"testing"
 	"testing/synctest"
@@ -20,7 +22,7 @@ func TestServerReceivePushStream(t *testing.T) {
 	// this MUST be treated as a connection error of type H3_STREAM_CREATION_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.2.2-3
 	synctest.Test(t, func(t *testing.T) {
-		ts := newTestServer(t)
+		ts := newTestServer(t, nil)
 		tc := ts.connect()
 		tc.newStream(streamTypePush)
 		tc.wantClosed("invalid client-created push stream", errH3StreamCreationError)
@@ -29,7 +31,7 @@ func TestServerReceivePushStream(t *testing.T) {
 
 func TestServerCancelPushForUnsentPromise(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		ts := newTestServer(t)
+		ts := newTestServer(t, nil)
 		tc := ts.connect()
 		tc.greet()
 
@@ -40,6 +42,103 @@ func TestServerCancelPushForUnsentPromise(t *testing.T) {
 		tc.control.Flush()
 
 		tc.wantClosed("client canceled never-sent push ID", errH3IDError)
+	})
+}
+
+func TestServerHeader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			header := w.Header()
+			for key, values := range r.Header {
+				for _, value := range values {
+					header.Add(key, value)
+				}
+			}
+			w.WriteHeader(204)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{
+			"header-from-client": {"that", "should", "be", "echoed"},
+		})
+		synctest.Wait()
+		reqStream.wantHeaders(map[string][]string{
+			":status":            {"204"},
+			"Header-From-Client": {"that", "should", "be", "echoed"},
+		})
+	})
+}
+
+func TestServerPseudoHeader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Pseudo-headers from client request should populate a specific
+			// field in http.Request, and should not be part of http.Request.Header.
+			if r.Header.Get(":method") != "" || r.Method != "GET" {
+				t.Error("want pseudo-headers from client to be reflected in appropriate fields in http.Request, not in http.Request.Header")
+			}
+			// Conversely, server should not be able to set pseudo-headers by
+			// writing to the ResponseWriter's Header.
+			header := w.Header()
+			header.Add(":status", "123")
+			w.WriteHeader(321)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {"GET"}})
+		synctest.Wait()
+		reqStream.wantHeaders(map[string][]string{":status": {"321"}})
+	})
+}
+
+func TestServerInvalidHeader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("valid-name", "valid value")
+			// Invalid headers are skipped.
+			w.Header().Add("invalid name with spaces", "some value")
+			w.Header().Add("some-name", "invalid value with \n")
+			w.Header().Add("valid-name-2", "valid value 2")
+			w.WriteHeader(200)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{})
+		synctest.Wait()
+		reqStream.wantHeaders(map[string][]string{
+			":status":      {"200"},
+			"Valid-Name":   {"valid value"},
+			"Valid-Name-2": {"valid value 2"},
+		})
+	})
+}
+
+func TestServerBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write(body) // Implicitly calls w.WriteHeader(200).
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{})
+		bodyContent := []byte("some body content that should be echoed")
+		reqStream.writeData(bodyContent)
+		reqStream.stream.stream.CloseWrite()
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData(bodyContent)
 	})
 }
 
@@ -57,9 +156,6 @@ type testQUICEndpoint struct {
 	e *quic.Endpoint
 }
 
-func (te *testQUICEndpoint) dial() {
-}
-
 type testServerConn struct {
 	ts *testServer
 
@@ -67,7 +163,7 @@ type testServerConn struct {
 	control *testQUICStream
 }
 
-func newTestServer(t testing.TB) *testServer {
+func newTestServer(t testing.TB, handler http.Handler) *testServer {
 	t.Helper()
 	ts := &testServer{
 		t: t,
@@ -75,6 +171,7 @@ func newTestServer(t testing.TB) *testServer {
 			Config: &quic.Config{
 				TLSConfig: testTLSConfig,
 			},
+			Handler: handler,
 		},
 	}
 	e := ts.tn.newQUICEndpoint(t, ts.s.Config)

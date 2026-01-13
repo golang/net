@@ -147,7 +147,7 @@ func runConnTest(t *testing.T, f func(testing.TB, *testQUICConn)) {
 		f(t, tc.testQUICConn)
 	})
 	synctestSubtest(t, "server", func(t *testing.T) {
-		ts := newTestServer(t)
+		ts := newTestServer(t, nil)
 		tc := ts.connect()
 		f(t, tc.testQUICConn)
 	})
