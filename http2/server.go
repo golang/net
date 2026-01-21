@@ -472,10 +472,13 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 		sc.conn.SetWriteDeadline(time.Time{})
 	}
 
-	if s.NewWriteScheduler != nil {
+	switch {
+	case s.NewWriteScheduler != nil:
 		sc.writeSched = s.NewWriteScheduler()
-	} else {
+	case clientPriorityDisabled(http1srv):
 		sc.writeSched = newRoundRobinWriteScheduler()
+	default:
+		sc.writeSched = newPriorityWriteSchedulerRFC9218()
 	}
 
 	// These start at the RFC-specified defaults. If there is a higher
