@@ -7,6 +7,7 @@ package http3
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 
@@ -156,8 +157,13 @@ func (sc *serverConn) handlePushStream(*stream) error {
 	}
 }
 
-func parseRequest(st *stream) (*http.Request, error) {
-	req := &http.Request{}
+func (sc *serverConn) parseRequest(st *stream) (*http.Request, error) {
+	req := &http.Request{
+		URL:        &url.URL{},
+		Proto:      "HTTP/3.0",
+		ProtoMajor: 3,
+		RemoteAddr: sc.qconn.RemoteAddr().String(),
+	}
 	ftype, err := st.readFrameHeader()
 	if err != nil {
 		return nil, err
@@ -195,7 +201,7 @@ func parseRequest(st *stream) (*http.Request, error) {
 }
 
 func (sc *serverConn) handleRequestStream(st *stream) error {
-	req, err := parseRequest(st)
+	req, err := sc.parseRequest(st)
 	if err != nil {
 		return err
 	}

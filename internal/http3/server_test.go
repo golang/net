@@ -68,6 +68,7 @@ func TestServerHeader(t *testing.T) {
 			":status":            {"204"},
 			"Header-From-Client": {"that", "should", "be", "echoed"},
 		})
+		reqStream.wantClosed("request is complete")
 	})
 }
 
@@ -92,6 +93,7 @@ func TestServerPseudoHeader(t *testing.T) {
 		reqStream.writeHeaders(http.Header{":method": {"GET"}})
 		synctest.Wait()
 		reqStream.wantHeaders(map[string][]string{":status": {"321"}})
+		reqStream.wantClosed("request is complete")
 	})
 }
 
@@ -116,6 +118,7 @@ func TestServerInvalidHeader(t *testing.T) {
 			"Valid-Name":   {"valid value"},
 			"Valid-Name-2": {"valid value 2"},
 		})
+		reqStream.wantClosed("request is complete")
 	})
 }
 
@@ -126,19 +129,24 @@ func TestServerBody(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.Write(body) // Implicitly calls w.WriteHeader(200).
+			w.Write([]byte(r.URL.Path)) // Implicitly calls w.WriteHeader(200).
+			w.Write(body)
 		}))
 		tc := ts.connect()
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{})
+		reqStream.writeHeaders(http.Header{
+			":path": {"/"},
+		})
 		bodyContent := []byte("some body content that should be echoed")
 		reqStream.writeData(bodyContent)
 		reqStream.stream.stream.CloseWrite()
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData([]byte("/"))
 		reqStream.wantData(bodyContent)
+		reqStream.wantClosed("request is complete")
 	})
 }
 
