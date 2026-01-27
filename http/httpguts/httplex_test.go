@@ -31,7 +31,7 @@ func TestIsTokenRune(t *testing.T) {
 }
 
 func BenchmarkIsTokenRune(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		var r rune
 		for ; r < 1024; r++ {
 			IsTokenRune(r)
@@ -140,7 +140,7 @@ func BenchmarkValidHeaderFieldName(b *testing.B) {
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		for _, name := range names {
 			ValidHeaderFieldName(name)
 		}
