@@ -856,10 +856,7 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			if tc == nil || !tc.rkeyAppData.hdr.isSet() {
 				t.Fatalf("reading 1-RTT packet with no read key")
 			}
-			var pnumMax packetNumber
-			if tc != nil {
-				pnumMax = tc.pnumMax[appDataSpace]
-			}
+			pnumMax := tc.pnumMax[appDataSpace]
 			pnumOff := 1 + len(tc.peerConnID)
 			// Try unprotecting the packet with the first maxTestKeyPhases keys.
 			var phase int
@@ -882,9 +879,7 @@ func parseTestDatagram(t *testing.T, te *testEndpoint, tc *testConn, buf []byte)
 			if err != nil {
 				t.Fatalf("1-RTT packet payload parse error")
 			}
-			if tc != nil {
-				tc.pnumMax[appDataSpace] = max(pnumMax, pnum)
-			}
+			tc.pnumMax[appDataSpace] = max(pnumMax, pnum)
 			frames, err := parseTestFrames(t, pay)
 			if err != nil {
 				t.Fatal(err)
