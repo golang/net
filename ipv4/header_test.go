@@ -6,14 +6,13 @@ package ipv4
 
 import (
 	"bytes"
-	"encoding/binary"
 	"net"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
-	"golang.org/x/net/internal/socket"
+	"golang.org/x/sys/cpu"
 )
 
 type headerTest struct {
@@ -169,7 +168,7 @@ func TestMarshalHeader(t *testing.T) {
 		}
 	}
 
-	if socket.NativeEndian != binary.LittleEndian {
+	if cpu.IsBigEndian {
 		t.Skip("no test for non-little endian machine yet")
 	}
 	for _, tt := range headerLittleEndianTests {
@@ -221,7 +220,7 @@ func TestParseHeader(t *testing.T) {
 		}
 	}
 
-	if socket.NativeEndian != binary.LittleEndian {
+	if cpu.IsBigEndian {
 		t.Skip("no test for big endian machine yet")
 	}
 	for _, tt := range headerLittleEndianTests {

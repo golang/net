@@ -5,19 +5,17 @@
 package icmp
 
 import (
-	"encoding/binary"
 	"net"
 	"reflect"
 	"runtime"
 	"testing"
 
-	"golang.org/x/net/internal/socket"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/sys/cpu"
 )
 
 func TestParseIPv4Header(t *testing.T) {
-	switch socket.NativeEndian {
-	case binary.LittleEndian:
+	if !cpu.IsBigEndian {
 		t.Run("LittleEndian", func(t *testing.T) {
 			// TODO(mikio): Add platform dependent wire
 			// header formats when we support new
