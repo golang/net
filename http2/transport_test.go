@@ -1881,6 +1881,29 @@ func testTransportResponseHeaderTimeout(t testing.TB, body bool) {
 	}
 }
 
+// https://go.dev/issue/77331
+func TestTransportWindowUpdateBeyondLimit(t *testing.T) {
+	synctestTest(t, testTransportWindowUpdateBeyondLimit)
+}
+func testTransportWindowUpdateBeyondLimit(t testing.TB) {
+	const windowIncrease uint32 = (1 << 31) - 1 // Will cause window to exceed limit of 2^31-1.
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+	tc.wantHeaders(wantHeader{
+		streamID:  rt.streamID(),
+		endStream: true,
+	})
+
+	tc.writeWindowUpdate(rt.streamID(), windowIncrease)
+	tc.wantRSTStream(rt.streamID(), ErrCodeFlowControl)
+
+	tc.writeWindowUpdate(0, windowIncrease)
+	tc.wantClosed()
+}
+
 func TestTransportDisableCompression(t *testing.T) {
 	const body = "sup"
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
