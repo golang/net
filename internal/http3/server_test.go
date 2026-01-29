@@ -150,6 +150,30 @@ func TestServerBody(t *testing.T) {
 	})
 }
 
+func TestServerHeadResponseNoBody(t *testing.T) {
+	bodyContent := []byte("response body that will not be sent for HEAD requests")
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write(bodyContent)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData(bodyContent)
+		reqStream.wantClosed("request is complete")
+
+		reqStream = tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {http.MethodHead}})
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 type testServer struct {
 	t  testing.TB
 	s  *Server

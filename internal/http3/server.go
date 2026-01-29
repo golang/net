@@ -207,11 +207,21 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	}
 	defer req.Body.Close()
 
-	responseWriter := sc.newResponseWriter(st)
-	defer responseWriter.close()
+	rw := &responseWriter{
+		st:         st,
+		headers:    make(http.Header),
+		isHeadResp: req.Method == "HEAD",
+		bw: &bodyWriter{
+			st:     st,
+			remain: -1,
+			flush:  false,
+			name:   "response",
+		},
+	}
+	defer rw.close()
 
 	// TODO: handle panic coming from the HTTP handler.
-	sc.handler.ServeHTTP(responseWriter, req)
+	sc.handler.ServeHTTP(rw, req)
 	return nil
 }
 
@@ -234,20 +244,7 @@ type responseWriter struct {
 	headers http.Header
 	// TODO: support 1xx status
 	wroteHeader bool // Non-1xx header has been (logically) written.
-}
-
-func (sc *serverConn) newResponseWriter(st *stream) *responseWriter {
-	rw := &responseWriter{
-		st:      st,
-		headers: make(http.Header),
-		bw: &bodyWriter{
-			st:     st,
-			remain: -1,
-			flush:  false,
-			name:   "response",
-		},
-	}
-	return rw
+	isHeadResp  bool // response is for a HEAD request.
 }
 
 func (rw *responseWriter) Header() http.Header {
@@ -294,6 +291,9 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	defer rw.mu.Unlock()
 	if !rw.wroteHeader {
 		rw.writeHeaderLocked(http.StatusOK)
+	}
+	if rw.isHeadResp {
+		return 0, nil
 	}
 	return rw.bw.Write(b)
 }
