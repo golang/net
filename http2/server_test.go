@@ -488,7 +488,7 @@ func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error
 	var gotSettingsAck bool
 	var gotWindowUpdate bool
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		f := st.readFrame()
 		if f == nil {
 			st.t.Fatal("wanted a settings ACK and window update, got none")
@@ -1282,7 +1282,7 @@ func testServer_MaxQueuedControlFrames(t testing.TB) {
 	// Send maxQueuedControlFrames pings, plus a few extra
 	// to account for ones that enter the server's write buffer.
 	const extraPings = 2
-	for i := 0; i < maxQueuedControlFrames+extraPings; i++ {
+	for range maxQueuedControlFrames + extraPings {
 		pingData := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 		st.fr.WritePing(false, pingData)
 	}
@@ -1294,7 +1294,7 @@ func testServer_MaxQueuedControlFrames(t testing.TB) {
 
 	st.advance(goAwayTimeout)
 	// Some frames may have persisted in the server's buffers.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if st.readFrame() == nil {
 			break
 		}
@@ -1501,7 +1501,8 @@ func TestServer_RSTStream_Unblocks_Header_Write(t *testing.T) {
 	if testing.Short() {
 		n = 5
 	}
-	for i := 0; i < n; i++ {
+
+	for range n {
 		synctestTest(t, testServer_RSTStream_Unblocks_Header_Write)
 	}
 }
@@ -2484,12 +2485,12 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 			EndHeaders: true,
 		})
 	}
-	for i := 0; i < defaultMaxStreams; i++ {
+	for range defaultMaxStreams {
 		sendReq(streamID())
 		<-inHandler
 	}
 	defer func() {
-		for i := 0; i < defaultMaxStreams; i++ {
+		for range defaultMaxStreams {
 			leaveHandler <- true
 		}
 	}()
@@ -2535,7 +2536,7 @@ func TestServer_Response_ManyHeaders_With_Continuation(t *testing.T) {
 func testServer_Response_ManyHeaders_With_Continuation(t testing.TB) {
 	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
 		h := w.Header()
-		for i := 0; i < 5000; i++ {
+		for i := range 5000 {
 			h.Set(fmt.Sprintf("x-header-%d", i), fmt.Sprintf("x-value-%d", i))
 		}
 		return nil
@@ -3153,7 +3154,7 @@ func BenchmarkServerGets(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		id := 1 + uint32(i)*2
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      id,
@@ -3190,7 +3191,7 @@ func BenchmarkServerPosts(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		id := 1 + uint32(i)*2
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      id,
@@ -3572,7 +3573,7 @@ func BenchmarkServer_GetRequest(b *testing.B) {
 		b.Fatal(err)
 	}
 	hbf := st.encodeHeader(":method", "GET")
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		streamID := uint32(1 + 2*i)
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      streamID,
@@ -3603,7 +3604,7 @@ func BenchmarkServer_PostRequest(b *testing.B) {
 		b.Fatal(err)
 	}
 	hbf := st.encodeHeader(":method", "POST")
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		streamID := uint32(1 + 2*i)
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      streamID,
@@ -3881,7 +3882,7 @@ func TestUnreadFlowControlReturned_Server(t *testing.T) {
 			if testing.Short() {
 				iters = 20
 			}
-			for i := 0; i < iters; i++ {
+			for range iters {
 				body := io.MultiReader(
 					io.LimitReader(neverEnding('A'), 16<<10),
 					funcReader(func([]byte) (n int, err error) {
@@ -4041,7 +4042,7 @@ func testIssue20704Race(t testing.TB) {
 	)
 
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		for i := 0; i < itemCount; i++ {
+		for range itemCount {
 			_, err := w.Write(make([]byte, itemSize))
 			if err != nil {
 				return
@@ -4053,7 +4054,7 @@ func testIssue20704Race(t testing.TB) {
 	defer tr.CloseIdleConnections()
 	cl := &http.Client{Transport: tr}
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		resp, err := cl.Get(ts.URL)
 		if err != nil {
 			t.Fatal(err)
@@ -4801,7 +4802,7 @@ func testServerMaxHandlerGoroutines(t testing.TB) {
 	streamID += 2
 
 	// Start another two requests. Don't reset these.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		st.writeHeaders(HeadersFrameParam{
 			StreamID:      streamID,
 			BlockFragment: st.encodeHeader(),
@@ -4865,7 +4866,7 @@ func testServerContinuationFlood(t testing.TB) {
 		BlockFragment: st.encodeHeader(),
 		EndStream:     true,
 	})
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		st.fr.WriteContinuation(1, false, st.encodeHeaderRaw(
 			fmt.Sprintf("x-%v", i), "1234567890",
 		))
@@ -5036,7 +5037,7 @@ func testServerWriteByteTimeout(t testing.TB) {
 	})
 
 	// Read a few bytes, staying just under WriteByteTimeout.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		st.advance(timeout - 1)
 		if n, err := st.cc.Read(make([]byte, 1)); n != 1 || err != nil {
 			t.Fatalf("read %v: %v, %v; want 1, nil", i, n, err)
