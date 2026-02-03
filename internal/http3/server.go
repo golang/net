@@ -251,8 +251,9 @@ func (rw *responseWriter) Header() http.Header {
 	return rw.headers
 }
 
-// Caller must hold rw.mu.
-func (rw *responseWriter) writeHeaderLocked(statusCode int) {
+// Caller must hold rw.mu. If rw.wroteHeader is true, calling this method is a
+// no-op.
+func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
 	// TODO: support trailer header.
 	if rw.wroteHeader {
 		return
@@ -283,21 +284,26 @@ func (rw *responseWriter) writeHeaderLocked(statusCode int) {
 func (rw *responseWriter) WriteHeader(statusCode int) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	rw.writeHeaderLocked(statusCode)
+	rw.writeHeaderLockedOnce(statusCode)
 }
 
 func (rw *responseWriter) Write(b []byte) (int, error) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	if !rw.wroteHeader {
-		rw.writeHeaderLocked(http.StatusOK)
-	}
+	rw.writeHeaderLockedOnce(http.StatusOK)
 	if rw.isHeadResp {
 		return 0, nil
 	}
 	return rw.bw.Write(b)
 }
 
+func (rw *responseWriter) Flush() {
+	rw.bw.st.Flush()
+}
+
 func (rw *responseWriter) close() error {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	rw.writeHeaderLockedOnce(http.StatusOK)
 	return rw.st.stream.Close()
 }

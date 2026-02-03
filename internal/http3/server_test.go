@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"golang.org/x/net/internal/quic/quicwire"
 	"golang.org/x/net/quic"
@@ -170,6 +171,65 @@ func TestServerHeadResponseNoBody(t *testing.T) {
 		reqStream.writeHeaders(http.Header{":method": {http.MethodHead}})
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerHandlerEmpty(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Empty handler should return a 200 OK
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerHandlerFlushing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(time.Second)
+			w.Write([]byte("first"))
+
+			time.Sleep(time.Second)
+			w.Write([]byte("second"))
+			w.(http.Flusher).Flush()
+
+			time.Sleep(time.Second)
+			w.Write([]byte("third"))
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		synctest.Wait()
+
+		respBody := make([]byte, 100)
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if n, err := reqStream.Read(respBody); err == nil {
+			t.Errorf("want no message yet, got %v bytes read", n)
+		}
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if _, err := reqStream.Read(respBody); err != nil {
+			t.Errorf("failed to read partial response from server, got err: %v", err)
+		}
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if _, err := reqStream.Read(respBody); err != io.EOF {
+			t.Errorf("expected EOF, got err: %v", err)
+		}
 		reqStream.wantClosed("request is complete")
 	})
 }
