@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 )
 
@@ -136,5 +137,9 @@ func (r *bodyReader) Close() error {
 	// Unlike the HTTP/1 and HTTP/2 body readers (at the time of this comment being written),
 	// calling Close concurrently with Read will interrupt the read.
 	r.st.stream.CloseRead()
+	// Make sure that any data that has already been written to bodyReader
+	// cannot be read after it has been closed.
+	r.err = net.ErrClosed
+	r.remain = 0
 	return nil
 }

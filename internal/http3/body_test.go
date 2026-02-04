@@ -8,8 +8,10 @@ package http3
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 )
@@ -46,7 +48,13 @@ func TestReadData(t *testing.T) {
 			size int64
 			eof  bool
 		}
-		wantError struct{}
+		// Check that reading the body results in non-EOF error.
+		wantError struct {
+			// If err is not nil, also check that the error received is err.
+			err error
+		}
+		// Close the body.
+		closeBody struct{}
 	)
 	for _, test := range []struct {
 		name       string
@@ -178,6 +186,21 @@ func TestReadData(t *testing.T) {
 			wantBody{size: 4},
 			wantBody{size: 8},
 		},
+	}, {
+		name: "read after body close",
+		steps: []any{
+			receiveHeaders{contentLength: -1},
+			receiveDataHeader{size: 2},
+			receiveData{size: 2},
+			receiveDataHeader{size: 4},
+			receiveData{size: 4},
+			receiveDataHeader{size: 8},
+			receiveData{size: 8},
+			wantBody{size: 2},
+			wantBody{size: 4},
+			closeBody{},
+			wantError{err: net.ErrClosed},
+		},
 	}} {
 
 		runTest := func(t testing.TB, h http.Header, st *testQUICStream, body func() io.ReadCloser) {
@@ -246,8 +269,16 @@ func TestReadData(t *testing.T) {
 						}
 					}
 				case wantError:
-					if n, err := body().Read([]byte{0}); n != 0 || err == nil || err == io.EOF {
+					n, err := body().Read([]byte{0})
+					if n != 0 || err == nil || err == io.EOF {
 						t.Fatalf("resp.Body.Read() = %v, %v; want error", n, err)
+					}
+					if step.err != nil && !errors.Is(step.err, err) {
+						t.Fatalf("resp.Body.Read() = %v, %v; want %v error", n, err, step.err)
+					}
+				case closeBody:
+					if err := body().Close(); err != nil {
+						t.Fatalf("resp.Body.Close() = %v, want nil", err)
 					}
 				default:
 					t.Fatalf("unknown test step %T", step)
