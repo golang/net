@@ -352,3 +352,70 @@ func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
 		}
 	})
 }
+
+func TestRoundTripExpect100Continue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+		clientBody := []byte("client's body that will be sent later")
+		serverBody := []byte("server's body")
+
+		// Client sends an Expect: 100-continue request.
+		req, _ := http.NewRequest("PUT", "https://example.tld/", bytes.NewBuffer(clientBody))
+		req.Header = http.Header{"Expect": {"100-continue"}}
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Server reads the header.
+		st.wantHeaders(nil)
+		st.wantIdle("client has yet to send its body")
+
+		// Server responds with HTTP status 100.
+		st.writeHeaders(http.Header{
+			":status": []string{"100"},
+		})
+
+		// Client sends its body after receiving HTTP status 100 response.
+		st.wantData(clientBody)
+
+		// The server sends its response after getting the client's body.
+		st.writeHeaders(http.Header{
+			":status": []string{"200"},
+		})
+		st.writeData(serverBody)
+		st.stream.stream.CloseWrite()
+
+		// Client receives the response from server.
+		rt.wantStatus(200)
+		rt.wantBody(serverBody)
+	})
+}
+
+func TestRoundTripExpect100ContinueRejected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		// Client sends an Expect: 100-continue request.
+		req, _ := http.NewRequest("PUT", "https://example.tld/", bytes.NewBufferString("client's body"))
+		req.Header = http.Header{"Expect": {"100-continue"}}
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Server reads the header.
+		st.wantHeaders(nil)
+		st.wantIdle("client has yet to send its body")
+
+		// Server rejects it.
+		st.writeHeaders(http.Header{
+			":status": []string{"200"},
+		})
+		st.wantIdle("client does not send its body without getting status 100")
+		serverBody := []byte("server's body")
+		st.writeData(serverBody)
+		st.stream.stream.CloseWrite()
+
+		rt.wantStatus(200)
+		rt.wantBody(serverBody)
+	})
+}

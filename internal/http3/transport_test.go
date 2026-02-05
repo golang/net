@@ -454,6 +454,26 @@ func (rt *testRoundTrip) wantHeaders(want http.Header) {
 	}
 }
 
+// readBody reads the contents of the response body.
+func (rt *testRoundTrip) readBody() ([]byte, error) {
+	t := rt.t
+	t.Helper()
+	return io.ReadAll(rt.response().Body)
+}
+
+// wantBody consumes the a body and asserts that it is as expected.
+func (rt *testRoundTrip) wantBody(want []byte) {
+	t := rt.t
+	t.Helper()
+	got, err := rt.readBody()
+	if err != nil {
+		t.Fatalf("unexpected error reading response body: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected response body:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 	rt := &testRoundTrip{t: tc.t}
 	go func() {

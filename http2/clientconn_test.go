@@ -437,7 +437,7 @@ func (rt *testRoundTrip) wantStatus(want int) {
 	}
 }
 
-// body reads the contents of the response body.
+// readBody reads the contents of the response body.
 func (rt *testRoundTrip) readBody() ([]byte, error) {
 	t := rt.t
 	t.Helper()

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/internal/httpcommon"
 )
 
@@ -113,14 +114,18 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		return nil, err
 	}
 
+	is100ContinueReq := httpguts.HeaderValuesContainsToken(req.Header["Expect"], "100-continue")
 	if encr.HasBody {
-		// TODO: Defer sending the request body when "Expect: 100-continue" is set.
 		rt.reqBody = req.Body
 		rt.reqBodyWriter.st = st
 		rt.reqBodyWriter.remain = contentLength
 		rt.reqBodyWriter.flush = true
 		rt.reqBodyWriter.name = "request"
-		go copyRequestBody(rt)
+
+		if !is100ContinueReq {
+			encr.HasBody = false
+			go copyRequestBody(rt)
+		}
 	}
 
 	// Read the response headers.
@@ -138,7 +143,19 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 
 			if statusCode >= 100 && statusCode < 199 {
 				// TODO: Handle 1xx responses.
-				continue
+				switch statusCode {
+				case 100:
+					if encr.HasBody && is100ContinueReq {
+						encr.HasBody = false
+						go copyRequestBody(rt)
+						continue
+					}
+					// If we did not send "Expect: 100-continue" request but
+					// received status 100 anyways, just continue per usual and
+					// let the caller decide what to do with the response.
+				default:
+					continue
+				}
 			}
 
 			// We have the response headers.
