@@ -298,6 +298,9 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 }
 
 func (rw *responseWriter) Flush() {
+	rw.mu.Lock()
+	rw.writeHeaderLockedOnce(http.StatusOK)
+	rw.mu.Unlock()
 	rw.bw.st.Flush()
 }
 

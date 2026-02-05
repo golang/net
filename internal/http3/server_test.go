@@ -65,7 +65,7 @@ func TestServerHeader(t *testing.T) {
 			"header-from-client": {"that", "should", "be", "echoed"},
 		})
 		synctest.Wait()
-		reqStream.wantHeaders(map[string][]string{
+		reqStream.wantHeaders(http.Header{
 			":status":            {"204"},
 			"Header-From-Client": {"that", "should", "be", "echoed"},
 		})
@@ -93,7 +93,7 @@ func TestServerPseudoHeader(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(http.Header{":method": {"GET"}})
 		synctest.Wait()
-		reqStream.wantHeaders(map[string][]string{":status": {"321"}})
+		reqStream.wantHeaders(http.Header{":status": {"321"}})
 		reqStream.wantClosed("request is complete")
 	})
 }
@@ -114,7 +114,7 @@ func TestServerInvalidHeader(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(http.Header{})
 		synctest.Wait()
-		reqStream.wantHeaders(map[string][]string{
+		reqStream.wantHeaders(http.Header{
 			":status":      {"200"},
 			"Valid-Name":   {"valid value"},
 			"Valid-Name-2": {"valid value 2"},
@@ -230,6 +230,35 @@ func TestServerHandlerFlushing(t *testing.T) {
 		if _, err := reqStream.Read(respBody); err != io.EOF {
 			t.Errorf("expected EOF, got err: %v", err)
 		}
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerHandlerStreaming(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		stream := make(chan string)
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Flushing when we have not written anything yet implicitly calls
+			// w.WriteHeader(200).
+			w.(http.Flusher).Flush()
+			for str := range stream {
+				w.Write([]byte(str))
+				w.(http.Flusher).Flush()
+			}
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+
+		for _, data := range []string{"a", "bunch", "of", "things", "to", "stream"} {
+			stream <- data
+			reqStream.wantData([]byte(data))
+		}
+		close(stream)
 		reqStream.wantClosed("request is complete")
 	})
 }
