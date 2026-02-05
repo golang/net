@@ -7,11 +7,11 @@ package http3
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"strconv"
 	"sync"
 
 	"golang.org/x/net/http/httpguts"
+	"golang.org/x/net/internal/httpcommon"
 	"golang.org/x/net/quic"
 )
 
@@ -157,53 +157,80 @@ func (sc *serverConn) handlePushStream(*stream) error {
 	}
 }
 
-func (sc *serverConn) parseRequest(st *stream) (*http.Request, error) {
-	req := &http.Request{
-		URL:        &url.URL{},
-		Proto:      "HTTP/3.0",
-		ProtoMajor: 3,
-		RemoteAddr: sc.qconn.RemoteAddr().String(),
-	}
+type pseudoHeader struct {
+	method    string
+	scheme    string
+	path      string
+	authority string
+}
+
+func (sc *serverConn) parseHeader(st *stream) (http.Header, pseudoHeader, error) {
 	ftype, err := st.readFrameHeader()
 	if err != nil {
-		return nil, err
+		return nil, pseudoHeader{}, err
 	}
 	if ftype != frameTypeHeaders {
-		return nil, err
+		return nil, pseudoHeader{}, err
 	}
-	req.Header = make(http.Header)
+	header := make(http.Header)
+	var pHeader pseudoHeader
 	var dec qpackDecoder
 	if err := dec.decode(st, func(_ indexType, name, value string) error {
 		switch name {
 		case ":method":
-			req.Method = value
+			pHeader.method = value
 		case ":scheme":
-			req.URL.Scheme = value
+			pHeader.scheme = value
 		case ":path":
-			req.URL.Path = value
+			pHeader.path = value
 		case ":authority":
-			req.URL.Host = value
+			pHeader.authority = value
 		default:
-			req.Header.Add(name, value)
+			header.Add(name, value)
 		}
 		return nil
 	}); err != nil {
-		return nil, err
+		return nil, pseudoHeader{}, err
 	}
 	if err := st.endFrame(); err != nil {
-		return nil, err
+		return nil, pseudoHeader{}, err
 	}
-	req.Body = &bodyReader{
-		st:     st,
-		remain: -1,
-	}
-	return req, nil
+	return header, pHeader, nil
 }
 
 func (sc *serverConn) handleRequestStream(st *stream) error {
-	req, err := sc.parseRequest(st)
+	header, pHeader, err := sc.parseHeader(st)
 	if err != nil {
 		return err
+	}
+
+	reqInfo := httpcommon.NewServerRequest(httpcommon.ServerRequestParam{
+		Method:    pHeader.method,
+		Scheme:    pHeader.scheme,
+		Authority: pHeader.authority,
+		Path:      pHeader.path,
+		Header:    header,
+	})
+	if reqInfo.InvalidReason != "" {
+		return &streamError{
+			code:    errH3MessageError,
+			message: reqInfo.InvalidReason,
+		}
+	}
+	req := &http.Request{
+		Proto:      "HTTP/3.0",
+		Method:     pHeader.method,
+		Host:       pHeader.authority,
+		URL:        reqInfo.URL,
+		RequestURI: reqInfo.RequestURI,
+		Trailer:    reqInfo.Trailer,
+		ProtoMajor: 3,
+		RemoteAddr: sc.qconn.RemoteAddr().String(),
+		Body: &bodyReader{
+			st:     st,
+			remain: -1,
+		},
+		Header: header,
 	}
 	defer req.Body.Close()
 
@@ -219,6 +246,12 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 		},
 	}
 	defer rw.close()
+	if reqInfo.NeedsContinue {
+		req.Body.(*bodyReader).send100Continue = func() {
+			rw.WriteHeader(http.StatusContinue)
+			rw.Flush()
+		}
+	}
 
 	// TODO: handle panic coming from the HTTP handler.
 	sc.handler.ServeHTTP(rw, req)
@@ -238,11 +271,10 @@ func (sc *serverConn) abort(err error) {
 }
 
 type responseWriter struct {
-	st      *stream
-	bw      *bodyWriter
-	mu      sync.Mutex
-	headers http.Header
-	// TODO: support 1xx status
+	st          *stream
+	bw          *bodyWriter
+	mu          sync.Mutex
+	headers     http.Header
 	wroteHeader bool // Non-1xx header has been (logically) written.
 	isHeadResp  bool // response is for a HEAD request.
 }
@@ -278,7 +310,9 @@ func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
 	rw.st.writeVarint(int64(frameTypeHeaders))
 	rw.st.writeVarint(int64(len(encHeaders)))
 	rw.st.Write(encHeaders)
-	rw.wroteHeader = true
+	if statusCode >= http.StatusOK {
+		rw.wroteHeader = true
+	}
 }
 
 func (rw *responseWriter) WriteHeader(statusCode int) {

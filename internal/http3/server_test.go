@@ -8,8 +8,11 @@ package http3
 
 import (
 	"io"
+	"maps"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"reflect"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -17,6 +20,22 @@ import (
 	"golang.org/x/net/internal/quic/quicwire"
 	"golang.org/x/net/quic"
 )
+
+// requestHeader is a helper function to make sure that all required
+// pseudo-headers exist in an http.Header used for a request. Per
+// https://www.rfc-editor.org/rfc/rfc9114.html#name-request-pseudo-header-field:
+// "All HTTP/3 requests MUST include exactly one value for the :method,
+// :scheme, and :path pseudo-header fields, unless the request is a CONNECT
+// request;"
+func requestHeader(h http.Header) http.Header {
+	minimalHeader := http.Header{
+		":method": {"GET"},
+		":scheme": {"https"},
+		":path":   {"/"},
+	}
+	maps.Copy(minimalHeader, h)
+	return minimalHeader
+}
 
 func TestServerReceivePushStream(t *testing.T) {
 	// "[...] if a server receives a client-initiated push stream,
@@ -61,9 +80,9 @@ func TestServerHeader(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{
+		reqStream.writeHeaders(requestHeader(http.Header{
 			"header-from-client": {"that", "should", "be", "echoed"},
-		})
+		}))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{
 			":status":            {"204"},
@@ -78,9 +97,23 @@ func TestServerPseudoHeader(t *testing.T) {
 		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Pseudo-headers from client request should populate a specific
 			// field in http.Request, and should not be part of http.Request.Header.
-			if r.Header.Get(":method") != "" || r.Method != "GET" {
-				t.Error("want pseudo-headers from client to be reflected in appropriate fields in http.Request, not in http.Request.Header")
+			if len(r.Header) != 0 {
+				t.Errorf("got %v, want request header to be empty", r.Header)
 			}
+			if r.Method != "GET" {
+				t.Errorf("got %v, want GET method", r.Method)
+			}
+			if r.Host != "fake.tld:1234" {
+				t.Errorf("got %v, want fake.tld:1234", r.Host)
+			}
+			wantURL := &url.URL{
+				Path:     "/some/path",
+				RawQuery: "query=value&query2=value2#fragment",
+			}
+			if !reflect.DeepEqual(r.URL, wantURL) {
+				t.Errorf("got %v, want URL to be %v", r.URL, wantURL)
+			}
+
 			// Conversely, server should not be able to set pseudo-headers by
 			// writing to the ResponseWriter's Header.
 			header := w.Header()
@@ -91,10 +124,20 @@ func TestServerPseudoHeader(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {"GET"}})
+		reqStream.writeHeaders(http.Header{
+			":method":    {"GET"},
+			":authority": {"fake.tld:1234"},
+			":scheme":    {"https"},
+			":path":      {"/some/path?query=value&query2=value2#fragment"},
+		})
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"321"}})
 		reqStream.wantClosed("request is complete")
+
+		reqStream = tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(http.Header{}) // Missing pseudo-header.
+		synctest.Wait()
+		reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
 	})
 }
 
@@ -112,7 +155,7 @@ func TestServerInvalidHeader(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{})
+		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{
 			":status":      {"200"},
@@ -137,9 +180,7 @@ func TestServerBody(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{
-			":path": {"/"},
-		})
+		reqStream.writeHeaders(requestHeader(nil))
 		bodyContent := []byte("some body content that should be echoed")
 		reqStream.writeData(bodyContent)
 		reqStream.stream.stream.CloseWrite()
@@ -161,14 +202,14 @@ func TestServerHeadResponseNoBody(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
 		reqStream.wantData(bodyContent)
 		reqStream.wantClosed("request is complete")
 
 		reqStream = tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {http.MethodHead}})
+		reqStream.writeHeaders(requestHeader(http.Header{":method": {http.MethodHead}}))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
 		reqStream.wantClosed("request is complete")
@@ -184,7 +225,7 @@ func TestServerHandlerEmpty(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
 		reqStream.wantClosed("request is complete")
@@ -208,7 +249,7 @@ func TestServerHandlerFlushing(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
 
 		respBody := make([]byte, 100)
@@ -216,7 +257,7 @@ func TestServerHandlerFlushing(t *testing.T) {
 		time.Sleep(time.Second)
 		synctest.Wait()
 		if n, err := reqStream.Read(respBody); err == nil {
-			t.Errorf("want no message yet, got %v bytes read", n)
+			t.Errorf("got %v bytes read, want no message yet", n)
 		}
 
 		time.Sleep(time.Second)
@@ -228,7 +269,7 @@ func TestServerHandlerFlushing(t *testing.T) {
 		time.Sleep(time.Second)
 		synctest.Wait()
 		if _, err := reqStream.Read(respBody); err != io.EOF {
-			t.Errorf("expected EOF, got err: %v", err)
+			t.Errorf("got err %v, want EOF", err)
 		}
 		reqStream.wantClosed("request is complete")
 	})
@@ -250,7 +291,7 @@ func TestServerHandlerStreaming(t *testing.T) {
 		tc.greet()
 
 		reqStream := tc.newStream(streamTypeRequest)
-		reqStream.writeHeaders(http.Header{":method": {http.MethodGet}})
+		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
 		reqStream.wantHeaders(http.Header{":status": {"200"}})
 
@@ -259,6 +300,75 @@ func TestServerHandlerStreaming(t *testing.T) {
 			reqStream.wantData([]byte(data))
 		}
 		close(stream)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerExpect100Continue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		streamIdle := make(chan bool)
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Expect: 100-continue header should not be accessible from the
+			// server handler.
+			if len(r.Header) > 0 {
+				t.Errorf("got %v, want request header to be empty", r.Header)
+			}
+			// Reading the body will cause the server to call w.WriteHeader(100).
+			<-streamIdle
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Implicitly calls w.WriteHeader(200) since non-1XX status code
+			// has been sent yet so far.
+			w.Write(body)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		// Client sends an Expect: 100-continue request.
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Expect": {"100-continue"},
+		}))
+
+		reqStream.wantIdle("stream is idle until server sends an HTTP 100 status")
+		streamIdle <- true
+		// Wait until server responds with HTTP status 100 before sending the
+		// body.
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"100"}})
+		body := []byte("body that will be echoed back if we get status 100")
+		reqStream.writeData(body)
+		reqStream.stream.stream.CloseWrite()
+
+		// Receive the server's response after sending the body.
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData(body)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerExpect100ContinueRejected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejectBody := []byte("not allowed")
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(403)
+			w.Write(rejectBody)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		// Client sends an Expect: 100-continue request.
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Expect": {"100-continue"},
+		}))
+
+		// Server rejects it.
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"403"}})
+		reqStream.wantData(rejectBody)
 		reqStream.wantClosed("request is complete")
 	})
 }

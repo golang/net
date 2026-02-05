@@ -57,6 +57,10 @@ type bodyReader struct {
 	mu     sync.Mutex
 	remain int64
 	err    error
+	// If not nil, the body contains an "Expect: 100-continue" header, and
+	// send100Continue should be called when Read is invoked for the first
+	// time.
+	send100Continue func()
 }
 
 func (r *bodyReader) Read(p []byte) (n int, err error) {
@@ -65,6 +69,10 @@ func (r *bodyReader) Read(p []byte) (n int, err error) {
 	// Use a mutex here to provide the same behavior.
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.send100Continue != nil {
+		r.send100Continue()
+		r.send100Continue = nil
+	}
 	if r.err != nil {
 		return 0, r.err
 	}
