@@ -373,6 +373,41 @@ func TestServerExpect100ContinueRejected(t *testing.T) {
 	})
 }
 
+func TestServerHandlerReadReqWithNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		serverBody := []byte("hello from server!")
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := io.ReadAll(r.Body); err != nil {
+				t.Errorf("got %v err when reading from an empty request body, want nil", err)
+			}
+			w.Write(serverBody)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		// Case 1: we know that there is no body / DATA frame because the
+		// client closes the write direction of the stream.
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		reqStream.stream.stream.CloseWrite()
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData(serverBody)
+		reqStream.wantClosed("request is complete")
+
+		// Case 2: we know that there is no body / DATA frame because the
+		// client indicates a Content-Length of 0.
+		reqStream = tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Content-Length": {"0"},
+		}))
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantData(serverBody)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 type testServer struct {
 	t  testing.TB
 	s  *Server

@@ -6,6 +6,7 @@ package http3
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strconv"
 	"sync"
@@ -217,6 +218,21 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 			message: reqInfo.InvalidReason,
 		}
 	}
+
+	var body io.ReadCloser
+	contentLength := int64(-1)
+	if n, err := strconv.Atoi(header.Get("Content-Length")); err == nil {
+		contentLength = int64(n)
+	}
+	if contentLength != 0 {
+		body = &bodyReader{
+			st:     st,
+			remain: contentLength,
+		}
+	} else {
+		body = http.NoBody
+	}
+
 	req := &http.Request{
 		Proto:      "HTTP/3.0",
 		Method:     pHeader.method,
@@ -226,11 +242,8 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 		Trailer:    reqInfo.Trailer,
 		ProtoMajor: 3,
 		RemoteAddr: sc.qconn.RemoteAddr().String(),
-		Body: &bodyReader{
-			st:     st,
-			remain: -1,
-		},
-		Header: header,
+		Body:       body,
+		Header:     header,
 	}
 	defer req.Body.Close()
 

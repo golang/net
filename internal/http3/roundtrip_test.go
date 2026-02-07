@@ -419,3 +419,63 @@ func TestRoundTripExpect100ContinueRejected(t *testing.T) {
 		rt.wantBody(serverBody)
 	})
 }
+
+func TestRoundTripNoBodyClosesStream(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		req, _ := http.NewRequest("PUT", "https://example.tld/", nil)
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.wantClosed("no DATA frames to send")
+	})
+}
+
+func TestRoundTripReadRespWithNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		// Case 1: we know response body is empty because the server closes the
+		// write direction of the stream.
+		req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+		})
+		st.stream.stream.CloseWrite()
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+
+		// Case 2: we know response body is empty because the server indicates
+		// a Content-Length of 0.
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt = tc.roundTrip(req)
+		st = tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"0"},
+		})
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+
+		// Case 3: we know response body is empty because we sent a HEAD
+		// request.
+		req, _ = http.NewRequest("HEAD", "https://example.tld/", nil)
+		rt = tc.roundTrip(req)
+		st = tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"1000"},
+		})
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+	})
+}

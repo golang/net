@@ -26,7 +26,7 @@ type roundTripState struct {
 	reqBodyWriter bodyWriter
 
 	// Response.Body, provided to the caller.
-	respBody bodyReader
+	respBody io.ReadCloser
 
 	errOnce sync.Once
 	err     error
@@ -126,6 +126,11 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			encr.HasBody = false
 			go copyRequestBody(rt)
 		}
+	} else {
+		// If we have no body to send, close the write direction of the stream
+		// as soon as we have sent our HEADERS. That way, servers will know
+		// that there are no DATA frames incoming.
+		rt.st.stream.CloseWrite()
 	}
 
 	// Read the response headers.
@@ -164,8 +169,14 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			if err != nil {
 				return nil, err
 			}
-			rt.respBody.st = st
-			rt.respBody.remain = contentLength
+			if contentLength != 0 && req.Method != http.MethodHead {
+				rt.respBody = &bodyReader{
+					st:     st,
+					remain: contentLength,
+				}
+			} else {
+				rt.respBody = http.NoBody
+			}
 			resp := &http.Response{
 				Proto:         "HTTP/3.0",
 				ProtoMajor:    3,
