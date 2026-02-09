@@ -81,18 +81,15 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	st.stream.SetReadContext(req.Context())
 	st.stream.SetWriteContext(req.Context())
 
-	contentLength := actualContentLength(req)
-
-	var encr httpcommon.EncodeHeadersResult
 	headers := cc.enc.encode(func(yield func(itype indexType, name, value string)) {
-		encr, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
+		_, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
 			Request: httpcommon.Request{
 				URL:                 req.URL,
 				Method:              req.Method,
 				Host:                req.Host,
 				Header:              req.Header,
 				Trailer:             req.Trailer,
-				ActualContentLength: contentLength,
+				ActualContentLength: actualContentLength(req),
 			},
 			AddGzipHeader:         false, // TODO: add when appropriate
 			PeerMaxHeaderListSize: 0,
@@ -114,23 +111,11 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		return nil, err
 	}
 
+	var bodyAndTrailerWritten bool
 	is100ContinueReq := httpguts.HeaderValuesContainsToken(req.Header["Expect"], "100-continue")
-	if encr.HasBody {
-		rt.reqBody = req.Body
-		rt.reqBodyWriter.st = st
-		rt.reqBodyWriter.remain = contentLength
-		rt.reqBodyWriter.flush = true
-		rt.reqBodyWriter.name = "request"
-
-		if !is100ContinueReq {
-			encr.HasBody = false
-			go copyRequestBody(rt)
-		}
-	} else {
-		// If we have no body to send, close the write direction of the stream
-		// as soon as we have sent our HEADERS. That way, servers will know
-		// that there are no DATA frames incoming.
-		rt.st.stream.CloseWrite()
+	if !is100ContinueReq && !bodyAndTrailerWritten {
+		bodyAndTrailerWritten = true
+		go cc.writeBodyAndTrailer(rt, req)
 	}
 
 	// Read the response headers.
@@ -150,9 +135,9 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				// TODO: Handle 1xx responses.
 				switch statusCode {
 				case 100:
-					if encr.HasBody && is100ContinueReq {
-						encr.HasBody = false
-						go copyRequestBody(rt)
+					if is100ContinueReq && !bodyAndTrailerWritten {
+						bodyAndTrailerWritten = true
+						go cc.writeBodyAndTrailer(rt, req)
 						continue
 					}
 					// If we did not send "Expect: 100-continue" request but
@@ -212,18 +197,39 @@ func actualContentLength(req *http.Request) int64 {
 	return -1
 }
 
-func copyRequestBody(rt *roundTripState) {
+// writeBodyAndTrailer handles writing the body and trailer for a given
+// request, if any. This function will close the write direction of the stream.
+func (cc *ClientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request) {
 	defer rt.closeReqBody()
+
+	declaredTrailer := req.Trailer.Clone()
+
+	rt.reqBody = req.Body
+	rt.reqBodyWriter.st = rt.st
+	rt.reqBodyWriter.remain = actualContentLength(req)
+	rt.reqBodyWriter.flush = true
+	rt.reqBodyWriter.name = "request"
+	rt.reqBodyWriter.trailer = req.Trailer
+	rt.reqBodyWriter.enc = &cc.enc
+	if req.Body == nil {
+		rt.reqBody = http.NoBody
+	}
+
 	_, err := io.Copy(&rt.reqBodyWriter, rt.reqBody)
+	// Get rid of any trailer that was not declared beforehand, before we
+	// close the request body which will cause the trailer headers to be
+	// written.
+	for name := range req.Trailer {
+		if _, ok := declaredTrailer[name]; !ok {
+			delete(req.Trailer, name)
+		}
+	}
 	if closeErr := rt.reqBodyWriter.Close(); err == nil {
 		err = closeErr
 	}
+	// Something went wrong writing the body.
 	if err != nil {
-		// Something went wrong writing the body.
 		rt.abort(err)
-	} else {
-		// We wrote the whole body.
-		rt.st.stream.CloseWrite()
 	}
 }
 

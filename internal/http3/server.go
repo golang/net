@@ -224,26 +224,28 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	if n, err := strconv.Atoi(header.Get("Content-Length")); err == nil {
 		contentLength = int64(n)
 	}
-	if contentLength != 0 {
+	if contentLength != 0 || len(reqInfo.Trailer) != 0 {
 		body = &bodyReader{
-			st:     st,
-			remain: contentLength,
+			st:      st,
+			remain:  contentLength,
+			trailer: reqInfo.Trailer,
 		}
 	} else {
 		body = http.NoBody
 	}
 
 	req := &http.Request{
-		Proto:      "HTTP/3.0",
-		Method:     pHeader.method,
-		Host:       pHeader.authority,
-		URL:        reqInfo.URL,
-		RequestURI: reqInfo.RequestURI,
-		Trailer:    reqInfo.Trailer,
-		ProtoMajor: 3,
-		RemoteAddr: sc.qconn.RemoteAddr().String(),
-		Body:       body,
-		Header:     header,
+		Proto:         "HTTP/3.0",
+		Method:        pHeader.method,
+		Host:          pHeader.authority,
+		URL:           reqInfo.URL,
+		RequestURI:    reqInfo.RequestURI,
+		Trailer:       reqInfo.Trailer,
+		ProtoMajor:    3,
+		RemoteAddr:    sc.qconn.RemoteAddr().String(),
+		Body:          body,
+		Header:        header,
+		ContentLength: contentLength,
 	}
 	defer req.Body.Close()
 
@@ -299,7 +301,6 @@ func (rw *responseWriter) Header() http.Header {
 // Caller must hold rw.mu. If rw.wroteHeader is true, calling this method is a
 // no-op.
 func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
-	// TODO: support trailer header.
 	if rw.wroteHeader {
 		return
 	}

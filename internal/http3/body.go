@@ -9,16 +9,21 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync"
+
+	"golang.org/x/net/http/httpguts"
 )
 
 // A bodyWriter writes a request or response body to a stream
 // as a series of DATA frames.
 type bodyWriter struct {
-	st     *stream
-	remain int64  // -1 when content-length is not known
-	flush  bool   // flush the stream after every write
-	name   string // "request" or "response"
+	st      *stream
+	remain  int64         // -1 when content-length is not known
+	flush   bool          // flush the stream after every write
+	name    string        // "request" or "response"
+	trailer http.Header   // trailer headers that will be written once bodyWriter is closed.
+	enc     *qpackEncoder // QPACK encoder used by the connection.
 }
 
 func (w *bodyWriter) Write(p []byte) (n int, err error) {
@@ -47,6 +52,27 @@ func (w *bodyWriter) Close() error {
 	if w.remain > 0 {
 		return errors.New(w.name + " body shorter than specified content length")
 	}
+	if len(w.trailer) > 0 {
+		encTrailer := w.enc.encode(func(f func(itype indexType, name, value string)) {
+			for name, values := range w.trailer {
+				if !httpguts.ValidHeaderFieldName(name) {
+					continue
+				}
+				for _, val := range values {
+					if !httpguts.ValidHeaderFieldValue(val) {
+						continue
+					}
+					f(mayIndex, name, val)
+				}
+			}
+		})
+		w.st.writeVarint(int64(frameTypeHeaders))
+		w.st.writeVarint(int64(len(encTrailer)))
+		w.st.Write(encTrailer)
+	}
+	if w.st != nil && w.st.stream != nil {
+		w.st.stream.CloseWrite()
+	}
 	return nil
 }
 
@@ -61,6 +87,11 @@ type bodyReader struct {
 	// send100Continue should be called when Read is invoked for the first
 	// time.
 	send100Continue func()
+	// A map where the key represents the trailer header names we expect. If
+	// there is a HEADERS frame after reading DATA frames to EOF, the value of
+	// the headers will be written here, provided that the name of the header
+	// exists in the map already.
+	trailer http.Header
 }
 
 func (r *bodyReader) Read(p []byte) (n int, err error) {
@@ -117,7 +148,15 @@ func (r *bodyReader) Read(p []byte) (n int, err error) {
 					message: "body shorter than content-length",
 				}
 			}
-			// TODO: Fill in Request.Trailer.
+			var dec qpackDecoder
+			if err := dec.decode(r.st, func(_ indexType, name, value string) error {
+				if _, ok := r.trailer[name]; ok {
+					r.trailer.Add(name, value)
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
 			if err := r.st.discardFrame(); err != nil {
 				return 0, err
 			}

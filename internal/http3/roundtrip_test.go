@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -474,6 +475,74 @@ func TestRoundTripReadRespWithNoBody(t *testing.T) {
 			"Content-Length": {"1000"},
 		})
 		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripWriteTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+			strings.NewReader("a body"),
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+		))
+		req.Trailer = http.Header{
+			"Client-Trailer-A": nil,
+			"Client-Trailer-B": nil,
+		}
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.wantData([]byte("a body"))
+		st.wantHeaders(http.Header{
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripWriteTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+		))
+		req.Trailer = http.Header{
+			"Client-Trailer-A": nil,
+			"Client-Trailer-B": nil,
+		}
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.wantHeaders(http.Header{
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+		})
 		st.wantClosed("request is complete")
 	})
 }

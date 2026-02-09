@@ -406,6 +406,89 @@ func TestServerHandlerReadReqWithNoBody(t *testing.T) {
 	})
 }
 
+func TestServerHandlerReadTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		body := []byte("some body")
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wantTrailer := http.Header{
+				"Client-Trailer-A": nil,
+				"Client-Trailer-B": nil,
+			}
+			if !reflect.DeepEqual(r.Trailer, wantTrailer) {
+				t.Errorf("got %v; want trailer to be %v before reading the body", r.Trailer, wantTrailer)
+			}
+			if _, err := io.ReadAll(r.Body); err != nil {
+				t.Fatal(err)
+			}
+			wantTrailer = http.Header{
+				"Client-Trailer-A": {"valuea"},
+				"Client-Trailer-B": {"valueb"},
+			}
+			if !reflect.DeepEqual(r.Trailer, wantTrailer) {
+				t.Errorf("got %v; want trailer to be %v after reading the body", r.Trailer, wantTrailer)
+			}
+			w.WriteHeader(200)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Trailer": {"Client-Trailer-A, Client-Trailer-B"},
+		}))
+		reqStream.writeData(body)
+		reqStream.writeHeaders(http.Header{
+			"Client-Trailer-A":   {"valuea"},
+			"Client-Trailer-B":   {"valueb"},
+			"Undeclared-Trailer": {"undeclared"}, // Undeclared trailer should be ignored.
+		})
+		synctest.Wait()
+		reqStream.wantHeaders(nil)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerHandlerReadTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wantTrailer := http.Header{
+				"Client-Trailer-A": nil,
+				"Client-Trailer-B": nil,
+			}
+			if !reflect.DeepEqual(r.Trailer, wantTrailer) {
+				t.Errorf("got %v; want trailer to be %v before reading the body", r.Trailer, wantTrailer)
+			}
+			if _, err := io.ReadAll(r.Body); err != nil {
+				t.Fatal(err)
+			}
+			wantTrailer = http.Header{
+				"Client-Trailer-A": {"valuea"},
+				"Client-Trailer-B": {"valueb"},
+			}
+			if !reflect.DeepEqual(r.Trailer, wantTrailer) {
+				t.Errorf("got %v; want trailer to be %v after reading the body", r.Trailer, wantTrailer)
+			}
+			w.WriteHeader(200)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Trailer":        {"Client-Trailer-A, Client-Trailer-B"},
+			"Content-Length": {"0"},
+		}))
+		reqStream.writeHeaders(http.Header{
+			"Client-Trailer-A":   {"valuea"},
+			"Client-Trailer-B":   {"valueb"},
+			"Undeclared-Trailer": {"undeclared"}, // Undeclared trailer should be ignored.
+		})
+		synctest.Wait()
+		reqStream.wantHeaders(nil)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 type testServer struct {
 	t  testing.TB
 	s  *Server
