@@ -500,9 +500,6 @@ func testStreamsCreateAndCloseRemote(t *testing.T) {
 }
 
 func TestStreamsCreateConcurrency(t *testing.T) {
-	synctest.Test(t, testStreamsCreateConcurrency)
-}
-func testStreamsCreateConcurrency(t *testing.T) {
 	cli, srv := newLocalConnPair(t, &Config{}, &Config{})
 
 	srvdone := make(chan int)
