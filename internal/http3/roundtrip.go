@@ -154,10 +154,16 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			if err != nil {
 				return nil, err
 			}
-			if contentLength != 0 && req.Method != http.MethodHead {
+
+			trailer := make(http.Header)
+			extractTrailerFromHeader(h, trailer)
+			delete(h, "Trailer")
+
+			if (contentLength != 0 && req.Method != http.MethodHead) || len(trailer) > 0 {
 				rt.respBody = &bodyReader{
-					st:     st,
-					remain: contentLength,
+					st:      st,
+					remain:  contentLength,
+					trailer: trailer,
 				}
 			} else {
 				rt.respBody = http.NoBody
@@ -169,6 +175,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				StatusCode:    statusCode,
 				Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
 				ContentLength: contentLength,
+				Trailer:       trailer,
 				Body:          (*transportResponseBody)(rt),
 			}
 			// TODO: Automatic Content-Type: gzip decoding.

@@ -7,8 +7,11 @@ package http3
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/net/http/httpguts"
@@ -252,12 +255,14 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	rw := &responseWriter{
 		st:         st,
 		headers:    make(http.Header),
+		trailer:    make(http.Header),
 		isHeadResp: req.Method == "HEAD",
 		bw: &bodyWriter{
 			st:     st,
 			remain: -1,
 			flush:  false,
 			name:   "response",
+			enc:    &sc.enc,
 		},
 	}
 	defer rw.close()
@@ -290,6 +295,7 @@ type responseWriter struct {
 	bw          *bodyWriter
 	mu          sync.Mutex
 	headers     http.Header
+	trailer     http.Header
 	wroteHeader bool // Non-1xx header has been (logically) written.
 	isHeadResp  bool // response is for a HEAD request.
 }
@@ -298,12 +304,37 @@ func (rw *responseWriter) Header() http.Header {
 	return rw.headers
 }
 
+// prepareTrailerForWriteLocked populates any pre-declared trailer header with
+// its value, and passes it to bodyWriter so it can be written after body EOF.
+// Caller must hold rw.mu.
+func (rw *responseWriter) prepareTrailerForWriteLocked() {
+	for name := range rw.trailer {
+		if val, ok := rw.headers[name]; ok {
+			rw.trailer[name] = val
+		} else {
+			delete(rw.trailer, name)
+		}
+	}
+	if len(rw.trailer) > 0 {
+		rw.bw.trailer = rw.trailer
+	}
+}
+
 // Caller must hold rw.mu. If rw.wroteHeader is true, calling this method is a
 // no-op.
 func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
 	if rw.wroteHeader {
 		return
 	}
+
+	// If there is any Trailer declared in headers, save them so we know which
+	// trailers have been pre-declared. Also, write back the extracted value,
+	// which is canonicalized, to rw.Header for consistency.
+	if _, ok := rw.headers["Trailer"]; ok {
+		extractTrailerFromHeader(rw.headers, rw.trailer)
+		rw.headers.Set("Trailer", strings.Join(slices.Sorted(maps.Keys(rw.trailer)), ", "))
+	}
+
 	enc := &qpackEncoder{}
 	enc.init()
 	encHeaders := enc.encode(func(f func(itype indexType, name, value string)) {
@@ -356,5 +387,10 @@ func (rw *responseWriter) close() error {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 	rw.writeHeaderLockedOnce(http.StatusOK)
+	rw.prepareTrailerForWriteLocked()
+
+	if err := rw.bw.Close(); err != nil {
+		return err
+	}
 	return rw.st.stream.Close()
 }

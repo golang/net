@@ -10,10 +10,28 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/textproto"
+	"strings"
 	"sync"
 
 	"golang.org/x/net/http/httpguts"
 )
+
+// extractTrailerFromHeader extracts the "Trailer" header values from a header
+// map, and populates a trailer map with those values as keys. The extracted
+// header values will be canonicalized.
+func extractTrailerFromHeader(header, trailer http.Header) {
+	for _, names := range header["Trailer"] {
+		names = textproto.TrimString(names)
+		for name := range strings.SplitSeq(names, ",") {
+			name = textproto.CanonicalMIMEHeaderKey(textproto.TrimString(name))
+			if !httpguts.ValidTrailerHeader(name) {
+				continue
+			}
+			trailer[name] = nil
+		}
+	}
+}
 
 // A bodyWriter writes a request or response body to a stream
 // as a series of DATA frames.

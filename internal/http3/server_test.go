@@ -489,6 +489,68 @@ func TestServerHandlerReadTrailerNoBody(t *testing.T) {
 	})
 }
 
+func TestServerHandlerWriteTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		body := []byte("some body")
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Trailer", "server-trailer-a, server-trailer-b") // Trailer header will be canonicalized.
+			w.Header().Add("Trailer", "Server-Trailer-C")
+
+			w.Write(body)
+
+			w.Header().Set("server-trailer-a", "valuea") // Trailer header will be canonicalized.
+			w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+			w.Header().Set("Server-Trailer-Not-Declared", "should be omitted")
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{
+			":status": {"200"},
+			"Trailer": {"Server-Trailer-A, Server-Trailer-B, Server-Trailer-C"},
+		})
+		reqStream.wantData(body)
+		reqStream.wantHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-C": {"valuec"},
+		})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerHandlerWriteTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Trailer", "server-trailer-a, server-trailer-b") // Trailer header will be canonicalized.
+			w.Header().Add("Trailer", "Server-Trailer-C")
+
+			w.(http.Flusher).Flush()
+
+			w.Header().Set("server-trailer-a", "valuea") // Trailer header will be canonicalized.
+			w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+			w.Header().Set("Server-Trailer-Not-Declared", "should be omitted")
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{
+			":status": {"200"},
+			"Trailer": {"Server-Trailer-A, Server-Trailer-B, Server-Trailer-C"},
+		})
+		reqStream.wantHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-C": {"valuec"},
+		})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 type testServer struct {
 	t  testing.TB
 	s  *Server

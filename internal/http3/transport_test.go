@@ -452,6 +452,13 @@ func (rt *testRoundTrip) wantHeaders(want http.Header) {
 	}
 }
 
+func (rt *testRoundTrip) wantTrailers(want http.Header) {
+	rt.t.Helper()
+	if diff := diffHeaders(rt.response().Trailer, want); diff != "" {
+		rt.t.Fatalf("unexpected response trailers:\n%v", diff)
+	}
+}
+
 // readBody reads the contents of the response body.
 func (rt *testRoundTrip) readBody() ([]byte, error) {
 	t := rt.t

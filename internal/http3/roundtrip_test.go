@@ -546,3 +546,90 @@ func TestRoundTripWriteTrailerNoBody(t *testing.T) {
 		st.wantClosed("request is complete")
 	})
 }
+
+func TestRoundTripReadTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+			"Trailer": {"Server-Trailer-A, Server-Trailer-B", "server-trailer-c"}, // Should be canonicalized.
+		})
+		body := []byte("body from server")
+		st.writeData(body)
+		st.writeHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			// Note that Server-Trailer-B is skipped.
+			"Server-Trailer-C":   {"valuec"},
+			"Undeclared-Trailer": {"undeclared"}, // Should be ignored.
+		})
+
+		rt.wantStatus(200)
+		// Trailer is stripped off from http.Response.Header and given in http.Response.Trailer.
+		rt.wantHeaders(http.Header{})
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": nil,
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": nil,
+		})
+
+		// Trailer updated after reading the body to EOF.
+		rt.wantBody(body)
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": {"valuec"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripReadTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"0"},
+			"Trailer":        {"Server-Trailer-A, Server-Trailer-B", "server-trailer-c"}, // Should be canonicalized.
+		})
+		st.writeHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			// Note that Server-Trailer-B is skipped.
+			"Server-Trailer-C":   {"valuec"},
+			"Undeclared-Trailer": {"undeclared"}, // Should be ignored.
+		})
+
+		rt.wantStatus(200)
+		// Trailer is stripped off from http.Response.Header and given in http.Response.Trailer.
+		rt.wantHeaders(http.Header{"Content-Length": {"0"}})
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": nil,
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": nil,
+		})
+
+		// Trailer updated after reading the empty body to EOF.
+		rt.wantBody(make([]byte, 0))
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": {"valuec"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
