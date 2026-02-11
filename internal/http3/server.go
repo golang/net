@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/internal/httpcommon"
@@ -253,10 +254,11 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	defer req.Body.Close()
 
 	rw := &responseWriter{
-		st:         st,
-		headers:    make(http.Header),
-		trailer:    make(http.Header),
-		isHeadResp: req.Method == "HEAD",
+		st:             st,
+		headers:        make(http.Header),
+		trailer:        make(http.Header),
+		bb:             make(bodyBuffer, 0, defaultBodyBufferCap),
+		cannotHaveBody: req.Method == "HEAD",
 		bw: &bodyWriter{
 			st:     st,
 			remain: -1,
@@ -268,8 +270,18 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	defer rw.close()
 	if reqInfo.NeedsContinue {
 		req.Body.(*bodyReader).send100Continue = func() {
-			rw.WriteHeader(http.StatusContinue)
-			rw.Flush()
+			rw.mu.Lock()
+			defer rw.mu.Unlock()
+			if rw.wroteHeader {
+				return
+			}
+			encHeaders := rw.bw.enc.encode(func(f func(itype indexType, name, value string)) {
+				f(mayIndex, ":status", strconv.Itoa(http.StatusContinue))
+			})
+			rw.st.writeVarint(int64(frameTypeHeaders))
+			rw.st.writeVarint(int64(len(encHeaders)))
+			rw.st.Write(encHeaders)
+			rw.st.Flush()
 		}
 	}
 
@@ -290,14 +302,31 @@ func (sc *serverConn) abort(err error) {
 	}
 }
 
+// responseCanHaveBody reports whether a given response status code permits a
+// body. See RFC 7230, section 3.3.
+func responseCanHaveBody(status int) bool {
+	switch {
+	case status >= 100 && status <= 199:
+		return false
+	case status == 204:
+		return false
+	case status == 304:
+		return false
+	}
+	return true
+}
+
 type responseWriter struct {
-	st          *stream
-	bw          *bodyWriter
-	mu          sync.Mutex
-	headers     http.Header
-	trailer     http.Header
-	wroteHeader bool // Non-1xx header has been (logically) written.
-	isHeadResp  bool // response is for a HEAD request.
+	st             *stream
+	bw             *bodyWriter
+	mu             sync.Mutex
+	headers        http.Header
+	trailer        http.Header
+	bb             bodyBuffer
+	wroteHeader    bool // Non-1xx header has been (logically) written.
+	statusCode     int  // Status of the response that will be sent in HEADERS frame.
+	statusCodeSet  bool // Status of the response has been set via a call to WriteHeader.
+	cannotHaveBody bool // Response should not have a body (e.g. response to a HEAD request).
 }
 
 func (rw *responseWriter) Header() http.Header {
@@ -322,11 +351,13 @@ func (rw *responseWriter) prepareTrailerForWriteLocked() {
 
 // Caller must hold rw.mu. If rw.wroteHeader is true, calling this method is a
 // no-op.
-func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
+func (rw *responseWriter) writeHeaderLockedOnce() {
 	if rw.wroteHeader {
 		return
 	}
-
+	if !responseCanHaveBody(rw.statusCode) {
+		rw.cannotHaveBody = true
+	}
 	// If there is any Trailer declared in headers, save them so we know which
 	// trailers have been pre-declared. Also, write back the extracted value,
 	// which is canonicalized, to rw.Header for consistency.
@@ -335,10 +366,9 @@ func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
 		rw.headers.Set("Trailer", strings.Join(slices.Sorted(maps.Keys(rw.trailer)), ", "))
 	}
 
-	enc := &qpackEncoder{}
-	enc.init()
-	encHeaders := enc.encode(func(f func(itype indexType, name, value string)) {
-		f(mayIndex, ":status", strconv.Itoa(statusCode))
+	rw.bb.inferHeader(rw.headers, rw.statusCode)
+	encHeaders := rw.bw.enc.encode(func(f func(itype indexType, name, value string)) {
+		f(mayIndex, ":status", strconv.Itoa(rw.statusCode))
 		for name, values := range rw.headers {
 			if !httpguts.ValidHeaderFieldName(name) {
 				continue
@@ -352,45 +382,128 @@ func (rw *responseWriter) writeHeaderLockedOnce(statusCode int) {
 			}
 		}
 	})
+
 	rw.st.writeVarint(int64(frameTypeHeaders))
 	rw.st.writeVarint(int64(len(encHeaders)))
 	rw.st.Write(encHeaders)
-	if statusCode >= http.StatusOK {
+	if rw.statusCode >= http.StatusOK {
 		rw.wroteHeader = true
 	}
 }
 
 func (rw *responseWriter) WriteHeader(statusCode int) {
+	// TODO: handle sending informational status headers (e.g. 103).
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	rw.writeHeaderLockedOnce(statusCode)
+	if rw.statusCodeSet {
+		return
+	}
+	rw.statusCodeSet = true
+	rw.statusCode = statusCode
 }
 
 func (rw *responseWriter) Write(b []byte) (int, error) {
+	// Calling Write implicitly calls WriteHeader(200) if WriteHeader has not
+	// been called before.
+	rw.WriteHeader(http.StatusOK)
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	rw.writeHeaderLockedOnce(http.StatusOK)
-	if rw.isHeadResp {
-		return 0, nil
+
+	// If b fits entirely in our body buffer, save it to the buffer and return
+	// early so we can coalesce small writes.
+	// As a special case, we always want to save b to the buffer even when b is
+	// big if we had yet to write our header, so we can infer headers like
+	// "Content-Type" with as much information as possible.
+	initialBufLen := len(rw.bb)
+	if !rw.wroteHeader || len(b) <= cap(rw.bb)-len(rw.bb) {
+		b = rw.bb.write(b)
+		if len(b) == 0 {
+			return len(b), nil
+		}
 	}
-	return rw.bw.Write(b)
+
+	// Reaching this point means that our buffer has been sufficiently filled.
+	// Therefore, we now want to:
+	// 1. Infer and write response headers based on our body buffer, if not
+	// done yet.
+	// 2. Write our body buffer and the rest of b (if any).
+	// 3. Reset the current body buffer so it can be used again.
+	rw.writeHeaderLockedOnce()
+	if rw.cannotHaveBody {
+		return len(b), nil
+	}
+	if n, err := rw.bw.write(rw.bb, b); err != nil {
+		return max(0, n-initialBufLen), err
+	}
+	rw.bb.discard()
+	return len(b), nil
 }
 
 func (rw *responseWriter) Flush() {
+	// Calling Flush implicitly calls WriteHeader(200) if WriteHeader has not
+	// been called before.
+	rw.WriteHeader(http.StatusOK)
 	rw.mu.Lock()
-	rw.writeHeaderLockedOnce(http.StatusOK)
+	rw.writeHeaderLockedOnce()
+	if !rw.cannotHaveBody {
+		rw.bw.Write(rw.bb)
+		rw.bb.discard()
+	}
 	rw.mu.Unlock()
-	rw.bw.st.Flush()
+	rw.st.Flush()
 }
 
 func (rw *responseWriter) close() error {
+	rw.Flush()
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	rw.writeHeaderLockedOnce(http.StatusOK)
 	rw.prepareTrailerForWriteLocked()
-
 	if err := rw.bw.Close(); err != nil {
 		return err
 	}
 	return rw.st.stream.Close()
+}
+
+// defaultBodyBufferCap is the default number of bytes of body that we are
+// willing to save in a buffer for the sake of inferring headers and coalescing
+// small writes. 512 was chosen to be consistent with how much
+// http.DetectContentType is willing to read.
+const defaultBodyBufferCap = 512
+
+// bodyBuffer is a buffer used to store body content of a response.
+type bodyBuffer []byte
+
+// write writes b to the buffer. It returns a new slice of b, which contains
+// any remaining data that could not be written to the buffer, if any.
+func (bb *bodyBuffer) write(b []byte) []byte {
+	n := min(len(b), cap(*bb)-len(*bb))
+	*bb = append(*bb, b[:n]...)
+	return b[n:]
+}
+
+// discard resets the buffer so it can be used again.
+func (bb *bodyBuffer) discard() {
+	*bb = (*bb)[:0]
+}
+
+// inferHeader populates h with the header values that we can infer from our
+// current buffer content, if not already explicitly set. This method should be
+// called only once with as much body content as possible in the buffer, before
+// a HEADERS frame is sent, and before discard has been called. Doing so
+// properly is the responsibility of the caller.
+func (bb *bodyBuffer) inferHeader(h http.Header, status int) {
+	if _, ok := h["Date"]; !ok {
+		h.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	}
+	// If the Content-Encoding is non-blank, we shouldn't
+	// sniff the body. See Issue golang.org/issue/31753.
+	_, hasCE := h["Content-Encoding"]
+	_, hasCT := h["Content-Type"]
+	if !hasCE && !hasCT && responseCanHaveBody(status) && len(*bb) > 0 {
+		h.Set("Content-Type", http.DetectContentType(*bb))
+	}
+	// We can technically infer Content-Length too here, as long as the entire
+	// response body fits within hi.buf and does not require flushing. However,
+	// we have chosen not to do so for now as Content-Length is not very
+	// important for HTTP/3, and such inconsistent behavior might be confusing.
 }

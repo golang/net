@@ -44,18 +44,34 @@ type bodyWriter struct {
 	enc     *qpackEncoder // QPACK encoder used by the connection.
 }
 
-func (w *bodyWriter) Write(p []byte) (n int, err error) {
-	if w.remain >= 0 && int64(len(p)) > w.remain {
+func (w *bodyWriter) write(ps ...[]byte) (n int, err error) {
+	var size int64
+	for _, p := range ps {
+		size += int64(len(p))
+	}
+	// If write is called with empty byte slices, just return instead of
+	// sending out a DATA frame containing nothing.
+	if size == 0 {
+		return 0, nil
+	}
+	if w.remain >= 0 && size > w.remain {
 		return 0, &streamError{
 			code:    errH3InternalError,
 			message: w.name + " body longer than specified content length",
 		}
 	}
 	w.st.writeVarint(int64(frameTypeData))
-	w.st.writeVarint(int64(len(p)))
-	n, err = w.st.Write(p)
-	if w.remain >= 0 {
-		w.remain -= int64(n)
+	w.st.writeVarint(size)
+	for _, p := range ps {
+		var n2 int
+		n2, err = w.st.Write(p)
+		n += n2
+		if w.remain >= 0 {
+			w.remain -= int64(n)
+		}
+		if err != nil {
+			break
+		}
 	}
 	if w.flush && err == nil {
 		err = w.st.Flush()
@@ -64,6 +80,10 @@ func (w *bodyWriter) Write(p []byte) (n int, err error) {
 		err = fmt.Errorf("writing %v body: %w", w.name, err)
 	}
 	return n, err
+}
+
+func (w *bodyWriter) Write(p []byte) (n int, err error) {
+	return w.write(p)
 }
 
 func (w *bodyWriter) Close() error {

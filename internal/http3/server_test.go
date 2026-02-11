@@ -11,6 +11,8 @@ import (
 	"net/netip"
 	"net/url"
 	"reflect"
+	"slices"
+	"strconv"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -82,7 +84,7 @@ func TestServerHeader(t *testing.T) {
 			"header-from-client": {"that", "should", "be", "echoed"},
 		}))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			":status":            {"204"},
 			"Header-From-Client": {"that", "should", "be", "echoed"},
 		})
@@ -129,7 +131,7 @@ func TestServerPseudoHeader(t *testing.T) {
 			":path":      {"/some/path?query=value&query2=value2#fragment"},
 		})
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"321"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"321"}})
 		reqStream.wantClosed("request is complete")
 
 		reqStream = tc.newStream(streamTypeRequest)
@@ -155,7 +157,7 @@ func TestServerInvalidHeader(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			":status":      {"200"},
 			"Valid-Name":   {"valid value"},
 			"Valid-Name-2": {"valid value 2"},
@@ -183,9 +185,9 @@ func TestServerBody(t *testing.T) {
 		reqStream.writeData(bodyContent)
 		reqStream.stream.stream.CloseWrite()
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
-		reqStream.wantData([]byte("/"))
-		reqStream.wantData(bodyContent)
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
+		// Small multiple calls to Write will be coalesced into one DATA frame.
+		reqStream.wantData(append([]byte("/"), bodyContent...))
 		reqStream.wantClosed("request is complete")
 	})
 }
@@ -202,14 +204,14 @@ func TestServerHeadResponseNoBody(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantData(bodyContent)
 		reqStream.wantClosed("request is complete")
 
 		reqStream = tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(http.Header{":method": {http.MethodHead}}))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantClosed("request is complete")
 	})
 }
@@ -225,7 +227,7 @@ func TestServerHandlerEmpty(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantClosed("request is complete")
 	})
 }
@@ -291,7 +293,7 @@ func TestServerHandlerStreaming(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 
 		for _, data := range []string{"a", "bunch", "of", "things", "to", "stream"} {
 			stream <- data
@@ -335,13 +337,14 @@ func TestServerExpect100Continue(t *testing.T) {
 		// Wait until server responds with HTTP status 100 before sending the
 		// body.
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"100"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"100"}})
 		body := []byte("body that will be echoed back if we get status 100")
 		reqStream.writeData(body)
 		reqStream.stream.stream.CloseWrite()
 
 		// Receive the server's response after sending the body.
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		synctest.Wait()
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantData(body)
 		reqStream.wantClosed("request is complete")
 	})
@@ -365,8 +368,39 @@ func TestServerExpect100ContinueRejected(t *testing.T) {
 
 		// Server rejects it.
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"403"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"403"}})
 		reqStream.wantData(rejectBody)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerNoExpect100ContinueAfterNormalResponse(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+			w.(http.Flusher).Flush()
+			// This should not cause an HTTP 100 status to be sent since we
+			// have sent an HTTP 200 response already.
+			io.ReadAll(r.Body)
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		// Client sends an Expect: 100-continue request.
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(http.Header{
+			"Expect": {"100-continue"},
+		}))
+		// Client sends a body prematurely. This should not happen, unless a
+		// client misbehaves. We do so here anyways so the server handler can
+		// read the request body without hanging, which would normally cause an
+		// HTTP 100 to be sent.
+		reqStream.writeData([]byte("some body"))
+		reqStream.stream.stream.CloseWrite()
+
+		// Verify that no HTTP 100 was sent.
+		synctest.Wait()
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantClosed("request is complete")
 	})
 }
@@ -389,7 +423,7 @@ func TestServerHandlerReadReqWithNoBody(t *testing.T) {
 		reqStream.writeHeaders(requestHeader(nil))
 		reqStream.stream.stream.CloseWrite()
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantData(serverBody)
 		reqStream.wantClosed("request is complete")
 
@@ -400,7 +434,7 @@ func TestServerHandlerReadReqWithNoBody(t *testing.T) {
 			"Content-Length": {"0"},
 		}))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{":status": {"200"}})
+		reqStream.wantSomeHeaders(http.Header{":status": {"200"}})
 		reqStream.wantData(serverBody)
 		reqStream.wantClosed("request is complete")
 	})
@@ -508,12 +542,12 @@ func TestServerHandlerWriteTrailer(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			":status": {"200"},
 			"Trailer": {"Server-Trailer-A, Server-Trailer-B, Server-Trailer-C"},
 		})
 		reqStream.wantData(body)
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			"Server-Trailer-A": {"valuea"},
 			"Server-Trailer-C": {"valuec"},
 		})
@@ -539,16 +573,221 @@ func TestServerHandlerWriteTrailerNoBody(t *testing.T) {
 		reqStream := tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(requestHeader(nil))
 		synctest.Wait()
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			":status": {"200"},
 			"Trailer": {"Server-Trailer-A, Server-Trailer-B, Server-Trailer-C"},
 		})
-		reqStream.wantHeaders(http.Header{
+		reqStream.wantSomeHeaders(http.Header{
 			"Server-Trailer-A": {"valuea"},
 			"Server-Trailer-C": {"valuec"},
 		})
 		reqStream.wantClosed("request is complete")
 	})
+}
+
+func TestServerInfersHeaders(t *testing.T) {
+	tests := []struct {
+		name            string
+		flushedEarly    bool
+		responseStatus  int
+		does100Continue bool
+		declaredHeader  http.Header
+		want            http.Header
+	}{
+		{
+			name:           "infers undeclared headers",
+			responseStatus: 200,
+			declaredHeader: http.Header{
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Content-Type":      {"text/html; charset=utf-8"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
+			name:           "does not write over declared header",
+			responseStatus: 200,
+			declaredHeader: http.Header{
+				"Date":              {"some date"},
+				"Content-Type":      {"some content type"},
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"some date"},
+				"Content-Type":      {"some content type"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
+			name:           "does not infer content type for response with no body",
+			responseStatus: 304, // 304 status response has no body.
+			declaredHeader: http.Header{
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
+			// See golang.org/issue/31753.
+			name:           "does not infer content type for response with declared content encoding",
+			responseStatus: 200,
+			declaredHeader: http.Header{
+				"Content-Encoding":  {"some encoding"},
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Content-Encoding":  {"some encoding"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
+			name:           "does not infer content type when header is flushed before body is written",
+			responseStatus: 200,
+			flushedEarly:   true,
+			declaredHeader: http.Header{
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
+			name:            "infers header for the header that comes after 100 continue",
+			responseStatus:  200,
+			does100Continue: true,
+			declaredHeader: http.Header{
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Content-Type":      {"text/html; charset=utf-8"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			body := []byte("<html>some html content</html>")
+			streamIdle := make(chan bool)
+			ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.does100Continue {
+					<-streamIdle
+					io.ReadAll(r.Body)
+				}
+				for name, values := range tt.declaredHeader {
+					for _, value := range values {
+						w.Header().Add(name, value)
+					}
+				}
+				w.WriteHeader(tt.responseStatus)
+				if tt.flushedEarly {
+					w.(http.Flusher).Flush()
+				}
+				// Write the body one byte at a time. To confirm that body
+				// writes are buffered and that Content-Type will not be
+				// wrongly identified as text/plain rather than text/html.
+				for _, b := range body {
+					w.Write([]byte{b})
+				}
+			}))
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+
+			if tt.does100Continue {
+				reqStream.writeHeaders(requestHeader(http.Header{
+					"Expect": {"100-continue"},
+				}))
+				reqStream.wantIdle("stream is idle until server sends an HTTP 100 status")
+				streamIdle <- true
+				synctest.Wait()
+				reqStream.wantHeaders(http.Header{":status": {"100"}})
+			}
+
+			reqStream.writeHeaders(requestHeader(nil))
+			synctest.Wait()
+			tt.want.Add(":status", strconv.Itoa(tt.responseStatus))
+			reqStream.wantHeaders(tt.want)
+			if responseCanHaveBody(tt.responseStatus) {
+				reqStream.wantData(body)
+			}
+			reqStream.wantClosed("request is complete")
+		})
+	}
+}
+
+func TestServerBuffersBodyWrite(t *testing.T) {
+	tests := []struct {
+		name      string
+		bodyLen   int
+		writeSize int
+		flushes   bool
+	}{
+		{
+			name:      "buffers small body content",
+			bodyLen:   defaultBodyBufferCap * 10,
+			writeSize: 5,
+			flushes:   false,
+		},
+		{
+			name:      "does not buffer large body content",
+			bodyLen:   defaultBodyBufferCap * 10,
+			writeSize: defaultBodyBufferCap * 2,
+			flushes:   false,
+		},
+		{
+			name:      "does not buffer flushed body content",
+			bodyLen:   defaultBodyBufferCap * 10,
+			writeSize: 10,
+			flushes:   true,
+		},
+	}
+	for _, tt := range tests {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for n := 0; n < tt.bodyLen; n += tt.writeSize {
+					data := slices.Repeat([]byte("a"), min(tt.writeSize, tt.bodyLen-n))
+					w.Write(data)
+					if tt.flushes {
+						w.(http.Flusher).Flush()
+					}
+				}
+			}))
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(nil))
+			synctest.Wait()
+			reqStream.wantHeaders(nil)
+			switch {
+			case tt.writeSize > defaultBodyBufferCap:
+				// After using the buffer once, it is no longer used since the
+				// writeSize is larger than the buffer.
+				for n := 0; n < tt.bodyLen; n += tt.writeSize {
+					reqStream.wantData(slices.Repeat([]byte("a"), min(tt.writeSize, tt.bodyLen-n)))
+				}
+			case tt.flushes:
+				for n := 0; n < tt.bodyLen; n += tt.writeSize {
+					reqStream.wantData(slices.Repeat([]byte("a"), min(tt.writeSize, tt.bodyLen-n)))
+				}
+			case tt.writeSize <= defaultBodyBufferCap:
+				dataLen := defaultBodyBufferCap + tt.writeSize - (defaultBodyBufferCap % tt.writeSize)
+				for n := 0; n < tt.bodyLen; n += dataLen {
+					reqStream.wantData(slices.Repeat([]byte("a"), min(dataLen, tt.bodyLen-n)))
+				}
+			}
+			reqStream.wantClosed("request is complete")
+		})
+	}
 }
 
 type testServer struct {

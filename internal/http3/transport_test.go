@@ -215,6 +215,43 @@ func (ts *testQUICStream) wantHeaders(want http.Header) {
 	}
 }
 
+// wantSomeHeaders reads a HEADERS frame and asserts that want is a subset of
+// the read HEADERS frame.
+// This is like wantHeaders, but headers that are in the HEADERS frame but not
+// in want are ignored.
+func (ts *testQUICStream) wantSomeHeaders(want http.Header) {
+	ts.t.Helper()
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
+	}
+	if ftype != frameTypeHeaders {
+		ts.t.Fatalf("want HEADERS frame, got: %v", ftype)
+	}
+
+	if want == nil {
+		panic("use wantHeaders(nil) instead to ignore the content of the frame")
+	}
+
+	got := make(http.Header)
+	var dec qpackDecoder
+	err = dec.decode(ts.stream, func(_ indexType, name, value string) error {
+		got.Add(name, value)
+		return nil
+	})
+	for name := range got {
+		if _, ok := want[name]; !ok {
+			delete(got, name)
+		}
+	}
+	if diff := diffHeaders(got, want); diff != "" {
+		ts.t.Fatalf("unexpected response headers:\n%v", diff)
+	}
+	if err := ts.endFrame(); err != nil {
+		ts.t.Fatalf("endFrame: %v", err)
+	}
+}
+
 func (ts *testQUICStream) encodeHeaders(h http.Header) []byte {
 	ts.t.Helper()
 	var enc qpackEncoder
