@@ -5,8 +5,6 @@
 // Infrastructure for testing ClientConn.RoundTrip.
 // Put actual tests in transport_test.go.
 
-//go:build go1.25 || goexperiment.synctest
-
 package http2
 
 import (

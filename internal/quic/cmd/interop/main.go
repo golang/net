@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.21
-
 // The interop command is the client and server used by QUIC interoperability tests.
 //
 // https://github.com/marten-seemann/quic-interop-runner
