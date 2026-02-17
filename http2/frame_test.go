@@ -1585,3 +1585,20 @@ func TestReadFrameForHeaderUnexpectedEOF(t *testing.T) {
 		t.Fatalf("ReadFrameForHeader with short body = %v; want io.ErrUnexpectedEOF", err)
 	}
 }
+
+func TestTypeFrameParserHolePanic(t *testing.T) {
+	// Verify that unassigned frame types (0x0a-0x0f) don't panic. golang.org/issue/77652
+	fr, _ := testFramer()
+	if err := fr.WriteRawFrame(FrameType(0x0a), 0, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := f.(*UnknownFrame); !ok {
+		t.Errorf("got %T; want *UnknownFrame", f)
+	}
+}
