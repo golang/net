@@ -755,7 +755,13 @@ func TestServerBuffersBodyWrite(t *testing.T) {
 			ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				for n := 0; n < tt.bodyLen; n += tt.writeSize {
 					data := slices.Repeat([]byte("a"), min(tt.writeSize, tt.bodyLen-n))
-					w.Write(data)
+					n, err := w.Write(data)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if n != len(data) {
+						t.Errorf("got %v bytes when writing in server handler, want %v", n, len(data))
+					}
 					if tt.flushes {
 						w.(http.Flusher).Flush()
 					}

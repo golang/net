@@ -414,11 +414,12 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	// As a special case, we always want to save b to the buffer even when b is
 	// big if we had yet to write our header, so we can infer headers like
 	// "Content-Type" with as much information as possible.
+	initialBLen := len(b)
 	initialBufLen := len(rw.bb)
 	if !rw.wroteHeader || len(b) <= cap(rw.bb)-len(rw.bb) {
 		b = rw.bb.write(b)
 		if len(b) == 0 {
-			return len(b), nil
+			return initialBLen, nil
 		}
 	}
 
@@ -430,13 +431,13 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	// 3. Reset the current body buffer so it can be used again.
 	rw.writeHeaderLockedOnce()
 	if rw.cannotHaveBody {
-		return len(b), nil
+		return initialBLen, nil
 	}
 	if n, err := rw.bw.write(rw.bb, b); err != nil {
 		return max(0, n-initialBufLen), err
 	}
 	rw.bb.discard()
-	return len(b), nil
+	return initialBLen, nil
 }
 
 func (rw *responseWriter) Flush() {
