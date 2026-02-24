@@ -327,6 +327,7 @@ type responseWriter struct {
 	statusCode     int  // Status of the response that will be sent in HEADERS frame.
 	statusCodeSet  bool // Status of the response has been set via a call to WriteHeader.
 	cannotHaveBody bool // Response should not have a body (e.g. response to a HEAD request).
+	bodyLenLeft    int  // How much of the content body is left to be sent, set via "Content-Length" header. -1 if unknown.
 }
 
 func (rw *responseWriter) Header() http.Header {
@@ -400,14 +401,40 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 	}
 	rw.statusCodeSet = true
 	rw.statusCode = statusCode
+
+	if n, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil {
+		rw.bodyLenLeft = n
+	} else {
+		rw.bodyLenLeft = -1 // Unknown.
+	}
 }
 
-func (rw *responseWriter) Write(b []byte) (int, error) {
+// trimWriteLocked trims a byte slice, b, such that the length of b will not
+// exceed rw.bodyLenLeft. This method will update rw.bodyLenLeft when trimming
+// b, and will also return whether b was trimmed or not.
+// Caller must hold rw.mu.
+func (rw *responseWriter) trimWriteLocked(b []byte) ([]byte, bool) {
+	if rw.bodyLenLeft < 0 {
+		return b, false
+	}
+	n := min(len(b), rw.bodyLenLeft)
+	rw.bodyLenLeft -= n
+	return b[:n], n != len(b)
+}
+
+func (rw *responseWriter) Write(b []byte) (n int, err error) {
 	// Calling Write implicitly calls WriteHeader(200) if WriteHeader has not
 	// been called before.
 	rw.WriteHeader(http.StatusOK)
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
+
+	b, trimmed := rw.trimWriteLocked(b)
+	if trimmed {
+		defer func() {
+			err = http.ErrContentLength
+		}()
+	}
 
 	// If b fits entirely in our body buffer, save it to the buffer and return
 	// early so we can coalesce small writes.

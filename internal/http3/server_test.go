@@ -304,6 +304,75 @@ func TestServerHandlerStreaming(t *testing.T) {
 	})
 }
 
+func TestServerHandlerTrimsContentBody(t *testing.T) {
+	tests := []struct {
+		name                      string
+		declaredContentLen        int
+		declaredInvalidContentLen bool
+		actualContentLen          int
+		wantTrimmed               bool
+	}{
+		{
+			name:               "declared accurate content length",
+			declaredContentLen: 100,
+			actualContentLen:   100,
+		},
+		{
+			name:               "declared larger content length",
+			declaredContentLen: 100,
+			actualContentLen:   10,
+		},
+		{
+			name:               "declared smaller content length",
+			declaredContentLen: 10,
+			actualContentLen:   100,
+			wantTrimmed:        true,
+		},
+		{
+			name:                      "declared invalid content length",
+			declaredInvalidContentLen: true,
+			actualContentLen:          100,
+		},
+	}
+
+	for _, tt := range tests {
+		wantWrittenLen := min(tt.actualContentLen, tt.declaredContentLen)
+		if tt.declaredInvalidContentLen {
+			wantWrittenLen = tt.actualContentLen
+		}
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", strconv.Itoa(tt.declaredContentLen))
+				if tt.declaredInvalidContentLen {
+					w.Header().Set("Content-Length", "not a number, should be ignored")
+				}
+				var written int
+				var lastErr error
+				for range tt.actualContentLen {
+					n, err := w.Write([]byte("a"))
+					written += n
+					lastErr = err
+				}
+				if tt.wantTrimmed != (lastErr != nil) {
+					t.Errorf("got %v error when writing response body, even though wantTrimmed is %v", lastErr, tt.wantTrimmed)
+				}
+				if written != wantWrittenLen {
+					t.Errorf("got %v bytes written by the server, want %v bytes", written, wantWrittenLen)
+				}
+			}))
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(nil))
+			synctest.Wait()
+			reqStream.wantHeaders(nil)
+			reqStream.wantData(slices.Repeat([]byte("a"), wantWrittenLen))
+			reqStream.wantClosed("request is complete")
+		})
+	}
+}
+
 func TestServerExpect100Continue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		streamIdle := make(chan bool)
