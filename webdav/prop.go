@@ -307,6 +307,13 @@ loop:
 
 	f, err := fs.OpenFile(ctx, name, os.O_RDWR, 0)
 	if err != nil {
+		stat, statErr := fs.Stat(ctx, name)
+		// If the error is a permission error or the file is a directory, return permission
+		// denied. We check the directory case because some file systems do not support
+		// writing to directories.
+		if errors.Is(err, os.ErrPermission) || (statErr == nil && stat.IsDir()) {
+			return patchesForbidden(patches), nil
+		}
 		return nil, err
 	}
 	defer f.Close()
@@ -327,13 +334,17 @@ loop:
 	}
 	// The file doesn't implement the optional DeadPropsHolder interface, so
 	// all patches are forbidden.
+	return patchesForbidden(patches), nil
+}
+
+func patchesForbidden(patches []Proppatch) []Propstat {
 	pstat := Propstat{Status: http.StatusForbidden}
 	for _, patch := range patches {
 		for _, p := range patch.Props {
 			pstat.Props = append(pstat.Props, Property{XMLName: p.XMLName})
 		}
 	}
-	return []Propstat{pstat}, nil
+	return []Propstat{pstat}
 }
 
 func escapeXML(s string) string {
