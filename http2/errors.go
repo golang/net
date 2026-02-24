@@ -90,6 +90,11 @@ func (e StreamError) Error() string {
 	return fmt.Sprintf("stream error: stream ID %d; %v", e.StreamID, e.Code)
 }
 
+func (e StreamError) Temporary() bool {
+	// Internal errors
+	return e.Code == ErrCodeInternal
+}
+
 // 6.9.1 The Flow Control Window
 // "If a sender receives a WINDOW_UPDATE that causes a flow control
 // window to exceed this maximum it MUST terminate either the stream
