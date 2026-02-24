@@ -1572,8 +1572,26 @@ func (cs *clientStream) writeRequest(req *http.Request, streamf func(*clientStre
 			respHeaderRecv = nil
 			respHeaderTimer = nil // keep waiting for END_STREAM
 		case <-cs.abort:
+			// If this was the only active stream, mark the connection
+			// as not for re-use in order to address raciness if the caller
+			// tries to call closeIdleConnections() before the stream has been
+			// removed
+			if len(cc.streams) == 1 {
+				cc.mu.Lock()
+				cc.doNotReuse = true
+				cc.mu.Unlock()
+			}
 			return cs.abortErr
 		case <-ctx.Done():
+			// If this was the only active stream, mark the connection
+			// as not for re-use in order to address raciness if the caller
+			// tries to call closeIdleConnections() before the stream has been
+			// removed
+			if len(cc.streams) == 1 {
+				cc.mu.Lock()
+				cc.doNotReuse = true
+				cc.mu.Unlock()
+			}
 			return ctx.Err()
 		case <-cs.reqCancel:
 			return errRequestCanceled
