@@ -658,8 +658,8 @@ func (t *Transport) RoundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Res
 // connected from previous requests but are now sitting idle.
 // It does not interrupt any connections currently in use.
 func (t *Transport) CloseIdleConnections() {
-	if cp, ok := t.connPool().(clientConnPoolIdleCloser); ok {
-		cp.closeIdleConnections()
+	if cp, ok := t.connPool().(ClientConnPoolIdleCloser); ok {
+		cp.CloseIdleConnections()
 	}
 }
 
