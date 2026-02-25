@@ -865,6 +865,53 @@ func TestServerBuffersBodyWrite(t *testing.T) {
 	}
 }
 
+func TestServer103EarlyHints(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		body := []byte("some body")
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+
+			h.Add("Content-Length", "123") // Must be ignored
+			h.Add("Link", "</style.css>; rel=preload; as=style")
+			h.Add("Link", "</script.js>; rel=preload; as=script")
+			w.WriteHeader(http.StatusEarlyHints)
+
+			h.Add("Link", "</foo.js>; rel=preload; as=script")
+			w.WriteHeader(http.StatusEarlyHints)
+
+			w.Write(body)                        // Implicitly sends status 200.
+			w.WriteHeader(http.StatusEarlyHints) // Should be a no-op.
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		synctest.Wait()
+		reqStream.wantHeaders(http.Header{
+			":status": {"103"},
+			"Link": {
+				"</style.css>; rel=preload; as=style",
+				"</script.js>; rel=preload; as=script",
+			},
+		})
+		reqStream.wantHeaders(http.Header{
+			":status": {"103"},
+			"Link": {
+				"</style.css>; rel=preload; as=style",
+				"</script.js>; rel=preload; as=script",
+				"</foo.js>; rel=preload; as=script",
+			},
+		})
+		reqStream.wantSomeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"123"},
+		})
+		reqStream.wantData(body)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 type testServer struct {
 	t  testing.TB
 	s  *Server

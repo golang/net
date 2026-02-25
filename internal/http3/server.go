@@ -270,18 +270,7 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	defer rw.close()
 	if reqInfo.NeedsContinue {
 		req.Body.(*bodyReader).send100Continue = func() {
-			rw.mu.Lock()
-			defer rw.mu.Unlock()
-			if rw.wroteHeader {
-				return
-			}
-			encHeaders := rw.bw.enc.encode(func(f func(itype indexType, name, value string)) {
-				f(mayIndex, ":status", strconv.Itoa(http.StatusContinue))
-			})
-			rw.st.writeVarint(int64(frameTypeHeaders))
-			rw.st.writeVarint(int64(len(encHeaders)))
-			rw.st.Write(encHeaders)
-			rw.st.Flush()
+			rw.WriteHeader(100)
 		}
 	}
 
@@ -350,8 +339,10 @@ func (rw *responseWriter) prepareTrailerForWriteLocked() {
 	}
 }
 
-// Caller must hold rw.mu. If rw.wroteHeader is true, calling this method is a
-// no-op.
+// writeHeaderLockedOnce writes the final response header. If rw.wroteHeader is
+// true, calling this method is a no-op. Sending informational status headers
+// should be done using writeInfoHeaderLocked, rather than this method.
+// Caller must hold rw.mu.
 func (rw *responseWriter) writeHeaderLockedOnce() {
 	if rw.wroteHeader {
 		return
@@ -387,9 +378,42 @@ func (rw *responseWriter) writeHeaderLockedOnce() {
 	rw.st.writeVarint(int64(frameTypeHeaders))
 	rw.st.writeVarint(int64(len(encHeaders)))
 	rw.st.Write(encHeaders)
-	if rw.statusCode >= http.StatusOK {
-		rw.wroteHeader = true
+	rw.wroteHeader = true
+}
+
+// writeHeaderLocked writes informational status headers (i.e. status 1XX).
+// If a non-informational status header has been written via
+// writeHeaderLockedOnce, this method is a no-op.
+// Caller must hold rw.mu.
+func (rw *responseWriter) writeHeaderLocked(statusCode int) {
+	if rw.wroteHeader {
+		return
 	}
+	encHeaders := rw.bw.enc.encode(func(f func(itype indexType, name, value string)) {
+		f(mayIndex, ":status", strconv.Itoa(statusCode))
+		for name, values := range rw.headers {
+			if name == "Content-Length" || name == "Transfer-Encoding" {
+				continue
+			}
+			if !httpguts.ValidHeaderFieldName(name) {
+				continue
+			}
+			for _, val := range values {
+				if !httpguts.ValidHeaderFieldValue(val) {
+					continue
+				}
+				// Issue #71374: Consider supporting never-indexed fields.
+				f(mayIndex, name, val)
+			}
+		}
+	})
+	rw.st.writeVarint(int64(frameTypeHeaders))
+	rw.st.writeVarint(int64(len(encHeaders)))
+	rw.st.Write(encHeaders)
+}
+
+func isInfoStatus(status int) bool {
+	return status >= 100 && status < 200
 }
 
 func (rw *responseWriter) WriteHeader(statusCode int) {
@@ -399,9 +423,19 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 	if rw.statusCodeSet {
 		return
 	}
+
+	// Informational headers can be sent multiple times, and should be flushed
+	// immediately.
+	if isInfoStatus(statusCode) {
+		rw.writeHeaderLocked(statusCode)
+		rw.st.Flush()
+		return
+	}
+
+	// Non-informational headers should only be set once, and should be
+	// buffered.
 	rw.statusCodeSet = true
 	rw.statusCode = statusCode
-
 	if n, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil {
 		rw.bodyLenLeft = n
 	} else {
