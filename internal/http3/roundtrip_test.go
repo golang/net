@@ -9,6 +9,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -354,13 +358,27 @@ func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
 
 func TestRoundTripExpect100Continue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		var callCount1xx, callCount100, callCount100Wait int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				callCount1xx++
+				return nil
+			},
+			Got100Continue: func() {
+				callCount100++
+			},
+			Wait100Continue: func() {
+				callCount100Wait++
+			},
+		}
+
 		tc := newTestClientConn(t)
 		tc.greet()
 		clientBody := []byte("client's body that will be sent later")
 		serverBody := []byte("server's body")
 
 		// Client sends an Expect: 100-continue request.
-		req, _ := http.NewRequest("PUT", "https://example.tld/", bytes.NewBuffer(clientBody))
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", bytes.NewBuffer(clientBody))
 		req.Header = http.Header{"Expect": {"100-continue"}}
 		rt := tc.roundTrip(req)
 		st := tc.wantStream(streamTypeRequest)
@@ -387,16 +405,35 @@ func TestRoundTripExpect100Continue(t *testing.T) {
 		// Client receives the response from server.
 		rt.wantStatus(200)
 		rt.wantBody(serverBody)
+
+		gotCount := []int{callCount1xx, callCount100, callCount100Wait}
+		if !slices.Equal(gotCount, []int{1, 1, 1}) {
+			t.Errorf("Got1xxResponse, Got100Continue, and Wait100Continue was called %v times respectively, want [1 1 1]", gotCount)
+		}
 	})
 }
 
 func TestRoundTripExpect100ContinueRejected(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		var callCount1xx, callCount100, callCount100Wait int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				callCount1xx++
+				return nil
+			},
+			Got100Continue: func() {
+				callCount100++
+			},
+			Wait100Continue: func() {
+				callCount100Wait++
+			},
+		}
+
 		tc := newTestClientConn(t)
 		tc.greet()
 
 		// Client sends an Expect: 100-continue request.
-		req, _ := http.NewRequest("PUT", "https://example.tld/", bytes.NewBufferString("client's body"))
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", bytes.NewBufferString("client's body"))
 		req.Header = http.Header{"Expect": {"100-continue"}}
 		rt := tc.roundTrip(req)
 		st := tc.wantStream(streamTypeRequest)
@@ -416,6 +453,11 @@ func TestRoundTripExpect100ContinueRejected(t *testing.T) {
 
 		rt.wantStatus(200)
 		rt.wantBody(serverBody)
+
+		gotCount := []int{callCount1xx, callCount100, callCount100Wait}
+		if !slices.Equal(gotCount, []int{0, 0, 1}) {
+			t.Errorf("Got1xxResponse, Got100Continue, and Wait100Continue was called %v times respectively, want [0 0 1]", gotCount)
+		}
 	})
 }
 
@@ -630,6 +672,61 @@ func TestRoundTripReadTrailerNoBody(t *testing.T) {
 			"Server-Trailer-B": nil,
 			"Server-Trailer-C": {"valuec"},
 		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTrip103EarlyHints(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		firstHeader := http.Header{
+			":status": {"103"},
+			"Link":    {"</style.css>; rel=preload; as=style"},
+		}
+		secondHeader := http.Header{
+			":status": {"103"},
+			"Link":    {"</style.css>; rel=preload; as=style", "</script.js>; rel=preload; as=script"},
+		}
+
+		var respCounter int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				var wantHeader textproto.MIMEHeader
+				switch respCounter {
+				case 0:
+					wantHeader = textproto.MIMEHeader(firstHeader)
+				case 1:
+					wantHeader = textproto.MIMEHeader(secondHeader)
+				default:
+					t.Error("Unexpected 1xx response")
+				}
+				wantHeader.Del(":status")
+				if !reflect.DeepEqual(header, wantHeader) {
+					t.Errorf("got %v early hints header, want %v", header, wantHeader)
+				}
+				respCounter++
+				return nil
+			},
+		}
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", nil)
+
+		tc := newTestClientConn(t)
+		tc.greet()
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(firstHeader)
+		st.writeHeaders(secondHeader)
+
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+		})
+		body := []byte("some body")
+		st.writeData(body)
+		st.stream.stream.CloseWrite()
+
+		rt.wantStatus(200)
+		rt.wantBody(body)
 		st.wantClosed("request is complete")
 	})
 }

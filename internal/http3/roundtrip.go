@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
 	"strconv"
 	"sync"
 
@@ -27,6 +29,8 @@ type roundTripState struct {
 
 	// Response.Body, provided to the caller.
 	respBody io.ReadCloser
+
+	trace *httptrace.ClientTrace
 
 	errOnce sync.Once
 	err     error
@@ -60,6 +64,28 @@ func (rt *roundTripState) closeReqBody() {
 	}
 }
 
+// TODO: Set up the rest of the hooks that might be in rt.trace.
+func (rt *roundTripState) maybeCallGot1xxResponse(status int, h http.Header) error {
+	if rt.trace == nil || rt.trace.Got1xxResponse == nil {
+		return nil
+	}
+	return rt.trace.Got1xxResponse(status, textproto.MIMEHeader(h))
+}
+
+func (rt *roundTripState) maybeCallGot100Continue() {
+	if rt.trace == nil || rt.trace.Got100Continue == nil {
+		return
+	}
+	rt.trace.Got100Continue()
+}
+
+func (rt *roundTripState) maybeCallWait100Continue() {
+	if rt.trace == nil || rt.trace.Wait100Continue == nil {
+		return
+	}
+	rt.trace.Wait100Continue()
+}
+
 // RoundTrip sends a request on the connection.
 func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
 	// Each request gets its own QUIC stream.
@@ -68,8 +94,9 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		return nil, err
 	}
 	rt := &roundTripState{
-		cc: cc,
-		st: st,
+		cc:    cc,
+		st:    st,
+		trace: httptrace.ContextClientTrace(req.Context()),
 	}
 	defer func() {
 		if err != nil {
@@ -113,7 +140,9 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 
 	var bodyAndTrailerWritten bool
 	is100ContinueReq := httpguts.HeaderValuesContainsToken(req.Header["Expect"], "100-continue")
-	if !is100ContinueReq && !bodyAndTrailerWritten {
+	if is100ContinueReq {
+		rt.maybeCallWait100Continue()
+	} else {
 		bodyAndTrailerWritten = true
 		go cc.writeBodyAndTrailer(rt, req)
 	}
@@ -131,10 +160,14 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				return nil, err
 			}
 
-			if statusCode >= 100 && statusCode < 199 {
-				// TODO: Handle 1xx responses.
+			// TODO: Handle 1xx responses.
+			if isInfoStatus(statusCode) {
+				if err := rt.maybeCallGot1xxResponse(statusCode, h); err != nil {
+					return nil, err
+				}
 				switch statusCode {
 				case 100:
+					rt.maybeCallGot100Continue()
 					if is100ContinueReq && !bodyAndTrailerWritten {
 						bodyAndTrailerWritten = true
 						go cc.writeBodyAndTrailer(rt, req)
