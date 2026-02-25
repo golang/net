@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package http2
+package http2_test
 
 import (
 	"errors"
@@ -14,6 +14,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	. "golang.org/x/net/http2"
 )
 
 func TestServer_Push_Success(t *testing.T) { synctestTest(t, testServer_Push_Success) }
@@ -463,16 +465,16 @@ func testServer_Push_StateTransitions(t testing.TB) {
 	defer st.Close()
 
 	st.greet()
-	if st.stream(2) != nil {
+	if st.streamExists(2) {
 		t.Fatal("stream 2 should be empty")
 	}
-	if got, want := st.streamState(2), stateIdle; got != want {
+	if got, want := st.streamState(2), StateIdle; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
 	getSlash(st)
 	// After the PUSH_PROMISE is sent, the stream should be stateHalfClosedRemote.
 	_ = readFrame[*PushPromiseFrame](t, st)
-	if got, want := st.streamState(2), stateHalfClosedRemote; got != want {
+	if got, want := st.streamState(2), StateHalfClosedRemote; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
 	// We stall the HTTP handler for "/pushed" until the above check. If we don't
@@ -484,7 +486,7 @@ func testServer_Push_StateTransitions(t testing.TB) {
 		streamID:  2,
 		endStream: false,
 	})
-	if got, want := st.streamState(2), stateClosed; got != want {
+	if got, want := st.streamState(2), StateClosed; got != want {
 		t.Fatalf("streamState(2)=%v, want %v", got, want)
 	}
 	close(finishedPush)

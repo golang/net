@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package http2
+package http2_test
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"slices"
 	"testing"
 
+	. "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
 
@@ -257,7 +258,7 @@ func (tf *testConnFramer) wantRSTStream(streamID uint32, code ErrCode) {
 	tf.t.Helper()
 	fr := readFrame[*RSTStreamFrame](tf.t, tf)
 	if fr.StreamID != streamID || fr.ErrCode != code {
-		tf.t.Fatalf("got %v, want RST_STREAM StreamID=%v, code=%v", summarizeFrame(fr), streamID, code)
+		tf.t.Fatalf("got %v, want RST_STREAM StreamID=%v, code=%v", SummarizeFrame(fr), streamID, code)
 	}
 }
 
@@ -291,7 +292,7 @@ func (tf *testConnFramer) wantGoAway(maxStreamID uint32, code ErrCode) {
 	tf.t.Helper()
 	fr := readFrame[*GoAwayFrame](tf.t, tf)
 	if fr.LastStreamID != maxStreamID || fr.ErrCode != code {
-		tf.t.Fatalf("got %v, want GOAWAY LastStreamID=%v, code=%v", summarizeFrame(fr), maxStreamID, code)
+		tf.t.Fatalf("got %v, want GOAWAY LastStreamID=%v, code=%v", SummarizeFrame(fr), maxStreamID, code)
 	}
 }
 

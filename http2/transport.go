@@ -3229,10 +3229,6 @@ func (gz *gzipReader) Close() error {
 	return gz.body.Close()
 }
 
-type errorReader struct{ err error }
-
-func (r errorReader) Read(p []byte) (int, error) { return 0, r.err }
-
 // isConnectionCloseRequest reports whether req should use its own
 // connection for a single request and then close the connection.
 func isConnectionCloseRequest(req *http.Request) bool {

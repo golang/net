@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package http2
+package http2_test
 
 import (
 	"net/http"
 	"testing"
 	"time"
+
+	. "golang.org/x/net/http2"
 )
 
 func TestConfigServerSettings(t *testing.T) { synctestTest(t, testConfigServerSettings) }

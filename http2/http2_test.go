@@ -5,7 +5,6 @@
 package http2
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"net/http"
@@ -15,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/net/http2/hpack"
 )
 
 var knownFailing = flag.Bool("known_failing", false, "Run known-failing tests.")
@@ -45,44 +42,6 @@ func TestSettingString(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("%d. for %#v, string = %q; want %q", i, tt.s, got, tt.want)
 		}
-	}
-}
-
-type twriter struct {
-	t  testing.TB
-	st *serverTester // optional
-}
-
-func (w twriter) Write(p []byte) (n int, err error) {
-	if w.st != nil {
-		ps := string(p)
-		for _, phrase := range w.st.logFilter {
-			if strings.Contains(ps, phrase) {
-				return len(p), nil // no logging
-			}
-		}
-	}
-	w.t.Logf("%s", p)
-	return len(p), nil
-}
-
-// like encodeHeader, but don't add implicit pseudo headers.
-func encodeHeaderNoImplicit(t testing.TB, headers ...string) []byte {
-	var buf bytes.Buffer
-	enc := hpack.NewEncoder(&buf)
-	for len(headers) > 0 {
-		k, v := headers[0], headers[1]
-		headers = headers[2:]
-		if err := enc.WriteField(hpack.HeaderField{Name: k, Value: v}); err != nil {
-			t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
-		}
-	}
-	return buf.Bytes()
-}
-
-func cleanDate(res *http.Response) {
-	if d := res.Header["Date"]; len(d) == 1 {
-		d[0] = "XXX"
 	}
 }
 
@@ -254,8 +213,8 @@ func TestNoUnicodeStrings(t *testing.T) {
 	}
 }
 
-// setForTest sets *p = v, and restores its original value in t.Cleanup.
-func setForTest[T any](t testing.TB, p *T, v T) {
+// SetForTest sets *p = v, and restores its original value in t.Cleanup.
+func SetForTest[T any](t testing.TB, p *T, v T) {
 	orig := *p
 	t.Cleanup(func() {
 		*p = orig
@@ -263,18 +222,10 @@ func setForTest[T any](t testing.TB, p *T, v T) {
 	*p = v
 }
 
-// must returns v if err is nil, or panics otherwise.
-func must[T any](v T, err error) T {
+// Must returns v if err is nil, or panics otherwise.
+func Must[T any](v T, err error) T {
 	if err != nil {
 		panic(err)
 	}
 	return v
-}
-
-// synctestSubtest starts a subtest and runs f in a synctest bubble within it.
-func synctestSubtest(t *testing.T, name string, f func(testing.TB)) {
-	t.Helper()
-	t.Run(name, func(t *testing.T) {
-		synctestTest(t, f)
-	})
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package http2
+package http2_test
 
 import (
 	"bytes"
@@ -30,6 +30,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	. "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
 
@@ -74,7 +75,7 @@ type serverTester struct {
 	serverLogBuf safeBuffer // logger for httptest.Server
 	logFilter    []string   // substrings to filter out
 	scMu         sync.Mutex // guards sc
-	sc           *serverConn
+	sc           *ServerConn
 	testConnFramer
 
 	callsMu sync.Mutex
@@ -94,15 +95,22 @@ type serverTester struct {
 	hpackEnc  *hpack.Encoder
 }
 
-func init() {
-	testHookOnPanicMu = new(sync.Mutex)
-	goAwayTimeout = 25 * time.Millisecond
+type twriter struct {
+	t  testing.TB
+	st *serverTester // optional
 }
 
-func resetHooks() {
-	testHookOnPanicMu.Lock()
-	testHookOnPanic = nil
-	testHookOnPanicMu.Unlock()
+func (w twriter) Write(p []byte) (n int, err error) {
+	if w.st != nil {
+		ps := string(p)
+		for _, phrase := range w.st.logFilter {
+			if strings.Contains(ps, phrase) {
+				return len(p), nil // no logging
+			}
+		}
+	}
+	w.t.Logf("%s", p)
+	return len(p), nil
 }
 
 func newTestServer(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *httptest.Server {
@@ -196,18 +204,18 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 
 	t.Cleanup(func() {
 		st.Close()
-		time.Sleep(goAwayTimeout) // give server time to shut down
+		time.Sleep(GoAwayTimeout) // give server time to shut down
 	})
 
-	connc := make(chan *serverConn)
+	connc := make(chan *ServerConn)
 	go func() {
-		h2server.serveConn(&netConnWithConnectionState{
+		h2server.TestServeConn(&netConnWithConnectionState{
 			Conn:  srv,
 			state: tlsState,
 		}, &ServeConnOpts{
 			Handler:    handler,
 			BaseConfig: h1server,
-		}, func(sc *serverConn) {
+		}, func(sc *ServerConn) {
 			connc <- sc
 		})
 	}()
@@ -217,7 +225,7 @@ func newServerTester(t testing.TB, handler http.HandlerFunc, opts ...interface{}
 	st.testConnFramer = testConnFramer{
 		t:   t,
 		fr:  NewFramer(st.cc, st.cc),
-		dec: hpack.NewDecoder(initialHeaderTableSize, nil),
+		dec: hpack.NewDecoder(InitialHeaderTableSize, nil),
 	}
 	synctest.Wait()
 	return st
@@ -281,8 +289,6 @@ func (call *serverHandlerCall) exit() {
 // net.Conn and synthetic time. This function is still around because some benchmarks
 // rely on it; new tests should use newServerTester.
 func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ...interface{}) *serverTester {
-	resetHooks()
-
 	ts := httptest.NewUnstartedServer(handler)
 	t.Cleanup(ts.Close)
 
@@ -337,11 +343,11 @@ func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ..
 	if VerboseLogs {
 		t.Logf("Running test server at: %s", ts.URL)
 	}
-	testHookGetServerConn = func(v *serverConn) {
+	SetTestHookGetServerConn(t, func(v *ServerConn) {
 		st.scMu.Lock()
 		defer st.scMu.Unlock()
 		st.sc = v
-	}
+	})
 	log.SetOutput(io.MultiWriter(stderrv(), twriter{t: t, st: st}))
 	cc, err := tls.Dial("tcp", ts.Listener.Addr().String(), tlsConfig)
 	if err != nil {
@@ -351,26 +357,24 @@ func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ..
 	st.testConnFramer = testConnFramer{
 		t:   t,
 		fr:  NewFramer(st.cc, st.cc),
-		dec: hpack.NewDecoder(initialHeaderTableSize, nil),
+		dec: hpack.NewDecoder(InitialHeaderTableSize, nil),
 	}
 	if framerReuseFrames {
 		st.fr.SetReuseFrames()
 	}
-	if !logFrameReads && !logFrameWrites {
-		st.fr.debugReadLoggerf = func(m string, v ...interface{}) {
+	if !LogFrameReads() && !LogFrameWrites() {
+		st.fr.TestSetDebugReadLoggerf(func(m string, v ...interface{}) {
 			m = time.Now().Format("2006-01-02 15:04:05.999999999 ") + strings.TrimPrefix(m, "http2: ") + "\n"
 			st.frameReadLogMu.Lock()
 			fmt.Fprintf(&st.frameReadLogBuf, m, v...)
 			st.frameReadLogMu.Unlock()
-		}
-		st.fr.debugWriteLoggerf = func(m string, v ...interface{}) {
+		})
+		st.fr.TestSetDebugWriteLoggerf(func(m string, v ...interface{}) {
 			m = time.Now().Format("2006-01-02 15:04:05.999999999 ") + strings.TrimPrefix(m, "http2: ") + "\n"
 			st.frameWriteLogMu.Lock()
 			fmt.Fprintf(&st.frameWriteLogBuf, m, v...)
 			st.frameWriteLogMu.Unlock()
-		}
-		st.fr.logReads = true
-		st.fr.logWrites = true
+		})
 	}
 	return st
 }
@@ -390,12 +394,6 @@ func (st *serverTester) authority() string {
 	return "dummy.tld"
 }
 
-func (st *serverTester) closeConn() {
-	st.scMu.Lock()
-	defer st.scMu.Unlock()
-	st.sc.conn.Close()
-}
-
 func (st *serverTester) addLogFilter(phrase string) {
 	st.logFilter = append(st.logFilter, phrase)
 }
@@ -413,30 +411,12 @@ func (st *serverTester) nextHandlerCall() *serverHandlerCall {
 	return call
 }
 
-func (st *serverTester) stream(id uint32) *stream {
-	ch := make(chan *stream, 1)
-	st.sc.serveMsgCh <- func(int) {
-		ch <- st.sc.streams[id]
-	}
-	return <-ch
+func (st *serverTester) streamExists(id uint32) bool {
+	return st.sc.TestStreamExists(id)
 }
 
-func (st *serverTester) streamState(id uint32) streamState {
-	ch := make(chan streamState, 1)
-	st.sc.serveMsgCh <- func(int) {
-		state, _ := st.sc.state(id)
-		ch <- state
-	}
-	return <-ch
-}
-
-// loopNum reports how many times this conn's select loop has gone around.
-func (st *serverTester) loopNum() int {
-	lastc := make(chan int, 1)
-	st.sc.serveMsgCh <- func(loopNum int) {
-		lastc <- loopNum
-	}
-	return <-lastc
+func (st *serverTester) streamState(id uint32) StreamState {
+	return st.sc.TestStreamState(id)
 }
 
 func (st *serverTester) Close() {
@@ -502,11 +482,6 @@ func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error
 			if f.FrameHeader.StreamID != 0 {
 				st.t.Fatalf("WindowUpdate StreamID = %d; want 0", f.FrameHeader.StreamID)
 			}
-			conf := configFromServer(st.sc.hs, st.sc.srv)
-			incr := uint32(conf.MaxUploadBufferPerConnection - initialWindowSize)
-			if f.Increment != incr {
-				st.t.Fatalf("WindowUpdate increment = %d; want %d", f.Increment, incr)
-			}
 			gotWindowUpdate = true
 
 		default:
@@ -523,12 +498,12 @@ func (st *serverTester) greetAndCheckSettings(checkSetting func(s Setting) error
 }
 
 func (st *serverTester) writePreface() {
-	n, err := st.cc.Write(clientPreface)
+	n, err := st.cc.Write([]byte(ClientPreface))
 	if err != nil {
 		st.t.Fatalf("Error writing client preface: %v", err)
 	}
-	if n != len(clientPreface) {
-		st.t.Fatalf("Writing client preface, wrote %d bytes; want %d", n, len(clientPreface))
+	if n != len(ClientPreface) {
+		st.t.Fatalf("Writing client preface, wrote %d bytes; want %d", n, len(ClientPreface))
 	}
 }
 
@@ -631,18 +606,9 @@ func (st *serverTester) bodylessReq1(headers ...string) {
 }
 
 func (st *serverTester) wantConnFlowControlConsumed(consumed int32) {
-	conf := configFromServer(st.sc.hs, st.sc.srv)
-	donec := make(chan struct{})
-	st.sc.sendServeMsg(func(sc *serverConn) {
-		defer close(donec)
-		var avail int32
-		initial := conf.MaxUploadBufferPerConnection
-		avail = sc.inflow.avail + sc.inflow.unsent
-		if got, want := initial-avail, consumed; got != want {
-			st.t.Errorf("connection flow control consumed: %v, want %v", got, want)
-		}
-	})
-	<-donec
+	if got, want := st.sc.TestFlowControlConsumed(), consumed; got != want {
+		st.t.Errorf("connection flow control consumed: %v, want %v", got, want)
+	}
 }
 
 func TestServer(t *testing.T) { synctestTest(t, testServer) }
@@ -1269,7 +1235,7 @@ func TestServer_MaxQueuedControlFrames(t *testing.T) {
 }
 func testServer_MaxQueuedControlFrames(t testing.TB) {
 	// Goroutine debugging makes this test very slow.
-	disableGoroutineTracking(t)
+	DisableGoroutineTracking(t)
 
 	st := newServerTester(t, nil)
 	st.greet()
@@ -1280,7 +1246,7 @@ func testServer_MaxQueuedControlFrames(t testing.TB) {
 	// Send maxQueuedControlFrames pings, plus a few extra
 	// to account for ones that enter the server's write buffer.
 	const extraPings = 2
-	for i := 0; i < maxQueuedControlFrames+extraPings; i++ {
+	for i := 0; i < MaxQueuedControlFrames+extraPings; i++ {
 		pingData := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 		st.fr.WritePing(false, pingData)
 	}
@@ -1290,7 +1256,7 @@ func testServer_MaxQueuedControlFrames(t testing.TB) {
 	// It should have closed the connection after exceeding the control frame limit.
 	st.cc.(*synctestNetConn).SetReadBufferSize(math.MaxInt)
 
-	st.advance(goAwayTimeout)
+	st.advance(GoAwayTimeout)
 	// Some frames may have persisted in the server's buffers.
 	for i := 0; i < 10; i++ {
 		if st.readFrame() == nil {
@@ -1312,10 +1278,10 @@ func testServer_RejectsLargeFrames(t testing.TB) {
 	// Write too large of a frame (too large by one byte)
 	// We ignore the return value because it's expected that the server
 	// will only read the first 9 bytes (the headre) and then disconnect.
-	st.fr.WriteRawFrame(0xff, 0, 0, make([]byte, defaultMaxReadFrameSize+1))
+	st.fr.WriteRawFrame(0xff, 0, 0, make([]byte, DefaultMaxReadFrameSize+1))
 
 	st.wantGoAway(0, ErrCodeFrameSize)
-	st.advance(goAwayTimeout)
+	st.advance(GoAwayTimeout)
 	st.wantClosed()
 }
 
@@ -1600,27 +1566,27 @@ func testServer_StateTransitions(t testing.TB) {
 	leaveHandler := make(chan bool)
 	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
 		inHandler <- true
-		if st.stream(1) == nil {
-			t.Errorf("nil stream 1 in handler")
+		if !st.streamExists(1) {
+			t.Errorf("stream 1 does not exist in handler")
 		}
-		if got, want := st.streamState(1), stateOpen; got != want {
+		if got, want := st.streamState(1), StateOpen; got != want {
 			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
 		writeData <- true
 		if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != io.EOF {
 			t.Errorf("body read = %d, %v; want 0, EOF", n, err)
 		}
-		if got, want := st.streamState(1), stateHalfClosedRemote; got != want {
+		if got, want := st.streamState(1), StateHalfClosedRemote; got != want {
 			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
 
 		<-leaveHandler
 	})
 	st.greet()
-	if st.stream(1) != nil {
+	if st.streamExists(1) {
 		t.Fatal("stream 1 should be empty")
 	}
-	if got := st.streamState(1); got != stateIdle {
+	if got := st.streamState(1); got != StateIdle {
 		t.Fatalf("stream 1 should be idle; got %v", got)
 	}
 
@@ -1640,10 +1606,10 @@ func testServer_StateTransitions(t testing.TB) {
 		endStream: true,
 	})
 
-	if got, want := st.streamState(1), stateClosed; got != want {
+	if got, want := st.streamState(1), StateClosed; got != want {
 		t.Errorf("at end, state is %v; want %v", got, want)
 	}
-	if st.stream(1) != nil {
+	if st.streamExists(1) {
 		t.Fatal("at end, stream 1 should be gone")
 	}
 }
@@ -1704,7 +1670,7 @@ func testServer_Rejects_HeadersEnd_Then_Continuation(t testing.TB) {
 		streamID:  1,
 		endStream: true,
 	})
-	if err := st.fr.WriteContinuation(1, true, encodeHeaderNoImplicit(t, "foo", "bar")); err != nil {
+	if err := st.fr.WriteContinuation(1, true, EncodeHeaderRaw(t, "foo", "bar")); err != nil {
 		t.Fatal(err)
 	}
 	st.wantGoAway(1, ErrCodeProtocol)
@@ -1722,7 +1688,7 @@ func testServer_Rejects_HeadersNoEnd_Then_ContinuationWrongStream(t testing.TB) 
 		EndStream:     true,
 		EndHeaders:    false,
 	})
-	if err := st.fr.WriteContinuation(3, true, encodeHeaderNoImplicit(t, "foo", "bar")); err != nil {
+	if err := st.fr.WriteContinuation(3, true, EncodeHeaderRaw(t, "foo", "bar")); err != nil {
 		t.Fatal(err)
 	}
 	st.wantGoAway(0, ErrCodeProtocol)
@@ -1782,7 +1748,7 @@ func TestServer_Rejects_PriorityUpdateUnparsable(t *testing.T) {
 }
 func testServer_Rejects_PriorityUnparsable(t testing.TB) {
 	st := newServerTester(t, nil, func(s *Server) {
-		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+		s.NewWriteScheduler = NewPriorityWriteSchedulerRFC9218
 	})
 	defer st.Close()
 	st.greet()
@@ -2482,12 +2448,12 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 			EndHeaders: true,
 		})
 	}
-	for i := 0; i < defaultMaxStreams; i++ {
+	for i := 0; i < DefaultMaxStreams; i++ {
 		sendReq(streamID())
 		<-inHandler
 	}
 	defer func() {
-		for i := 0; i < defaultMaxStreams; i++ {
+		for i := 0; i < DefaultMaxStreams; i++ {
 			leaveHandler <- true
 		}
 	}()
@@ -2611,14 +2577,12 @@ func testServer_NoCrash_HandlerClose_Then_ClientClose(t testing.TB) {
 			panicVal interface{}
 		)
 
-		testHookOnPanicMu.Lock()
-		testHookOnPanic = func(sc *serverConn, pv interface{}) bool {
+		SetTestHookOnPanic(t, func(sc *ServerConn, pv interface{}) bool {
 			panMu.Lock()
 			panicVal = pv
 			panMu.Unlock()
 			return true
-		}
-		testHookOnPanicMu.Unlock()
+		})
 
 		// Now force the serve loop to end, via closing the connection.
 		st.cc.Close()
@@ -2738,7 +2702,7 @@ func TestServer_MaxDecoderHeaderTableSize(t *testing.T) {
 	synctestTest(t, testServer_MaxDecoderHeaderTableSize)
 }
 func testServer_MaxDecoderHeaderTableSize(t testing.TB) {
-	wantHeaderTableSize := uint32(initialHeaderTableSize * 2)
+	wantHeaderTableSize := uint32(InitialHeaderTableSize * 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {}, func(s *Server) {
 		s.MaxDecoderHeaderTableSize = wantHeaderTableSize
 	})
@@ -2764,7 +2728,7 @@ func TestServer_MaxEncoderHeaderTableSize(t *testing.T) {
 	synctestTest(t, testServer_MaxEncoderHeaderTableSize)
 }
 func testServer_MaxEncoderHeaderTableSize(t testing.TB) {
-	wantHeaderTableSize := uint32(initialHeaderTableSize / 2)
+	wantHeaderTableSize := uint32(InitialHeaderTableSize / 2)
 	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {}, func(s *Server) {
 		s.MaxEncoderHeaderTableSize = wantHeaderTableSize
 	})
@@ -2772,7 +2736,7 @@ func testServer_MaxEncoderHeaderTableSize(t testing.TB) {
 
 	st.greet()
 
-	if got, want := st.sc.hpackEncoder.MaxDynamicTableSize(), wantHeaderTableSize; got != want {
+	if got, want := st.sc.TestHPACKEncoder().MaxDynamicTableSize(), wantHeaderTableSize; got != want {
 		t.Errorf("server encoder is using a header table size of %d, want %d", got, want)
 	}
 }
@@ -2784,15 +2748,15 @@ func testServerDoS_MaxHeaderListSize(t testing.TB) {
 	defer st.Close()
 
 	// shake hands
-	frameSize := defaultMaxReadFrameSize
+	frameSize := DefaultMaxReadFrameSize
 	var advHeaderListSize *uint32
 	st.greetAndCheckSettings(func(s Setting) error {
 		switch s.ID {
 		case SettingMaxFrameSize:
-			if s.Val < minMaxFrameSize {
-				frameSize = minMaxFrameSize
-			} else if s.Val > maxFrameSize {
-				frameSize = maxFrameSize
+			if s.Val < MinMaxFrameSize {
+				frameSize = MinMaxFrameSize
+			} else if s.Val > MaxFrameSize {
+				frameSize = MaxFrameSize
 			} else {
 				frameSize = int(s.Val)
 			}
@@ -2883,7 +2847,7 @@ func testCompressionErrorOnWrite(t testing.TB) {
 	defer st.Close()
 	st.greet()
 
-	maxAllowed := st.sc.framer.maxHeaderStringLen()
+	maxAllowed := st.sc.TestFramerMaxHeaderStringLen()
 
 	// Crank this up, now that we have a conn connected with the
 	// hpack.Decoder's max string length set has been initialized
@@ -3136,7 +3100,7 @@ func testServerDoesntWriteInvalidHeaders(t testing.TB) {
 }
 
 func BenchmarkServerGets(b *testing.B) {
-	disableGoroutineTracking(b)
+	DisableGoroutineTracking(b)
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
@@ -3167,7 +3131,7 @@ func BenchmarkServerGets(b *testing.B) {
 }
 
 func BenchmarkServerPosts(b *testing.B) {
-	disableGoroutineTracking(b)
+	DisableGoroutineTracking(b)
 	b.ReportAllocs()
 
 	const msg = "Hello, world"
@@ -3218,7 +3182,7 @@ func BenchmarkServerToClientStreamReuseFrames(b *testing.B) {
 }
 
 func benchmarkServerToClientStream(b *testing.B, newServerOpts ...interface{}) {
-	disableGoroutineTracking(b)
+	DisableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msgLen = 1
 	// default window size
@@ -3360,7 +3324,7 @@ func testServeConnNilOpts(t testing.TB) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		gotRequest = r.URL.Path
 	})
-	setForTest(t, &http.DefaultServeMux, &mux)
+	SetForTest(t, &http.DefaultServeMux, &mux)
 
 	srvConn, cliConn := net.Pipe()
 	defer srvConn.Close()
@@ -3544,15 +3508,8 @@ func testServerContentLengthCanBeDisabled(t testing.TB) {
 	})
 }
 
-func disableGoroutineTracking(t testing.TB) {
-	disableDebugGoroutines.Store(true)
-	t.Cleanup(func() {
-		disableDebugGoroutines.Store(false)
-	})
-}
-
 func BenchmarkServer_GetRequest(b *testing.B) {
-	disableGoroutineTracking(b)
+	DisableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msg = "Hello, world."
 	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
@@ -3584,7 +3541,7 @@ func BenchmarkServer_GetRequest(b *testing.B) {
 }
 
 func BenchmarkServer_PostRequest(b *testing.B) {
-	disableGoroutineTracking(b)
+	DisableGoroutineTracking(b)
 	b.ReportAllocs()
 	const msg = "Hello, world."
 	st := newServerTesterWithRealConn(b, func(w http.ResponseWriter, r *http.Request) {
@@ -3644,7 +3601,7 @@ func testServerHandleCustomConn(t testing.TB) {
 			return
 		}
 		if sf, ok := f.(*SettingsFrame); !ok || sf.IsAck() {
-			t.Errorf("Got %v; want non-ACK SettingsFrame", summarizeFrame(f))
+			t.Errorf("Got %v; want non-ACK SettingsFrame", SummarizeFrame(f))
 			return
 		}
 		f, err = fr.ReadFrame()
@@ -3653,7 +3610,7 @@ func testServerHandleCustomConn(t testing.TB) {
 			return
 		}
 		if sf, ok := f.(*SettingsFrame); !ok || !sf.IsAck() {
-			t.Errorf("Got %v; want ACK SettingsFrame", summarizeFrame(f))
+			t.Errorf("Got %v; want ACK SettingsFrame", SummarizeFrame(f))
 			return
 		}
 		var henc hpackEncoder
@@ -3667,6 +3624,7 @@ func testServerHandleCustomConn(t testing.TB) {
 		<-handlerDone
 	}()
 	const testString = "my custom ConnectionState"
+	const cipher_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xC02F // defined in ciphers.go
 	fakeConnState := tls.ConnectionState{
 		ServerName:  testString,
 		Version:     tls.VersionTLS12,
@@ -3732,49 +3690,6 @@ func (he *hpackEncoder) encodeHeaderRaw(t testing.TB, headers ...string) []byte 
 		headers = headers[2:]
 	}
 	return he.buf.Bytes()
-}
-
-func TestCheckValidHTTP2Request(t *testing.T) { synctestTest(t, testCheckValidHTTP2Request) }
-func testCheckValidHTTP2Request(t testing.TB) {
-	tests := []struct {
-		h    http.Header
-		want error
-	}{
-		{
-			h:    http.Header{"Te": {"trailers"}},
-			want: nil,
-		},
-		{
-			h:    http.Header{"Te": {"trailers", "bogus"}},
-			want: errors.New(`request header "TE" may only be "trailers" in HTTP/2`),
-		},
-		{
-			h:    http.Header{"Foo": {""}},
-			want: nil,
-		},
-		{
-			h:    http.Header{"Connection": {""}},
-			want: errors.New(`request header "Connection" is not valid in HTTP/2`),
-		},
-		{
-			h:    http.Header{"Proxy-Connection": {""}},
-			want: errors.New(`request header "Proxy-Connection" is not valid in HTTP/2`),
-		},
-		{
-			h:    http.Header{"Keep-Alive": {""}},
-			want: errors.New(`request header "Keep-Alive" is not valid in HTTP/2`),
-		},
-		{
-			h:    http.Header{"Upgrade": {""}},
-			want: errors.New(`request header "Upgrade" is not valid in HTTP/2`),
-		},
-	}
-	for i, tt := range tests {
-		got := checkValidHTTP2RequestHeaders(tt.h)
-		if !equalError(got, tt.want) {
-			t.Errorf("%d. checkValidHTTP2Request = %v; want %v", i, got, tt.want)
-		}
-	}
 }
 
 // golang.org/issue/14030
@@ -3923,7 +3838,7 @@ func testServerReturnsStreamAndConnFlowControlOnBodyClose(t testing.TB) {
 		streamID:  1,
 		endStream: false,
 	})
-	const size = inflowMinRefresh // enough to trigger flow control return
+	const size = InflowMinRefresh // enough to trigger flow control return
 	st.writeData(1, false, make([]byte, size))
 	st.wantWindowUpdate(0, size) // conn-level flow control is returned
 	unblockHandler <- struct{}{}
@@ -4116,7 +4031,7 @@ func testServerHandlerConnectionClose(t testing.TB) {
 			case *GoAwayFrame:
 				sawGoAway = true
 				if f.LastStreamID != 1 || f.ErrCode != ErrCodeNo {
-					t.Errorf("unexpected GOAWAY frame: %v", summarizeFrame(f))
+					t.Errorf("unexpected GOAWAY frame: %v", SummarizeFrame(f))
 				}
 				// Create a stream and reset it.
 				// The server should ignore the stream.
@@ -4150,11 +4065,11 @@ func testServerHandlerConnectionClose(t testing.TB) {
 				sawRes = true
 			case *DataFrame:
 				if f.StreamID != 1 || !f.StreamEnded() || len(f.Data()) != 0 {
-					t.Errorf("unexpected DATA frame: %v", summarizeFrame(f))
+					t.Errorf("unexpected DATA frame: %v", SummarizeFrame(f))
 				}
 			case *WindowUpdateFrame:
 				if !sawGoAway {
-					t.Errorf("unexpected WINDOW_UPDATE frame: %v", summarizeFrame(f))
+					t.Errorf("unexpected WINDOW_UPDATE frame: %v", SummarizeFrame(f))
 					return
 				}
 				if f.StreamID != 0 {
@@ -4164,9 +4079,9 @@ func testServerHandlerConnectionClose(t testing.TB) {
 				sawWindowUpdate = true
 				unblockHandler <- true
 				st.sync()
-				st.advance(goAwayTimeout)
+				st.advance(GoAwayTimeout)
 			default:
-				t.Logf("unexpected frame: %v", summarizeFrame(f))
+				t.Logf("unexpected frame: %v", SummarizeFrame(f))
 			}
 		}
 		if !sawGoAway {
@@ -4190,17 +4105,17 @@ func testServer_Headers_HalfCloseRemote(t testing.TB) {
 	writeHeaders := make(chan bool)
 	leaveHandler := make(chan bool)
 	st = newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		if st.stream(1) == nil {
-			t.Errorf("nil stream 1 in handler")
+		if !st.streamExists(1) {
+			t.Errorf("stream 1 does not exist in handler")
 		}
-		if got, want := st.streamState(1), stateOpen; got != want {
+		if got, want := st.streamState(1), StateOpen; got != want {
 			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
 		writeData <- true
 		if n, err := r.Body.Read(make([]byte, 1)); n != 0 || err != io.EOF {
 			t.Errorf("body read = %d, %v; want 0, EOF", n, err)
 		}
-		if got, want := st.streamState(1), stateHalfClosedRemote; got != want {
+		if got, want := st.streamState(1), StateHalfClosedRemote; got != want {
 			t.Errorf("in handler, state is %v; want %v", got, want)
 		}
 		writeHeaders <- true
@@ -4453,7 +4368,7 @@ func testNoErrorLoggedOnPostAfterGOAWAY(t testing.TB) {
 		endStream: true,
 	})
 
-	st.sc.startGracefulShutdown()
+	st.sc.StartGracefulShutdown()
 	st.wantRSTStream(1, ErrCodeNo)
 	st.wantGoAway(1, ErrCodeNo)
 
@@ -4579,7 +4494,7 @@ func testProtocolErrorAfterGoAway(t testing.TB) {
 		t.Fatal(err)
 	}
 
-	st.advance(goAwayTimeout)
+	st.advance(GoAwayTimeout)
 	st.wantGoAway(1, ErrCodeNo)
 	st.wantClosed()
 }
@@ -4634,36 +4549,6 @@ func TestServerInitialFlowControlWindow(t *testing.T) {
 				t.Errorf("got initial flow control window = %v, want %v", window, want)
 			}
 		})
-	}
-}
-
-// TestCanonicalHeaderCacheGrowth verifies that the canonical header cache
-// size is capped to a reasonable level.
-func TestCanonicalHeaderCacheGrowth(t *testing.T) { synctestTest(t, testCanonicalHeaderCacheGrowth) }
-func testCanonicalHeaderCacheGrowth(t testing.TB) {
-	for _, size := range []int{1, (1 << 20) - 10} {
-		base := strings.Repeat("X", size)
-		sc := &serverConn{
-			serveG: newGoroutineLock(),
-		}
-		count := 0
-		added := 0
-		for added < 10*maxCachedCanonicalHeadersKeysSize {
-			h := fmt.Sprintf("%v-%v", base, count)
-			c := sc.canonicalHeader(h)
-			if len(h) != len(c) {
-				t.Errorf("sc.canonicalHeader(%q) = %q, want same length", h, c)
-			}
-			count++
-			added += len(h)
-		}
-		total := 0
-		for k, v := range sc.canonHeader {
-			total += len(k) + len(v) + 100
-		}
-		if total > maxCachedCanonicalHeadersKeysSize {
-			t.Errorf("after adding %v ~%v-byte headers, canonHeader cache is ~%v bytes, want <%v", count, size, total, maxCachedCanonicalHeadersKeysSize)
-		}
 	}
 }
 
@@ -5160,12 +5045,12 @@ func testServerSettingNoRFC7540Priorities(t testing.TB) {
 	}{
 		{
 			ws: func() WriteScheduler {
-				return newPriorityWriteSchedulerRFC7540(nil)
+				return NewPriorityWriteSchedulerRFC7540(nil)
 			},
 			wantNoRFC7540Setting: false,
 		},
 		{
-			ws:                   newPriorityWriteSchedulerRFC9218,
+			ws:                   NewPriorityWriteSchedulerRFC9218,
 			wantNoRFC7540Setting: true,
 		},
 		{
@@ -5173,7 +5058,7 @@ func testServerSettingNoRFC7540Priorities(t testing.TB) {
 			wantNoRFC7540Setting: true,
 		},
 		{
-			ws:                   newRoundRobinWriteScheduler,
+			ws:                   NewRoundRobinWriteScheduler,
 			wantNoRFC7540Setting: true,
 		},
 	}
@@ -5228,7 +5113,7 @@ func testServerRFC7540PrioritySmallPayload(t testing.TB) {
 		}
 	}, func(s *Server) {
 		s.NewWriteScheduler = func() WriteScheduler {
-			return newPriorityWriteSchedulerRFC7540(nil)
+			return NewPriorityWriteSchedulerRFC7540(nil)
 		}
 	})
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
@@ -5295,7 +5180,7 @@ func testServerRFC9218PrioritySmallPayload(t testing.TB) {
 			}
 		}
 	}, func(s *Server) {
-		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+		s.NewWriteScheduler = NewPriorityWriteSchedulerRFC9218
 	})
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
 		syncConn.SetReadBufferSize(1)
@@ -5355,7 +5240,7 @@ func testServerRFC9218Priority(t testing.TB) {
 			f.Flush()
 		}
 	}, func(s *Server) {
-		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+		s.NewWriteScheduler = NewPriorityWriteSchedulerRFC9218
 	})
 	defer st.Close()
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
@@ -5363,8 +5248,9 @@ func testServerRFC9218Priority(t testing.TB) {
 	} else {
 		t.Fatal("Server connection is not synctestNetConn")
 	}
-	st.sc.flow.add(1 << 30)
 	st.greet()
+	st.writeWindowUpdate(0, 1<<30)
+	synctest.Wait()
 
 	// Create 8 streams, where streams with larger ID has lower urgency value
 	// (i.e. more urgent).
@@ -5409,7 +5295,7 @@ func testServerRFC9218PriorityIgnoredWhenProxied(t testing.TB) {
 			f.Flush()
 		}
 	}, func(s *Server) {
-		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+		s.NewWriteScheduler = NewPriorityWriteSchedulerRFC9218
 	})
 	defer st.Close()
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
@@ -5417,8 +5303,9 @@ func testServerRFC9218PriorityIgnoredWhenProxied(t testing.TB) {
 	} else {
 		t.Fatal("Server connection is not synctestNetConn")
 	}
-	st.sc.flow.add(1 << 30)
 	st.greet()
+	st.writeWindowUpdate(0, 1<<30)
+	synctest.Wait()
 
 	// Create 8 streams, where streams with larger ID has lower urgency value
 	// (i.e. more urgent). These should be ignored since the requests are
@@ -5457,7 +5344,7 @@ func testServerRFC9218PriorityAware(t testing.TB) {
 			f.Flush()
 		}
 	}, func(s *Server) {
-		s.NewWriteScheduler = newPriorityWriteSchedulerRFC9218
+		s.NewWriteScheduler = NewPriorityWriteSchedulerRFC9218
 	})
 	defer st.Close()
 	if syncConn, ok := st.cc.(*synctestNetConn); ok {
@@ -5465,8 +5352,9 @@ func testServerRFC9218PriorityAware(t testing.TB) {
 	} else {
 		t.Fatal("Server connection is not synctestNetConn")
 	}
-	st.sc.flow.add(1 << 30)
 	st.greet()
+	st.writeWindowUpdate(0, 1<<30)
+	synctest.Wait()
 
 	// When there is no indication that the client is aware of RFC 9218
 	// priority, it should process streams in a round-robin manner.

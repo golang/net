@@ -1139,8 +1139,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		0: {
 			name: "single_headers",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/")
 				write(f, all)
 			},
 			want: want(FlagHeadersEndHeaders, 2, ":method", "GET", ":path", "/"),
@@ -1148,8 +1147,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		1: {
 			name: "with_continuation",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
 				write(f, all[:1], all[1:])
 			},
 			want: want(noFlags, 1, ":method", "GET", ":path", "/", "foo", "bar"),
@@ -1157,8 +1155,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		2: {
 			name: "with_two_continuation",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
 				write(f, all[:2], all[2:4], all[4:])
 			},
 			want: want(noFlags, 2, ":method", "GET", ":path", "/", "foo", "bar"),
@@ -1166,8 +1163,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		3: {
 			name: "big_string_okay",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
 				write(f, all[:2], all[2:])
 			},
 			want: want(noFlags, 2, ":method", "GET", ":path", "/", "foo", oneKBString),
@@ -1175,8 +1171,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		4: {
 			name: "big_string_error",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
 				write(f, all[:2], all[2:])
 			},
 			maxHeaderListSize: (1 << 10) / 2,
@@ -1185,12 +1180,11 @@ func TestMetaFrameHeader(t *testing.T) {
 		5: {
 			name: "max_header_list_truncated",
 			w: func(f *Framer) {
-				var he hpackEncoder
 				var pairs = []string{":method", "GET", ":path", "/"}
 				for i := 0; i < 100; i++ {
 					pairs = append(pairs, "foo", "bar")
 				}
-				all := he.encodeHeaderRaw(t, pairs...)
+				all := encodeHeaderRaw(t, pairs...)
 				write(f, all[:2], all[2:])
 			},
 			maxHeaderListSize: (1 << 10) / 2,
@@ -1412,9 +1406,18 @@ func readAndVerifyDataFrame(data string, length byte, fr *Framer, buf *bytes.Buf
 	return df
 }
 
-func encodeHeaderRaw(t *testing.T, pairs ...string) []byte {
-	var he hpackEncoder
-	return he.encodeHeaderRaw(t, pairs...)
+func encodeHeaderRaw(t testing.TB, headers ...string) []byte {
+	var buf bytes.Buffer
+	enc := hpack.NewEncoder(&buf)
+	for len(headers) > 0 {
+		k, v := headers[0], headers[1]
+		err := enc.WriteField(hpack.HeaderField{Name: k, Value: v})
+		if err != nil {
+			t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
+		}
+		headers = headers[2:]
+	}
+	return buf.Bytes()
 }
 
 func TestSettingsDuplicates(t *testing.T) {
