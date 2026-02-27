@@ -934,7 +934,7 @@ func TestServer304NotModified(t *testing.T) {
 
 type testServer struct {
 	t  testing.TB
-	s  *Server
+	s  *server
 	tn testNet
 	*testQUICEndpoint
 
@@ -957,16 +957,16 @@ func newTestServer(t testing.TB, handler http.Handler) *testServer {
 	t.Helper()
 	ts := &testServer{
 		t: t,
-		s: &Server{
-			Config: &quic.Config{
+		s: &server{
+			config: &quic.Config{
 				TLSConfig: testTLSConfig,
 			},
-			Handler: handler,
+			handler: handler,
 		},
 	}
-	e := ts.tn.newQUICEndpoint(t, ts.s.Config)
+	e := ts.tn.newQUICEndpoint(t, ts.s.config)
 	ts.addr = e.LocalAddr()
-	go ts.s.Serve(e)
+	go ts.s.serve(e)
 	return ts
 }
 

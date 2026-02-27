@@ -18,7 +18,7 @@ import (
 )
 
 type roundTripState struct {
-	cc *ClientConn
+	cc *clientConn
 	st *stream
 
 	// Request body, provided by the caller.
@@ -87,7 +87,7 @@ func (rt *roundTripState) maybeCallWait100Continue() {
 }
 
 // RoundTrip sends a request on the connection.
-func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
+func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
 	// Each request gets its own QUIC stream.
 	st, err := newConnStream(req.Context(), cc.qconn, streamTypeRequest)
 	if err != nil {
@@ -239,7 +239,7 @@ func actualContentLength(req *http.Request) int64 {
 
 // writeBodyAndTrailer handles writing the body and trailer for a given
 // request, if any. This function will close the write direction of the stream.
-func (cc *ClientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request) {
+func (cc *clientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request) {
 	defer rt.closeReqBody()
 
 	declaredTrailer := req.Trailer.Clone()
@@ -339,7 +339,7 @@ func parseResponseContentLength(method string, statusCode int, h http.Header) (i
 	return int64(contentLen), nil
 }
 
-func (cc *ClientConn) handleHeaders(st *stream) (statusCode int, h http.Header, err error) {
+func (cc *clientConn) handleHeaders(st *stream) (statusCode int, h http.Header, err error) {
 	haveStatus := false
 	cookie := ""
 	// Issue #71374: Consider tracking the never-indexed status of headers
@@ -406,7 +406,7 @@ func (cc *ClientConn) handleHeaders(st *stream) (statusCode int, h http.Header, 
 	return statusCode, h, err
 }
 
-func (cc *ClientConn) handlePushPromise(st *stream) error {
+func (cc *clientConn) handlePushPromise(st *stream) error {
 	// "A client MUST treat receipt of a PUSH_PROMISE frame that contains a
 	// larger push ID than the client has advertised as a connection error of H3_ID_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.5-5

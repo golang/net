@@ -6,6 +6,7 @@ package http3
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"maps"
 	"net/http"
@@ -20,52 +21,120 @@ import (
 	"golang.org/x/net/quic"
 )
 
-// A Server is an HTTP/3 server.
-// The zero value for Server is a valid server.
-type Server struct {
-	// Handler to invoke for requests, http.DefaultServeMux if nil.
-	Handler http.Handler
+// A server is an HTTP/3 server.
+// The zero value for server is a valid server.
+type server struct {
+	// handler to invoke for requests, http.DefaultServeMux if nil.
+	handler http.Handler
 
-	// Config is the QUIC configuration used by the server.
-	// The Config may be nil.
-	//
-	// ListenAndServe may clone and modify the Config.
-	// The Config must not be modified after calling ListenAndServe.
-	Config *quic.Config
+	config *quic.Config
+
+	listenQUIC func(addr string, config *quic.Config) (*quic.Endpoint, error)
 
 	initOnce sync.Once
+
+	serveCtx context.Context
 }
 
-func (s *Server) init() {
+// netHTTPHandler is an interface that is implemented by
+// net/http.http3ServerHandler in std.
+//
+// It provides a way for information to be passed between x/net and net/http
+// that would otherwise be inaccessible, such as the TLS configs that users
+// have supplied to net/http servers.
+//
+// This allows us to integrate our HTTP/3 server implementation with the
+// net/http server when RegisterServer is called.
+type netHTTPHandler interface {
+	http.Handler
+	TLSConfig() *tls.Config
+	BaseContext() context.Context
+	Addr() string
+	ListenErrHook(err error)
+}
+
+type ServerOpts struct {
+	// ListenQUIC determines how the server will open a QUIC endpoint.
+	// By default, quic.Listen("udp", addr, config) is used.
+	ListenQUIC func(addr string, config *quic.Config) (*quic.Endpoint, error)
+
+	// QUICConfig is the QUIC configuration used by the server.
+	// QUICConfig may be nil and should not be modified after calling
+	// RegisterServer.
+	// If QUICConfig.TLSConfig is nil, the TLSConfig of the net/http Server
+	// given to RegisterServer will be used.
+	QUICConfig *quic.Config
+}
+
+// RegisterServer adds HTTP/3 support to a net/http Server.
+//
+// RegisterServer must be called before s begins serving, and only affects
+// s.ListenAndServeTLS.
+func RegisterServer(s *http.Server, opts ServerOpts) {
+	if s.TLSNextProto == nil {
+		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+	}
+	s.TLSNextProto["http/3"] = func(s *http.Server, c *tls.Conn, h http.Handler) {
+		stdHandler, ok := h.(netHTTPHandler)
+		if !ok {
+			panic("RegisterServer was given a server that does not implement netHTTPHandler")
+		}
+		if opts.QUICConfig == nil {
+			opts.QUICConfig = &quic.Config{}
+		}
+		if opts.QUICConfig.TLSConfig == nil {
+			opts.QUICConfig.TLSConfig = stdHandler.TLSConfig()
+		}
+		s3 := &server{
+			config:     opts.QUICConfig,
+			listenQUIC: opts.ListenQUIC,
+			handler:    stdHandler,
+			serveCtx:   stdHandler.BaseContext(),
+		}
+		stdHandler.ListenErrHook(s3.listenAndServe(stdHandler.Addr()))
+	}
+}
+
+func (s *server) init() {
 	s.initOnce.Do(func() {
-		s.Config = initConfig(s.Config)
-		if s.Handler == nil {
-			s.Handler = http.DefaultServeMux
+		s.config = initConfig(s.config)
+		if s.handler == nil {
+			s.handler = http.DefaultServeMux
+		}
+		if s.serveCtx == nil {
+			s.serveCtx = context.Background()
+		}
+		if s.listenQUIC == nil {
+			s.listenQUIC = func(addr string, config *quic.Config) (*quic.Endpoint, error) {
+				return quic.Listen("udp", addr, config)
+			}
 		}
 	})
 }
 
-// ListenAndServe listens on the UDP network address addr
+// listenAndServe listens on the UDP network address addr
 // and then calls Serve to handle requests on incoming connections.
-func (s *Server) ListenAndServe(addr string) error {
+func (s *server) listenAndServe(addr string) error {
 	s.init()
-	e, err := quic.Listen("udp", addr, s.Config)
+	e, err := s.listenQUIC(addr, s.config)
 	if err != nil {
 		return err
 	}
-	return s.Serve(e)
+	go s.serve(e)
+	return nil
 }
 
-// Serve accepts incoming connections on the QUIC endpoint e,
+// serve accepts incoming connections on the QUIC endpoint e,
 // and handles requests from those connections.
-func (s *Server) Serve(e *quic.Endpoint) error {
+func (s *server) serve(e *quic.Endpoint) error {
 	s.init()
+	defer e.Close(s.serveCtx)
 	for {
-		qconn, err := e.Accept(context.Background())
+		qconn, err := e.Accept(s.serveCtx)
 		if err != nil {
 			return err
 		}
-		go newServerConn(qconn, s.Handler)
+		go newServerConn(qconn, s.handler)
 	}
 }
 

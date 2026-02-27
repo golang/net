@@ -370,8 +370,8 @@ func (ts *testQUICStream) Flush() error {
 
 // A testClientConn is a ClientConn on a test network.
 type testClientConn struct {
-	tr *Transport
-	cc *ClientConn
+	tr *transport
+	cc *clientConn
 
 	// *testQUICConn is the server half of the connection.
 	*testQUICConn
@@ -380,19 +380,19 @@ type testClientConn struct {
 
 func newTestClientConn(t testing.TB) *testClientConn {
 	e1, e2 := newQUICEndpointPair(t)
-	tr := &Transport{
-		Endpoint: e1,
-		Config: &quic.Config{
+	tr := &transport{
+		endpoint: e1,
+		config: &quic.Config{
 			TLSConfig: testTLSConfig,
 		},
 	}
 
-	cc, err := tr.Dial(t.Context(), e2.LocalAddr().String())
+	cc, err := tr.dial(t.Context(), e2.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		cc.Close()
+		cc.close()
 	})
 	srvConn, err := e2.Accept(t.Context())
 	if err != nil {
