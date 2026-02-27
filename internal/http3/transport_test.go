@@ -98,7 +98,7 @@ func (tq *testQUICConn) newStream(stype streamType) *testQUICStream {
 	return newTestQUICStream(tq.t, st)
 }
 
-// wantNotClosed asserts that the peer has not closed the connectioln.
+// wantNotClosed asserts that the peer has not closed the connection.
 func (tq *testQUICConn) wantNotClosed(reason string) {
 	t := tq.t
 	t.Helper()
@@ -331,6 +331,38 @@ func (ts *testQUICStream) wantError(want quic.StreamErrorCode) {
 	}
 	if got != want {
 		ts.t.Fatalf("stream error code = %v; want %v", got, want)
+	}
+}
+
+func (ts *testQUICStream) wantSettings(f func(settingType, value int64) error) {
+	ts.t.Helper()
+	synctest.Wait()
+	if f == nil {
+		f = func(settingType, value int64) error { return nil }
+	}
+	if err := ts.readSettings(f); err != nil {
+		ts.t.Fatalf("f returned an error: %v", err)
+	}
+}
+
+func (ts *testQUICStream) wantGoaway(wantID int64) {
+	ts.t.Helper()
+	// No synctest.Wait. We assert GOAWAY frame when a graceful shutdown is
+	// occuring. Waiting would cause us to wait until the entire connection is
+	// closed, at which point we can no longer read from the stream.
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want GOAWAY frame, got error: %v", err)
+	}
+	if ftype != frameTypeGoaway {
+		ts.t.Fatalf("want GOAWAY frame, got: %v", ftype)
+	}
+	gotID, err := ts.readVarint()
+	if err != nil {
+		ts.t.Fatalf("failed reading GOAWAY frame, got error: %v", err)
+	}
+	if gotID != wantID {
+		ts.t.Fatalf("got stream ID %v from GOAWAY frame, want %v stream ID", gotID, wantID)
 	}
 }
 

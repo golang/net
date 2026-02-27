@@ -187,6 +187,15 @@ func newStream(c *Conn, id streamID) *Stream {
 	return s
 }
 
+// ID returns the QUIC stream ID of s.
+//
+// As specified in RFC 9000, the two least significant bits of a stream ID
+// indicate the initiator and directionality of the stream. The upper bits are
+// the stream number.
+func (s *Stream) ID() int64 {
+	return int64(s.id)
+}
+
 // SetReadContext sets the context used for reads from the stream.
 //
 // It is not safe to call SetReadContext concurrently.

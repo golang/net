@@ -34,7 +34,11 @@ type server struct {
 
 	initOnce sync.Once
 
-	serveCtx context.Context
+	serveCtx       context.Context
+	serveCtxCancel context.CancelFunc
+
+	mu          sync.Mutex // Guards fields below.
+	activeConns map[*serverConn]struct{}
 }
 
 // netHTTPHandler is an interface that is implemented by
@@ -92,6 +96,8 @@ func RegisterServer(s *http.Server, opts ServerOpts) {
 			handler:    stdHandler,
 			serveCtx:   stdHandler.BaseContext(),
 		}
+		s3.init()
+		s.RegisterOnShutdown(s3.shutdown)
 		stdHandler.ListenErrHook(s3.listenAndServe(stdHandler.Addr()))
 	}
 }
@@ -110,6 +116,8 @@ func (s *server) init() {
 				return quic.Listen("udp", addr, config)
 			}
 		}
+		s.serveCtx, s.serveCtxCancel = context.WithCancel(s.serveCtx)
+		s.activeConns = make(map[*serverConn]struct{})
 	})
 }
 
@@ -135,8 +143,45 @@ func (s *server) serve(e *quic.Endpoint) error {
 		if err != nil {
 			return err
 		}
-		go newServerConn(qconn, s.handler)
+		go s.newServerConn(qconn, s.handler)
 	}
+}
+
+// shutdownTimeout defines how long the server will wait after sending GOAWAY
+// frames before fully shutting down. This value is configurable in tests.
+var shutdownTimeout = time.Second
+
+// shutdown attempts a graceful shutdown for the server.
+func (s *server) shutdown() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for sc := range s.activeConns {
+		// TODO: Modify x/net/quic stream API so that write errors from context
+		// deadline are sticky.
+		go sc.sendGoaway()
+	}
+	// TODO: Find a way to plumb net/HTTP's shutdown context here?
+	time.Sleep(shutdownTimeout)
+	s.serveCtxCancel()
+	for sc := range s.activeConns {
+		sc.abort(&connectionError{
+			code:    errH3NoError,
+			message: "server is shutting down",
+		})
+	}
+}
+
+func (s *server) registerConn(sc *serverConn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeConns[sc] = struct{}{}
+}
+
+func (s *server) unregisterConn(sc *serverConn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.activeConns, sc)
 }
 
 type serverConn struct {
@@ -146,23 +191,32 @@ type serverConn struct {
 	enc         qpackEncoder
 	dec         qpackDecoder
 	handler     http.Handler
+
+	// For handling shutdown.
+	controlStream      *stream
+	mu                 sync.Mutex // Guards everything below.
+	maxRequestStreamID int64
+	goawaySent         bool
 }
 
-func newServerConn(qconn *quic.Conn, handler http.Handler) {
+func (s *server) newServerConn(qconn *quic.Conn, handler http.Handler) {
 	sc := &serverConn{
 		qconn:   qconn,
 		handler: handler,
 	}
+	s.registerConn(sc)
+	defer s.unregisterConn(sc)
 	sc.enc.init()
 
 	// Create control stream and send SETTINGS frame.
 	// TODO: Time out on creating stream.
-	controlStream, err := newConnStream(context.Background(), sc.qconn, streamTypeControl)
+	var err error
+	sc.controlStream, err = newConnStream(context.Background(), sc.qconn, streamTypeControl)
 	if err != nil {
 		return
 	}
-	controlStream.writeSettings()
-	controlStream.Flush()
+	sc.controlStream.writeSettings()
+	sc.controlStream.Flush()
 
 	sc.acceptStreams(sc.qconn, sc)
 }
@@ -273,7 +327,43 @@ func (sc *serverConn) parseHeader(st *stream) (http.Header, pseudoHeader, error)
 	return header, pHeader, nil
 }
 
+func (sc *serverConn) sendGoaway() {
+	sc.mu.Lock()
+	if sc.goawaySent {
+		sc.mu.Unlock()
+		return
+	}
+	sc.goawaySent = true
+	sc.mu.Unlock()
+
+	// No lock in this section in case writing to stream blocks. This is safe
+	// since sc.maxRequestStreamID is only updated when sc.goawaySent is false.
+	sc.controlStream.writeVarint(int64(frameTypeGoaway))
+	sc.controlStream.writeVarint(int64(sizeVarint(uint64(sc.maxRequestStreamID))))
+	sc.controlStream.writeVarint(sc.maxRequestStreamID)
+	sc.controlStream.Flush()
+}
+
+// requestShouldGoAway returns true if st has a stream ID that is equal or
+// greater than the ID we have sent in a GOAWAY frame, if any.
+func (sc *serverConn) requestShouldGoaway(st *stream) bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.goawaySent {
+		return st.stream.ID() >= sc.maxRequestStreamID
+	} else {
+		sc.maxRequestStreamID = max(sc.maxRequestStreamID, st.stream.ID())
+		return false
+	}
+}
+
 func (sc *serverConn) handleRequestStream(st *stream) error {
+	if sc.requestShouldGoaway(st) {
+		return &streamError{
+			code:    errH3RequestRejected,
+			message: "GOAWAY request with equal or lower ID than the stream has been sent",
+		}
+	}
 	header, pHeader, err := sc.parseHeader(st)
 	if err != nil {
 		return err

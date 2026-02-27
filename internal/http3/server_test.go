@@ -252,6 +252,27 @@ func TestServerHeadResponseNoBody(t *testing.T) {
 	})
 }
 
+func TestServerShutdownGoaway(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, nil)
+
+		tc := ts.connect()
+		tc.greet()
+		tc.wantNotClosed("after initial connection handshake")
+
+		requestCount := int64(5)
+		for range requestCount {
+			tc.newStream(streamTypeRequest).writeHeaders(requestHeader(nil))
+		}
+
+		control := tc.wantStream(streamTypeControl)
+		control.wantSettings(nil)
+		ts.s.shutdown()
+		control.wantGoaway((requestCount - 1) * 4) // Request stream ID goes from 0, 4, 8, ...
+		tc.wantClosed("server has finished shutting down", errH3NoError)
+	})
+}
+
 func TestServerHandlerEmpty(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -104,7 +104,7 @@ func (e peerTransportError) Error() string {
 }
 
 // A StreamErrorCode is an application protocol error code (RFC 9000, Section 20.2)
-// indicating whay a stream is being closed.
+// indicating why a stream is being closed.
 type StreamErrorCode uint64
 
 func (e StreamErrorCode) Error() string {
