@@ -292,6 +292,8 @@ func TestNameUnpackTooLongName(t *testing.T) {
 	}{
 		{name: prepName(255)},
 		{name: prepName(256), err: errNameTooLong},
+		// too large to be valid, return error during unpack.
+		{name: prepName(300), err: errNameTooLong},
 	}
 
 	for i, test := range tests {
