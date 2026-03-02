@@ -4838,15 +4838,15 @@ func TestTransportCloseRequestBody(t *testing.T) {
 	}
 }
 
-func TestTransportRetriesOnStreamProtocolError(t *testing.T) {
-	synctestTest(t, testTransportRetriesOnStreamProtocolError)
+func TestTransportNoRetryOnStreamProtocolError(t *testing.T) {
+	synctestTest(t, testTransportNoRetryOnStreamProtocolError)
 }
-func testTransportRetriesOnStreamProtocolError(t testing.TB) {
-	// This test verifies that
+func testTransportNoRetryOnStreamProtocolError(t testing.TB) {
+	// This test verifies that:
+	//   - a request that fails with ErrCodeProtocol is not retried. See
+	//     go.dev/issue/77843.
 	//   - receiving a protocol error on a connection does not interfere with
-	//     other requests in flight on that connection;
-	//   - the connection is not reused for further requests; and
-	//   - the failed request is retried on a new connecection.
+	//     other requests in flight on that connection.
 	tt := newTestTransport(t)
 
 	// Start two requests. The first is a long request
@@ -4866,7 +4866,7 @@ func testTransportRetriesOnStreamProtocolError(t testing.TB) {
 	tc1.writeSettings()
 	tc1.wantFrameType(FrameSettings) // settings ACK
 
-	// Request #2(a): The short request.
+	// Request #2: The short request.
 	req2, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
 	rt2 := tt.roundTrip(req2)
 	tc1.wantHeaders(wantHeader{
@@ -4874,36 +4874,18 @@ func testTransportRetriesOnStreamProtocolError(t testing.TB) {
 		endStream: true,
 	})
 
-	// Request #2(a) fails with ErrCodeProtocol.
+	// Request #2 fails with ErrCodeProtocol.
 	tc1.writeRSTStream(3, ErrCodeProtocol)
 	if rt1.done() {
 		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #1 is done; want still in progress")
 	}
-	if rt2.done() {
-		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #2 is done; want still in progress")
+	if !rt2.done() {
+		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #2 is in progress; want done")
 	}
-
-	// Request #2(b): The short request is retried on a new connection.
-	tc2 := tt.getConn()
-	tc2.wantFrameType(FrameSettings)
-	tc2.wantFrameType(FrameWindowUpdate)
-	tc2.wantHeaders(wantHeader{
-		streamID:  1,
-		endStream: true,
-	})
-	tc2.writeSettings()
-	tc2.wantFrameType(FrameSettings) // settings ACK
-
-	// Request #2(b) succeeds.
-	tc2.writeHeaders(HeadersFrameParam{
-		StreamID:   1,
-		EndHeaders: true,
-		EndStream:  true,
-		BlockFragment: tc1.makeHeaderBlockFragment(
-			":status", "201",
-		),
-	})
-	rt2.wantStatus(201)
+	// Request #2 should not be retried.
+	if tt.hasConn() {
+		t.Fatalf("After protocol error on RoundTrip #2, RoundTrip #2 is unexpectedly retried")
+	}
 
 	// Request #1 succeeds.
 	tc1.writeHeaders(HeadersFrameParam{

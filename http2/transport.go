@@ -712,10 +712,6 @@ func canRetryError(err error) bool {
 		return true
 	}
 	if se, ok := err.(StreamError); ok {
-		if se.Code == ErrCodeProtocol && se.Cause == errFromPeer {
-			// See golang/go#47635, golang/go#42777
-			return true
-		}
 		return se.Code == ErrCodeRefusedStream
 	}
 	return false
