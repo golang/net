@@ -5,6 +5,7 @@
 package http3
 
 import (
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -908,6 +909,25 @@ func TestServer103EarlyHints(t *testing.T) {
 			"Content-Length": {"123"},
 		})
 		reqStream.wantData(body)
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServer304NotModified(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotModified)
+			if _, err := w.Write([]byte("body should not be allowed")); !errors.Is(err, http.ErrBodyNotAllowed) {
+				t.Errorf("got %v error when calling Write after WriteHeader(304), want %v error", err, http.ErrBodyNotAllowed)
+			}
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		synctest.Wait()
+		reqStream.wantSomeHeaders(http.Header{":status": {"304"}})
 		reqStream.wantClosed("request is complete")
 	})
 }

@@ -463,6 +463,10 @@ func (rw *responseWriter) Write(b []byte) (n int, err error) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
+	if rw.statusCode == http.StatusNotModified {
+		return 0, http.ErrBodyNotAllowed
+	}
+
 	b, trimmed := rw.trimWriteLocked(b)
 	if trimmed {
 		defer func() {
