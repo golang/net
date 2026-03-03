@@ -222,7 +222,9 @@ func (cc *ClientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request)
 		rt.reqBody = http.NoBody
 	}
 
-	_, err := io.Copy(&rt.reqBodyWriter, rt.reqBody)
+	if _, err := io.Copy(&rt.reqBodyWriter, rt.reqBody); err != nil {
+		rt.abort(err)
+	}
 	// Get rid of any trailer that was not declared beforehand, before we
 	// close the request body which will cause the trailer headers to be
 	// written.
@@ -231,11 +233,7 @@ func (cc *ClientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request)
 			delete(req.Trailer, name)
 		}
 	}
-	if closeErr := rt.reqBodyWriter.Close(); err == nil {
-		err = closeErr
-	}
-	// Something went wrong writing the body.
-	if err != nil {
+	if err := rt.reqBodyWriter.Close(); err != nil {
 		rt.abort(err)
 	}
 }
