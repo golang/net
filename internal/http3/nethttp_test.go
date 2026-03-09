@@ -81,20 +81,37 @@ func TestNetHTTPIntegration(t *testing.T) {
 		Timeout: 5 * time.Second,
 	}
 	<-listenAddrSet
-	req, err := http.NewRequest("GET", "https://"+listenAddr, nil)
-	if err != nil {
-		t.Fatal(err)
+
+	for range 5 {
+		req, err := http.NewRequest("GET", "https://"+listenAddr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(b, body) {
+			t.Errorf("got %v, want %v", string(b), string(body))
+		}
+		// TestMain checks that there are no leaked goroutines after tests have
+		// finished running.
+		// Over here, we verify that closing the idle connections of a net/http
+		// Transport will result in HTTP/3 transport closing any UDP sockets
+		// after there are no longer any open connections.
+		// We do this in a loop to verify that CloseIdleConnections will not
+		// prevent transport from creating a new connection should a new dial
+		// be started.
+		tr.CloseIdleConnections()
 	}
-	resp, err := client.Do(req)
-	if err != nil {
+	// Similarly when a net/http Server shuts down, the HTTP/3 server should
+	// also follow.
+	if err := srv.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(b, body) {
-		t.Errorf("got %v, want %v", string(b), string(body))
 	}
 }

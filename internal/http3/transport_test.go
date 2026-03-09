@@ -417,6 +417,7 @@ func newTestClientConn(t testing.TB) *testClientConn {
 		config: &quic.Config{
 			TLSConfig: testTLSConfig,
 		},
+		activeConns: make(map[*clientConn]struct{}),
 	}
 
 	cc, err := tr.dial(t.Context(), e2.LocalAddr().String())
@@ -424,7 +425,7 @@ func newTestClientConn(t testing.TB) *testClientConn {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		cc.close()
+		cc.Close()
 	})
 	srvConn, err := e2.Accept(t.Context())
 	if err != nil {
