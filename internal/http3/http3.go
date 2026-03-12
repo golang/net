@@ -4,7 +4,10 @@
 
 package http3
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Stream types.
 //
@@ -30,6 +33,14 @@ const (
 	streamTypeEncoder = streamType(0x02)
 	streamTypeDecoder = streamType(0x03)
 )
+
+// canceledCtx is a canceled Context.
+// Used for performing non-blocking QUIC operations.
+var canceledCtx = func() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}()
 
 func (stype streamType) String() string {
 	switch stype {

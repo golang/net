@@ -160,9 +160,7 @@ func (ts *testQUICStream) wantIdle(reason string) {
 	ts.t.Helper()
 	synctest.Wait()
 	qs := ts.stream.stream
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	qs.SetReadContext(ctx)
+	qs.SetReadContext(canceledCtx)
 	if _, err := qs.Read(make([]byte, 1)); !errors.Is(err, context.Canceled) {
 		ts.t.Fatalf("%v: want stream to be idle, but stream has content", reason)
 	}
@@ -523,11 +521,3 @@ func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 	}()
 	return rt
 }
-
-// canceledCtx is a canceled Context.
-// Used for performing non-blocking QUIC operations.
-var canceledCtx = func() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return ctx
-}()

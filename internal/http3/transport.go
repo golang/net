@@ -126,9 +126,7 @@ func (cc *clientConn) close() error {
 	cc.qconn.Abort(nil)
 
 	// Return any existing error from the peer, but don't wait for it.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return cc.qconn.Wait(ctx)
+	return cc.qconn.Wait(canceledCtx)
 }
 
 func (cc *clientConn) handleControlStream(st *stream) error {

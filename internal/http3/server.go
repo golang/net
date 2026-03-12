@@ -128,7 +128,7 @@ func (s *server) listenAndServe(addr string) error {
 // and handles requests from those connections.
 func (s *server) serve(e *quic.Endpoint) error {
 	s.init()
-	defer e.Close(s.serveCtx)
+	defer e.Close(canceledCtx)
 	for {
 		qconn, err := e.Accept(s.serveCtx)
 		if err != nil {
