@@ -2416,22 +2416,7 @@ func TestServer_Rejects_Too_Many_Streams(t *testing.T) {
 	synctestTest(t, testServer_Rejects_Too_Many_Streams)
 }
 func testServer_Rejects_Too_Many_Streams(t testing.TB) {
-	inHandler := make(chan uint32)
-	leaveHandler := make(chan bool)
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
-		var streamID uint32
-		if _, err := fmt.Sscanf(r.URL.Path, "/%d", &streamID); err != nil {
-			t.Errorf("parsing %q: %v", r.URL.Path, err)
-		}
-		inHandler <- streamID
-		<-leaveHandler
-	})
-	defer st.Close()
-
-	// Automatically syncing after every write / before every read
-	// slows this test down substantially.
-	st.cc.(*synctestNetConn).autoWait = false
-
+	st := newServerTester(t, nil)
 	st.greet()
 	nextStreamID := uint32(1)
 	streamID := func() uint32 {
@@ -2448,15 +2433,11 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 			EndHeaders: true,
 		})
 	}
+	var calls []*serverHandlerCall
 	for i := 0; i < DefaultMaxStreams; i++ {
 		sendReq(streamID())
-		<-inHandler
+		calls = append(calls, st.nextHandlerCall())
 	}
-	defer func() {
-		for i := 0; i < DefaultMaxStreams; i++ {
-			leaveHandler <- true
-		}
-	}()
 
 	// And this one should cross the limit:
 	// (It's also sent as a CONTINUATION, to verify we still track the decoder context,
@@ -2477,7 +2458,7 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 	st.wantRSTStream(rejectID, ErrCodeProtocol)
 
 	// But let a handler finish:
-	leaveHandler <- true
+	calls[0].exit()
 	st.sync()
 	st.wantHeaders(wantHeader{
 		streamID:  1,
@@ -2487,8 +2468,9 @@ func testServer_Rejects_Too_Many_Streams(t testing.TB) {
 	// And now another stream should be able to start:
 	goodID := streamID()
 	sendReq(goodID)
-	if got := <-inHandler; got != goodID {
-		t.Errorf("Got stream %d; want %d", got, goodID)
+	call := st.nextHandlerCall()
+	if got, want := call.req.URL.Path, fmt.Sprintf("/%d", goodID); got != want {
+		t.Errorf("Got request for %q, want %q", got, want)
 	}
 }
 
