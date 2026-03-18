@@ -7,6 +7,7 @@ package http3
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -485,6 +486,23 @@ func isInfoStatus(status int) bool {
 	return status >= 100 && status < 200
 }
 
+// checkWriteHeaderCode is a copy of net/http's checkWriteHeaderCode.
+func checkWriteHeaderCode(code int) {
+	// Issue 22880: require valid WriteHeader status codes.
+	// For now we only enforce that it's three digits.
+	// In the future we might block things over 599 (600 and above aren't defined
+	// at http://httpwg.org/specs/rfc7231.html#status.codes).
+	// But for now any three digits.
+	//
+	// We used to send "HTTP/1.1 000 0" on the wire in responses but there's
+	// no equivalent bogus thing we can realistically send in HTTP/3,
+	// so we'll consistently panic instead and help people find their bugs
+	// early. (We can't return an error from WriteHeader even if we wanted to.)
+	if code < 100 || code > 999 {
+		panic(fmt.Sprintf("invalid WriteHeader code %v", code))
+	}
+}
+
 func (rw *responseWriter) WriteHeader(statusCode int) {
 	// TODO: handle sending informational status headers (e.g. 103).
 	rw.mu.Lock()
@@ -492,6 +510,7 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 	if rw.statusCodeSet {
 		return
 	}
+	checkWriteHeaderCode(statusCode)
 
 	// Informational headers can be sent multiple times, and should be flushed
 	// immediately.

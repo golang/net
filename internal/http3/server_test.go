@@ -6,6 +6,7 @@ package http3
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -158,6 +159,47 @@ func TestServerInvalidHeader(t *testing.T) {
 			":status":      {"200"},
 			"Valid-Name":   {"valid value"},
 			"Valid-Name-2": {"valid value 2"},
+		})
+		reqStream.wantClosed("request is complete")
+	})
+}
+
+func TestServerInvalidStatus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		gotpanic := make(chan bool)
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer close(gotpanic)
+			defer func() {
+				if e := recover(); e != nil {
+					got := fmt.Sprintf("%T, %v", e, e)
+					want := "string, invalid WriteHeader code 0"
+					if got != want {
+						t.Errorf("unexpected panic value:\n got: %v\nwant: %v\n", got, want)
+					}
+					gotpanic <- true
+					// Set an explicit 503. This also tests that the
+					// WriteHeader call panics before it recorded that an
+					// explicit value was set.
+					w.WriteHeader(503)
+
+					// Verify that writing invalid status will not panic if a
+					// status is already set anyways.
+					w.WriteHeader(0)
+				}
+			}()
+			w.WriteHeader(0) // Invalid. Will panic.
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		if !<-gotpanic {
+			t.Error("expected panic in handler")
+		}
+		synctest.Wait()
+		reqStream.wantSomeHeaders(http.Header{
+			":status": {"503"},
 		})
 		reqStream.wantClosed("request is complete")
 	})
