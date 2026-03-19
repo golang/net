@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -40,6 +41,11 @@ func newTestTLSConfig() *tls.Config {
 }
 
 func TestNetHTTPIntegration(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9":
+		t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
+	}
+
 	body := []byte("some body")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(body)
