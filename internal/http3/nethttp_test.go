@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
-	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -41,11 +40,6 @@ func newTestTLSConfig() *tls.Config {
 }
 
 func TestNetHTTPIntegration(t *testing.T) {
-	switch runtime.GOOS {
-	case "plan9":
-		t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
-	}
-
 	body := []byte("some body")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(body)
@@ -82,7 +76,9 @@ func TestNetHTTPIntegration(t *testing.T) {
 
 	client := &http.Client{
 		Transport: tr,
-		Timeout:   time.Second,
+		// Be extra generous with the timeout, to account for smaller builders
+		// that we use for e.g. plan9.
+		Timeout: 5 * time.Second,
 	}
 	<-listenAddrSet
 	req, err := http.NewRequest("GET", "https://"+listenAddr, nil)

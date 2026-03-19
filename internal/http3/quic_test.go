@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/netip"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -23,10 +22,6 @@ import (
 // newLocalQUICEndpoint returns a QUIC Endpoint listening on localhost.
 func newLocalQUICEndpoint(t *testing.T) *quic.Endpoint {
 	t.Helper()
-	switch runtime.GOOS {
-	case "plan9":
-		t.Skipf("ReadMsgUDP not supported on %s", runtime.GOOS)
-	}
 	conf := &quic.Config{
 		TLSConfig: testTLSConfig,
 	}
