@@ -85,7 +85,7 @@ func TestNetHTTPIntegration(t *testing.T) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		t.Errorf("got %v err, want nil", err)
+		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
