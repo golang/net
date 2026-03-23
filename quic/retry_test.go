@@ -218,6 +218,37 @@ func testRetryServerTokenWrongIP(t *testing.T) {
 			errInvalidToken))
 }
 
+func TestRetryServerShortDstConnID(t *testing.T) {
+	synctest.Test(t, testRetryServerShortDstConnID)
+}
+func testRetryServerShortDstConnID(t *testing.T) {
+	// Verify that a shorter-than-expected Destination Connection ID does not
+	// cause a panic due to bad nonce length. https://go.dev/issue/78292.
+	rt := newRetryServerTest(t)
+	te := rt.te
+	te.writeDatagram(&testDatagram{
+		packets: []*testPacket{{
+			ptype:     packetTypeInitial,
+			num:       1,
+			version:   quicVersion1,
+			srcConnID: rt.originalSrcConnID,
+			dstConnID: []byte("short id"),
+			token:     rt.retry.token,
+			frames: []debugFrame{
+				debugFrameCrypto{
+					data: rt.initialCrypto,
+				},
+			},
+		}},
+		paddedSize: 1200,
+	})
+	te.wantDatagram("server closes connection after Initial from wrong address",
+		initialConnectionCloseDatagram(
+			[]byte("short id"),
+			rt.originalSrcConnID,
+			errInvalidToken))
+}
+
 func TestRetryServerIgnoresRetry(t *testing.T) {
 	synctest.Test(t, testRetryServerIgnoresRetry)
 }
