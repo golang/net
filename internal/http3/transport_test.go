@@ -184,6 +184,7 @@ func (ts *testQUICStream) wantFrameHeader(reason string, wantType frameType) {
 // If want is nil, the contents of the frame are ignored.
 func (ts *testQUICStream) wantHeaders(want http.Header) {
 	ts.t.Helper()
+	synctest.Wait()
 	ftype, err := ts.readFrameHeader()
 	if err != nil {
 		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
@@ -219,6 +220,7 @@ func (ts *testQUICStream) wantHeaders(want http.Header) {
 // in want are ignored.
 func (ts *testQUICStream) wantSomeHeaders(want http.Header) {
 	ts.t.Helper()
+	synctest.Wait()
 	ftype, err := ts.readFrameHeader()
 	if err != nil {
 		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
