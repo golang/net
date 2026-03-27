@@ -263,6 +263,11 @@ func writeQuoted(w writer, s string) error {
 	if err := w.WriteByte(q); err != nil {
 		return err
 	}
+	// If s contains both quote types, escape the ones matching our
+	// chosen delimiter to prevent breaking out of the quoted context.
+	if q == '\'' && strings.Contains(s, "'") {
+		s = strings.ReplaceAll(s, "'", "&#39;")
+	}
 	if _, err := w.WriteString(s); err != nil {
 		return err
 	}

@@ -172,6 +172,65 @@ func TestRenderer(t *testing.T) {
 	}
 }
 
+func TestWriteQuotedBothQuoteTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		node *Node
+		want string
+	}{
+		{
+			name: "double quotes only",
+			node: &Node{
+				Type: DoctypeNode,
+				Data: "html",
+				Attr: []Attribute{{Key: "public", Val: `foo"bar`}},
+			},
+			want: `<!DOCTYPE html PUBLIC 'foo"bar'>`,
+		},
+		{
+			name: "single quotes only",
+			node: &Node{
+				Type: DoctypeNode,
+				Data: "html",
+				Attr: []Attribute{{Key: "public", Val: `foo'bar`}},
+			},
+			want: `<!DOCTYPE html PUBLIC "foo'bar">`,
+		},
+		{
+			name: "both quote types",
+			node: &Node{
+				Type: DoctypeNode,
+				Data: "html",
+				Attr: []Attribute{{Key: "public", Val: `foo"bar'baz`}},
+			},
+			want: `<!DOCTYPE html PUBLIC 'foo"bar&#39;baz'>`,
+		},
+		{
+			name: "both quote types in system identifier",
+			node: &Node{
+				Type: DoctypeNode,
+				Data: "html",
+				Attr: []Attribute{
+					{Key: "public", Val: "pub"},
+					{Key: "system", Val: `he said "it's"`},
+				},
+			},
+			want: `<!DOCTYPE html PUBLIC "pub" 'he said "it&#39;s"'>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			if err := Render(&b, tt.node); err != nil {
+				t.Fatal(err)
+			}
+			if got := b.String(); got != tt.want {
+				t.Errorf("got:  %s\nwant: %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderTextNodes(t *testing.T) {
 	elements := []string{"style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"}
 	for _, namespace := range []string{
