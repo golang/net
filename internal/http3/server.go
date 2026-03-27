@@ -154,15 +154,20 @@ var shutdownTimeout = time.Second
 // shutdown attempts a graceful shutdown for the server.
 func (s *server) shutdown() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	for sc := range s.activeConns {
 		// TODO: Modify x/net/quic stream API so that write errors from context
 		// deadline are sticky.
 		go sc.sendGoaway()
 	}
+	s.mu.Unlock()
+
+	// Don't hold the mutex while sleeping, so connections can be
+	// unregistered from activeConn.
 	// TODO: Find a way to plumb net/HTTP's shutdown context here?
 	time.Sleep(shutdownTimeout)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.serveCtxCancel()
 	for sc := range s.activeConns {
 		sc.abort(&connectionError{
@@ -329,7 +334,7 @@ func (sc *serverConn) parseHeader(st *stream) (http.Header, pseudoHeader, error)
 
 func (sc *serverConn) sendGoaway() {
 	sc.mu.Lock()
-	if sc.goawaySent {
+	if sc.goawaySent || sc.controlStream == nil {
 		sc.mu.Unlock()
 		return
 	}
@@ -688,12 +693,12 @@ func (rw *responseWriter) Flush() {
 	// been called before.
 	rw.WriteHeader(http.StatusOK)
 	rw.mu.Lock()
+	defer rw.mu.Unlock()
 	rw.writeHeaderLockedOnce()
 	if !rw.cannotHaveBody {
 		rw.bw.Write(rw.bb)
 		rw.bb.discard()
 	}
-	rw.mu.Unlock()
 	rw.st.Flush()
 }
 
