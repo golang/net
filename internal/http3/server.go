@@ -37,6 +37,10 @@ type server struct {
 	serveCtx       context.Context
 	serveCtxCancel context.CancelFunc
 
+	// connClosed is used to signal that a connection has been unregistered
+	// from activeConns. That way, when shutting down gracefully, the server
+	// can avoid busy-waiting for activeConns to be empty.
+	connClosed  chan any
 	mu          sync.Mutex // Guards fields below.
 	activeConns map[*serverConn]struct{}
 }
@@ -56,6 +60,7 @@ type netHTTPHandler interface {
 	BaseContext() context.Context
 	Addr() string
 	ListenErrHook(err error)
+	ShutdownContext() context.Context
 }
 
 type ServerOpts struct {
@@ -97,7 +102,9 @@ func RegisterServer(s *http.Server, opts ServerOpts) {
 			serveCtx:   stdHandler.BaseContext(),
 		}
 		s3.init()
-		s.RegisterOnShutdown(s3.shutdown)
+		s.RegisterOnShutdown(func() {
+			s3.shutdown(stdHandler.ShutdownContext())
+		})
 		stdHandler.ListenErrHook(s3.listenAndServe(stdHandler.Addr()))
 	}
 }
@@ -118,6 +125,7 @@ func (s *server) init() {
 		}
 		s.serveCtx, s.serveCtxCancel = context.WithCancel(s.serveCtx)
 		s.activeConns = make(map[*serverConn]struct{})
+		s.connClosed = make(chan any, 1)
 	})
 }
 
@@ -147,12 +155,17 @@ func (s *server) serve(e *quic.Endpoint) error {
 	}
 }
 
-// shutdownTimeout defines how long the server will wait after sending GOAWAY
-// frames before fully shutting down. This value is configurable in tests.
-var shutdownTimeout = time.Second
-
 // shutdown attempts a graceful shutdown for the server.
-func (s *server) shutdown() {
+func (s *server) shutdown(ctx context.Context) {
+	// Set a reasonable default in case ctx is nil.
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+	}
+
+	// Send GOAWAY frames to all active connections to give a chance for them
+	// to gracefully terminate.
 	s.mu.Lock()
 	for sc := range s.activeConns {
 		// TODO: Modify x/net/quic stream API so that write errors from context
@@ -161,19 +174,33 @@ func (s *server) shutdown() {
 	}
 	s.mu.Unlock()
 
-	// Don't hold the mutex while sleeping, so connections can be
-	// unregistered from activeConn.
-	// TODO: Find a way to plumb net/HTTP's shutdown context here?
-	time.Sleep(shutdownTimeout)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.serveCtxCancel()
-	for sc := range s.activeConns {
-		sc.abort(&connectionError{
-			code:    errH3NoError,
-			message: "server is shutting down",
-		})
+	// Complete shutdown as soon as there are no more active connections or ctx
+	// is done, whichever comes first.
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.serveCtxCancel()
+		for sc := range s.activeConns {
+			sc.abort(&connectionError{
+				code:    errH3NoError,
+				message: "server is shutting down",
+			})
+		}
+	}()
+	noMoreConns := func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.activeConns) == 0
+	}
+	for {
+		if noMoreConns() {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.connClosed:
+		}
 	}
 }
 
@@ -185,8 +212,14 @@ func (s *server) registerConn(sc *serverConn) {
 
 func (s *server) unregisterConn(sc *serverConn) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.activeConns, sc)
+	s.mu.Unlock()
+	select {
+	case s.connClosed <- struct{}{}:
+	default:
+		// Channel already full. No need to send more values since we are just
+		// using this channel as a simpler sync.Cond.
+	}
 }
 
 type serverConn struct {

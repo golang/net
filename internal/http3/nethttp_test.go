@@ -7,6 +7,7 @@
 package http3_test
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"net/http"
@@ -111,7 +112,9 @@ func TestNetHTTPIntegration(t *testing.T) {
 	}
 	// Similarly when a net/http Server shuts down, the HTTP/3 server should
 	// also follow.
-	if err := srv.Shutdown(t.Context()); err != nil {
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
 }

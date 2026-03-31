@@ -267,9 +267,14 @@ func TestServerShutdownGoaway(t *testing.T) {
 
 		control := tc.wantStream(streamTypeControl)
 		control.wantSettings(nil)
-		ts.s.shutdown()
+
+		shutdownComplete := make(chan any)
+		go func() {
+			ts.s.shutdown(t.Context())
+			shutdownComplete <- struct{}{}
+		}()
 		control.wantGoaway((requestCount - 1) * 4) // Request stream ID goes from 0, 4, 8, ...
-		tc.wantClosed("server has finished shutting down", errH3NoError)
+		<-shutdownComplete
 	})
 }
 

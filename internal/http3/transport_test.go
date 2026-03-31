@@ -347,9 +347,7 @@ func (ts *testQUICStream) wantSettings(f func(settingType, value int64) error) {
 
 func (ts *testQUICStream) wantGoaway(wantID int64) {
 	ts.t.Helper()
-	// No synctest.Wait. We assert GOAWAY frame when a graceful shutdown is
-	// occuring. Waiting would cause us to wait until the entire connection is
-	// closed, at which point we can no longer read from the stream.
+	synctest.Wait()
 	ftype, err := ts.readFrameHeader()
 	if err != nil {
 		ts.t.Fatalf("want GOAWAY frame, got error: %v", err)
