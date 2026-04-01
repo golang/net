@@ -718,9 +718,6 @@ func canRetryError(err error) bool {
 }
 
 func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse bool) (*ClientConn, error) {
-	if t.transportTestHooks != nil {
-		return t.newClientConn(nil, singleUse, nil)
-	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err

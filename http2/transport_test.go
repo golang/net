@@ -1858,6 +1858,7 @@ func testTransportWindowUpdateBeyondLimit(t testing.TB) {
 	tc.wantRSTStream(rt.streamID(), ErrCodeFlowControl)
 
 	tc.writeWindowUpdate(0, windowIncrease)
+	synctest.Wait()
 	tc.wantClosed()
 }
 
@@ -2777,6 +2778,7 @@ func testRoundTripDoesntConsumeRequestBodyEarly(t testing.TB) {
 	tc := newTestClientConn(t)
 	tc.greet()
 	tc.closeWrite()
+	synctest.Wait()
 
 	const body = "foo"
 	req, _ := http.NewRequest("POST", "http://foo.com/", io.NopCloser(strings.NewReader(body)))
@@ -3213,6 +3215,7 @@ func testTransportRetryHasLimit(t testing.TB) {
 	start := time.Now()
 	for streamID := uint32(1); !rt.done(); streamID += 2 {
 		count++
+		tc.connReader.waitForData(t)
 		tc.wantHeaders(wantHeader{
 			streamID:  streamID,
 			endStream: true,
@@ -3456,6 +3459,7 @@ func testTransportMaxDecoderHeaderTableSize(t testing.TB) {
 	}
 
 	tc.writeSettings(Setting{SettingHeaderTableSize, resSize})
+	synctest.Wait()
 	if got, want := tc.cc.TestPeerMaxHeaderTableSize(), resSize; got != want {
 		t.Fatalf("peerHeaderTableSize = %d, want %d", got, want)
 	}
@@ -5269,7 +5273,7 @@ func TestTransport1xxLimits(t *testing.T) {
 			tc.wantFrameType(FrameHeaders)
 
 			for i := 0; i < test.hcount; i++ {
-				if fr, err := tc.fr.ReadFrame(); err != os.ErrDeadlineExceeded {
+				if fr, err := tc.fr.ReadFrame(); err != errWouldBlock {
 					t.Fatalf("after writing %v 1xx headers: read %v, %v; want idle", i, fr, err)
 				}
 				tc.writeHeaders(HeadersFrameParam{
@@ -5430,6 +5434,7 @@ func testTransportSendNoMoreThanOnePingWithReset(t testing.TB) {
 
 	// The server responds to our PING.
 	tc.writePing(true, pf1.Data)
+	synctest.Wait()
 
 	// Create yet another request and cancel it.
 	// Still no PING frame; we got a response to the previous one,
@@ -5445,6 +5450,7 @@ func testTransportSendNoMoreThanOnePingWithReset(t testing.TB) {
 			":status", "200",
 		),
 	})
+	synctest.Wait()
 
 	// One more request.
 	// This time we send a PING frame.
@@ -5531,9 +5537,10 @@ func testTransportTLSNextProtoConnOK(t testing.TB) {
 	t1 := &http.Transport{}
 	t2, _ := ConfigureTransports(t1)
 	tt := newTestTransport(t, t2)
+	tt.useTLS = true
 
 	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
-	cli, _ := synctestNetPipe()
+	cli := tt.li.newConn()
 	cliTLS := tls.Client(cli, tlsConfigInsecure)
 	go func() {
 		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
@@ -5575,9 +5582,10 @@ func testTransportTLSNextProtoConnImmediateFailureUsed(t testing.TB) {
 	t1 := &http.Transport{}
 	t2, _ := ConfigureTransports(t1)
 	tt := newTestTransport(t, t2)
+	tt.useTLS = true
 
 	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
-	cli, _ := synctestNetPipe()
+	cli := tt.li.newConn()
 	cliTLS := tls.Client(cli, tlsConfigInsecure)
 	go func() {
 		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
@@ -5617,9 +5625,10 @@ func testTransportTLSNextProtoConnIdleTimoutBeforeUse(t testing.TB) {
 	}
 	t2, _ := ConfigureTransports(t1)
 	tt := newTestTransport(t, t2)
+	tt.useTLS = true
 
 	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
-	cli, _ := synctestNetPipe()
+	cli := tt.li.newConn()
 	cliTLS := tls.Client(cli, tlsConfigInsecure)
 	go func() {
 		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)
@@ -5650,9 +5659,10 @@ func testTransportTLSNextProtoConnImmediateFailureUnused(t testing.TB) {
 	t1 := &http.Transport{}
 	t2, _ := ConfigureTransports(t1)
 	tt := newTestTransport(t, t2)
+	tt.useTLS = true
 
 	// Create a new, fake connection and pass it to the Transport via the TLSNextProto hook.
-	cli, _ := synctestNetPipe()
+	cli := tt.li.newConn()
 	cliTLS := tls.Client(cli, tlsConfigInsecure)
 	go func() {
 		t1.TLSNextProto["h2"]("dummy.tld", cliTLS)

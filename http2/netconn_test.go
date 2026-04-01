@@ -16,7 +16,68 @@ import (
 	"sync"
 	"testing/synctest"
 	"time"
+
+	"golang.org/x/net/internal/gate"
 )
+
+type synctestNetListener struct {
+	gate     gate.Gate
+	nextPort uint16
+	queue    []*synctestNetConn
+	err      error
+}
+
+func newSynctestNetListener() *synctestNetListener {
+	li := &synctestNetListener{
+		gate:     gate.New(false),
+		nextPort: 10000,
+	}
+	return li
+}
+
+func (li *synctestNetListener) Accept() (net.Conn, error) {
+	li.gate.WaitAndLock(context.Background())
+	defer li.unlock()
+	if li.err != nil {
+		return nil, li.err
+	}
+	c := li.queue[0]
+	li.queue = li.queue[1:]
+	return c, nil
+}
+
+func (li *synctestNetListener) Close() error {
+	li.gate.Lock()
+	defer li.unlock()
+	li.err = net.ErrClosed
+	for _, c := range li.queue {
+		c.Close()
+	}
+	li.queue = nil
+	return nil
+}
+
+func (li *synctestNetListener) Addr() net.Addr {
+	return net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:1000"))
+}
+
+func (li *synctestNetListener) newConn() *synctestNetConn {
+	li.gate.Lock()
+	defer li.unlock()
+	cliAddr := net.TCPAddrFromAddrPort(netip.AddrPortFrom(
+		netip.MustParseAddr("127.0.0.1"),
+		li.nextPort,
+	))
+	li.nextPort++
+	cli, srv := synctestNetPipeWithAddrs(cliAddr, li.Addr())
+	li.queue = append(li.queue, srv)
+	return cli
+}
+
+func (li *synctestNetListener) unlock() {
+	canAccept := len(li.queue) > 0 || li.err != nil
+	li.gate.Unlock(canAccept)
+}
 
 // synctestNetPipe creates an in-memory, full duplex network connection.
 // Read and write timeouts are managed by the synctest group.
@@ -27,6 +88,10 @@ import (
 func synctestNetPipe() (r, w *synctestNetConn) {
 	s1addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:8000"))
 	s2addr := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:8001"))
+	return synctestNetPipeWithAddrs(s1addr, s2addr)
+}
+
+func synctestNetPipeWithAddrs(s1addr, s2addr net.Addr) (r, w *synctestNetConn) {
 	s1 := newSynctestNetConnHalf(s1addr)
 	s2 := newSynctestNetConnHalf(s2addr)
 	r = &synctestNetConn{loc: s1, rem: s2}

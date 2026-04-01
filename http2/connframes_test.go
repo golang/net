@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 
 	. "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -28,7 +29,7 @@ type testConnFramer struct {
 func (tf *testConnFramer) readFrame() Frame {
 	tf.t.Helper()
 	fr, err := tf.fr.ReadFrame()
-	if err == io.EOF || err == os.ErrDeadlineExceeded {
+	if err == io.EOF || err == os.ErrDeadlineExceeded || err == errWouldBlock {
 		return nil
 	}
 	if err != nil {
@@ -178,7 +179,7 @@ func (tf *testConnFramer) wantHeaders(want wantHeader) {
 
 	for k, v := range want.header {
 		if !reflect.DeepEqual(v, gotHeader[k]) {
-			tf.t.Fatalf("got header %q = %q; want %q", k, v, gotHeader[k])
+			tf.t.Fatalf("got header %q = %q; want %q = %q", k, gotHeader[k], k, v)
 		}
 	}
 }
@@ -309,11 +310,12 @@ func (tf *testConnFramer) wantWindowUpdate(streamID, incr uint32) {
 
 func (tf *testConnFramer) wantClosed() {
 	tf.t.Helper()
+	synctest.Wait()
 	fr, err := tf.fr.ReadFrame()
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want closed connection): %v", fr)
 	}
-	if err == os.ErrDeadlineExceeded {
+	if err == errWouldBlock {
 		tf.t.Fatalf("connection is not closed; want it to be")
 	}
 }
@@ -324,7 +326,7 @@ func (tf *testConnFramer) wantIdle() {
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want idle connection): %v", fr)
 	}
-	if err != os.ErrDeadlineExceeded {
+	if err != os.ErrDeadlineExceeded && err != io.EOF && err != errWouldBlock {
 		tf.t.Fatalf("got unexpected frame error (want idle connection): %v", err)
 	}
 }
