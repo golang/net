@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -382,5 +383,16 @@ func BenchmarkEncoderSearchTable(b *testing.B) {
 		for _, f := range possible {
 			e.searchTable(f)
 		}
+	}
+}
+
+func TestEncodeZeroAlloc(t *testing.T) {
+	e := NewEncoder(io.Discard)
+	s := []byte("some string")
+	alloc := testing.AllocsPerRun(100, func() {
+		e.WriteField(HeaderField{Name: string(s), Value: string(s)})
+	})
+	if alloc != 0 {
+		t.Errorf("got %v allocs when encoding, want 0", alloc)
 	}
 }
