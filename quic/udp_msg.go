@@ -11,9 +11,8 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"syscall"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 // Network interface for platforms using sendmsg/recvmsg with cmsgs.
@@ -44,11 +43,11 @@ func newNetUDPConn(uc *net.UDPConn) (*netUDPConn, error) {
 		//
 		// If any of these calls fail, we won't get the requested information.
 		// That's fine, we'll gracefully handle the lack.
-		unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_RECVTOS, 1)
-		unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_RECVTCLASS, 1)
+		syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, ip_recvtos, 1)
+		syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_RECVTCLASS, 1)
 		if !localAddr.IsValid() {
-			unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_PKTINFO, 1)
-			unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_RECVPKTINFO, 1)
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_PKTINFO, 1)
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, ipv6_recvpktinfo, 1)
 		}
 	})
 
@@ -75,10 +74,10 @@ func (c *netUDPConn) Read(f func(*datagram)) {
 		ipv6TclassSize = 4
 	)
 	control := make([]byte, 0+
-		unix.CmsgSpace(inPktinfoSize)+
-		unix.CmsgSpace(in6PktinfoSize)+
-		unix.CmsgSpace(ipTOSSize)+
-		unix.CmsgSpace(ipv6TclassSize))
+		syscall.CmsgSpace(inPktinfoSize)+
+		syscall.CmsgSpace(in6PktinfoSize)+
+		syscall.CmsgSpace(ipTOSSize)+
+		syscall.CmsgSpace(ipv6TclassSize))
 
 	for {
 		d := newDatagram()
@@ -132,36 +131,35 @@ func (c *netUDPConn) Write(dgram datagram) error {
 }
 
 func parseControl(d *datagram, control []byte) {
-	for len(control) > 0 {
-		hdr, data, remainder, err := unix.ParseOneSocketControlMessage(control)
-		if err != nil {
-			return
-		}
-		control = remainder
-		switch hdr.Level {
-		case unix.IPPROTO_IP:
-			switch hdr.Type {
-			case unix.IP_TOS, unix.IP_RECVTOS:
+	msgs, err := syscall.ParseSocketControlMessage(control)
+	if err != nil {
+		return
+	}
+	for _, m := range msgs {
+		switch m.Header.Level {
+		case syscall.IPPROTO_IP:
+			switch m.Header.Type {
+			case syscall.IP_TOS, ip_recvtos:
 				// (Linux sets the type to IP_TOS, Darwin to IP_RECVTOS,
 				// just check for both.)
-				if ecn, ok := parseIPTOS(data); ok {
+				if ecn, ok := parseIPTOS(m.Data); ok {
 					d.ecn = ecn
 				}
-			case unix.IP_PKTINFO:
-				if a, ok := parseInPktinfo(data); ok {
+			case syscall.IP_PKTINFO:
+				if a, ok := parseInPktinfo(m.Data); ok {
 					d.localAddr = netip.AddrPortFrom(a, d.localAddr.Port())
 				}
 			}
-		case unix.IPPROTO_IPV6:
-			switch hdr.Type {
-			case unix.IPV6_TCLASS:
+		case syscall.IPPROTO_IPV6:
+			switch m.Header.Type {
+			case syscall.IPV6_TCLASS:
 				// 32-bit integer containing the traffic class field.
 				// The low two bits are the ECN field.
-				if ecn, ok := parseIPv6TCLASS(data); ok {
+				if ecn, ok := parseIPv6TCLASS(m.Data); ok {
 					d.ecn = ecn
 				}
-			case unix.IPV6_PKTINFO:
-				if a, ok := parseIn6Pktinfo(data); ok {
+			case ipv6_pktinfo:
+				if a, ok := parseIn6Pktinfo(m.Data); ok {
 					d.localAddr = netip.AddrPortFrom(a, d.localAddr.Port())
 				}
 			}
@@ -179,7 +177,7 @@ func parseIPv6TCLASS(b []byte) (ecnBits, bool) {
 }
 
 func appendCmsgECNv6(b []byte, ecn ecnBits) []byte {
-	b, data := appendCmsg(b, unix.IPPROTO_IPV6, unix.IPV6_TCLASS, 4)
+	b, data := appendCmsg(b, syscall.IPPROTO_IPV6, syscall.IPV6_TCLASS, 4)
 	binary.NativeEndian.PutUint32(data, uint32(ecn))
 	return b
 }
@@ -206,7 +204,7 @@ func appendCmsgIPSourceAddrV4(b []byte, src netip.Addr) []byte {
 	//   struct in_addr ipi_spec_dst; /* Local address */
 	//   struct in_addr ipi_addr;     /* IP Header dst address */
 	// };
-	b, data := appendCmsg(b, unix.IPPROTO_IP, unix.IP_PKTINFO, 12)
+	b, data := appendCmsg(b, syscall.IPPROTO_IP, syscall.IP_PKTINFO, 12)
 	ip := src.As4()
 	copy(data[4:], ip[:])
 	return b
@@ -228,7 +226,7 @@ func parseIn6Pktinfo(b []byte) (netip.Addr, bool) {
 // appendCmsgIPSourceAddrV6 appends an IPV6_PKTINFO setting the source address
 // for an outbound datagram.
 func appendCmsgIPSourceAddrV6(b []byte, src netip.Addr) []byte {
-	b, data := appendCmsg(b, unix.IPPROTO_IPV6, unix.IPV6_PKTINFO, 20)
+	b, data := appendCmsg(b, syscall.IPPROTO_IPV6, ipv6_pktinfo, 20)
 	ip := src.As16()
 	copy(data[0:], ip[:])
 	return b
@@ -238,10 +236,10 @@ func appendCmsgIPSourceAddrV6(b []byte, src netip.Addr) []byte {
 // It returns the new buffer, and the data section of the cmsg.
 func appendCmsg(b []byte, level, typ int32, size int) (_, data []byte) {
 	off := len(b)
-	b = append(b, make([]byte, unix.CmsgSpace(size))...)
-	h := (*unix.Cmsghdr)(unsafe.Pointer(&b[off]))
+	b = append(b, make([]byte, syscall.CmsgSpace(size))...)
+	h := (*syscall.Cmsghdr)(unsafe.Pointer(&b[off]))
 	h.Level = level
 	h.Type = typ
-	h.SetLen(unix.CmsgLen(size))
-	return b, b[off+unix.CmsgSpace(0):][:size]
+	h.SetLen(syscall.CmsgLen(size))
+	return b, b[off+syscall.CmsgSpace(0):][:size]
 }

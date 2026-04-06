@@ -7,7 +7,13 @@
 package quic
 
 import (
-	"golang.org/x/sys/unix"
+	"syscall"
+)
+
+const (
+	ip_recvtos       = syscall.IP_RECVTOS
+	ipv6_recvpktinfo = syscall.IPV6_RECVPKTINFO
+	ipv6_pktinfo     = syscall.IPV6_PKTINFO
 )
 
 // See udp.go.
@@ -27,7 +33,7 @@ func parseIPTOS(b []byte) (ecnBits, bool) {
 }
 
 func appendCmsgECNv4(b []byte, ecn ecnBits) []byte {
-	b, data := appendCmsg(b, unix.IPPROTO_IP, unix.IP_TOS, 1)
+	b, data := appendCmsg(b, syscall.IPPROTO_IP, syscall.IP_TOS, 1)
 	data[0] = byte(ecn)
 	return b
 }
