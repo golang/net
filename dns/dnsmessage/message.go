@@ -214,7 +214,7 @@ const hexDigits = "0123456789abcdef"
 
 func printString(str []byte) string {
 	buf := make([]byte, 0, len(str))
-	for i := 0; i < len(str); i++ {
+	for i := range len(str) {
 		c := str[i]
 		if c == '.' || c == '-' || c == ' ' ||
 			'A' <= c && c <= 'Z' ||
