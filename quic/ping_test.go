@@ -4,9 +4,15 @@
 
 package quic
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+)
 
 func TestPing(t *testing.T) {
+	synctest.Test(t, testPing)
+}
+func testPing(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.handshake()
 
@@ -22,6 +28,9 @@ func TestPing(t *testing.T) {
 }
 
 func TestAck(t *testing.T) {
+	synctest.Test(t, testAck)
+}
+func testAck(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 

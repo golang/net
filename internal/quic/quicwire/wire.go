@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.21
-
 // Package quicwire encodes and decode QUIC/HTTP3 wire encoding types,
 // particularly variable-length integers.
 package quicwire

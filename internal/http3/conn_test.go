@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
-
 package http3
 
 import (
@@ -142,12 +140,12 @@ func TestConnPeerCreatesBadUnidirectionalStream(t *testing.T) {
 
 func runConnTest(t *testing.T, f func(testing.TB, *testQUICConn)) {
 	t.Helper()
-	runSynctestSubtest(t, "client", func(t testing.TB) {
+	synctestSubtest(t, "client", func(t *testing.T) {
 		tc := newTestClientConn(t)
 		f(t, tc.testQUICConn)
 	})
-	runSynctestSubtest(t, "server", func(t testing.TB) {
-		ts := newTestServer(t)
+	synctestSubtest(t, "server", func(t *testing.T) {
+		ts := newTestServer(t, nil)
 		tc := ts.connect()
 		f(t, tc.testQUICConn)
 	})

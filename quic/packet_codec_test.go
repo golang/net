@@ -75,6 +75,51 @@ func TestParseLongHeaderPacket(t *testing.T) {
 	}
 }
 
+func TestParseInvalidLongHeaderPacket(t *testing.T) {
+	// Baseline successful parse, just to confirm we've got a valid packet to start with.
+	// various bits; version; dcid; srcid; token; length; packet number
+	okPacket := unhex(`c0 00000001 00 00 00 00 00`)
+	if _, n := parseLongHeaderPacket(okPacket, fixedKeys{}, 0); n < 0 {
+		t.Fatalf("parse long header packet: unexpected failure")
+	}
+
+	for _, test := range []struct {
+		desc string
+		p    []byte
+	}{{
+		desc: "fixed bit not set",
+		p:    unhex(`80 00000001 00 00 00 00 00`),
+	}, {
+		desc: "truncated version",
+		p:    unhex(`c0 000000`),
+	}, {
+		desc: "DCID exceeds packet",
+		p:    unhex(`c0 00000001 10 00 00 00 00`),
+	}, {
+		desc: "DCID too long",
+		p:    unhex(`c0 00000001 15000102030405060708090a0b0c0d0e0f1011121314 00 00 00 00`),
+	}, {
+		desc: "SCID exceeds packet",
+		p:    unhex(`c0 00000001 00 10 00 00 00`),
+	}, {
+		desc: "SCID too long",
+		p:    unhex(`c0 00000001 00 15000102030405060708090a0b0c0d0e0f1011121314 00 00 00`),
+	}, {
+		desc: "token exceeds packet",
+		p:    unhex(`c0 00000001 00 00 10 00 00`),
+	}, {
+		desc: "length exceeds packet",
+		p:    unhex(`c0 00000001 00 00 00 10 00`),
+	}} {
+		t.Run(test.desc, func(t *testing.T) {
+			_, n := parseLongHeaderPacket(test.p, fixedKeys{}, 0)
+			if n >= 0 {
+				t.Errorf("parse long header packet: unexpected success")
+			}
+		})
+	}
+}
+
 func TestRoundtripEncodeLongPacket(t *testing.T) {
 	var aes128Keys, aes256Keys, chachaKeys fixedKeys
 	aes128Keys.init(tls.TLS_AES_128_GCM_SHA256, []byte("secret"))
@@ -263,6 +308,65 @@ func TestFrameEncodeDecode(t *testing.T) {
 			0x0f, // Gap (i)
 			0x0e, // ACK Range Length (i)
 		},
+	}, {
+		s: "ACK Delay=10 [0,16) [17,32) ECN=[1,2,3]",
+		j: `"error: debugFrameAck should not appear as a slog Value"`,
+		f: debugFrameAck{
+			ackDelay: 10,
+			ranges: []i64range[packetNumber]{
+				{0x00, 0x10},
+				{0x11, 0x20},
+			},
+			ecn: ecnCounts{1, 2, 3},
+		},
+		b: []byte{
+			0x03, // TYPE (i) = 0x3
+			0x1f, // Largest Acknowledged (i)
+			10,   // ACK Delay (i)
+			0x01, // ACK Range Count (i)
+			0x0e, // First ACK Range (i)
+			0x00, // Gap (i)
+			0x0f, // ACK Range Length (i)
+			0x01, // ECT0 Count (i)
+			0x02, // ECT1 Count (i)
+			0x03, // ECN-CE Count (i)
+		},
+		truncated: []byte{
+			0x03, // TYPE (i) = 0x3
+			0x1f, // Largest Acknowledged (i)
+			10,   // ACK Delay (i)
+			0x00, // ACK Range Count (i)
+			0x0e, // First ACK Range (i)
+			0x01, // ECT0 Count (i)
+			0x02, // ECT1 Count (i)
+			0x03, // ECN-CE Count (i)
+		},
+	}, {
+		s: "ACK Delay=10 [17,32) ECN=[1,2,3]",
+		j: `"error: debugFrameAck should not appear as a slog Value"`,
+		f: debugFrameAck{
+			ackDelay: 10,
+			ranges: []i64range[packetNumber]{
+				{0x11, 0x20},
+			},
+			ecn: ecnCounts{1, 2, 3},
+		},
+		b: []byte{
+			0x03, // TYPE (i) = 0x3
+			0x1f, // Largest Acknowledged (i)
+			10,   // ACK Delay (i)
+			0x00, // ACK Range Count (i)
+			0x0e, // First ACK Range (i)
+			0x01, // ECT0 Count (i)
+			0x02, // ECT1 Count (i)
+			0x03, // ECN-CE Count (i)
+		},
+		// Downgrading to a type 0x2 ACK frame is not allowed: "Even if an
+		// endpoint does not set an ECT field in packets it sends, the endpoint
+		// MUST provide feedback about ECN markings it receives, if these are
+		// accessible."
+		// https://www.rfc-editor.org/rfc/rfc9000.html#section-13.4.1-2
+		truncated: nil,
 	}, {
 		s: "RESET_STREAM ID=1 Code=2 FinalSize=3",
 		j: `{"frame_type":"reset_stream","stream_id":1,"final_size":3}`,
@@ -675,6 +779,7 @@ func TestFrameDecode(t *testing.T) {
 			ranges: []i64range[packetNumber]{
 				{0, 1},
 			},
+			ecn: ecnCounts{1, 2, 3},
 		},
 		b: []byte{
 			0x03,             // TYPE (i) = 0x02..0x03

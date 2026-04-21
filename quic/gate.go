@@ -46,10 +46,7 @@ func (g *gate) lock() (set bool) {
 
 // waitAndLock waits until the condition is set before acquiring the gate.
 // If the context expires, waitAndLock returns an error and does not acquire the gate.
-func (g *gate) waitAndLock(ctx context.Context, testHooks connTestHooks) error {
-	if testHooks != nil {
-		return testHooks.waitUntil(ctx, g.lockIfSet)
-	}
+func (g *gate) waitAndLock(ctx context.Context) error {
 	select {
 	case <-g.set:
 		return nil

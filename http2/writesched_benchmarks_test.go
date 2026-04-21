@@ -152,29 +152,42 @@ func BenchmarkWriteSchedulerLifetimePriorityRFC7540(b *testing.B) {
 }
 
 func BenchmarkWriteSchedulerThroughputPriorityRFC9218Incremental(b *testing.B) {
-	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
-		urgency:     defaultRFC9218Priority.urgency,
+	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		incremental: 1,
 	})
 }
 
 func BenchmarkWriteSchedulerLifetimePriorityRFC9218Incremental(b *testing.B) {
-	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
-		urgency:     defaultRFC9218Priority.urgency,
+	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		incremental: 1,
 	})
 }
 
 func BenchmarkWriteSchedulerThroughputPriorityRFC9218NonIncremental(b *testing.B) {
-	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
-		urgency:     defaultRFC9218Priority.urgency,
+	benchmarkThroughput(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		incremental: 0,
 	})
 }
 
 func BenchmarkWriteSchedulerLifetimePriorityRFC9218NonIncremental(b *testing.B) {
-	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9128, PriorityParam{
-		urgency:     defaultRFC9218Priority.urgency,
+	benchmarkStreamLifetime(b, newPriorityWriteSchedulerRFC9218, PriorityParam{
 		incremental: 0,
 	})
+}
+
+func BenchmarkWriteQueue(b *testing.B) {
+	var qp writeQueuePool
+	frameCount := 25
+	for b.Loop() {
+		q := qp.get()
+		for range frameCount {
+			q.push(FrameWriteRequest{})
+		}
+		for !q.empty() {
+			// Since we pushed empty frames, consuming 1 byte is enough to
+			// consume the entire frame.
+			q.consume(1)
+		}
+		qp.put(q)
+	}
 }

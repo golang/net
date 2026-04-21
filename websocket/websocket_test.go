@@ -323,7 +323,7 @@ func TestHTTP(t *testing.T) {
 		return
 	}
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("Get: expected %q got %q", http.StatusBadRequest, resp.StatusCode)
+		t.Errorf("Get: expected %d got %d", http.StatusBadRequest, resp.StatusCode)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"net/netip"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -77,9 +78,12 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 }
 
 func TestRetryServerSucceeds(t *testing.T) {
+	synctest.Test(t, testRetryServerSucceeds)
+}
+func testRetryServerSucceeds(t *testing.T) {
 	rt := newRetryServerTest(t)
 	te := rt.te
-	te.advance(retryTokenValidityPeriod)
+	time.Sleep(retryTokenValidityPeriod)
 	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
@@ -117,6 +121,9 @@ func TestRetryServerSucceeds(t *testing.T) {
 }
 
 func TestRetryServerTokenInvalid(t *testing.T) {
+	synctest.Test(t, testRetryServerTokenInvalid)
+}
+func testRetryServerTokenInvalid(t *testing.T) {
 	// "If a server receives a client Initial that contains an invalid Retry token [...]
 	// the server SHOULD immediately close [...] the connection with an
 	// INVALID_TOKEN error."
@@ -147,11 +154,14 @@ func TestRetryServerTokenInvalid(t *testing.T) {
 }
 
 func TestRetryServerTokenTooOld(t *testing.T) {
+	synctest.Test(t, testRetryServerTokenTooOld)
+}
+func testRetryServerTokenTooOld(t *testing.T) {
 	// "[...] a token SHOULD have an expiration time [...]"
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.3-3
 	rt := newRetryServerTest(t)
 	te := rt.te
-	te.advance(retryTokenValidityPeriod + time.Second)
+	time.Sleep(retryTokenValidityPeriod + time.Second)
 	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
@@ -176,6 +186,9 @@ func TestRetryServerTokenTooOld(t *testing.T) {
 }
 
 func TestRetryServerTokenWrongIP(t *testing.T) {
+	synctest.Test(t, testRetryServerTokenWrongIP)
+}
+func testRetryServerTokenWrongIP(t *testing.T) {
 	// "Tokens sent in Retry packets SHOULD include information that allows the server
 	// to verify that the source IP address and port in client packets remain constant."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.4-3
@@ -205,7 +218,41 @@ func TestRetryServerTokenWrongIP(t *testing.T) {
 			errInvalidToken))
 }
 
+func TestRetryServerShortDstConnID(t *testing.T) {
+	synctest.Test(t, testRetryServerShortDstConnID)
+}
+func testRetryServerShortDstConnID(t *testing.T) {
+	// Verify that a shorter-than-expected Destination Connection ID does not
+	// cause a panic due to bad nonce length. https://go.dev/issue/78292.
+	rt := newRetryServerTest(t)
+	te := rt.te
+	te.writeDatagram(&testDatagram{
+		packets: []*testPacket{{
+			ptype:     packetTypeInitial,
+			num:       1,
+			version:   quicVersion1,
+			srcConnID: rt.originalSrcConnID,
+			dstConnID: []byte("short id"),
+			token:     rt.retry.token,
+			frames: []debugFrame{
+				debugFrameCrypto{
+					data: rt.initialCrypto,
+				},
+			},
+		}},
+		paddedSize: 1200,
+	})
+	te.wantDatagram("server closes connection after Initial from wrong address",
+		initialConnectionCloseDatagram(
+			[]byte("short id"),
+			rt.originalSrcConnID,
+			errInvalidToken))
+}
+
 func TestRetryServerIgnoresRetry(t *testing.T) {
+	synctest.Test(t, testRetryServerIgnoresRetry)
+}
+func testRetryServerIgnoresRetry(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 	tc.write(&testDatagram{
@@ -225,6 +272,9 @@ func TestRetryServerIgnoresRetry(t *testing.T) {
 }
 
 func TestRetryClientSuccess(t *testing.T) {
+	synctest.Test(t, testRetryClientSuccess)
+}
+func testRetryClientSuccess(t *testing.T) {
 	// "This token MUST be repeated by the client in all Initial packets it sends
 	// for that connection after it receives the Retry packet."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-8.1.2-1
@@ -323,7 +373,7 @@ func TestRetryClientInvalidServerTransportParameters(t *testing.T) {
 			p.retrySrcConnID = []byte("invalid")
 		},
 	}} {
-		t.Run(test.name, func(t *testing.T) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestConn(t, clientSide,
 				func(p *transportParameters) {
 					p.initialSrcConnID = initialSrcConnID
@@ -367,6 +417,9 @@ func TestRetryClientInvalidServerTransportParameters(t *testing.T) {
 }
 
 func TestRetryClientIgnoresRetryAfterReceivingPacket(t *testing.T) {
+	synctest.Test(t, testRetryClientIgnoresRetryAfterReceivingPacket)
+}
+func testRetryClientIgnoresRetryAfterReceivingPacket(t *testing.T) {
 	// "After the client has received and processed an Initial or Retry packet
 	// from the server, it MUST discard any subsequent Retry packets that it receives."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-1
@@ -401,6 +454,9 @@ func TestRetryClientIgnoresRetryAfterReceivingPacket(t *testing.T) {
 }
 
 func TestRetryClientIgnoresRetryAfterReceivingRetry(t *testing.T) {
+	synctest.Test(t, testRetryClientIgnoresRetryAfterReceivingRetry)
+}
+func testRetryClientIgnoresRetryAfterReceivingRetry(t *testing.T) {
 	// "After the client has received and processed an Initial or Retry packet
 	// from the server, it MUST discard any subsequent Retry packets that it receives."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-1
@@ -424,6 +480,9 @@ func TestRetryClientIgnoresRetryAfterReceivingRetry(t *testing.T) {
 }
 
 func TestRetryClientIgnoresRetryWithInvalidIntegrityTag(t *testing.T) {
+	synctest.Test(t, testRetryClientIgnoresRetryWithInvalidIntegrityTag)
+}
+func testRetryClientIgnoresRetryWithInvalidIntegrityTag(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	tc.wantFrameType("client Initial CRYPTO data",
 		packetTypeInitial, debugFrameCrypto{})
@@ -441,6 +500,9 @@ func TestRetryClientIgnoresRetryWithInvalidIntegrityTag(t *testing.T) {
 }
 
 func TestRetryClientIgnoresRetryWithZeroLengthToken(t *testing.T) {
+	synctest.Test(t, testRetryClientIgnoresRetryWithZeroLengthToken)
+}
+func testRetryClientIgnoresRetryWithZeroLengthToken(t *testing.T) {
 	// "A client MUST discard a Retry packet with a zero-length Retry Token field."
 	// https://www.rfc-editor.org/rfc/rfc9000#section-17.2.5.2-2
 	tc := newTestConn(t, clientSide)

@@ -17,7 +17,7 @@ func TestAcksDisallowDuplicate(t *testing.T) {
 	receive := []packetNumber{0, 1, 2, 4, 7, 6, 9}
 	seen := map[packetNumber]bool{}
 	for i, pnum := range receive {
-		acks.receive(now, appDataSpace, pnum, true)
+		acks.receive(now, appDataSpace, pnum, true, ecnNotECT)
 		seen[pnum] = true
 		for ppnum := packetNumber(0); ppnum < 11; ppnum++ {
 			if got, want := acks.shouldProcess(ppnum), !seen[ppnum]; got != want {
@@ -32,7 +32,7 @@ func TestAcksDisallowDiscardedAckRanges(t *testing.T) {
 	acks := ackState{}
 	now := time.Now()
 	for pnum := packetNumber(0); ; pnum += 2 {
-		acks.receive(now, appDataSpace, pnum, true)
+		acks.receive(now, appDataSpace, pnum, true, ecnNotECT)
 		send, _ := acks.acksToSend(now)
 		for ppnum := packetNumber(0); ppnum < packetNumber(send.min()); ppnum++ {
 			if acks.shouldProcess(ppnum) {
@@ -158,13 +158,13 @@ func TestAcksSent(t *testing.T) {
 			start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 			for _, p := range test.ackedPackets {
 				t.Logf("receive %v.%v, ack-eliciting=%v", test.space, p.pnum, p.ackEliciting)
-				acks.receive(start, test.space, p.pnum, p.ackEliciting)
+				acks.receive(start, test.space, p.pnum, p.ackEliciting, ecnNotECT)
 			}
 			t.Logf("send an ACK frame")
 			acks.sentAck()
 			for _, p := range test.packets {
 				t.Logf("receive %v.%v, ack-eliciting=%v", test.space, p.pnum, p.ackEliciting)
-				acks.receive(start, test.space, p.pnum, p.ackEliciting)
+				acks.receive(start, test.space, p.pnum, p.ackEliciting, ecnNotECT)
 			}
 			switch {
 			case len(test.wantAcks) == 0:
@@ -208,13 +208,13 @@ func TestAcksSent(t *testing.T) {
 func TestAcksDiscardAfterAck(t *testing.T) {
 	acks := ackState{}
 	now := time.Now()
-	acks.receive(now, appDataSpace, 0, true)
-	acks.receive(now, appDataSpace, 2, true)
-	acks.receive(now, appDataSpace, 4, true)
-	acks.receive(now, appDataSpace, 5, true)
-	acks.receive(now, appDataSpace, 6, true)
+	acks.receive(now, appDataSpace, 0, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 2, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 4, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 5, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 6, true, ecnNotECT)
 	acks.handleAck(6) // discards all ranges prior to the one containing packet 6
-	acks.receive(now, appDataSpace, 7, true)
+	acks.receive(now, appDataSpace, 7, true, ecnNotECT)
 	got, _ := acks.acksToSend(now)
 	if len(got) != 1 {
 		t.Errorf("acks.acksToSend contains ranges prior to last acknowledged ack; got %v, want 1 range", got)
@@ -224,9 +224,9 @@ func TestAcksDiscardAfterAck(t *testing.T) {
 func TestAcksLargestSeen(t *testing.T) {
 	acks := ackState{}
 	now := time.Now()
-	acks.receive(now, appDataSpace, 0, true)
-	acks.receive(now, appDataSpace, 4, true)
-	acks.receive(now, appDataSpace, 1, true)
+	acks.receive(now, appDataSpace, 0, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 4, true, ecnNotECT)
+	acks.receive(now, appDataSpace, 1, true, ecnNotECT)
 	if got, want := acks.largestSeen(), packetNumber(4); got != want {
 		t.Errorf("acks.largestSeen() = %v, want %v", got, want)
 	}

@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
-
 package http3
 
 import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
 	"strconv"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/internal/httpcommon"
 )
 
 type roundTripState struct {
-	cc *ClientConn
+	cc *clientConn
 	st *stream
 
 	// Request body, provided by the caller.
@@ -27,7 +28,9 @@ type roundTripState struct {
 	reqBodyWriter bodyWriter
 
 	// Response.Body, provided to the caller.
-	respBody bodyReader
+	respBody io.ReadCloser
+
+	trace *httptrace.ClientTrace
 
 	errOnce sync.Once
 	err     error
@@ -61,16 +64,43 @@ func (rt *roundTripState) closeReqBody() {
 	}
 }
 
+// TODO: Set up the rest of the hooks that might be in rt.trace.
+func (rt *roundTripState) maybeCallGot1xxResponse(status int, h http.Header) error {
+	if rt.trace == nil || rt.trace.Got1xxResponse == nil {
+		return nil
+	}
+	return rt.trace.Got1xxResponse(status, textproto.MIMEHeader(h))
+}
+
+func (rt *roundTripState) maybeCallGot100Continue() {
+	if rt.trace == nil || rt.trace.Got100Continue == nil {
+		return
+	}
+	rt.trace.Got100Continue()
+}
+
+func (rt *roundTripState) maybeCallWait100Continue() {
+	if rt.trace == nil || rt.trace.Wait100Continue == nil {
+		return
+	}
+	rt.trace.Wait100Continue()
+}
+
 // RoundTrip sends a request on the connection.
-func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
+func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
 	// Each request gets its own QUIC stream.
 	st, err := newConnStream(req.Context(), cc.qconn, streamTypeRequest)
 	if err != nil {
 		return nil, err
 	}
 	rt := &roundTripState{
-		cc: cc,
-		st: st,
+		cc:      cc,
+		st:      st,
+		trace:   httptrace.ContextClientTrace(req.Context()),
+		reqBody: req.Body,
+	}
+	if rt.reqBody == nil {
+		rt.reqBody = http.NoBody
 	}
 	defer func() {
 		if err != nil {
@@ -82,18 +112,15 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	st.stream.SetReadContext(req.Context())
 	st.stream.SetWriteContext(req.Context())
 
-	contentLength := actualContentLength(req)
-
-	var encr httpcommon.EncodeHeadersResult
 	headers := cc.enc.encode(func(yield func(itype indexType, name, value string)) {
-		encr, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
+		_, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
 			Request: httpcommon.Request{
 				URL:                 req.URL,
 				Method:              req.Method,
 				Host:                req.Host,
 				Header:              req.Header,
 				Trailer:             req.Trailer,
-				ActualContentLength: contentLength,
+				ActualContentLength: actualContentLength(req),
 			},
 			AddGzipHeader:         false, // TODO: add when appropriate
 			PeerMaxHeaderListSize: 0,
@@ -115,14 +142,13 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		return nil, err
 	}
 
-	if encr.HasBody {
-		// TODO: Defer sending the request body when "Expect: 100-continue" is set.
-		rt.reqBody = req.Body
-		rt.reqBodyWriter.st = st
-		rt.reqBodyWriter.remain = contentLength
-		rt.reqBodyWriter.flush = true
-		rt.reqBodyWriter.name = "request"
-		go copyRequestBody(rt)
+	var bodyAndTrailerWritten bool
+	is100ContinueReq := httpguts.HeaderValuesContainsToken(req.Header["Expect"], "100-continue")
+	if is100ContinueReq {
+		rt.maybeCallWait100Continue()
+	} else {
+		bodyAndTrailerWritten = true
+		go cc.writeBodyAndTrailer(rt, req)
 	}
 
 	// Read the response headers.
@@ -138,9 +164,25 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				return nil, err
 			}
 
-			if statusCode >= 100 && statusCode < 199 {
-				// TODO: Handle 1xx responses.
-				continue
+			// TODO: Handle 1xx responses.
+			if isInfoStatus(statusCode) {
+				if err := rt.maybeCallGot1xxResponse(statusCode, h); err != nil {
+					return nil, err
+				}
+				switch statusCode {
+				case 100:
+					rt.maybeCallGot100Continue()
+					if is100ContinueReq && !bodyAndTrailerWritten {
+						bodyAndTrailerWritten = true
+						go cc.writeBodyAndTrailer(rt, req)
+						continue
+					}
+					// If we did not send "Expect: 100-continue" request but
+					// received status 100 anyways, just continue per usual and
+					// let the caller decide what to do with the response.
+				default:
+					continue
+				}
 			}
 
 			// We have the response headers.
@@ -149,8 +191,20 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 			if err != nil {
 				return nil, err
 			}
-			rt.respBody.st = st
-			rt.respBody.remain = contentLength
+
+			trailer := make(http.Header)
+			extractTrailerFromHeader(h, trailer)
+			delete(h, "Trailer")
+
+			if (contentLength != 0 && req.Method != http.MethodHead) || len(trailer) > 0 {
+				rt.respBody = &bodyReader{
+					st:      st,
+					remain:  contentLength,
+					trailer: trailer,
+				}
+			} else {
+				rt.respBody = http.NoBody
+			}
 			resp := &http.Response{
 				Proto:         "HTTP/3.0",
 				ProtoMajor:    3,
@@ -158,6 +212,7 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				StatusCode:    statusCode,
 				Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
 				ContentLength: contentLength,
+				Trailer:       trailer,
 				Body:          (*transportResponseBody)(rt),
 			}
 			// TODO: Automatic Content-Type: gzip decoding.
@@ -186,18 +241,33 @@ func actualContentLength(req *http.Request) int64 {
 	return -1
 }
 
-func copyRequestBody(rt *roundTripState) {
+// writeBodyAndTrailer handles writing the body and trailer for a given
+// request, if any. This function will close the write direction of the stream.
+func (cc *clientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request) {
 	defer rt.closeReqBody()
-	_, err := io.Copy(&rt.reqBodyWriter, rt.reqBody)
-	if closeErr := rt.reqBodyWriter.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		// Something went wrong writing the body.
+
+	declaredTrailer := req.Trailer.Clone()
+
+	rt.reqBodyWriter.st = rt.st
+	rt.reqBodyWriter.remain = actualContentLength(req)
+	rt.reqBodyWriter.flush = true
+	rt.reqBodyWriter.name = "request"
+	rt.reqBodyWriter.trailer = req.Trailer
+	rt.reqBodyWriter.enc = &cc.enc
+
+	if _, err := io.Copy(&rt.reqBodyWriter, rt.reqBody); err != nil {
 		rt.abort(err)
-	} else {
-		// We wrote the whole body.
-		rt.st.stream.CloseWrite()
+	}
+	// Get rid of any trailer that was not declared beforehand, before we
+	// close the request body which will cause the trailer headers to be
+	// written.
+	for name := range req.Trailer {
+		if _, ok := declaredTrailer[name]; !ok {
+			delete(req.Trailer, name)
+		}
+	}
+	if err := rt.reqBodyWriter.Close(); err != nil {
+		rt.abort(err)
 	}
 }
 
@@ -269,7 +339,7 @@ func parseResponseContentLength(method string, statusCode int, h http.Header) (i
 	return int64(contentLen), nil
 }
 
-func (cc *ClientConn) handleHeaders(st *stream) (statusCode int, h http.Header, err error) {
+func (cc *clientConn) handleHeaders(st *stream) (statusCode int, h http.Header, err error) {
 	haveStatus := false
 	cookie := ""
 	// Issue #71374: Consider tracking the never-indexed status of headers
@@ -336,7 +406,7 @@ func (cc *ClientConn) handleHeaders(st *stream) (statusCode int, h http.Header, 
 	return statusCode, h, err
 }
 
-func (cc *ClientConn) handlePushPromise(st *stream) error {
+func (cc *clientConn) handlePushPromise(st *stream) error {
 	// "A client MUST treat receipt of a PUSH_PROMISE frame that contains a
 	// larger push ID than the client has advertised as a connection error of H3_ID_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.5-5

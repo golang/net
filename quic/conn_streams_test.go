@@ -11,9 +11,13 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"testing/synctest"
 )
 
 func TestStreamsCreate(t *testing.T) {
+	synctest.Test(t, testStreamsCreate)
+}
+func testStreamsCreate(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, clientSide, permissiveTransportParameters)
 	tc.handshake()
@@ -53,6 +57,9 @@ func TestStreamsCreate(t *testing.T) {
 }
 
 func TestStreamsAccept(t *testing.T) {
+	synctest.Test(t, testStreamsAccept)
+}
+func testStreamsAccept(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
@@ -95,6 +102,9 @@ func TestStreamsAccept(t *testing.T) {
 }
 
 func TestStreamsBlockingAccept(t *testing.T) {
+	synctest.Test(t, testStreamsBlockingAccept)
+}
+func testStreamsBlockingAccept(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 
@@ -124,6 +134,9 @@ func TestStreamsBlockingAccept(t *testing.T) {
 }
 
 func TestStreamsLocalStreamNotCreated(t *testing.T) {
+	synctest.Test(t, testStreamsLocalStreamNotCreated)
+}
+func testStreamsLocalStreamNotCreated(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream that has
 	// not yet been created [...]"
@@ -142,6 +155,9 @@ func TestStreamsLocalStreamNotCreated(t *testing.T) {
 }
 
 func TestStreamsLocalStreamClosed(t *testing.T) {
+	synctest.Test(t, testStreamsLocalStreamClosed)
+}
+func testStreamsLocalStreamClosed(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream, permissiveTransportParameters)
 	s.CloseWrite()
 	tc.wantFrame("FIN for closed stream",
@@ -168,6 +184,9 @@ func TestStreamsLocalStreamClosed(t *testing.T) {
 }
 
 func TestStreamsStreamSendOnly(t *testing.T) {
+	synctest.Test(t, testStreamsStreamSendOnly)
+}
+func testStreamsStreamSendOnly(t *testing.T) {
 	// "An endpoint MUST terminate the connection with error STREAM_STATE_ERROR
 	// if it receives a STREAM frame for a locally initiated stream that has
 	// not yet been created [...]"
@@ -198,6 +217,9 @@ func TestStreamsStreamSendOnly(t *testing.T) {
 }
 
 func TestStreamsWriteQueueFairness(t *testing.T) {
+	synctest.Test(t, testStreamsWriteQueueFairness)
+}
+func testStreamsWriteQueueFairness(t *testing.T) {
 	ctx := canceledContext()
 	const dataLen = 1 << 20
 	const numStreams = 3
@@ -233,7 +255,7 @@ func TestStreamsWriteQueueFairness(t *testing.T) {
 		}
 		// Wait for the stream to finish writing whatever frames it can before
 		// congestion control blocks it.
-		tc.wait()
+		synctest.Wait()
 	}
 
 	sent := make([]int64, len(streams))
@@ -344,7 +366,7 @@ func TestStreamsShutdown(t *testing.T) {
 		},
 	}} {
 		name := fmt.Sprintf("%v/%v/%v", test.side, test.styp, test.name)
-		t.Run(name, func(t *testing.T) {
+		synctestSubtest(t, name, func(t *testing.T) {
 			tc, s := newTestConnAndStream(t, serverSide, test.side, test.styp,
 				permissiveTransportParameters)
 			tc.ignoreFrame(frameTypeStreamBase)
@@ -364,6 +386,9 @@ func TestStreamsShutdown(t *testing.T) {
 }
 
 func TestStreamsCreateAndCloseRemote(t *testing.T) {
+	synctest.Test(t, testStreamsCreateAndCloseRemote)
+}
+func testStreamsCreateAndCloseRemote(t *testing.T) {
 	// This test exercises creating new streams in response to frames
 	// from the peer, and cleaning up after streams are fully closed.
 	//
@@ -520,6 +545,9 @@ func TestStreamsCreateConcurrency(t *testing.T) {
 }
 
 func TestStreamsPTOWithImplicitStream(t *testing.T) {
+	synctest.Test(t, testStreamsPTOWithImplicitStream)
+}
+func testStreamsPTOWithImplicitStream(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, serverSide, permissiveTransportParameters)
 	tc.handshake()

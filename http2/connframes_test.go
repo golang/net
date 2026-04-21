@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.25 || goexperiment.synctest
-
-package http2
+package http2_test
 
 import (
 	"bytes"
@@ -14,7 +12,9 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 
+	. "golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
 
@@ -29,7 +29,7 @@ type testConnFramer struct {
 func (tf *testConnFramer) readFrame() Frame {
 	tf.t.Helper()
 	fr, err := tf.fr.ReadFrame()
-	if err == io.EOF || err == os.ErrDeadlineExceeded {
+	if err == io.EOF || err == os.ErrDeadlineExceeded || err == errWouldBlock {
 		return nil
 	}
 	if err != nil {
@@ -179,7 +179,7 @@ func (tf *testConnFramer) wantHeaders(want wantHeader) {
 
 	for k, v := range want.header {
 		if !reflect.DeepEqual(v, gotHeader[k]) {
-			tf.t.Fatalf("got header %q = %q; want %q", k, v, gotHeader[k])
+			tf.t.Fatalf("got header %q = %q; want %q = %q", k, gotHeader[k], k, v)
 		}
 	}
 }
@@ -259,7 +259,7 @@ func (tf *testConnFramer) wantRSTStream(streamID uint32, code ErrCode) {
 	tf.t.Helper()
 	fr := readFrame[*RSTStreamFrame](tf.t, tf)
 	if fr.StreamID != streamID || fr.ErrCode != code {
-		tf.t.Fatalf("got %v, want RST_STREAM StreamID=%v, code=%v", summarizeFrame(fr), streamID, code)
+		tf.t.Fatalf("got %v, want RST_STREAM StreamID=%v, code=%v", SummarizeFrame(fr), streamID, code)
 	}
 }
 
@@ -293,7 +293,7 @@ func (tf *testConnFramer) wantGoAway(maxStreamID uint32, code ErrCode) {
 	tf.t.Helper()
 	fr := readFrame[*GoAwayFrame](tf.t, tf)
 	if fr.LastStreamID != maxStreamID || fr.ErrCode != code {
-		tf.t.Fatalf("got %v, want GOAWAY LastStreamID=%v, code=%v", summarizeFrame(fr), maxStreamID, code)
+		tf.t.Fatalf("got %v, want GOAWAY LastStreamID=%v, code=%v", SummarizeFrame(fr), maxStreamID, code)
 	}
 }
 
@@ -310,11 +310,12 @@ func (tf *testConnFramer) wantWindowUpdate(streamID, incr uint32) {
 
 func (tf *testConnFramer) wantClosed() {
 	tf.t.Helper()
+	synctest.Wait()
 	fr, err := tf.fr.ReadFrame()
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want closed connection): %v", fr)
 	}
-	if err == os.ErrDeadlineExceeded {
+	if err == errWouldBlock {
 		tf.t.Fatalf("connection is not closed; want it to be")
 	}
 }
@@ -325,7 +326,7 @@ func (tf *testConnFramer) wantIdle() {
 	if err == nil {
 		tf.t.Fatalf("got unexpected frame (want idle connection): %v", fr)
 	}
-	if err != os.ErrDeadlineExceeded {
+	if err != os.ErrDeadlineExceeded && err != io.EOF && err != errWouldBlock {
 		tf.t.Fatalf("got unexpected frame error (want idle connection): %v", err)
 	}
 }
@@ -400,6 +401,12 @@ func (tf *testConnFramer) writeContinuation(streamID uint32, endHeaders bool, he
 
 func (tf *testConnFramer) writePriority(id uint32, p PriorityParam) {
 	if err := tf.fr.WritePriority(id, p); err != nil {
+		tf.t.Fatal(err)
+	}
+}
+
+func (tf *testConnFramer) writePriorityUpdate(id uint32, p string) {
+	if err := tf.fr.WritePriorityUpdate(id, p); err != nil {
 		tf.t.Fatal(err)
 	}
 }

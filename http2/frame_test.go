@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.25 || goexperiment.synctest
-
 package http2
 
 import (
@@ -38,7 +36,7 @@ func TestFrameTypeString(t *testing.T) {
 		{FrameData, "DATA"},
 		{FramePing, "PING"},
 		{FrameGoAway, "GOAWAY"},
-		{0xf, "UNKNOWN_FRAME_TYPE_15"},
+		{0x20, "UNKNOWN_FRAME_TYPE_32"},
 	}
 
 	for i, tt := range tests {
@@ -427,6 +425,99 @@ func TestWriteContinuation(t *testing.T) {
 	}
 }
 
+func TestParseRFC9218Priority(t *testing.T) {
+	tests := []struct {
+		name        string
+		priorityStr string
+		want        PriorityParam
+		wantOk      bool
+	}{
+		{
+			name:        "with urgency",
+			priorityStr: "u=0",
+			want: PriorityParam{
+				urgency:     0,
+				incremental: 0,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with implicit incremental",
+			priorityStr: "i",
+			want: PriorityParam{
+				urgency:     3,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with explicit incremental",
+			priorityStr: "i=?1",
+			want: PriorityParam{
+				urgency:     3,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with urgency and incremental",
+			priorityStr: "i=?0, u=4",
+			want: PriorityParam{
+				urgency:     4,
+				incremental: 0,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "with other valid dictionary data",
+			priorityStr: "some=data;someparam;u=fake, u=1;foo, i;bar",
+			want: PriorityParam{
+				urgency:     1,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "repeated field",
+			priorityStr: "u=1,i,u=5,i=?0",
+			want: PriorityParam{
+				urgency:     5,
+				incremental: 0,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "wrong field type",
+			priorityStr: `u="urgency will be ignored", i`,
+			want: PriorityParam{
+				urgency:     3,
+				incremental: 1,
+			},
+			wantOk: true,
+		},
+		{
+			name:        "invalid dictionary",
+			priorityStr: `u=1,i, but this is not a valid dictionary"`,
+			want:        defaultRFC9218Priority(true),
+		},
+		{
+			name:        "out of range value",
+			priorityStr: "u=8",
+			want:        defaultRFC9218Priority(true),
+			wantOk:      true,
+		},
+	}
+	for _, tt := range tests {
+		got, gotOk := parseRFC9218Priority(tt.priorityStr, true)
+		if gotOk != tt.wantOk {
+			t.Errorf("test %q: mismatch.\n got ok: %#v\nwant ok: %#v\n", tt.name, got, tt.want)
+		}
+		if got != tt.want {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestWritePriority(t *testing.T) {
 	const streamID = 42
 	tests := []struct {
@@ -481,6 +572,115 @@ func TestWritePriority(t *testing.T) {
 	for _, tt := range tests {
 		fr, _ := testFramer()
 		if err := fr.WritePriority(streamID, tt.priority); err != nil {
+			t.Errorf("test %q: %v", tt.name, err)
+			continue
+		}
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Errorf("test %q: failed to read the frame back: %v", tt.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(f, tt.wantFrame) {
+			t.Errorf("test %q: mismatch.\n got: %#v\nwant: %#v\n", tt.name, f, tt.wantFrame)
+		}
+	}
+}
+
+func TestWritePriorityUpdate(t *testing.T) {
+	const streamID = 42
+	tests := []struct {
+		name      string
+		priority  string
+		wantFrame *PriorityUpdateFrame
+	}{
+		{
+			name:     "with urgency",
+			priority: "u=0",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   7,
+				},
+				Priority:            "u=0",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with incremental",
+			priority: "i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   5,
+				},
+				Priority:            "i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with urgency and incremental",
+			priority: "u=7,i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   9,
+				},
+				Priority:            "u=7,i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with other fields",
+			priority: "a=123,u=7,i,b;a;b",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   21,
+				},
+				Priority:            "a=123,u=7,i,b;a;b",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with string escapes",
+			priority: "u=\"invalid\" , i",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   19,
+				},
+				Priority:            "u=\"invalid\" , i",
+				PrioritizedStreamID: streamID,
+			},
+		},
+		{
+			name:     "with empty payload",
+			priority: "",
+			wantFrame: &PriorityUpdateFrame{
+				FrameHeader: FrameHeader{
+					valid:    true,
+					StreamID: 0,
+					Type:     FramePriorityUpdate,
+					Length:   4,
+				},
+				Priority:            "",
+				PrioritizedStreamID: streamID,
+			},
+		},
+	}
+	for _, tt := range tests {
+		fr, _ := testFramer()
+		if err := fr.WritePriorityUpdate(streamID, tt.priority); err != nil {
 			t.Errorf("test %q: %v", tt.name, err)
 			continue
 		}
@@ -825,7 +1025,7 @@ func TestReadFrameOrder(t *testing.T) {
 			},
 		},
 		9: {
-			wantErr: "CONTINUATION frame with stream ID 0",
+			wantErr: "unexpected CONTINUATION for stream 0",
 			w: func(f *Framer) {
 				cont(f, 0, true)
 			},
@@ -939,8 +1139,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		0: {
 			name: "single_headers",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/")
 				write(f, all)
 			},
 			want: want(FlagHeadersEndHeaders, 2, ":method", "GET", ":path", "/"),
@@ -948,8 +1147,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		1: {
 			name: "with_continuation",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
 				write(f, all[:1], all[1:])
 			},
 			want: want(noFlags, 1, ":method", "GET", ":path", "/", "foo", "bar"),
@@ -957,8 +1155,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		2: {
 			name: "with_two_continuation",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", "bar")
 				write(f, all[:2], all[2:4], all[4:])
 			},
 			want: want(noFlags, 2, ":method", "GET", ":path", "/", "foo", "bar"),
@@ -966,8 +1163,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		3: {
 			name: "big_string_okay",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
 				write(f, all[:2], all[2:])
 			},
 			want: want(noFlags, 2, ":method", "GET", ":path", "/", "foo", oneKBString),
@@ -975,8 +1171,7 @@ func TestMetaFrameHeader(t *testing.T) {
 		4: {
 			name: "big_string_error",
 			w: func(f *Framer) {
-				var he hpackEncoder
-				all := he.encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
+				all := encodeHeaderRaw(t, ":method", "GET", ":path", "/", "foo", oneKBString)
 				write(f, all[:2], all[2:])
 			},
 			maxHeaderListSize: (1 << 10) / 2,
@@ -985,12 +1180,11 @@ func TestMetaFrameHeader(t *testing.T) {
 		5: {
 			name: "max_header_list_truncated",
 			w: func(f *Framer) {
-				var he hpackEncoder
 				var pairs = []string{":method", "GET", ":path", "/"}
 				for range 100 {
 					pairs = append(pairs, "foo", "bar")
 				}
-				all := he.encodeHeaderRaw(t, pairs...)
+				all := encodeHeaderRaw(t, pairs...)
 				write(f, all[:2], all[2:])
 			},
 			maxHeaderListSize: (1 << 10) / 2,
@@ -1212,9 +1406,18 @@ func readAndVerifyDataFrame(data string, length byte, fr *Framer, buf *bytes.Buf
 	return df
 }
 
-func encodeHeaderRaw(t *testing.T, pairs ...string) []byte {
-	var he hpackEncoder
-	return he.encodeHeaderRaw(t, pairs...)
+func encodeHeaderRaw(t testing.TB, headers ...string) []byte {
+	var buf bytes.Buffer
+	enc := hpack.NewEncoder(&buf)
+	for len(headers) > 0 {
+		k, v := headers[0], headers[1]
+		err := enc.WriteField(hpack.HeaderField{Name: k, Value: v})
+		if err != nil {
+			t.Fatalf("HPACK encoding error for %q/%q: %v", k, v, err)
+		}
+		headers = headers[2:]
+	}
+	return buf.Bytes()
 }
 
 func TestSettingsDuplicates(t *testing.T) {
@@ -1268,7 +1471,7 @@ func TestTypeFrameParser(t *testing.T) {
 	}
 
 	// typeFrameParser() for an unknown type returns a function that returns UnknownFrame
-	unknownFrameType := FrameType(FrameContinuation + 1)
+	unknownFrameType := FrameType(FramePriorityUpdate + 1)
 	unknownParser := typeFrameParser(unknownFrameType)
 	frame, err := unknownParser(nil, FrameHeader{}, nil, nil)
 	if err != nil {
@@ -1276,5 +1479,129 @@ func TestTypeFrameParser(t *testing.T) {
 	}
 	if _, isUnknown := frame.(*UnknownFrame); !isUnknown {
 		t.Errorf("expected UnknownFrame, got %T", frame)
+	}
+}
+
+func TestReadFrameHeaderAndBody(t *testing.T) {
+	fr, _ := testFramer()
+	var streamID uint32 = 1
+	data := []byte("ABC")
+	if err := fr.WriteData(streamID, true, data); err != nil {
+		t.Fatalf("WriteData(%d, true, %q) failed: %v", streamID, data, err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+	wantHeader := FrameHeader{
+		Type:     FrameData,
+		Flags:    FlagDataEndStream,
+		Length:   3,
+		StreamID: 1,
+		valid:    true,
+	}
+	if !fh.Equal(wantHeader) {
+		t.Fatalf("ReadFrameHeader = %+v; want %+v", fh, wantHeader)
+	}
+
+	f, err := fr.ReadFrameForHeader(fh)
+	if err != nil {
+		t.Fatalf("ReadFrameForHeader failed: %v", err)
+	}
+
+	if !fh.Equal(f.Header()) {
+		t.Fatalf("Frame.Header() = %+v; want %+v", f.Header(), fh)
+	}
+
+	df, ok := f.(*DataFrame)
+	if !ok {
+		t.Fatalf("got %T; want *DataFrame", f)
+	}
+	if got, want := df.Data(), data; !bytes.Equal(got, want) {
+		t.Errorf("DataFrame.Data() = %q; want %q", string(got), string(want))
+	}
+	if got, want := df.StreamEnded(), true; got != want {
+		t.Errorf("DataFrame.StreamEnded() = %v; want %v", got, want)
+	}
+}
+
+func TestReadFrameHeaderFrameTooLarge(t *testing.T) {
+	fr, _ := testFramer()
+	fr.SetMaxReadFrameSize(2)
+	if err := fr.WriteData(1, true, []byte("ABC")); err != nil {
+		t.Fatalf("WriteData failed: %v", err)
+	}
+	fh, err := fr.ReadFrameHeader()
+	if gotErr, wantErr := err, ErrFrameTooLarge; gotErr != wantErr {
+		t.Fatalf("ReadFrameHeader returned error %v; want %v", gotErr, wantErr)
+	}
+	if fh.StreamID != 1 {
+		t.Errorf("ReadFrameHeader = %v, %v; want StreamID 1", fh, err)
+	}
+}
+
+func TestReadFrameHeaderBadFrameOrder(t *testing.T) {
+	fr, _ := testFramer()
+	if err := fr.WriteHeaders(HeadersFrameParam{
+		StreamID:      1,
+		BlockFragment: []byte("foo"), // unused, but non-empty
+		EndHeaders:    false,
+	}); err != nil {
+		t.Fatalf("WriteHeaders failed: %v", err)
+	}
+
+	// Write a CONTINUATION frame for stream 2 without first finishing the headers for stream 1.
+	if err := fr.WriteContinuation(2, true, []byte("foo")); err != nil {
+		t.Fatalf("WriteContinuation failed: %v", err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+	if _, err = fr.ReadFrameForHeader(fh); err != nil {
+		t.Fatalf("ReadFrameForHeader failed: %v", err)
+	}
+
+	if _, err := fr.ReadFrameHeader(); err != ConnectionError(ErrCodeProtocol) {
+		t.Fatalf("ReadFrameHeader returned error %v; want ConnectionError(ErrCodeProtocol)", err)
+	}
+}
+
+func TestReadFrameForHeaderUnexpectedEOF(t *testing.T) {
+	fr, b := testFramer()
+	if err := fr.WriteData(1, true, []byte("ABC")); err != nil {
+		t.Fatalf("WriteData failed: %v", err)
+	}
+
+	fh, err := fr.ReadFrameHeader()
+	if err != nil {
+		t.Fatalf("ReadFrameHeader failed: %v", err)
+	}
+
+	// Remove one byte from the body, corrupting the frame body.
+	b.Truncate(b.Len() - 1)
+
+	_, err = fr.ReadFrameForHeader(fh)
+	if err != io.ErrUnexpectedEOF {
+		t.Fatalf("ReadFrameForHeader with short body = %v; want io.ErrUnexpectedEOF", err)
+	}
+}
+
+func TestTypeFrameParserHolePanic(t *testing.T) {
+	// Verify that unassigned frame types (0x0a-0x0f) don't panic. golang.org/issue/77652
+	fr, _ := testFramer()
+	if err := fr.WriteRawFrame(FrameType(0x0a), 0, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := f.(*UnknownFrame); !ok {
+		t.Errorf("got %T; want *UnknownFrame", f)
 	}
 }

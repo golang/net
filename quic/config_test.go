@@ -4,9 +4,15 @@
 
 package quic
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+)
 
 func TestConfigTransportParameters(t *testing.T) {
+	synctest.Test(t, testConfigTransportParameters)
+}
+func testConfigTransportParameters(t *testing.T) {
 	const (
 		wantInitialMaxData        = int64(1)
 		wantInitialMaxStreamData  = int64(2)

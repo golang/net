@@ -2,67 +2,151 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
-
 package http3
 
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sync"
 
 	"golang.org/x/net/quic"
 )
 
-// A Transport is an HTTP/3 transport.
+// A transport is an HTTP/3 transport.
 //
 // It does not manage a pool of connections,
 // and therefore does not implement net/http.RoundTripper.
 //
-// TODO: Provide a way to register an HTTP/3 transport with a net/http.Transport's
+// TODO: Provide a way to register an HTTP/3 transport with a net/http.transport's
 // connection pool.
-type Transport struct {
-	// Endpoint is the QUIC endpoint used by connections created by the transport.
-	// If unset, it is initialized by the first call to Dial.
-	Endpoint *quic.Endpoint
+type transport struct {
+	// config is the QUIC configuration used for client connections.
+	config *quic.Config
 
-	// Config is the QUIC configuration used for client connections.
-	// The Config may be nil.
-	//
-	// Dial may clone and modify the Config.
-	// The Config must not be modified after calling Dial.
-	Config *quic.Config
+	listenQUIC func(addr string, config *quic.Config) (*quic.Endpoint, error)
 
-	initOnce sync.Once
-	initErr  error
+	mu sync.Mutex // Guards fields below.
+	// endpoint is the QUIC endpoint used by connections created by the
+	// transport. If CloseIdleConnections is called when activeConns is empty,
+	// endpoint will be unset. If unset, endpoint will be initialized by any
+	// call to dial.
+	endpoint      *quic.Endpoint
+	activeConns   map[*clientConn]struct{}
+	inFlightDials int
 }
 
-func (tr *Transport) init() error {
-	tr.initOnce.Do(func() {
-		tr.Config = initConfig(tr.Config)
-		if tr.Endpoint == nil {
-			tr.Endpoint, tr.initErr = quic.Listen("udp", ":0", nil)
+// netHTTPTransport implements the net/http.dialClientConner interface,
+// allowing our HTTP/3 transport to integrate with net/http.
+type netHTTPTransport struct {
+	*transport
+}
+
+// RoundTrip is defined since Transport.RegisterProtocol takes in a
+// RoundTripper. However, this method will never be used as net/http's
+// dialClientConner interface does not have a RoundTrip method and will only
+// use DialClientConn to create a new RoundTripper.
+func (t netHTTPTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	panic("netHTTPTransport.RoundTrip should never be called")
+}
+
+func (t netHTTPTransport) DialClientConn(ctx context.Context, addr string, _ *url.URL, _ func()) (http.RoundTripper, error) {
+	return t.transport.dial(ctx, addr)
+}
+
+type TransportOpts struct {
+	// ListenQUIC determines how the transport will open a QUIC endpoint.
+	// By default, quic.Listen("udp", addr, config) is used.
+	// ListenQUIC might be called multiple times.
+	ListenQUIC func(addr string, config *quic.Config) (*quic.Endpoint, error)
+
+	// QUICConfig is the QUIC configuration used by the transport.
+	// QUICConfig may be nil and should not be modified after calling
+	// RegisterTransport.
+	// If QUICConfig.TLSConfig is nil, the TLSConfig of the net/http Transport
+	// given to RegisterTransport will be used.
+	QUICConfig *quic.Config
+}
+
+// RegisterTransport configures a net/http HTTP/1 Transport to use HTTP/3.
+func RegisterTransport(tr *http.Transport, opts TransportOpts) {
+	if opts.QUICConfig == nil {
+		opts.QUICConfig = &quic.Config{}
+	}
+	if opts.QUICConfig.TLSConfig == nil {
+		opts.QUICConfig.TLSConfig = tr.TLSClientConfig
+	}
+	if opts.ListenQUIC == nil {
+		opts.ListenQUIC = func(addr string, config *quic.Config) (*quic.Endpoint, error) {
+			return quic.Listen("udp", addr, config)
 		}
-	})
-	return tr.initErr
+	}
+	tr3 := &transport{
+		// initConfig will clone the tr.TLSClientConfig.
+		config:      initConfig(opts.QUICConfig),
+		listenQUIC:  opts.ListenQUIC,
+		activeConns: make(map[*clientConn]struct{}),
+	}
+	tr.RegisterProtocol("http/3", netHTTPTransport{tr3})
 }
 
-// Dial creates a new HTTP/3 client connection.
-func (tr *Transport) Dial(ctx context.Context, target string) (*ClientConn, error) {
-	if err := tr.init(); err != nil {
+func (tr *transport) incInFlightDials() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.inFlightDials++
+}
+
+func (tr *transport) decInFlightDials() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.inFlightDials--
+}
+
+func (tr *transport) initEndpoint() (err error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.endpoint == nil {
+		tr.endpoint, err = tr.listenQUIC(":0", tr.config)
+	}
+	return err
+}
+
+// dial creates a new HTTP/3 client connection.
+func (tr *transport) dial(ctx context.Context, target string) (*clientConn, error) {
+	tr.incInFlightDials()
+	defer tr.decInFlightDials()
+
+	if err := tr.initEndpoint(); err != nil {
 		return nil, err
 	}
-	qconn, err := tr.Endpoint.Dial(ctx, "udp", target, tr.Config)
+	qconn, err := tr.endpoint.Dial(ctx, "udp", target, tr.config)
 	if err != nil {
 		return nil, err
 	}
-	return newClientConn(ctx, qconn)
+	return tr.newClientConn(ctx, qconn)
 }
 
-// A ClientConn is a client HTTP/3 connection.
+// CloseIdleConnections is called by net/http.Transport.CloseIdleConnections
+// after all existing idle connections are closed using http3.clientConn.Close.
 //
-// Multiple goroutines may invoke methods on a ClientConn simultaneously.
-type ClientConn struct {
+// When the transport has no active connections anymore, calling this method
+// will make the transport clean up any shared resources that are no longer
+// required, such as its QUIC endpoint.
+func (tr *transport) CloseIdleConnections() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.endpoint == nil || len(tr.activeConns) > 0 || tr.inFlightDials > 0 {
+		return
+	}
+	tr.endpoint.Close(canceledCtx)
+	tr.endpoint = nil
+}
+
+// A clientConn is a client HTTP/3 connection.
+//
+// Multiple goroutines may invoke methods on a clientConn simultaneously.
+type clientConn struct {
 	qconn *quic.Conn
 	genericConn
 
@@ -70,38 +154,72 @@ type ClientConn struct {
 	dec qpackDecoder
 }
 
-func newClientConn(ctx context.Context, qconn *quic.Conn) (*ClientConn, error) {
-	cc := &ClientConn{
+func (tr *transport) registerConn(cc *clientConn) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.activeConns[cc] = struct{}{}
+}
+
+func (tr *transport) unregisterConn(cc *clientConn) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	delete(tr.activeConns, cc)
+}
+
+func (tr *transport) newClientConn(ctx context.Context, qconn *quic.Conn) (*clientConn, error) {
+	cc := &clientConn{
 		qconn: qconn,
 	}
+	tr.registerConn(cc)
 	cc.enc.init()
 
 	// Create control stream and send SETTINGS frame.
 	controlStream, err := newConnStream(ctx, cc.qconn, streamTypeControl)
 	if err != nil {
+		tr.unregisterConn(cc)
 		return nil, fmt.Errorf("http3: cannot create control stream: %v", err)
 	}
 	controlStream.writeSettings()
 	controlStream.Flush()
 
-	go cc.acceptStreams(qconn, cc)
+	go func() {
+		cc.acceptStreams(qconn, cc)
+		tr.unregisterConn(cc)
+	}()
 	return cc, nil
 }
 
-// Close closes the connection.
-// Any in-flight requests are canceled.
-// Close does not wait for the peer to acknowledge the connection closing.
-func (cc *ClientConn) Close() error {
-	// Close the QUIC connection immediately with a status of NO_ERROR.
-	cc.qconn.Abort(nil)
-
-	// Return any existing error from the peer, but don't wait for it.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return cc.qconn.Wait(ctx)
+// TODO: implement the rest of net/http.ClientConn methods beyond Close.
+func (cc *clientConn) Close() error {
+	// We need to use Close rather than Abort on the QUIC connection.
+	// Otherwise, when a net/http.Transport.CloseIdleConnections is called, it
+	// might call the http3.transport.CloseIdleConnections prior to all idle
+	// connections being fully closed; this would make it unable to close its
+	// QUIC endpoint, making http3.transport.CloseIdleConnections a no-op
+	// unintentionally.
+	return cc.qconn.Close()
 }
 
-func (cc *ClientConn) handleControlStream(st *stream) error {
+func (cc *clientConn) Err() error {
+	return nil
+}
+
+func (cc *clientConn) Reserve() error {
+	return nil
+}
+
+func (cc *clientConn) Release() {
+}
+
+func (cc *clientConn) Available() int {
+	return 0
+}
+
+func (cc *clientConn) InFlight() int {
+	return 0
+}
+
+func (cc *clientConn) handleControlStream(st *stream) error {
 	// "A SETTINGS frame MUST be sent as the first frame of each control stream [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4-2
 	if err := st.readSettings(func(settingsType, settingsValue int64) error {
@@ -147,17 +265,17 @@ func (cc *ClientConn) handleControlStream(st *stream) error {
 	}
 }
 
-func (cc *ClientConn) handleEncoderStream(*stream) error {
+func (cc *clientConn) handleEncoderStream(*stream) error {
 	// TODO
 	return nil
 }
 
-func (cc *ClientConn) handleDecoderStream(*stream) error {
+func (cc *clientConn) handleDecoderStream(*stream) error {
 	// TODO
 	return nil
 }
 
-func (cc *ClientConn) handlePushStream(*stream) error {
+func (cc *clientConn) handlePushStream(*stream) error {
 	// "A client MUST treat receipt of a push stream as a connection error
 	// of type H3_ID_ERROR when no MAX_PUSH_ID frame has been sent [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-4.6-3
@@ -167,7 +285,7 @@ func (cc *ClientConn) handlePushStream(*stream) error {
 	}
 }
 
-func (cc *ClientConn) handleRequestStream(st *stream) error {
+func (cc *clientConn) handleRequestStream(st *stream) error {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
 	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
@@ -178,7 +296,7 @@ func (cc *ClientConn) handleRequestStream(st *stream) error {
 }
 
 // abort closes the connection with an error.
-func (cc *ClientConn) abort(err error) {
+func (cc *clientConn) abort(err error) {
 	if e, ok := err.(*connectionError); ok {
 		cc.qconn.Abort(&quic.ApplicationError{
 			Code:   uint64(e.code),

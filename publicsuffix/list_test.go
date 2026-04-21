@@ -5,6 +5,7 @@
 package publicsuffix
 
 import (
+	"net/netip"
 	"sort"
 	"strings"
 	"testing"
@@ -84,6 +85,11 @@ var publicSuffixTestCases = []struct {
 }{
 	// Empty string.
 	{"", "", false},
+
+	// IP addresses don't have a domain hierarchy
+	{"192.0.2.0", "192.0.2.0", false},
+	{"::ffff:192.0.2.0", "::ffff:192.0.2.0", false},
+	{"2001:db8::", "2001:db8::", false},
 
 	// The .ao rules are:
 	// ao
@@ -204,15 +210,6 @@ var publicSuffixTestCases = []struct {
 	{"aaa.xn--p1ai", "xn--p1ai", true},
 	{"www.xxx.yyy.xn--p1ai", "xn--p1ai", true},
 
-	// The .bd rules are:
-	// *.bd
-	{"bd", "bd", false}, // The catch-all "*" rule is not in the ICANN DOMAIN section. See footnote (†).
-	{"www.bd", "www.bd", true},
-	{"xxx.www.bd", "www.bd", true},
-	{"zzz.bd", "zzz.bd", true},
-	{"www.zzz.bd", "zzz.bd", true},
-	{"www.xxx.yyy.zzz.bd", "zzz.bd", true},
-
 	// The .ck rules are:
 	// *.ck
 	// !www.ck
@@ -236,12 +233,6 @@ var publicSuffixTestCases = []struct {
 	{"landing.myjino.ru", "myjino.ru", false},
 	{"www.landing.myjino.ru", "www.landing.myjino.ru", false},
 	{"spectrum.vps.myjino.ru", "spectrum.vps.myjino.ru", false},
-
-	// The .uberspace.de rules (in the PRIVATE DOMAIN section) are:
-	// *.uberspace.de
-	{"uberspace.de", "de", true}, // "de" is in the ICANN DOMAIN section. See footnote (†).
-	{"aaa.uberspace.de", "aaa.uberspace.de", false},
-	{"bbb.ccc.uberspace.de", "ccc.uberspace.de", false},
 
 	// There are no .nosuchtld rules.
 	{"nosuchtld", "nosuchtld", false},
@@ -332,6 +323,10 @@ type slowPublicSuffixRule struct {
 // This function returns the public suffix, not the registrable domain, and so
 // it stops after step 6.
 func slowPublicSuffix(domain string) (string, bool) {
+	if _, err := netip.ParseAddr(domain); err == nil {
+		return domain, false
+	}
+
 	match := func(rulePart, domainPart string) bool {
 		switch rulePart[0] {
 		case '*':

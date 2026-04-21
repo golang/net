@@ -43,7 +43,7 @@ func (c *netUDPConn) LocalAddr() netip.AddrPort {
 func (c *netUDPConn) Read(f func(*datagram)) {
 	for {
 		dgram := newDatagram()
-		n, _, _, peerAddr, err := c.c.ReadMsgUDPAddrPort(dgram.b, nil)
+		n, peerAddr, err := c.c.ReadFromUDPAddrPort(dgram.b)
 		if err != nil {
 			return
 		}

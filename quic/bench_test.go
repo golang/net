@@ -29,7 +29,9 @@ func throughput(b *testing.B, totalBytes int64) {
 
 	cli, srv := newLocalConnPair(b, &Config{}, &Config{})
 
-	go func() {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
 		buf := make([]byte, bufsize)
 		for i := 0; i < b.N; i++ {
 			sconn, err := srv.AcceptStream(context.Background())
@@ -41,7 +43,7 @@ func throughput(b *testing.B, totalBytes int64) {
 			}
 			sconn.Close()
 		}
-	}()
+	})
 
 	b.SetBytes(totalBytes)
 	buf := make([]byte, bufsize)
@@ -144,7 +146,9 @@ func BenchmarkWriteByte(b *testing.B) {
 func BenchmarkStreamCreation(b *testing.B) {
 	cli, srv := newLocalConnPair(b, &Config{}, &Config{})
 
-	go func() {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
 		for i := 0; i < b.N; i++ {
 			sconn, err := srv.AcceptStream(context.Background())
 			if err != nil {
@@ -152,7 +156,7 @@ func BenchmarkStreamCreation(b *testing.B) {
 			}
 			sconn.Close()
 		}
-	}()
+	})
 
 	buf := make([]byte, 1)
 	for i := 0; i < b.N; i++ {

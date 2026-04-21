@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
-
 package http3
 
 import (
@@ -27,7 +25,7 @@ func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
 	// stream as a connection error of type H3_STREAM_CREATION_ERROR [...]"
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-6.1-3
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 		st := tc.newStream(streamTypeRequest)
@@ -100,7 +98,7 @@ func (tq *testQUICConn) newStream(stype streamType) *testQUICStream {
 	return newTestQUICStream(tq.t, st)
 }
 
-// wantNotClosed asserts that the peer has not closed the connectioln.
+// wantNotClosed asserts that the peer has not closed the connection.
 func (tq *testQUICConn) wantNotClosed(reason string) {
 	t := tq.t
 	t.Helper()
@@ -158,6 +156,17 @@ func newTestQUICStream(t testing.TB, st *stream) *testQUICStream {
 	}
 }
 
+func (ts *testQUICStream) wantIdle(reason string) {
+	ts.t.Helper()
+	synctest.Wait()
+	qs := ts.stream.stream
+	qs.SetReadContext(canceledCtx)
+	if _, err := qs.Read(make([]byte, 1)); !errors.Is(err, context.Canceled) {
+		ts.t.Fatalf("%v: want stream to be idle, but stream has content", reason)
+	}
+	qs.SetReadContext(nil)
+}
+
 // wantFrameHeader calls readFrameHeader and asserts that the frame is of a given type.
 func (ts *testQUICStream) wantFrameHeader(reason string, wantType frameType) {
 	ts.t.Helper()
@@ -175,6 +184,7 @@ func (ts *testQUICStream) wantFrameHeader(reason string, wantType frameType) {
 // If want is nil, the contents of the frame are ignored.
 func (ts *testQUICStream) wantHeaders(want http.Header) {
 	ts.t.Helper()
+	synctest.Wait()
 	ftype, err := ts.readFrameHeader()
 	if err != nil {
 		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
@@ -196,6 +206,44 @@ func (ts *testQUICStream) wantHeaders(want http.Header) {
 		got.Add(name, value)
 		return nil
 	})
+	if diff := diffHeaders(got, want); diff != "" {
+		ts.t.Fatalf("unexpected response headers:\n%v", diff)
+	}
+	if err := ts.endFrame(); err != nil {
+		ts.t.Fatalf("endFrame: %v", err)
+	}
+}
+
+// wantSomeHeaders reads a HEADERS frame and asserts that want is a subset of
+// the read HEADERS frame.
+// This is like wantHeaders, but headers that are in the HEADERS frame but not
+// in want are ignored.
+func (ts *testQUICStream) wantSomeHeaders(want http.Header) {
+	ts.t.Helper()
+	synctest.Wait()
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want HEADERS frame, got error: %v", err)
+	}
+	if ftype != frameTypeHeaders {
+		ts.t.Fatalf("want HEADERS frame, got: %v", ftype)
+	}
+
+	if want == nil {
+		panic("use wantHeaders(nil) instead to ignore the content of the frame")
+	}
+
+	got := make(http.Header)
+	var dec qpackDecoder
+	err = dec.decode(ts.stream, func(_ indexType, name, value string) error {
+		got.Add(name, value)
+		return nil
+	})
+	for name := range got {
+		if _, ok := want[name]; !ok {
+			delete(got, name)
+		}
+	}
 	if diff := diffHeaders(got, want); diff != "" {
 		ts.t.Fatalf("unexpected response headers:\n%v", diff)
 	}
@@ -226,6 +274,16 @@ func (ts *testQUICStream) writeHeaders(h http.Header) {
 	ts.Write(headers)
 	if err := ts.Flush(); err != nil {
 		ts.t.Fatalf("flushing HEADERS frame: %v", err)
+	}
+}
+
+func (ts *testQUICStream) writeData(b []byte) {
+	ts.t.Helper()
+	ts.writeVarint(int64(frameTypeData))
+	ts.writeVarint(int64(len(b)))
+	ts.Write(b)
+	if err := ts.Flush(); err != nil {
+		ts.t.Fatalf("flushing DATA frame: %v", err)
 	}
 }
 
@@ -276,6 +334,36 @@ func (ts *testQUICStream) wantError(want quic.StreamErrorCode) {
 	}
 }
 
+func (ts *testQUICStream) wantSettings(f func(settingType, value int64) error) {
+	ts.t.Helper()
+	synctest.Wait()
+	if f == nil {
+		f = func(settingType, value int64) error { return nil }
+	}
+	if err := ts.readSettings(f); err != nil {
+		ts.t.Fatalf("f returned an error: %v", err)
+	}
+}
+
+func (ts *testQUICStream) wantGoaway(wantID int64) {
+	ts.t.Helper()
+	synctest.Wait()
+	ftype, err := ts.readFrameHeader()
+	if err != nil {
+		ts.t.Fatalf("want GOAWAY frame, got error: %v", err)
+	}
+	if ftype != frameTypeGoaway {
+		ts.t.Fatalf("want GOAWAY frame, got: %v", ftype)
+	}
+	gotID, err := ts.readVarint()
+	if err != nil {
+		ts.t.Fatalf("failed reading GOAWAY frame, got error: %v", err)
+	}
+	if gotID != wantID {
+		ts.t.Fatalf("got stream ID %v from GOAWAY frame, want %v stream ID", gotID, wantID)
+	}
+}
+
 func (ts *testQUICStream) writePushPromise(pushID int64, h http.Header) {
 	ts.t.Helper()
 	headers := ts.encodeHeaders(h)
@@ -312,8 +400,8 @@ func (ts *testQUICStream) Flush() error {
 
 // A testClientConn is a ClientConn on a test network.
 type testClientConn struct {
-	tr *Transport
-	cc *ClientConn
+	tr *transport
+	cc *clientConn
 
 	// *testQUICConn is the server half of the connection.
 	*testQUICConn
@@ -322,14 +410,15 @@ type testClientConn struct {
 
 func newTestClientConn(t testing.TB) *testClientConn {
 	e1, e2 := newQUICEndpointPair(t)
-	tr := &Transport{
-		Endpoint: e1,
-		Config: &quic.Config{
+	tr := &transport{
+		endpoint: e1,
+		config: &quic.Config{
 			TLSConfig: testTLSConfig,
 		},
+		activeConns: make(map[*clientConn]struct{}),
 	}
 
-	cc, err := tr.Dial(t.Context(), e2.LocalAddr().String())
+	cc, err := tr.dial(t.Context(), e2.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,6 +520,33 @@ func (rt *testRoundTrip) wantHeaders(want http.Header) {
 	}
 }
 
+func (rt *testRoundTrip) wantTrailers(want http.Header) {
+	rt.t.Helper()
+	if diff := diffHeaders(rt.response().Trailer, want); diff != "" {
+		rt.t.Fatalf("unexpected response trailers:\n%v", diff)
+	}
+}
+
+// readBody reads the contents of the response body.
+func (rt *testRoundTrip) readBody() ([]byte, error) {
+	t := rt.t
+	t.Helper()
+	return io.ReadAll(rt.response().Body)
+}
+
+// wantBody consumes the a body and asserts that it is as expected.
+func (rt *testRoundTrip) wantBody(want []byte) {
+	t := rt.t
+	t.Helper()
+	got, err := rt.readBody()
+	if err != nil {
+		t.Fatalf("unexpected error reading response body: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected response body:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 	rt := &testRoundTrip{t: tc.t}
 	go func() {
@@ -438,11 +554,3 @@ func (tc *testClientConn) roundTrip(req *http.Request) *testRoundTrip {
 	}()
 	return rt
 }
-
-// canceledCtx is a canceled Context.
-// Used for performing non-blocking QUIC operations.
-var canceledCtx = func() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return ctx
-}()

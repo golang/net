@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24 && goexperiment.synctest
-
 package http3
 
 import (
@@ -11,6 +9,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -18,7 +21,7 @@ import (
 )
 
 func TestRoundTripSimple(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -44,7 +47,7 @@ func TestRoundTripSimple(t *testing.T) {
 }
 
 func TestRoundTripWithBadHeaders(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -56,7 +59,7 @@ func TestRoundTripWithBadHeaders(t *testing.T) {
 }
 
 func TestRoundTripWithUnknownFrame(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -82,7 +85,7 @@ func TestRoundTripWithInvalidPushPromise(t *testing.T) {
 	// "A client MUST treat receipt of a PUSH_PROMISE frame that contains
 	// a larger push ID than the client has advertised as a connection error of H3_ID_ERROR."
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.5-5
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -155,7 +158,7 @@ func TestRoundTripResponseContentLength(t *testing.T) {
 		},
 		wantContentLength: -1,
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -199,7 +202,7 @@ func TestRoundTripMalformedResponses(t *testing.T) {
 		name:       "no :status",
 		respHeader: http.Header{},
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -218,7 +221,7 @@ func TestRoundTripCrumbledCookiesInResponse(t *testing.T) {
 	// these MUST be concatenated into a single byte string [...]"
 	// using the two-byte delimiter of "; "''
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-4.2.1-2
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -238,7 +241,7 @@ func TestRoundTripCrumbledCookiesInResponse(t *testing.T) {
 }
 
 func TestRoundTripRequestBodySent(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -290,7 +293,7 @@ func TestRoundTripRequestBodyErrors(t *testing.T) {
 			},
 		),
 	}} {
-		runSynctestSubtest(t, test.name, func(t testing.TB) {
+		synctestSubtest(t, test.name, func(t *testing.T) {
 			tc := newTestClientConn(t)
 			tc.greet()
 
@@ -323,7 +326,7 @@ func TestRoundTripRequestBodyErrors(t *testing.T) {
 }
 
 func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
-	runSynctest(t, func(t testing.TB) {
+	synctest.Test(t, func(t *testing.T) {
 		tc := newTestClientConn(t)
 		tc.greet()
 
@@ -350,5 +353,380 @@ func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
 		if err := rt.response().Body.Close(); err == nil {
 			t.Fatalf("Response.Body.Close() = %v, want error", err)
 		}
+	})
+}
+
+func TestRoundTripExpect100Continue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var callCount1xx, callCount100, callCount100Wait int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				callCount1xx++
+				return nil
+			},
+			Got100Continue: func() {
+				callCount100++
+			},
+			Wait100Continue: func() {
+				callCount100Wait++
+			},
+		}
+
+		tc := newTestClientConn(t)
+		tc.greet()
+		clientBody := []byte("client's body that will be sent later")
+		serverBody := []byte("server's body")
+
+		// Client sends an Expect: 100-continue request.
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", bytes.NewBuffer(clientBody))
+		req.Header = http.Header{"Expect": {"100-continue"}}
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Server reads the header.
+		st.wantHeaders(nil)
+		st.wantIdle("client has yet to send its body")
+
+		// Server responds with HTTP status 100.
+		st.writeHeaders(http.Header{
+			":status": []string{"100"},
+		})
+
+		// Client sends its body after receiving HTTP status 100 response.
+		st.wantData(clientBody)
+
+		// The server sends its response after getting the client's body.
+		st.writeHeaders(http.Header{
+			":status": []string{"200"},
+		})
+		st.writeData(serverBody)
+		st.stream.stream.CloseWrite()
+
+		// Client receives the response from server.
+		rt.wantStatus(200)
+		rt.wantBody(serverBody)
+
+		gotCount := []int{callCount1xx, callCount100, callCount100Wait}
+		if !slices.Equal(gotCount, []int{1, 1, 1}) {
+			t.Errorf("Got1xxResponse, Got100Continue, and Wait100Continue was called %v times respectively, want [1 1 1]", gotCount)
+		}
+	})
+}
+
+func TestRoundTripExpect100ContinueRejected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var callCount1xx, callCount100, callCount100Wait int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				callCount1xx++
+				return nil
+			},
+			Got100Continue: func() {
+				callCount100++
+			},
+			Wait100Continue: func() {
+				callCount100Wait++
+			},
+		}
+
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		// Client sends an Expect: 100-continue request.
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", bytes.NewBufferString("client's body"))
+		req.Header = http.Header{"Expect": {"100-continue"}}
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Server reads the header.
+		st.wantHeaders(nil)
+		st.wantIdle("client has yet to send its body")
+
+		// Server rejects it.
+		st.writeHeaders(http.Header{
+			":status": []string{"200"},
+		})
+		st.wantIdle("client does not send its body without getting status 100")
+		serverBody := []byte("server's body")
+		st.writeData(serverBody)
+		st.stream.stream.CloseWrite()
+
+		rt.wantStatus(200)
+		rt.wantBody(serverBody)
+
+		gotCount := []int{callCount1xx, callCount100, callCount100Wait}
+		if !slices.Equal(gotCount, []int{0, 0, 1}) {
+			t.Errorf("Got1xxResponse, Got100Continue, and Wait100Continue was called %v times respectively, want [0 0 1]", gotCount)
+		}
+	})
+}
+
+func TestRoundTripNoBodyClosesStream(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		req, _ := http.NewRequest("PUT", "https://example.tld/", nil)
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.wantClosed("no DATA frames to send")
+	})
+}
+
+func TestRoundTripReadRespWithNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		// Case 1: we know response body is empty because the server closes the
+		// write direction of the stream.
+		req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+		})
+		st.stream.stream.CloseWrite()
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+
+		// Case 2: we know response body is empty because the server indicates
+		// a Content-Length of 0.
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt = tc.roundTrip(req)
+		st = tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"0"},
+		})
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+
+		// Case 3: we know response body is empty because we sent a HEAD
+		// request.
+		req, _ = http.NewRequest("HEAD", "https://example.tld/", nil)
+		rt = tc.roundTrip(req)
+		st = tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"1000"},
+		})
+		rt.wantStatus(200)
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripWriteTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+			strings.NewReader("a body"),
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+		))
+		req.Trailer = http.Header{
+			"Client-Trailer-A": nil,
+			"Client-Trailer-B": nil,
+		}
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.wantData([]byte("a body"))
+		st.wantHeaders(http.Header{
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripWriteTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+			testReader{readFunc: func(_ []byte) (int, error) {
+				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				return 0, io.EOF
+			}},
+		))
+		req.Trailer = http.Header{
+			"Client-Trailer-A": nil,
+			"Client-Trailer-B": nil,
+		}
+		tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+		st.wantHeaders(nil)
+		st.wantHeaders(http.Header{
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripReadTrailer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+			"Trailer": {"Server-Trailer-A, Server-Trailer-B", "server-trailer-c"}, // Should be canonicalized.
+		})
+		body := []byte("body from server")
+		st.writeData(body)
+		st.writeHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			// Note that Server-Trailer-B is skipped.
+			"Server-Trailer-C":   {"valuec"},
+			"Undeclared-Trailer": {"undeclared"}, // Should be ignored.
+		})
+
+		rt.wantStatus(200)
+		// Trailer is stripped off from http.Response.Header and given in http.Response.Trailer.
+		rt.wantHeaders(http.Header{})
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": nil,
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": nil,
+		})
+
+		// Trailer updated after reading the body to EOF.
+		rt.wantBody(body)
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": {"valuec"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripReadTrailerNoBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		var req *http.Request
+		req, _ = http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(http.Header{
+			":status":        {"200"},
+			"Content-Length": {"0"},
+			"Trailer":        {"Server-Trailer-A, Server-Trailer-B", "server-trailer-c"}, // Should be canonicalized.
+		})
+		st.writeHeaders(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			// Note that Server-Trailer-B is skipped.
+			"Server-Trailer-C":   {"valuec"},
+			"Undeclared-Trailer": {"undeclared"}, // Should be ignored.
+		})
+
+		rt.wantStatus(200)
+		// Trailer is stripped off from http.Response.Header and given in http.Response.Trailer.
+		rt.wantHeaders(http.Header{"Content-Length": {"0"}})
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": nil,
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": nil,
+		})
+
+		// Trailer updated after reading the empty body to EOF.
+		rt.wantBody(make([]byte, 0))
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": {"valuea"},
+			"Server-Trailer-B": nil,
+			"Server-Trailer-C": {"valuec"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTrip103EarlyHints(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		firstHeader := http.Header{
+			":status": {"103"},
+			"Link":    {"</style.css>; rel=preload; as=style"},
+		}
+		secondHeader := http.Header{
+			":status": {"103"},
+			"Link":    {"</style.css>; rel=preload; as=style", "</script.js>; rel=preload; as=script"},
+		}
+
+		var respCounter int
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				var wantHeader textproto.MIMEHeader
+				switch respCounter {
+				case 0:
+					wantHeader = textproto.MIMEHeader(firstHeader)
+				case 1:
+					wantHeader = textproto.MIMEHeader(secondHeader)
+				default:
+					t.Error("Unexpected 1xx response")
+				}
+				wantHeader.Del(":status")
+				if !reflect.DeepEqual(header, wantHeader) {
+					t.Errorf("got %v early hints header, want %v", header, wantHeader)
+				}
+				respCounter++
+				return nil
+			},
+		}
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), "GET", "https://example.tld/", nil)
+
+		tc := newTestClientConn(t)
+		tc.greet()
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		st.wantHeaders(nil)
+		st.writeHeaders(firstHeader)
+		st.writeHeaders(secondHeader)
+
+		st.writeHeaders(http.Header{
+			":status": {"200"},
+		})
+		body := []byte("some body")
+		st.writeData(body)
+		st.stream.stream.CloseWrite()
+
+		rt.wantStatus(200)
+		rt.wantBody(body)
+		st.wantClosed("request is complete")
 	})
 }

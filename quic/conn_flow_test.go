@@ -7,9 +7,13 @@ package quic
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 )
 
 func TestConnInflowReturnOnRead(t *testing.T) {
+	synctest.Test(t, testConnInflowReturnOnRead)
+}
+func testConnInflowReturnOnRead(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
 		c.MaxConnReadBufferSize = 64
 	})
@@ -41,6 +45,9 @@ func TestConnInflowReturnOnRead(t *testing.T) {
 }
 
 func TestConnInflowReturnOnRacingReads(t *testing.T) {
+	synctest.Test(t, testConnInflowReturnOnRacingReads)
+}
+func testConnInflowReturnOnRacingReads(t *testing.T) {
 	// Perform two reads at the same time,
 	// one for half of MaxConnReadBufferSize
 	// and one for one byte.
@@ -91,6 +98,9 @@ func TestConnInflowReturnOnRacingReads(t *testing.T) {
 }
 
 func TestConnInflowReturnOnClose(t *testing.T) {
+	synctest.Test(t, testConnInflowReturnOnClose)
+}
+func testConnInflowReturnOnClose(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
 		c.MaxConnReadBufferSize = 64
 	})
@@ -107,6 +117,9 @@ func TestConnInflowReturnOnClose(t *testing.T) {
 }
 
 func TestConnInflowReturnOnReset(t *testing.T) {
+	synctest.Test(t, testConnInflowReturnOnReset)
+}
+func testConnInflowReturnOnReset(t *testing.T) {
 	tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
 		c.MaxConnReadBufferSize = 64
 	})
@@ -127,6 +140,9 @@ func TestConnInflowReturnOnReset(t *testing.T) {
 }
 
 func TestConnInflowStreamViolation(t *testing.T) {
+	synctest.Test(t, testConnInflowStreamViolation)
+}
+func testConnInflowStreamViolation(t *testing.T) {
 	tc := newTestConn(t, serverSide, func(c *Config) {
 		c.MaxConnReadBufferSize = 100
 	})
@@ -169,6 +185,9 @@ func TestConnInflowStreamViolation(t *testing.T) {
 }
 
 func TestConnInflowResetViolation(t *testing.T) {
+	synctest.Test(t, testConnInflowResetViolation)
+}
+func testConnInflowResetViolation(t *testing.T) {
 	tc := newTestConn(t, serverSide, func(c *Config) {
 		c.MaxConnReadBufferSize = 100
 	})
@@ -197,6 +216,9 @@ func TestConnInflowResetViolation(t *testing.T) {
 }
 
 func TestConnInflowMultipleStreams(t *testing.T) {
+	synctest.Test(t, testConnInflowMultipleStreams)
+}
+func testConnInflowMultipleStreams(t *testing.T) {
 	tc := newTestConn(t, serverSide, func(c *Config) {
 		c.MaxConnReadBufferSize = 128
 	})
@@ -247,6 +269,9 @@ func TestConnInflowMultipleStreams(t *testing.T) {
 }
 
 func TestConnOutflowBlocked(t *testing.T) {
+	synctest.Test(t, testConnOutflowBlocked)
+}
+func testConnOutflowBlocked(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
 		permissiveTransportParameters,
 		func(p *transportParameters) {
@@ -291,6 +316,9 @@ func TestConnOutflowBlocked(t *testing.T) {
 }
 
 func TestConnOutflowMaxDataDecreases(t *testing.T) {
+	synctest.Test(t, testConnOutflowMaxDataDecreases)
+}
+func testConnOutflowMaxDataDecreases(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, uniStream,
 		permissiveTransportParameters,
 		func(p *transportParameters) {
@@ -318,6 +346,9 @@ func TestConnOutflowMaxDataDecreases(t *testing.T) {
 }
 
 func TestConnOutflowMaxDataRoundRobin(t *testing.T) {
+	synctest.Test(t, testConnOutflowMaxDataRoundRobin)
+}
+func testConnOutflowMaxDataRoundRobin(t *testing.T) {
 	ctx := canceledContext()
 	tc := newTestConn(t, clientSide, permissiveTransportParameters,
 		func(p *transportParameters) {
@@ -370,6 +401,9 @@ func TestConnOutflowMaxDataRoundRobin(t *testing.T) {
 }
 
 func TestConnOutflowMetaAndData(t *testing.T) {
+	synctest.Test(t, testConnOutflowMetaAndData)
+}
+func testConnOutflowMetaAndData(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters,
 		func(p *transportParameters) {
@@ -398,6 +432,9 @@ func TestConnOutflowMetaAndData(t *testing.T) {
 }
 
 func TestConnOutflowResentData(t *testing.T) {
+	synctest.Test(t, testConnOutflowResentData)
+}
+func testConnOutflowResentData(t *testing.T) {
 	tc, s := newTestConnAndLocalStream(t, clientSide, bidiStream,
 		permissiveTransportParameters,
 		func(p *transportParameters) {

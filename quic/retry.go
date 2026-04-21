@@ -110,6 +110,9 @@ func (rs *retryState) validateToken(now time.Time, token, srcConnID, dstConnID [
 	nonce := append([]byte{}, dstConnID...)
 	nonce = append(nonce, token[:tokenNonceLen]...)
 	ciphertext := token[tokenNonceLen:]
+	if len(nonce) != rs.aead.NonceSize() {
+		return nil, false
+	}
 
 	plaintext, err := rs.aead.Open(nil, nonce, ciphertext, rs.additionalData(srcConnID, addr))
 	if err != nil {

@@ -2,13 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.24
-
 package http3
-
-import (
-	"golang.org/x/net/internal/quic/quicwire"
-)
 
 const (
 	// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4.1
@@ -25,7 +19,7 @@ func (st *stream) writeSettings(settings ...int64) {
 	var size int64
 	for _, s := range settings {
 		// Settings values that don't fit in a QUIC varint ([0,2^62)) will panic here.
-		size += int64(quicwire.SizeVarint(uint64(s)))
+		size += int64(sizeVarint(uint64(s)))
 	}
 	st.writeVarint(int64(frameTypeSettings))
 	st.writeVarint(size)

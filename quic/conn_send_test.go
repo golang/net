@@ -6,10 +6,14 @@ package quic
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 func TestAckElicitingAck(t *testing.T) {
+	synctest.Test(t, testAckElicitingAck)
+}
+func testAckElicitingAck(t *testing.T) {
 	// "A receiver that sends only non-ack-eliciting packets [...] might not receive
 	// an acknowledgment for a long period of time.
 	// [...] a receiver could send a [...] ack-eliciting frame occasionally [...]
@@ -22,7 +26,7 @@ func TestAckElicitingAck(t *testing.T) {
 	tc.handshake()
 	const count = 100
 	for i := 0; i < count; i++ {
-		tc.advance(1 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 		tc.writeFrames(packetType1RTT,
 			debugFramePing{},
 		)
@@ -38,6 +42,9 @@ func TestAckElicitingAck(t *testing.T) {
 }
 
 func TestSendPacketNumberSize(t *testing.T) {
+	synctest.Test(t, testSendPacketNumberSize)
+}
+func testSendPacketNumberSize(t *testing.T) {
 	tc := newTestConn(t, clientSide, permissiveTransportParameters)
 	tc.handshake()
 
