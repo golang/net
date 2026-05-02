@@ -6,12 +6,20 @@ package html
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html/atom"
 )
 
 // https://github.com/golang/go/issues/58246
@@ -943,3 +951,233 @@ func benchmarkTokenizer(b *testing.B, level int) {
 func BenchmarkRawLevelTokenizer(b *testing.B)  { benchmarkTokenizer(b, rawLevel) }
 func BenchmarkLowLevelTokenizer(b *testing.B)  { benchmarkTokenizer(b, lowLevel) }
 func BenchmarkHighLevelTokenizer(b *testing.B) { benchmarkTokenizer(b, highLevel) }
+
+type h5libTest struct {
+	Description   string
+	Input         string
+	InitialStates []string
+	Output        []Token
+	Errors        []struct{ Code string }
+}
+
+var unicodeRegexp = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
+
+const (
+	tx = 0b10000000
+	t2 = 0b11000000
+	t3 = 0b11100000
+	t4 = 0b11110000
+
+	maskx = 0b00111111
+
+	rune1Max = 1<<7 - 1
+	rune2Max = 1<<11 - 1
+	rune3Max = 1<<16 - 1
+
+	surrogateMin = 0xD800
+	surrogateMax = 0xDFFF
+)
+
+func unescapeUnicode(s string) string {
+	return unicodeRegexp.ReplaceAllStringFunc(s, func(match string) string {
+		// match is something like "\u0000"
+		// Extract the 4 hex digits
+		hex := match[2:]
+
+		// Parse the hex digits into an integer
+		n, err := strconv.ParseInt(hex, 16, 32)
+		if err != nil {
+			panic(err)
+		}
+
+		// The following is a loose copy of unicode/utf8.AppendRune, which ignores
+		// some of the error checking, which is necessary to support some of the
+		// test characters.
+
+		if uint32(n) <= rune1Max {
+			return string(byte(n))
+		}
+
+		// Convert the integer to a string
+		switch i := uint32(n); {
+		case i <= rune2Max:
+			return string([]byte{t2 | byte(n>>6), tx | byte(n)&maskx})
+		case i <= rune3Max:
+			return string([]byte{t3 | byte(n>>12), tx | byte(n>>6)&maskx, tx | byte(n)&maskx})
+		case i > rune3Max: // && i <= MaxRune:
+			return string([]byte{t4 | byte(n>>18), tx | byte(n>>12)&maskx, tx | byte(n>>6)&maskx, tx | byte(n)&maskx})
+		default:
+			panic(fmt.Sprintf("unsupported rune %x", n))
+		}
+	})
+}
+
+func (t *h5libTest) UnmarshalJSON(data []byte) error {
+	var test struct {
+		Description   string
+		Input         string
+		DoubleEscaped bool
+		InitialStates []string
+		Output        [][]any
+		Errors        []struct{ Code string }
+	}
+	if err := json.Unmarshal(data, &test); err != nil {
+		return err
+	}
+	*t = h5libTest{
+		Description:   test.Description,
+		Input:         test.Input,
+		InitialStates: test.InitialStates,
+		Errors:        test.Errors,
+	}
+
+	if test.DoubleEscaped {
+		t.Input = unescapeUnicode(t.Input)
+	}
+
+	for _, testToken := range test.Output {
+		token := Token{}
+		switch testToken[0].(string) {
+		case "DOCTYPE":
+			token.Type = DoctypeToken
+			if testToken[1] != nil {
+				token.Data = testToken[1].(string)
+			}
+			// TODO: public/system id, we don't really support this?
+		case "StartTag":
+			if len(testToken) == 4 && testToken[3].(bool) == true {
+				token.Type = SelfClosingTagToken
+			} else {
+				token.Type = StartTagToken
+			}
+			token.Data = testToken[1].(string)
+		case "EndTag":
+			token.Type = EndTagToken
+			token.Data = testToken[1].(string)
+		case "Comment":
+			token.Type = CommentToken
+			token.Data = testToken[1].(string)
+		case "Character":
+			token.Type = TextToken
+			token.Data = testToken[1].(string)
+		default:
+			return fmt.Errorf("unknown token type %s", testToken[0])
+		}
+
+		if test.DoubleEscaped {
+			token.Data = unescapeUnicode(token.Data)
+		}
+
+		if testToken[0] == "DOCTYPE" || testToken[0] == "StartTag" || testToken[0] == "EndTag" {
+			token.DataAtom = atom.Lookup([]byte(token.Data))
+		}
+
+		if (testToken[0] == "StartTag" || testToken[0] == "EndTag") && len(testToken) > 2 {
+			for k, v := range testToken[2].(map[string]any) {
+				token.Attr = append(token.Attr, Attribute{
+					Key: k,
+					Val: v.(string),
+				})
+			}
+		}
+
+		t.Output = append(t.Output, token)
+	}
+
+	return nil
+}
+
+func TestHTML5LibTests(t *testing.T) {
+	skipTests := map[string]bool{
+		"namedEntities.test/Named entity: nGt; with a semi-colon": true,
+		"namedEntities.test/Named entity: nLt; with a semi-colon": true,
+		// We emit a comment token here, instead of no token. This is a specification
+		// divergence that we may want to fix.
+		"test1.test/Empty end tag":                           true,
+		"test2.test/Empty end tag with following characters": true,
+		"test2.test/Empty end tag with following tag":        true,
+		"test2.test/Empty end tag with following comment":    true,
+		"test2.test/Empty end tag with following end tag":    true,
+		"test3.test/<!>":                                 true,
+		"test3.test/</>":                                 true,
+		"test3.test/<a\\u0000>":                          true,
+		"test3.test/<a \\u0000>":                         true,
+		"test3.test/<a a\\u0000>":                        true,
+		"test3.test/<a a \\u0000>":                       true,
+		"test3.test/<a a=\\u0000>":                       true,
+		"test3.test/<a a=\"\\u0000\">":                   true,
+		"test3.test/<a a='\\u0000'>":                     true,
+		"test3.test/<a a=''\\u0000>":                     true,
+		"test3.test/<a a=a=\u0000>":                      true,
+		"test3.test/<a/\\u0000>":                         true,
+		"test3.test/<a a=a\\u0000>":                      true,
+		"test4.test/CR EOF after doctype name":           true,
+		"test4.test/Zero decimal numeric entity":         true,
+		"test4.test/33-bit hex numeric entity":           true,
+		"test4.test/33-bit decimal numeric entity":       true,
+		"test4.test/65-bit hex numeric entity":           true,
+		"test4.test/65-bit decimal numeric entity":       true,
+		"test4.test/Doctype public case-sensitivity (1)": true,
+		"test4.test/Doctype public case-sensitivity (2)": true,
+		"test4.test/Doctype system case-sensitivity (1)": true,
+		"test4.test/Doctype system case-sensitivity (2)": true,
+	}
+
+	var tests struct {
+		Tests []h5libTest
+	}
+	testFiles, err := filepath.Glob("testdata/html5lib-tests/tokenizer/*.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, testFile := range testFiles {
+		data, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &tests); err != nil {
+			t.Fatal(err)
+		}
+
+		base := filepath.Base(testFile)
+
+		for _, tc := range tests.Tests {
+			name := fmt.Sprintf("%s/%s", base, tc.Description)
+			t.Run(name, func(t *testing.T) {
+				if skipTests[name] {
+					t.Skip("skipping, known failure")
+				}
+				if len(tc.InitialStates) > 0 {
+					t.Skip("Initial states not supported yet")
+				}
+				if strings.Contains(tc.Input, "<!DOCTYPE") {
+					t.Skip("Skipping DOCTYPE")
+				}
+				z := NewTokenizer(strings.NewReader(tc.Input))
+				var tokens []Token
+				for {
+					if z.Next() == ErrorToken {
+						if z.Err() == io.EOF {
+							break
+						}
+						t.Fatalf("Error: %v", z.Err())
+					}
+					tokens = append(tokens, z.Token())
+				}
+				sortTokenAttributes(tokens)
+				sortTokenAttributes(tc.Output)
+				if !reflect.DeepEqual(tokens, tc.Output) {
+					t.Errorf("\nInput: %s\nGot:\t%#v\nWant:\t%#v\nParse Errors: %s\n", tc.Input, tokens, tc.Output, tc.Errors)
+				}
+			})
+		}
+	}
+}
+
+func sortTokenAttributes(tokens []Token) {
+	for _, token := range tokens {
+		slices.SortFunc(token.Attr, func(a, b Attribute) int {
+			return strings.Compare(a.Namespace+a.Key+a.Val, b.Namespace+b.Key+b.Val)
+		})
+	}
+}
