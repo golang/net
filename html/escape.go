@@ -66,7 +66,7 @@ func unescapeEntity(b []byte, dst, src int, attribute bool) (dst1, src1 int) {
 	}
 
 	if s[i] == '#' {
-		if len(s) <= 3 { // We need to have at least "&#.".
+		if len(s) < 3 { // We need to have at least "&#.".
 			b[dst] = b[src]
 			return dst + 1, src + 1
 		}
@@ -81,31 +81,40 @@ func unescapeEntity(b []byte, dst, src int, attribute bool) (dst1, src1 int) {
 		x := '\x00'
 		for i < len(s) {
 			c = s[i]
-			i++
+			var d rune
+			var mult rune
 			if hex {
+				mult = 16
 				if '0' <= c && c <= '9' {
-					x = 16*x + rune(c) - '0'
-					continue
+					d = rune(c) - '0'
 				} else if 'a' <= c && c <= 'f' {
-					x = 16*x + rune(c) - 'a' + 10
-					continue
+					d = rune(c) - 'a' + 10
 				} else if 'A' <= c && c <= 'F' {
-					x = 16*x + rune(c) - 'A' + 10
-					continue
+					d = rune(c) - 'A' + 10
+				} else {
+					break
 				}
-			} else if '0' <= c && c <= '9' {
-				x = 10*x + rune(c) - '0'
-				continue
+			} else {
+				mult = 10
+				if '0' <= c && c <= '9' {
+					d = rune(c) - '0'
+				} else {
+					break
+				}
 			}
-			if c != ';' {
-				i--
+			if x <= 0x10FFFF {
+				x = mult*x + d
 			}
-			break
+			i++
 		}
 
 		if i <= 3 { // No characters matched.
 			b[dst] = b[src]
 			return dst + 1, src + 1
+		}
+
+		if i < len(s) && s[i] == ';' {
+			i++
 		}
 
 		if 0x80 <= x && x <= 0x9F {
