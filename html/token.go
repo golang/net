@@ -704,7 +704,11 @@ func (z *Tokenizer) readMarkupDeclaration() TokenType {
 	for i := 0; i < 2; i++ {
 		c[i] = z.readByte()
 		if z.err != nil {
+			// bogus comment
 			z.data.end = z.raw.end
+			if i == 1 && c[0] == '>' {
+				z.data.end--
+			}
 			return CommentToken
 		}
 	}

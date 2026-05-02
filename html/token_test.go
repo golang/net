@@ -1098,7 +1098,6 @@ func TestHTML5LibTests(t *testing.T) {
 		"test2.test/Empty end tag with following tag":        true,
 		"test2.test/Empty end tag with following comment":    true,
 		"test2.test/Empty end tag with following end tag":    true,
-		"test3.test/<!>":                                 true,
 		"test3.test/</>":                                 true,
 		"test3.test/<a\\u0000>":                          true,
 		"test3.test/<a \\u0000>":                         true,
