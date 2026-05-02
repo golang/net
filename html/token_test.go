@@ -1100,7 +1100,6 @@ func TestHTML5LibTests(t *testing.T) {
 		"test2.test/Empty end tag with following end tag":    true,
 		"test3.test/</>":                                 true,
 		"test4.test/CR EOF after doctype name":           true,
-		"test4.test/Zero decimal numeric entity":         true,
 		"test4.test/Doctype public case-sensitivity (1)": true,
 		"test4.test/Doctype public case-sensitivity (2)": true,
 		"test4.test/Doctype system case-sensitivity (1)": true,

@@ -64,6 +64,16 @@ var unescapeTests = []unescapeTest{
 		"Footnote&#x87;",
 		"Footnote‡",
 	},
+	{
+		"single digit numeric entity",
+		"&#7;",
+		"\a",
+	},
+	{
+		"single digit hex entity",
+		"&#x7;",
+		"\a",
+	},
 }
 
 func TestUnescape(t *testing.T) {

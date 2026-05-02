@@ -66,7 +66,7 @@ func unescapeEntity(b []byte, dst, src int, attribute bool) (dst1, src1 int) {
 	}
 
 	if s[i] == '#' {
-		if len(s) < 3 { // We need to have at least "&#.".
+		if len(s) <= 2 { // We need to have at least "&#".
 			b[dst] = b[src]
 			return dst + 1, src + 1
 		}
@@ -108,7 +108,7 @@ func unescapeEntity(b []byte, dst, src int, attribute bool) (dst1, src1 int) {
 			i++
 		}
 
-		if i <= 3 { // No characters matched.
+		if i < 3 && !hex || i < 4 && hex { // No characters matched.
 			b[dst] = b[src]
 			return dst + 1, src + 1
 		}
