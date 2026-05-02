@@ -74,6 +74,12 @@ var unescapeTests = []unescapeTest{
 		"&#x7;",
 		"\a",
 	},
+	{"nLt then text", "&nLt;hello", "≪⃒hello"},
+	{"nGt then text", "&nGt;hello", "≫⃒hello"},
+	{"text nLt text", "a&nLt;b", "a≪⃒b"},
+	{"multiple nLt", "&nLt;&nLt;", "≪⃒≪⃒"},
+	{"nLt then entity", "&nLt;&lt;", "≪⃒<"},
+	{"nLt nGt seq", "&nLt;&nGt;", "≪⃒≫⃒"},
 }
 
 func TestUnescape(t *testing.T) {

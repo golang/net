@@ -1089,8 +1089,6 @@ func (t *h5libTest) UnmarshalJSON(data []byte) error {
 
 func TestHTML5LibTests(t *testing.T) {
 	skipTests := map[string]bool{
-		"namedEntities.test/Named entity: nGt; with a semi-colon": true,
-		"namedEntities.test/Named entity: nLt; with a semi-colon": true,
 		// We emit a comment token here, instead of no token. This is a specification
 		// divergence that we may want to fix.
 		"test1.test/Empty end tag":                           true,
