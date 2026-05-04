@@ -449,6 +449,8 @@ var renderTestBlacklist = map[string]bool{
 	`<table><math><select><mi><select></table>`:               true,
 	`<!doctype html><table><colgroup><plaintext></plaintext>`: true,
 	`<!doctype html><svg><plaintext>a</plaintext>b`:           true,
+	// Due to fostering, parsing the rendered output produces a different tree.
+	`<math><mtext><table><mglyph><style><img>`: true,
 }
 
 func TestNodeConsistency(t *testing.T) {

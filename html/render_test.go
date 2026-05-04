@@ -205,3 +205,20 @@ func TestRenderTextNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderFosteredForeignContent(t *testing.T) {
+	a := `<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>`
+	d, err := Parse(strings.NewReader(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := bytes.NewBuffer(nil)
+	if err := Render(buf, d); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "<html><head></head><body><math><mtext><mglyph><style>&lt;img src=x onerror=alert(1)&gt;</style></mglyph><table></table></mtext></math></body></html>"
+	if buf.String() != expected {
+		t.Errorf("unexpected output: got %q, want %q", buf.String(), expected)
+	}
+}
