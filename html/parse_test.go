@@ -248,10 +248,6 @@ func TestParser(t *testing.T) {
 	skipTests := map[string]bool{
 		"testdata/html5lib-tests/tree-construction/tests4.dat/8":    true, // strange script case
 		"testdata/html5lib-tests/tree-construction/webkit02.dat/22": true, // xml attribute sort & replace
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/44": true, // selectedcontent, ignore?
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/45": true, // selectedcontent, ignore?
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/46": true, // selectedcontent, ignore?
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/47": true, // selectedcontent, ignore?html5lib-tests/pull/192
 	}
 
 	for _, testDataDir := range testDataDirs {
@@ -402,6 +398,11 @@ var parseTestBlacklist = map[string]bool{
 	// See the a.Template TODO in inHeadIM.
 	`<math><template><mo><template>`:                                     true,
 	`<template><svg><foo><template><foreignObject><div></template><div>`: true,
+	// We don't support "element insertion steps"
+	`<select><button><selectedcontent></button><option>X`:                   true,
+	`<select><button><selectedcontent></button><option>x<i>i<b>ib</i>b`:     true,
+	`<select><button><selectedcontent></button><option>X<option>Y`:          true,
+	`<select><button><selectedcontent></button><option>X<option selected>Y`: true,
 }
 
 // Some test input result in parse trees are not 'well-formed' despite
