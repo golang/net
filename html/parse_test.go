@@ -246,46 +246,12 @@ var testDataDirs = []string{"testdata/html5lib-tests/tree-construction/", "testd
 
 func TestParser(t *testing.T) {
 	skipTests := map[string]bool{
-		"testdata/html5lib-tests/tree-construction/menuitem-element.dat/13":  true,
-		"testdata/html5lib-tests/tree-construction/tests1.dat/29":            true,
-		"testdata/html5lib-tests/tree-construction/tests1.dat/99":            true,
-		"testdata/html5lib-tests/tree-construction/tests10.dat/3":            true,
-		"testdata/html5lib-tests/tree-construction/tests10.dat/4":            true,
-		"testdata/html5lib-tests/tree-construction/tests10.dat/16":           true,
-		"testdata/html5lib-tests/tree-construction/tests10.dat/17":           true,
-		"testdata/html5lib-tests/tree-construction/tests18.dat/13":           true,
-		"testdata/html5lib-tests/tree-construction/tests18.dat/14":           true,
-		"testdata/html5lib-tests/tree-construction/tests4.dat/8":             true,
-		"testdata/html5lib-tests/tree-construction/tests7.dat/33":            true,
-		"testdata/html5lib-tests/tree-construction/tests9.dat/4":             true,
-		"testdata/html5lib-tests/tree-construction/tests9.dat/5":             true,
-		"testdata/html5lib-tests/tree-construction/tests9.dat/17":            true,
-		"testdata/html5lib-tests/tree-construction/tests9.dat/18":            true,
-		"testdata/html5lib-tests/tree-construction/tests_innerHTML_1.dat/76": true,
-		"testdata/html5lib-tests/tree-construction/tests_innerHTML_1.dat/77": true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/18":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/22":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/25":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/26":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/27":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/28":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/29":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/30":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/31":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/32":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/33":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/34":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/35":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/37":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/38":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/39":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/40":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/41":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/42":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/44":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/45":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/46":          true,
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/47":          true,
+		"testdata/html5lib-tests/tree-construction/tests4.dat/8":    true, // strange script case
+		"testdata/html5lib-tests/tree-construction/webkit02.dat/22": true, // xml attribute sort & replace
+		"testdata/html5lib-tests/tree-construction/webkit02.dat/44": true, // selectedcontent, ignore?
+		"testdata/html5lib-tests/tree-construction/webkit02.dat/45": true, // selectedcontent, ignore?
+		"testdata/html5lib-tests/tree-construction/webkit02.dat/46": true, // selectedcontent, ignore?
+		"testdata/html5lib-tests/tree-construction/webkit02.dat/47": true, // selectedcontent, ignore?html5lib-tests/pull/192
 	}
 
 	for _, testDataDir := range testDataDirs {
@@ -496,6 +462,8 @@ var renderTestBlacklist = map[string]bool{
 	`<!doctype html><svg><plaintext>a</plaintext>b`:           true,
 	// Due to fostering, parsing the rendered output produces a different tree.
 	`<math><mtext><table><mglyph><style><img>`: true,
+	// Confusing plaintext behavior
+	`<!doctype html><table><select><plaintext>a<caption>b`: true,
 }
 
 func TestNodeConsistency(t *testing.T) {
