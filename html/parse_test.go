@@ -246,7 +246,6 @@ var testDataDirs = []string{"testdata/html5lib-tests/tree-construction/", "testd
 
 func TestParser(t *testing.T) {
 	skipTests := map[string]bool{
-		"testdata/html5lib-tests/tree-construction/tests4.dat/8":    true, // strange script case
 		"testdata/html5lib-tests/tree-construction/webkit02.dat/22": true, // xml attribute sort & replace
 	}
 
