@@ -246,21 +246,6 @@ var testDataDirs = []string{"testdata/html5lib-tests/tree-construction/", "testd
 
 func TestParser(t *testing.T) {
 	skipTests := map[string]bool{
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/0":   true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/1":   true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/38":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/40":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/47":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/48":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/57":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/58":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/59":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/60":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/61":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/62":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/63":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/64":  true,
-		"testdata/html5lib-tests/tree-construction/foreign-fragment.dat/65":  true,
 		"testdata/html5lib-tests/tree-construction/menuitem-element.dat/13":  true,
 		"testdata/html5lib-tests/tree-construction/tests1.dat/29":            true,
 		"testdata/html5lib-tests/tree-construction/tests1.dat/99":            true,

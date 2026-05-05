@@ -2174,7 +2174,7 @@ func ignoreTheRemainingTokens(p *parser) bool {
 
 const whitespaceOrNUL = whitespace + "\x00"
 
-// Section 12.2.6.5
+// Section 13.2.6.5
 func parseForeignContent(p *parser) bool {
 	switch p.tok.Type {
 	case TextToken:
@@ -2189,28 +2189,26 @@ func parseForeignContent(p *parser) bool {
 			Data: p.tok.Data,
 		})
 	case StartTagToken:
-		if !p.fragment {
-			b := breakout[p.tok.Data]
-			if p.tok.DataAtom == a.Font {
-			loop:
-				for _, attr := range p.tok.Attr {
-					switch attr.Key {
-					case "color", "face", "size":
-						b = true
-						break loop
-					}
+		b := breakout[p.tok.Data]
+		if p.tok.DataAtom == a.Font {
+		loop:
+			for _, attr := range p.tok.Attr {
+				switch attr.Key {
+				case "color", "face", "size":
+					b = true
+					break loop
 				}
 			}
-			if b {
-				for i := len(p.oe) - 1; i >= 0; i-- {
-					n := p.oe[i]
-					if n.Namespace == "" || htmlIntegrationPoint(n) || mathMLTextIntegrationPoint(n) {
-						p.oe = p.oe[:i+1]
-						break
-					}
+		}
+		if b {
+			for i := len(p.oe) - 1; i >= 0; i-- {
+				n := p.oe[i]
+				if n.Namespace == "" || htmlIntegrationPoint(n) || mathMLTextIntegrationPoint(n) {
+					p.oe = p.oe[:i+1]
+					break
 				}
-				return false
 			}
+			return p.im(p)
 		}
 		current := p.adjustedCurrentNode()
 		switch current.Namespace {
