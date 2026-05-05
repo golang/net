@@ -152,9 +152,6 @@ func (a sortedAttributes) Len() int {
 }
 
 func (a sortedAttributes) Less(i, j int) bool {
-	if a[i].Namespace != a[j].Namespace {
-		return a[i].Namespace < a[j].Namespace
-	}
 	return a[i].Key < a[j].Key
 }
 
@@ -245,10 +242,6 @@ func dump(n *Node) (string, error) {
 var testDataDirs = []string{"testdata/html5lib-tests/tree-construction/", "testdata/go/"}
 
 func TestParser(t *testing.T) {
-	skipTests := map[string]bool{
-		"testdata/html5lib-tests/tree-construction/webkit02.dat/22": true, // xml attribute sort & replace
-	}
-
 	for _, testDataDir := range testDataDirs {
 		testFiles, err := filepath.Glob(testDataDir + "*.dat")
 		if err != nil {
@@ -276,10 +269,6 @@ func TestParser(t *testing.T) {
 
 				testId := fmt.Sprintf("%s/%d", strings.ReplaceAll(tf, string(os.PathSeparator), "/"), i)
 				t.Run(testId, func(t *testing.T) {
-					if skipTests[testId] {
-						t.Skip("Skipping known broken test")
-					}
-
 					err = testParseCase(ta.text, ta.want, ta.context, ParseOptionEnableScripting(ta.scripting))
 					if err != nil {
 						t.Errorf("%s test #%d %q, %s", tf, i, ta.text, err)
