@@ -1372,8 +1372,6 @@ func (p *parser) inBodyEndTagFormatting(tagAtom a.Atom, tagName string) {
 }
 
 // inBodyEndTagOther performs the "any other end tag" algorithm for inBodyIM.
-// "Any other end tag" handling from 12.2.6.5 The rules for parsing tokens in foreign content
-// https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inforeign
 func (p *parser) inBodyEndTagOther(tagAtom a.Atom, tagName string) {
 	for i := len(p.oe) - 1; i >= 0; i-- {
 		// Two element nodes have the same tag if they have the same Data (a
@@ -1383,7 +1381,7 @@ func (p *parser) inBodyEndTagOther(tagAtom a.Atom, tagName string) {
 		// Uncommon (custom) tags get a zero DataAtom.
 		//
 		// The if condition here is equivalent to (p.oe[i].Data == tagName).
-		if (p.oe[i].DataAtom == tagAtom) &&
+		if p.oe[i].Namespace == "" && (p.oe[i].DataAtom == tagAtom) &&
 			((tagAtom != 0) || (p.oe[i].Data == tagName)) {
 			p.oe = p.oe[:i]
 			break
