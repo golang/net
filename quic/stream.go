@@ -815,7 +815,7 @@ func (s *Stream) handleData(off int64, b []byte, fin bool) error {
 		// sending us different data than we received the first time.
 		// We currently don't bother.)
 		newOff := min(end, s.inset[0].end)
-		b = b[end-newOff:]
+		b = b[newOff-off:]
 		off = newOff
 	}
 	s.in.writeAt(b, off)

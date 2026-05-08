@@ -395,48 +395,70 @@ func TestStreamReceive(t *testing.T) {
 			wantEOF: true,
 		}},
 	}} {
-		testStreamTypesSynctest(t, test.name, func(t *testing.T, styp streamType) {
-			tc := newTestConn(t, serverSide)
-			tc.handshake()
-			sid := newStreamID(clientSide, styp, 0)
-			var s *Stream
-			got := make([]byte, len(want))
-			var total int
-			for _, f := range test.frames {
-				t.Logf("receive [%v,%v)", f.start, f.end)
-				tc.writeFrames(packetType1RTT, debugFrameStream{
-					id:   sid,
-					off:  f.start,
-					data: want[f.start:f.end],
-					fin:  f.fin,
-				})
-				if s == nil {
-					s = tc.acceptStream()
-				}
-				for {
-					n, err := s.Read(got[total:])
-					t.Logf("s.Read() = %v, %v", n, err)
-					total += n
-					if f.wantEOF && err != io.EOF {
-						t.Fatalf("Read() error = %v; want io.EOF", err)
-					}
-					if !f.wantEOF && err == io.EOF {
-						t.Fatalf("Read() error = io.EOF, want something else")
-					}
-					if err != nil {
-						break
-					}
-				}
-				if total != f.want {
-					t.Fatalf("total bytes read = %v, want %v", total, f.want)
-				}
-				for i := 0; i < total; i++ {
-					if got[i] != want[i] {
-						t.Fatalf("byte %v differs: got %v, want %v", i, got[i], want[i])
-					}
-				}
+		for _, buffered := range []bool{true, false} {
+			name := test.name
+			if buffered {
+				name += "/buffered"
+			} else {
+				name += "/unbuffered"
 			}
-		})
+			testStreamTypesSynctest(t, name, func(t *testing.T, styp streamType) {
+				tc := newTestConn(t, serverSide)
+				tc.handshake()
+				sid := newStreamID(clientSide, styp, 0)
+				var s *Stream
+				got := make([]byte, len(want))
+				var total int
+
+				// readAndVerify reads all the data that has been buffered in s
+				// so far, and verifies whether it contains the expected bytes
+				// and EOF.
+				readAndVerify := func(wantEOF bool, wantTotal int) {
+					for {
+						n, err := s.Read(got[total:])
+						t.Logf("s.Read() = %v, %v", n, err)
+						total += n
+						if wantEOF && err != io.EOF {
+							t.Fatalf("Read() error = %v; want io.EOF", err)
+						}
+						if !wantEOF && err == io.EOF {
+							t.Fatalf("Read() error = io.EOF, want something else")
+						}
+						if err != nil {
+							break
+						}
+					}
+					if total != wantTotal {
+						t.Fatalf("total bytes read = %v, want %v", total, wantTotal)
+					}
+					for i := 0; i < total; i++ {
+						if got[i] != want[i] {
+							t.Fatalf("byte %v differs: got %v, want %v", i, got[i], want[i])
+						}
+					}
+				}
+
+				for _, f := range test.frames {
+					t.Logf("receive [%v,%v)", f.start, f.end)
+					tc.writeFrames(packetType1RTT, debugFrameStream{
+						id:   sid,
+						off:  f.start,
+						data: want[f.start:f.end],
+						fin:  f.fin,
+					})
+					if s == nil {
+						s = tc.acceptStream()
+					}
+					if !buffered {
+						readAndVerify(f.wantEOF, f.want)
+					}
+				}
+				if buffered {
+					finalFrame := test.frames[len(test.frames)-1]
+					readAndVerify(finalFrame.wantEOF, finalFrame.want)
+				}
+			})
+		}
 	}
 
 }
