@@ -1623,6 +1623,50 @@ func TestStreamInbufReadRace(t *testing.T) {
 	})
 }
 
+// TestStreamWriteHappensBeforeRead verifies that a write to a stream
+// establishes a happens-before relationship with a read from the stream, as
+// seen by the race detector.
+func TestStreamWriteHappensBeforeRead(t *testing.T) {
+	// Use real UDP sockets via newLocalConnPair to avoid the synchronization
+	// inherent in the channel-based testConn infrastructure.
+	cli, srv := newLocalConnPair(t, &Config{}, &Config{})
+	var written bool
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
+		s, err := srv.AcceptStream(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		if _, err := io.ReadFull(s, make([]byte, 1)); err != nil {
+			t.Fatal(err)
+		}
+
+		// Access shared variable after reading from stream. If the stream read
+		// doesn't establish happens-before with the stream write, this will be
+		// flagged as a data race.
+		if !written {
+			t.Error("written is false, want true")
+		}
+	})
+
+	s, err := cli.NewSendOnlyStream(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	written = true // Write shared variable
+	// Write to stream. This should happen-before the read of x in the
+	// goroutine.
+	_, err = s.Write([]byte{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 type streamSide string
 
 const (
