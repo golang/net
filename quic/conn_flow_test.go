@@ -266,6 +266,19 @@ func testConnInflowMultipleStreams(t *testing.T) {
 		packetType1RTT, debugFrameMaxData{
 			max: 128 + 32 + 1 + 32 + 1,
 		})
+
+	// Current limit is 194 (128 + 32 + 1 + 32 + 1).
+	// Available window is 194 - 128 = 66 bytes.
+	// Send 67 bytes on streams[0] to violate flow control.
+	tc.writeFrames(packetType1RTT, debugFrameStream{
+		id:   streams[0].id,
+		off:  32,
+		data: make([]byte, 67),
+	})
+	tc.wantFrame("peer violates MAX_DATA limit",
+		packetType1RTT, debugFrameConnectionCloseTransport{
+			code: errFlowControl,
+		})
 }
 
 func TestConnOutflowBlocked(t *testing.T) {
