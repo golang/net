@@ -644,12 +644,28 @@ var tokenTests = []tokenTest{
 		`<p FOO="bar" foo="baz">`,
 		`<p foo="bar">`,
 	},
+	{
+		"partial doctype",
+		`<!doc`,
+		`<!--doc-->`,
+	},
+	{
+		"partial cdata",
+		`<![CDA`,
+		`<!--[CDA-->`,
+	},
+	{
+		"partial comment",
+		`<!comment`,
+		`<!--comment-->`,
+	},
 }
 
 func TestTokenizer(t *testing.T) {
 	for _, tt := range tokenTests {
 		t.Run(tt.desc, func(t *testing.T) {
 			z := NewTokenizer(strings.NewReader(tt.html))
+			z.AllowCDATA(true)
 			if tt.golden != "" {
 				for i, s := range strings.Split(tt.golden, "$") {
 					if z.Next() == ErrorToken {

@@ -736,6 +736,13 @@ func (z *Tokenizer) readDoctype() bool {
 	for i := 0; i < len(s); i++ {
 		c := z.readByte()
 		if z.err != nil {
+			if z.err == io.EOF {
+				// Back up to read the fragment of "DOCTYPE" again, reset
+				// z.err to signal EOF on the next call
+				z.raw.end = z.data.start
+				z.err = nil
+				return false
+			}
 			z.data.end = z.raw.end
 			return false
 		}
@@ -761,6 +768,13 @@ func (z *Tokenizer) readCDATA() bool {
 	for i := 0; i < len(s); i++ {
 		c := z.readByte()
 		if z.err != nil {
+			if z.err == io.EOF {
+				// Back up to read the fragment of "[CDATA[" again, reset
+				// z.err to signal EOF on the next call
+				z.raw.end = z.data.start
+				z.err = nil
+				return false
+			}
 			z.data.end = z.raw.end
 			return false
 		}
