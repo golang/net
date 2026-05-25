@@ -5,12 +5,14 @@
 package http2
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +158,37 @@ func TestConfigureServerIdleTimeout_Go18(t *testing.T) {
 		if s2.IdleTimeout != timeout {
 			t.Errorf("s2.IdleTimeout = %v; want %v", s2.IdleTimeout, timeout)
 		}
+	}
+}
+
+// Tests that ConfigureServer initializes s.TLSConfig and registers
+// the h2 and http/1.1 ALPN protocols on it, so that TLS listeners
+// built from s.TLSConfig negotiate HTTP/2.
+// https://golang.org/issue/79642
+func TestConfigureServerRegistersALPN(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   *http.Server
+	}{
+		{name: "nil TLSConfig", in: &http.Server{}},
+		{name: "empty TLSConfig", in: &http.Server{TLSConfig: &tls.Config{}}},
+		{name: "preexisting http/1.1", in: &http.Server{TLSConfig: &tls.Config{NextProtos: []string{"http/1.1"}}}},
+		{name: "preexisting h2", in: &http.Server{TLSConfig: &tls.Config{NextProtos: []string{"h2"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ConfigureServer(tc.in, nil); err != nil {
+				t.Fatalf("ConfigureServer: %v", err)
+			}
+			if tc.in.TLSConfig == nil {
+				t.Fatal("ConfigureServer left TLSConfig nil; want non-nil")
+			}
+			got := tc.in.TLSConfig.NextProtos
+			for _, want := range []string{NextProtoTLS, "http/1.1"} {
+				if !slices.Contains(got, want) {
+					t.Errorf("NextProtos = %v; want to contain %q", got, want)
+				}
+			}
+		})
 	}
 }
 
