@@ -41,6 +41,12 @@ type roundTripState struct {
 func (rt *roundTripState) abort(err error) error {
 	rt.errOnce.Do(func() {
 		rt.err = err
+
+		rt.cc.mu.Lock()
+		rt.cc.active--
+		rt.cc.mu.Unlock()
+		rt.cc.maybeCallStateHook()
+
 		switch e := err.(type) {
 		case *connectionError:
 			rt.cc.abort(e)
@@ -88,9 +94,20 @@ func (rt *roundTripState) maybeCallWait100Continue() {
 
 // RoundTrip sends a request on the connection.
 func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error) {
+	cc.mu.Lock()
+	if cc.reserved > 0 {
+		cc.reserved--
+	}
+	cc.active++
+	cc.mu.Unlock()
+
 	// Each request gets its own QUIC stream.
 	st, err := newConnStream(req.Context(), cc.qconn, streamTypeRequest)
 	if err != nil {
+		cc.mu.Lock()
+		cc.active--
+		cc.mu.Unlock()
+		cc.maybeCallStateHook()
 		return nil, err
 	}
 	rt := &roundTripState{

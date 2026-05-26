@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net/http"
 	"reflect"
 	"slices"
@@ -31,6 +32,111 @@ func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 		st := tc.newStream(streamTypeRequest)
 		st.Flush()
 		tc.wantClosed("after server creates bidi stream", errH3StreamCreationError)
+	})
+}
+
+func TestClientConnMethods(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var called bool
+		hook := func() {
+			if called {
+				t.Error("state hook was unexpectedly called")
+			}
+			called = true
+		}
+		verifyHookWasCalled := func() {
+			if !called {
+				t.Error("state hook was unexpectedly not called")
+			}
+			called = false
+		}
+		tc := newTestClientConnWithHook(t, hook)
+		tc.greet()
+
+		// Initial state after establishing connection.
+		if err := tc.cc.Err(); err != nil {
+			t.Errorf("cc.Err() = %v, want nil", err)
+		}
+		if avail := tc.cc.Available(); avail != math.MaxInt {
+			t.Errorf("cc.Available() = %v, want %v", avail, math.MaxInt)
+		}
+		if inFlight := tc.cc.InFlight(); inFlight != 0 {
+			t.Errorf("cc.InFlight() = %v, want 0", inFlight)
+		}
+
+		// Release, with Reserve before and without.
+		for _, reserveBefore := range []bool{true, false} {
+			if reserveBefore {
+				if err := tc.cc.Reserve(); err != nil {
+					t.Fatalf("cc.Reserve() failed: %v", err)
+				}
+				if avail := tc.cc.Available(); avail != math.MaxInt {
+					t.Errorf("after Reserve, cc.Available() = %v, want %v", avail, math.MaxInt)
+				}
+				if inFlight := tc.cc.InFlight(); inFlight != 1 {
+					t.Errorf("after Reserve, cc.InFlight() = %v, want 1", inFlight)
+				}
+			}
+			tc.cc.Release()
+			if avail := tc.cc.Available(); avail != math.MaxInt {
+				t.Errorf("after Release, cc.Available() = %v, want %v", avail, math.MaxInt)
+			}
+			if inFlight := tc.cc.InFlight(); inFlight != 0 {
+				t.Errorf("after Release, cc.InFlight() = %v, want 0", inFlight)
+			}
+		}
+
+		// RoundTrip, with Reserve before and without.
+		for _, reserveBefore := range []bool{true, false} {
+			if reserveBefore {
+				if err := tc.cc.Reserve(); err != nil {
+					t.Fatalf("cc.Reserve() failed: %v", err)
+				}
+				if avail := tc.cc.Available(); avail != math.MaxInt {
+					t.Errorf("after Reserve, cc.Available() = %v, want %v", avail, math.MaxInt)
+				}
+				if inFlight := tc.cc.InFlight(); inFlight != 1 {
+					t.Errorf("after Reserve, cc.InFlight() = %v, want 1", inFlight)
+				}
+			}
+			req, _ := http.NewRequest("GET", "https://example.com/", nil)
+			rt := tc.roundTrip(req)
+			if avail := tc.cc.Available(); avail != math.MaxInt {
+				t.Errorf("after RoundTrip, cc.Available() = %v, want %v", avail, math.MaxInt)
+			}
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+			st.writeHeaders(http.Header{":status": []string{"200"}})
+			resp := rt.response()
+			if resp.StatusCode != 200 {
+				t.Errorf("resp.StatusCode = %v, want 200", resp.StatusCode)
+			}
+			if inFlight := tc.cc.InFlight(); inFlight != 1 { // InFlight should decrement only after the body is closed.
+				t.Errorf("before body close, cc.InFlight() = %v, want 1", inFlight)
+			}
+			resp.Body.Close()
+			if inFlight := tc.cc.InFlight(); inFlight != 0 {
+				t.Errorf("after body close, cc.InFlight() = %v, want 0", inFlight)
+			}
+			verifyHookWasCalled()
+		}
+
+		// Connection closure.
+		if err := tc.cc.Reserve(); err != nil {
+			t.Fatalf("cc.Reserve() failed: %v", err)
+		}
+		tc.cc.Close()
+		synctest.Wait()
+		verifyHookWasCalled()
+		if err := tc.cc.Err(); err == nil {
+			t.Error("after connection is closed, cc.Err() = nil, want err")
+		}
+		if avail := tc.cc.Available(); avail != 0 {
+			t.Errorf("after connection is closed, cc.Available() = %v, want 0", avail)
+		}
+		if inFlight := tc.cc.InFlight(); inFlight != 0 {
+			t.Errorf("after connection is closed, cc.InFlight() = %v, want 0", inFlight)
+		}
 	})
 }
 
@@ -440,7 +546,7 @@ type testClientConn struct {
 	control *testQUICStream
 }
 
-func newTestClientConn(t testing.TB) *testClientConn {
+func newTestClientConnWithHook(t testing.TB, stateHook func()) *testClientConn {
 	e1, e2 := newQUICEndpointPair(t)
 	tr := &transport{
 		endpoint: e1,
@@ -450,7 +556,7 @@ func newTestClientConn(t testing.TB) *testClientConn {
 		activeConns: make(map[*clientConn]struct{}),
 	}
 
-	cc, err := tr.dial(t.Context(), e2.LocalAddr().String())
+	cc, err := tr.dial(t.Context(), e2.LocalAddr().String(), stateHook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,6 +575,10 @@ func newTestClientConn(t testing.TB) *testClientConn {
 	}
 	synctest.Wait()
 	return tc
+}
+
+func newTestClientConn(t testing.TB) *testClientConn {
+	return newTestClientConnWithHook(t, nil)
 }
 
 // greet performs initial connection handshaking with the client.

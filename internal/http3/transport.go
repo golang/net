@@ -6,7 +6,9 @@ package http3
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sync"
@@ -51,8 +53,8 @@ func (t netHTTPTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	panic("netHTTPTransport.RoundTrip should never be called")
 }
 
-func (t netHTTPTransport) DialClientConn(ctx context.Context, addr string, _ *url.URL, _ func()) (http.RoundTripper, error) {
-	return t.transport.dial(ctx, addr)
+func (t netHTTPTransport) DialClientConn(ctx context.Context, addr string, _ *url.URL, stateHook func()) (http.RoundTripper, error) {
+	return t.transport.dial(ctx, addr, stateHook)
 }
 
 type TransportOpts struct {
@@ -138,7 +140,7 @@ func (tr *transport) initEndpoint() (err error) {
 }
 
 // dial creates a new HTTP/3 client connection.
-func (tr *transport) dial(ctx context.Context, target string) (*clientConn, error) {
+func (tr *transport) dial(ctx context.Context, target string, stateHook func()) (*clientConn, error) {
 	tr.incInFlightDials()
 	defer tr.decInFlightDials()
 
@@ -149,7 +151,7 @@ func (tr *transport) dial(ctx context.Context, target string) (*clientConn, erro
 	if err != nil {
 		return nil, err
 	}
-	return tr.newClientConn(ctx, qconn)
+	return tr.newClientConn(ctx, qconn, stateHook)
 }
 
 // CloseIdleConnections is called by net/http.Transport.CloseIdleConnections
@@ -177,6 +179,13 @@ type clientConn struct {
 
 	enc qpackEncoder
 	dec qpackDecoder
+
+	// Guarded by genericConn.mu
+	reserved int
+	active   int
+	closed   bool
+
+	stateHook func()
 }
 
 func (tr *transport) registerConn(cc *clientConn) {
@@ -191,9 +200,10 @@ func (tr *transport) unregisterConn(cc *clientConn) {
 	delete(tr.activeConns, cc)
 }
 
-func (tr *transport) newClientConn(ctx context.Context, qconn *quic.Conn) (*clientConn, error) {
+func (tr *transport) newClientConn(ctx context.Context, qconn *quic.Conn, stateHook func()) (*clientConn, error) {
 	cc := &clientConn{
-		qconn: qconn,
+		qconn:     qconn,
+		stateHook: stateHook,
 	}
 	tr.registerConn(cc)
 	cc.enc.init()
@@ -209,12 +219,15 @@ func (tr *transport) newClientConn(ctx context.Context, qconn *quic.Conn) (*clie
 
 	go func() {
 		cc.acceptStreams(qconn, cc)
+		cc.mu.Lock()
+		cc.closed = true
+		cc.mu.Unlock()
 		tr.unregisterConn(cc)
+		cc.maybeCallStateHook()
 	}()
 	return cc, nil
 }
 
-// TODO: implement the rest of net/http.ClientConn methods beyond Close.
 func (cc *clientConn) Close() error {
 	// We need to use Close rather than Abort on the QUIC connection.
 	// Otherwise, when a net/http.Transport.CloseIdleConnections is called, it
@@ -226,22 +239,63 @@ func (cc *clientConn) Close() error {
 }
 
 func (cc *clientConn) Err() error {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.closed {
+		return errors.New("connection closed")
+	}
 	return nil
 }
 
 func (cc *clientConn) Reserve() error {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.closed {
+		return errors.New("connection closed")
+	}
+	cc.reserved++
 	return nil
 }
 
 func (cc *clientConn) Release() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	// This is consistent with RoundTrip: both Release and RoundTrip will
+	// consume a reservation iff one exists.
+	if cc.reserved > 0 {
+		cc.reserved--
+	}
 }
 
 func (cc *clientConn) Available() int {
-	return 0
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.closed {
+		return 0
+	}
+	// The general recommendation for HTTP/3 is to reuse the same connection
+	// for multiple requests rather than creating new connections. As of now,
+	// we don't have a good understanding of when one might want to create
+	// multiple HTTP/3 connections to the same server.
+	// Therefore, for ClientConn API, let HTTP/3 connections have no limit.
+	// Starting a new RoundTrip when we are at the connection limit will just
+	// block until a new max stream limit is received.
+	return math.MaxInt
 }
 
 func (cc *clientConn) InFlight() int {
-	return 0
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.closed {
+		return 0
+	}
+	return cc.reserved + cc.active
+}
+
+func (cc *clientConn) maybeCallStateHook() {
+	if cc.stateHook != nil {
+		cc.stateHook()
+	}
 }
 
 func (cc *clientConn) handleControlStream(st *stream) error {
