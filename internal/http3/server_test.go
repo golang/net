@@ -93,6 +93,28 @@ func TestServerHeader(t *testing.T) {
 	})
 }
 
+func TestServerHeaderSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Test-Header", "original")
+			w.WriteHeader(200)
+			w.Header().Set("X-Test-Header", "modified")
+			w.Write([]byte("body"))
+		}))
+		tc := ts.connect()
+		tc.greet()
+
+		reqStream := tc.newStream(streamTypeRequest)
+		reqStream.writeHeaders(requestHeader(nil))
+		reqStream.wantSomeHeaders(http.Header{
+			":status":       {"200"},
+			"X-Test-Header": {"original"},
+		})
+		reqStream.wantData([]byte("body"))
+		reqStream.wantClosed("request is complete")
+	})
+}
+
 func TestServerHeaderInvalid(t *testing.T) {
 	tests := []struct {
 		name      string

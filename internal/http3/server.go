@@ -583,6 +583,7 @@ type responseWriter struct {
 	bw             *bodyWriter
 	mu             sync.Mutex
 	headers        http.Header
+	snapHeaders    http.Header // Snapshot of headers at WriteHeader time
 	trailer        http.Header
 	bb             bodyBuffer
 	wroteHeader    bool // Non-1xx header has been (logically) written.
@@ -623,18 +624,18 @@ func (rw *responseWriter) writeHeaderLockedOnce() {
 	if !responseCanHaveBody(rw.statusCode) {
 		rw.cannotHaveBody = true
 	}
-	// If there is any Trailer declared in headers, save them so we know which
-	// trailers have been pre-declared. Also, write back the extracted value,
-	// which is canonicalized, to rw.Header for consistency.
-	if _, ok := rw.headers["Trailer"]; ok {
-		extractTrailerFromHeader(rw.headers, rw.trailer)
-		rw.headers.Set("Trailer", strings.Join(slices.Sorted(maps.Keys(rw.trailer)), ", "))
+	// If there is any Trailer declared, save them so we know which trailers
+	// have been pre-declared. Also, write back the extracted value, which is
+	// canonicalized, for consistency.
+	if _, ok := rw.snapHeaders["Trailer"]; ok {
+		extractTrailerFromHeader(rw.snapHeaders, rw.trailer)
+		rw.snapHeaders.Set("Trailer", strings.Join(slices.Sorted(maps.Keys(rw.trailer)), ", "))
 	}
 
-	rw.bb.inferHeader(rw.headers, rw.statusCode)
+	rw.bb.inferHeader(rw.snapHeaders, rw.statusCode)
 	encHeaders := rw.bw.enc.encode(func(f func(itype indexType, name, value string)) {
 		f(mayIndex, ":status", strconv.Itoa(rw.statusCode))
-		for name, values := range rw.headers {
+		for name, values := range rw.snapHeaders {
 			if !httpguts.ValidHeaderFieldName(name) {
 				continue
 			}
@@ -727,6 +728,7 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 	// buffered.
 	rw.statusCodeSet = true
 	rw.statusCode = statusCode
+	rw.snapHeaders = rw.headers.Clone()
 	if n, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil {
 		rw.bodyLenLeft = n
 	} else {
