@@ -553,6 +553,7 @@ func newTestClientConnWithHook(t testing.TB, stateHook func()) *testClientConn {
 		config: &quic.Config{
 			TLSConfig: testTLSConfig,
 		},
+		tr1:         new(http.Transport),
 		activeConns: make(map[*clientConn]struct{}),
 	}
 

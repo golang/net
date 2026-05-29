@@ -26,6 +26,7 @@ import (
 type transport struct {
 	// config is the QUIC configuration used for client connections.
 	config *quic.Config
+	tr1    *http.Transport
 
 	listenQUIC func(addr string, config *quic.Config) (*quic.Endpoint, error)
 
@@ -87,6 +88,7 @@ func RegisterTransport(tr *http.Transport, opts TransportOpts) {
 	tr3 := &transport{
 		// initConfig will clone the tr.TLSClientConfig.
 		config:      initConfig(opts.QUICConfig),
+		tr1:         tr,
 		listenQUIC:  opts.ListenQUIC,
 		activeConns: make(map[*clientConn]struct{}),
 	}
@@ -174,6 +176,8 @@ func (tr *transport) CloseIdleConnections() {
 //
 // Multiple goroutines may invoke methods on a clientConn simultaneously.
 type clientConn struct {
+	tr *transport
+
 	qconn *quic.Conn
 	genericConn
 
@@ -202,6 +206,7 @@ func (tr *transport) unregisterConn(cc *clientConn) {
 
 func (tr *transport) newClientConn(ctx context.Context, qconn *quic.Conn, stateHook func()) (*clientConn, error) {
 	cc := &clientConn{
+		tr:        tr,
 		qconn:     qconn,
 		stateHook: stateHook,
 	}

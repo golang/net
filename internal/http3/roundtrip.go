@@ -11,6 +11,7 @@ import (
 	"net/http/httptrace"
 	"net/textproto"
 	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/net/http/httpguts"
@@ -129,6 +130,7 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	st.stream.SetReadContext(req.Context())
 	st.stream.SetWriteContext(req.Context())
 
+	addedGzip := httpcommon.IsRequestGzip(req.Method, req.Header, cc.tr.tr1.DisableCompression)
 	headers := cc.enc.encode(func(yield func(itype indexType, name, value string)) {
 		_, err = httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
 			Request: httpcommon.Request{
@@ -139,7 +141,7 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				Trailer:             req.Trailer,
 				ActualContentLength: actualContentLength(req),
 			},
-			AddGzipHeader:         false, // TODO: add when appropriate
+			AddGzipHeader:         addedGzip,
 			PeerMaxHeaderListSize: 0,
 			DefaultUserAgent:      "Go-http-client/3",
 		}, func(name, value string) {
@@ -232,7 +234,13 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				Trailer:       trailer,
 				Body:          (*transportResponseBody)(rt),
 			}
-			// TODO: Automatic Content-Type: gzip decoding.
+			if addedGzip && strings.EqualFold(h.Get("Content-Encoding"), "gzip") {
+				resp.Body = &gzipReader{body: resp.Body}
+				h.Del("Content-Encoding")
+				h.Del("Content-Length")
+				resp.ContentLength = -1
+				resp.Uncompressed = true
+			}
 			return resp, nil
 		case frameTypePushPromise:
 			if err := cc.handlePushPromise(st); err != nil {

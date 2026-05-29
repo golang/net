@@ -6,6 +6,7 @@ package http3
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"net/textproto"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -29,7 +31,7 @@ func TestRoundTripSimple(t *testing.T) {
 		req.Header["User-Agent"] = nil
 		rt := tc.roundTrip(req)
 		st := tc.wantStream(streamTypeRequest)
-		st.wantHeaders(http.Header{
+		st.wantSomeHeaders(http.Header{
 			":authority": []string{"example.tld"},
 			":method":    []string{"GET"},
 			":path":      []string{"/"},
@@ -763,5 +765,252 @@ func TestRoundTrip103EarlyHints(t *testing.T) {
 		rt.wantStatus(200)
 		rt.wantBody(body)
 		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripGzipEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		explicit bool
+	}{
+		{
+			name:     "transparent",
+			explicit: false,
+		},
+		{
+			name:     "explicit",
+			explicit: true,
+		},
+	}
+	for _, tt := range tests {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+			if tt.explicit {
+				req.Header.Set("Accept-Encoding", "gzip")
+			}
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+
+			// Verify that client sends Accept-Encoding: gzip.
+			st.wantSomeHeaders(http.Header{
+				"Accept-Encoding": []string{"gzip"},
+			})
+
+			// Server responds with gzip.
+			var buf bytes.Buffer
+			gw := gzip.NewWriter(&buf)
+			gw.Write([]byte("hello world"))
+			gw.Close()
+			st.writeHeaders(http.Header{
+				":status":          []string{"200"},
+				"content-encoding": []string{"gzip"},
+				"content-length":   []string{strconv.Itoa(buf.Len())},
+			})
+			st.writeData(buf.Bytes())
+			st.stream.stream.CloseWrite()
+
+			rt.wantStatus(200)
+
+			if tt.explicit {
+				// When user explicitly sets gzip, the server response should
+				// be given as is.
+				rt.wantBody(buf.Bytes())
+				resp, err := rt.result()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.Header.Get("Content-Encoding") != "gzip" {
+					t.Errorf("Content-Encoding = %q, want gzip", resp.Header.Get("Content-Encoding"))
+				}
+				if resp.Header.Get("Content-Length") != strconv.Itoa(buf.Len()) {
+					t.Errorf("Content-Length = %q, want %d", resp.Header.Get("Content-Length"), buf.Len())
+				}
+				if resp.ContentLength != int64(buf.Len()) {
+					t.Errorf("ContentLength = %d, want %d", resp.ContentLength, buf.Len())
+				}
+				if resp.Uncompressed {
+					t.Errorf("Uncompressed = true, want false")
+				}
+			} else {
+				// When gzip is transparently set, we automatically decode the
+				// response body, and make sure stale information about the
+				// gzip content length and encoding are updated.
+				rt.wantBody([]byte("hello world"))
+				resp, err := rt.result()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.Header.Get("Content-Encoding") != "" {
+					t.Errorf("Content-Encoding = %q, want empty", resp.Header.Get("Content-Encoding"))
+				}
+				if resp.Header.Get("Content-Length") != "" {
+					t.Errorf("Content-Length = %q, want empty", resp.Header.Get("Content-Length"))
+				}
+				if resp.ContentLength != -1 {
+					t.Errorf("ContentLength = %d, want -1", resp.ContentLength)
+				}
+				if !resp.Uncompressed {
+					t.Errorf("Uncompressed = false, want true")
+				}
+			}
+		})
+	}
+}
+
+func TestRoundTripGzipDisabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(tc *testClientConn, req *http.Request, wantHeaders http.Header)
+	}{
+		{
+			name: "explicitly disabled",
+			setup: func(tc *testClientConn, req *http.Request, wantHeaders http.Header) {
+				tc.tr.tr1.DisableCompression = true
+			},
+		},
+		{
+			name: "HEAD request",
+			setup: func(tc *testClientConn, req *http.Request, wantHeaders http.Header) {
+				req.Method = "HEAD"
+				wantHeaders.Set(":method", "HEAD")
+			},
+		},
+		{
+			name: "contains Range header",
+			setup: func(tc *testClientConn, req *http.Request, wantHeaders http.Header) {
+				req.Header.Set("Range", "bytes=0-10")
+				wantHeaders.Set("Range", "bytes=0-10")
+			},
+		},
+		{
+			name: "contains Accept-Encoding-identity header",
+			setup: func(tc *testClientConn, req *http.Request, wantHeaders http.Header) {
+				req.Header.Set("Accept-Encoding", "identity")
+				wantHeaders.Set("Accept-Encoding", "identity")
+			},
+		},
+	}
+	for _, tt := range tests {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+			wantHeaders := http.Header{
+				":authority": []string{"example.tld"},
+				":method":    []string{"GET"},
+				":path":      []string{"/"},
+				":scheme":    []string{"https"},
+				"User-Agent": []string{"Go-http-client/3"},
+			}
+			tt.setup(tc, req, wantHeaders)
+			tc.greet()
+
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+
+			// Verify that client does not send Accept-Encoding: gzip.
+			st.wantHeaders(wantHeaders)
+
+			st.writeHeaders(http.Header{
+				":status": []string{"200"},
+			})
+			rt.wantStatus(200)
+		})
+	}
+}
+
+func TestRoundTripGzipWithTrailers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Verify that client sends Accept-Encoding: gzip.
+		st.wantSomeHeaders(http.Header{
+			"Accept-Encoding": []string{"gzip"},
+		})
+
+		// Server responds with gzip and trailer declaration.
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		gw.Write([]byte("hello world"))
+		gw.Close()
+		st.writeHeaders(http.Header{
+			":status":          []string{"200"},
+			"content-encoding": []string{"gzip"},
+			"trailer":          []string{"Server-Trailer-A"},
+		})
+		st.writeData(buf.Bytes())
+		st.writeHeaders(http.Header{
+			"server-trailer-a": {"valuea"},
+		})
+		st.stream.stream.CloseWrite()
+
+		rt.wantStatus(200)
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": nil,
+		})
+		rt.wantBody([]byte("hello world"))
+		rt.wantTrailers(http.Header{
+			"Server-Trailer-A": {"valuea"},
+		})
+		st.wantClosed("request is complete")
+	})
+}
+
+func TestRoundTripGzipConcurrentCloseAndRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc := newTestClientConn(t)
+		tc.greet()
+
+		req, _ := http.NewRequest("GET", "https://example.tld/", nil)
+		rt := tc.roundTrip(req)
+		st := tc.wantStream(streamTypeRequest)
+
+		// Verify that client sends Accept-Encoding: gzip.
+		st.wantSomeHeaders(http.Header{
+			"Accept-Encoding": []string{"gzip"},
+		})
+
+		// Server responds with gzip.
+		st.writeHeaders(http.Header{
+			":status":          []string{"200"},
+			"content-encoding": []string{"gzip"},
+		})
+		rt.wantStatus(200)
+
+		resp, err := rt.result()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Read from the response body in a goroutine while it is empty.
+		// This will block indefinitely.
+		readErrCh := make(chan error, 1)
+		go func() {
+			var p [10]byte
+			_, err := resp.Body.Read(p[:])
+			readErrCh <- err
+		}()
+		synctest.Wait()
+
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("Body.Close() = %v", err)
+		}
+		synctest.Wait()
+
+		select {
+		case err := <-readErrCh:
+			if err == nil {
+				t.Error("Read returned nil error, want error")
+			}
+		default:
+			t.Error("Read did not unblock on Close")
+		}
 	})
 }

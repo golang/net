@@ -236,6 +236,8 @@ func (r *bodyReader) Close() error {
 	r.st.stream.CloseRead()
 	// Make sure that any data that has already been written to bodyReader
 	// cannot be read after it has been closed.
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.err = net.ErrClosed
 	r.remain = 0
 	return nil
