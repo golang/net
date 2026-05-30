@@ -324,7 +324,7 @@ func (sc *serverConn) handlePushStream(*stream) error {
 	}
 }
 
-// hasDisallowedConnectionHeader reports whether h contains connnection headers
+// hasDisallowedConnectionHeader reports whether h contains connection headers
 // that are not allowed in HTTP/3:
 //
 // "An endpoint MUST NOT generate an HTTP/3 field section containing
