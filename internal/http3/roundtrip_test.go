@@ -557,13 +557,15 @@ func TestRoundTripWriteTrailer(t *testing.T) {
 		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
 			testReader{readFunc: func(_ []byte) (int, error) {
 				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
-				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				// Transport should not send undeclared trailer.
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"}
 				return 0, io.EOF
 			}},
 			strings.NewReader("a body"),
 			testReader{readFunc: func(_ []byte) (int, error) {
 				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
-				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				// Transport should not send undeclared trailer.
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"}
 				return 0, io.EOF
 			}},
 		))
@@ -592,12 +594,14 @@ func TestRoundTripWriteTrailerNoBody(t *testing.T) {
 		req, _ = http.NewRequest("POST", "https://example.tld/", io.MultiReader(
 			testReader{readFunc: func(_ []byte) (int, error) {
 				req.Trailer["Client-Trailer-A"] = []string{"valuea"}
-				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				// Transport should not send undeclared trailer.
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"}
 				return 0, io.EOF
 			}},
 			testReader{readFunc: func(_ []byte) (int, error) {
 				req.Trailer["Client-Trailer-B"] = []string{"valueb"}
-				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"} // Should be ignored.
+				// Transport should not send undeclared trailer.
+				req.Trailer["Undeclared-Trailer"] = []string{"undeclared"}
 				return 0, io.EOF
 			}},
 		))
@@ -637,7 +641,7 @@ func TestRoundTripReadTrailer(t *testing.T) {
 			"server-trailer-a": {"valuea"},
 			// Note that Server-Trailer-B is skipped.
 			"server-trailer-c":   {"valuec"},
-			"undeclared-trailer": {"undeclared"}, // Should be ignored.
+			"undeclared-trailer": {"undeclared"},
 		})
 
 		rt.wantStatus(200)
@@ -655,6 +659,8 @@ func TestRoundTripReadTrailer(t *testing.T) {
 			"Server-Trailer-A": {"valuea"},
 			"Server-Trailer-B": nil,
 			"Server-Trailer-C": {"valuec"},
+			// Transport should accept undeclared trailers.
+			"Undeclared-Trailer": {"undeclared"},
 		})
 		st.wantClosed("request is complete")
 	})
@@ -680,7 +686,7 @@ func TestRoundTripReadTrailerNoBody(t *testing.T) {
 			"server-trailer-a": {"valuea"},
 			// Note that Server-Trailer-B is skipped.
 			"server-trailer-c":   {"valuec"},
-			"undeclared-trailer": {"undeclared"}, // Should be ignored.
+			"undeclared-trailer": {"undeclared"},
 		})
 
 		rt.wantStatus(200)
@@ -698,6 +704,8 @@ func TestRoundTripReadTrailerNoBody(t *testing.T) {
 			"Server-Trailer-A": {"valuea"},
 			"Server-Trailer-B": nil,
 			"Server-Trailer-C": {"valuec"},
+			// Transport should accept undeclared trailers.
+			"Undeclared-Trailer": {"undeclared"},
 		})
 		st.wantClosed("request is complete")
 	})

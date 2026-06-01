@@ -11,6 +11,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/textproto"
 	"slices"
 	"strconv"
 	"strings"
@@ -503,9 +504,10 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	}
 	if contentLength != 0 || len(reqInfo.Trailer) != 0 {
 		body = &bodyReader{
-			st:      st,
-			remain:  contentLength,
-			trailer: reqInfo.Trailer,
+			st:            st,
+			remain:        contentLength,
+			trailer:       reqInfo.Trailer,
+			filterTrailer: true,
 		}
 	} else {
 		body = http.NoBody
@@ -578,6 +580,12 @@ func responseCanHaveBody(status int) bool {
 	return true
 }
 
+// trailerPrefix is a magic prefix for [responseWriter.Header] map keys that,
+// if present, signals that the map entry is actually for the response
+// trailers, and not the response headers. See [net/http.TrailerPrefix] for
+// details.
+const trailerPrefix = "Trailer:"
+
 type responseWriter struct {
 	st             *stream
 	bw             *bodyWriter
@@ -606,6 +614,12 @@ func (rw *responseWriter) prepareTrailerForWriteLocked() {
 			rw.trailer[name] = val
 		} else {
 			delete(rw.trailer, name)
+		}
+	}
+	for name, vals := range rw.headers {
+		if name, found := strings.CutPrefix(name, trailerPrefix); found {
+			name = textproto.CanonicalMIMEHeaderKey(textproto.TrimString(name))
+			rw.trailer[name] = vals
 		}
 	}
 	if len(rw.trailer) > 0 {

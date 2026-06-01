@@ -127,9 +127,12 @@ type bodyReader struct {
 	send100Continue func()
 	// A map where the key represents the trailer header names we expect. If
 	// there is a HEADERS frame after reading DATA frames to EOF, the value of
-	// the headers will be written here, provided that the name of the header
-	// exists in the map already.
-	trailer http.Header
+	// the headers will be written here. Keys in the map are assumed to be
+	// canonicalized.
+	// If filterTrailer is true, headers that are not already in the map will
+	// be ignored; otherwise, all headers will be added to the map.
+	trailer       http.Header
+	filterTrailer bool
 }
 
 func (r *bodyReader) Read(p []byte) (n int, err error) {
@@ -188,8 +191,16 @@ func (r *bodyReader) Read(p []byte) (n int, err error) {
 			}
 			var dec qpackDecoder
 			if err := dec.decode(r.st, func(_ indexType, name, value string) error {
+				if r.trailer == nil {
+					return nil
+				}
+				if !validWireHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(name) {
+					return nil
+				}
 				name = textproto.CanonicalMIMEHeaderKey(textproto.TrimString(name))
-				if _, ok := r.trailer[name]; ok {
+				if !r.filterTrailer {
+					r.trailer.Add(name, value)
+				} else if _, ok := r.trailer[name]; ok {
 					r.trailer.Add(name, value)
 				}
 				return nil

@@ -798,9 +798,10 @@ func TestServerHandlerReadTrailer(t *testing.T) {
 		}))
 		reqStream.writeData(body)
 		reqStream.writeHeaders(http.Header{
-			"Client-Trailer-A":   {"valuea"},
-			"Client-Trailer-B":   {"valueb"},
-			"Undeclared-Trailer": {"undeclared"}, // Undeclared trailer should be ignored.
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+			// Server should not accept undeclared trailers.
+			"Undeclared-Trailer": {"undeclared"},
 		})
 		reqStream.wantHeaders(nil)
 		reqStream.wantClosed("request is complete")
@@ -838,9 +839,10 @@ func TestServerHandlerReadTrailerNoBody(t *testing.T) {
 			"content-length": {"0"},
 		}))
 		reqStream.writeHeaders(http.Header{
-			"Client-Trailer-A":   {"valuea"},
-			"Client-Trailer-B":   {"valueb"},
-			"Undeclared-Trailer": {"undeclared"}, // Undeclared trailer should be ignored.
+			"Client-Trailer-A": {"valuea"},
+			"Client-Trailer-B": {"valueb"},
+			// Server should not accept undeclared trailers.
+			"Undeclared-Trailer": {"undeclared"},
 		})
 		reqStream.wantHeaders(nil)
 		reqStream.wantClosed("request is complete")
@@ -858,7 +860,10 @@ func TestServerHandlerWriteTrailer(t *testing.T) {
 
 			w.Header().Set("server-trailer-a", "valuea") // Trailer header will be canonicalized.
 			w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+			// Server should not send undeclared trailers, unless it has the
+			// magic "Trailer:" prefix.
 			w.Header().Set("Server-Trailer-Not-Declared", "should be omitted")
+			w.Header().Set("Trailer:Undeclared-Trailer-Exception", "should be sent")
 		}))
 		tc := ts.connect()
 		tc.greet()
@@ -871,8 +876,9 @@ func TestServerHandlerWriteTrailer(t *testing.T) {
 		})
 		reqStream.wantData(body)
 		reqStream.wantSomeHeaders(http.Header{
-			"Server-Trailer-A": {"valuea"},
-			"Server-Trailer-C": {"valuec"},
+			"Server-Trailer-A":             {"valuea"},
+			"Server-Trailer-C":             {"valuec"},
+			"Undeclared-Trailer-Exception": {"should be sent"},
 		})
 		reqStream.wantClosed("request is complete")
 	})
@@ -888,7 +894,10 @@ func TestServerHandlerWriteTrailerNoBody(t *testing.T) {
 
 			w.Header().Set("server-trailer-a", "valuea") // Trailer header will be canonicalized.
 			w.Header().Set("Server-Trailer-C", "valuec") // skipping B
+			// Server should not send undeclared trailers without "Trailer:"
+			// prefix.
 			w.Header().Set("Server-Trailer-Not-Declared", "should be omitted")
+			w.Header().Set("Trailer:undeclared-trailer-exception", "should be sent")
 		}))
 		tc := ts.connect()
 		tc.greet()
@@ -900,8 +909,9 @@ func TestServerHandlerWriteTrailerNoBody(t *testing.T) {
 			"Trailer": {"Server-Trailer-A, Server-Trailer-B, Server-Trailer-C"},
 		})
 		reqStream.wantSomeHeaders(http.Header{
-			"Server-Trailer-A": {"valuea"},
-			"Server-Trailer-C": {"valuec"},
+			"Server-Trailer-A":             {"valuea"},
+			"Server-Trailer-C":             {"valuec"},
+			"Undeclared-Trailer-Exception": {"should be sent"},
 		})
 		reqStream.wantClosed("request is complete")
 	})
