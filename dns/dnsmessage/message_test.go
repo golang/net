@@ -1924,3 +1924,39 @@ func TestBuilderCompressionInAppendMode(t *testing.T) {
 		t.Fatalf("msg[maxPtr:] = %v, want: %v", msg[maxPtr:], expect)
 	}
 }
+
+func TestInvalidMessages(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		in   []byte
+	}{
+		{
+			name: "invalid SVCB",
+			in: []byte{
+				0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x41, 0x00, 0x01,
+				0x00, 0x00, 0x41, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x64,
+				0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x5d,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var p Parser
+			_, err := p.Start(test.in)
+			if err != nil {
+				return
+			}
+			_, err = p.AllQuestions()
+			if err != nil {
+				return
+			}
+			_, err = p.AllAnswers()
+			if err != nil {
+				return
+			}
+			t.Errorf("successfully parsed message: want error")
+			t.Errorf("message: {%x}", test.in)
+		})
+	}
+}
