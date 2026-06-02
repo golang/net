@@ -168,9 +168,8 @@ func (r *SVCBResource) pack(msg []byte, _ map[string]uint16, _ int) ([]byte, err
 	if err != nil {
 		return oldMsg, &nestedError{"SVCBResource.Target", err}
 	}
-	var previousKey SVCParamKey
 	for i, param := range r.Params {
-		if i > 0 && param.Key <= previousKey {
+		if i > 0 && param.Key <= r.Params[i-1].Key {
 			return oldMsg, &nestedError{"SVCBResource.Params", errParamOutOfOrder}
 		}
 		if len(param.Value) > (1<<16)-1 {
@@ -220,6 +219,7 @@ func unpackSVCBResource(msg []byte, off int, length uint16) (SVCBResource, error
 		if off+int(size) > bodyEnd {
 			return SVCBResource{}, errResourceLen
 		}
+		previousKey = key
 		totalValueLen += size
 		off += int(size)
 		n++
