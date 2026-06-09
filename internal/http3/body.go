@@ -194,7 +194,7 @@ func (r *bodyReader) Read(p []byte) (n int, err error) {
 				if r.trailer == nil {
 					return nil
 				}
-				if !validWireHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(name) {
+				if !validWireHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
 					return nil
 				}
 				name = textproto.CanonicalMIMEHeaderKey(textproto.TrimString(name))
