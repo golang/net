@@ -65,11 +65,16 @@ func TestSeparatorReplacement(t *testing.T) {
 			generateTokenAtTime("key", ":foo:", "wah", now),
 			generateTokenAtTime("key", "::foo::", "wah", now),
 		},
+		{
+			"End Colon and Start Colon",
+			generateTokenAtTime("key", "foo:", "wah", now),
+			generateTokenAtTime("key", "foo", ":wah", now),
+		},
 	}
 
 	for _, st := range separatorTests {
 		if st.token1 == st.token2 {
-			t.Errorf("%v: Expected generated tokens to be different", st.name)
+			t.Errorf("%v: Expected generated tokens (%q) to be different", st.name, st.token1)
 		}
 	}
 }
