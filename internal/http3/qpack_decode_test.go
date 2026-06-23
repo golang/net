@@ -173,6 +173,12 @@ func TestQPACKDecodeErrors(t *testing.T) {
 	}, {
 		name: "too high static table index",
 		enc:  unhex("0000ff23ff24"),
+	}, {
+		name: "prefixed string length overflow",
+		enc:  unhex("000027ffffffffffffffff7f"),
+	}, {
+		name: "prefixed static index overflow",
+		enc:  unhex("0000ffffffffffffffffff7f"),
 	}} {
 		synctestSubtest(t, test.name, func(t *testing.T) {
 			st1, st2 := newStreamPair(t)
