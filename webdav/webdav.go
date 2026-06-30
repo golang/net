@@ -14,7 +14,8 @@
 //
 //   - Remote code execution.
 //   - Access of a file outside of the restricted tree
-//     defined by [Dir].
+//     defined by [Dir] (but see the Dir documentation for
+//     limitations).
 //
 // Other misbahaviors (crashes, excessive resource consumption,
 // lack of isolation between clients, etc.) will be handled

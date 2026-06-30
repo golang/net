@@ -61,6 +61,10 @@ type File interface {
 // Dir does not prevent traversal of symbolic links within its directory tree,
 // including links that reference locations outside of the tree.
 //
+// Dir does not prevent filesystem modifications which change the target
+// of relative symbolic links. For example, moving a directory containing
+// a symbolic link to "../target" may cause the link to point to a new target.
+//
 // While the FileSystem.OpenFile method takes '/'-separated paths, a Dir's
 // string value is a filename on the native file system, not a URL, so it is
 // separated by filepath.Separator, which isn't necessarily '/'.
