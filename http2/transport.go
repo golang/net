@@ -742,7 +742,7 @@ func (cc *ClientConn) availableLocked() int {
 	return max(0, int(cc.maxConcurrentStreams)-cc.currentRequestCountLocked())
 }
 
-// tooIdleLocked reports whether this connection has been been sitting idle
+// tooIdleLocked reports whether this connection has been sitting idle
 // for too much wall time.
 func (cc *ClientConn) tooIdleLocked() bool {
 	// The Round(0) strips the monontonic clock reading so the
