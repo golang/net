@@ -437,3 +437,31 @@ func TestSVCBPackErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestSVCBUnpackOutOfBounds(t *testing.T) {
+	// A minimal DNS message with an SVCB record where the header Length
+	// field (65535) maliciously exceeds the physical bounds of the buffer.
+	msg := []byte{
+		0x00, 0x01, // ID
+		0x00, 0x00, // Flags
+		0x00, 0x00, // QDCount = 0
+		0x00, 0x01, // ANCount = 1
+		0x00, 0x00, // NSCount = 0
+		0x00, 0x00, // ARCount = 0
+		0x00,       // Name: "."
+		0x00, 0x40, // Type: SVCB
+		0x00, 0x01, // Class: INET
+		0x00, 0x00, 0x00, 0x00, // TTL
+		0xff, 0xff, // Length: 65535 (Spoofed)
+		0x00, 0x01, // Priority
+		0x00,       // Target
+		0x00, 0x01, // Param Key
+		0xff, 0xf8, // Param Length
+	}
+
+	var m Message
+	err := m.Unpack(msg)
+	if err == nil {
+		t.Fatal("expected error parsing malformed message, got nil")
+	}
+}
