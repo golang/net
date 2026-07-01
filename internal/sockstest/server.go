@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 
 	"golang.org/x/net/internal/socks"
 	"golang.org/x/net/nettest"
@@ -61,8 +62,11 @@ func ParseCmdRequest(b []byte) (*CmdRequest, error) {
 	if b[0] != socks.Version5 {
 		return nil, errors.New("unexpected protocol version")
 	}
-	if socks.Command(b[1]) != socks.CmdConnect {
+	switch socks.Command(b[1]) {
+	case socks.CmdConnect, socks.CmdUDPAssociate:
+	default:
 		return nil, errors.New("unexpected command")
+
 	}
 	if b[2] != 0 {
 		return nil, errors.New("non-zero reserved field")
@@ -130,21 +134,20 @@ func (s *Server) Addr() net.Addr {
 	return s.ln.Addr()
 }
 
-// TargetAddr returns a fake final destination address.
+// TargetAddrPort returns a fake final destination address and port.
 //
 // The returned address is only valid for testing with Server.
-func (s *Server) TargetAddr() net.Addr {
+func (s *Server) TargetAddrPort() netip.AddrPort {
 	a := s.ln.Addr()
 	switch a := a.(type) {
 	case *net.TCPAddr:
-		if a.IP.To4() != nil {
-			return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5963}
+		addr, ok := netip.AddrFromSlice(a.IP)
+		if !ok {
+			return netip.AddrPort{}
 		}
-		if a.IP.To16() != nil && a.IP.To4() == nil {
-			return &net.TCPAddr{IP: net.IPv6loopback, Port: 5963}
-		}
+		return netip.AddrPortFrom(addr, 5963)
 	}
-	return nil
+	return netip.AddrPort{}
 }
 
 // Close closes the server.

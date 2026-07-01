@@ -75,6 +75,17 @@ func TestParseCmdRequest(t *testing.T) {
 			},
 		},
 		{
+			[]byte{0x05, 0x03, 0x00, 0x01, 192, 0, 2, 1, 0x17, 0x4b},
+			&CmdRequest{
+				socks.Version5,
+				socks.CmdUDPAssociate,
+				socks.Addr{
+					IP:   net.IP{192, 0, 2, 1},
+					Port: 5963,
+				},
+			},
+		},
+		{
 			[]byte{0x05, 0x01, 0x00, 0x03, 0x04, 'F', 'Q', 'D', 'N', 0x17, 0x4b},
 			&CmdRequest{
 				socks.Version5,
