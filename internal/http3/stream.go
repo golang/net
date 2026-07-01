@@ -60,13 +60,14 @@ func newStream(qs *quic.Stream) *stream {
 	}
 }
 
-// readFrameHeader reads the type and length fields of an HTTP/3 frame.
-// It sets the read limit to the end of the frame.
-//
-// https://www.rfc-editor.org/rfc/rfc9114.html#section-7.1
+// maxHeaderSectionSize is the maximum allowed size of an HTTP/3 HEADERS frame.
+// This matches the MaxHeaderListSize limit enforced by the HTTP/2 implementation.
+// https://www.rfc-editor.org/rfc/rfc9114.html#section-4.2.2
+const maxHeaderSectionSize = 10 << 20 // 10 MB
+
 func (st *stream) readFrameHeader() (ftype frameType, err error) {
 	if st.lim >= 0 {
-		// We shouldn't call readFrameHeader before ending the previous frame.
+		// We shoudn't call readFrameHeader before ending the previous frame.
 		return 0, errH3FrameError
 	}
 	ftype, err = readVarint[frameType](st)
@@ -76,6 +77,16 @@ func (st *stream) readFrameHeader() (ftype frameType, err error) {
 	size, err := st.readVarint()
 	if err != nil {
 		return 0, err
+	}
+	// Enforce a maximum size for HEADERS frames before setting st.lim.
+	// Without this check, an unauthenticated client can declare a frame
+	// length up to 2^62 bytes, causing unbounded memory allocation and OOM.
+	// This mirrors MaxHeaderListSize enforcement in http2/server.go.
+	if ftype == frameTypeHeaders && size > maxHeaderSectionSize {
+		return 0, &connectionError{
+			code:    errH3ExcessiveLoad,
+			message: "HEADERS frame too large",
+		}
 	}
 	st.lim = size
 	return ftype, nil
@@ -98,6 +109,13 @@ func (st *stream) endFrame() error {
 func (st *stream) readFrameData() ([]byte, error) {
 	if st.lim < 0 {
 		return nil, errH3FrameError
+	}
+	// Secondary guard: prevent single-frame OOM for any oversized frame.
+	if st.lim > maxHeaderSectionSize {
+		return nil, &connectionError{
+			code:    errH3ExcessiveLoad,
+			message: "frame too large",
+		}
 	}
 	// TODO: Pool buffers to avoid allocation here.
 	b := make([]byte, st.lim)
