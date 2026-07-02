@@ -161,25 +161,65 @@ var liveProps = map[xml.Name]struct {
 }
 
 // TODO(nigeltao) merge props and allprop?
+func getProps(ctx context.Context, fs FileSystem, name string) (DeadPropsHolder, bool, error) {
+	if propsFS, ok := fs.(FileSystemProps); ok {
+		dph, err := propsFS.Props(ctx, name)
+		if err != nil {
+			return nil, false, err
+		}
+		if dph != nil {
+			return dph, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func getDeadPropsHolder(ctx context.Context, fs FileSystem, name string, flag int, needFi bool) (DeadPropsHolder, os.FileInfo, func() error, error) {
+	dph, isFsProp, err := getProps(ctx, fs, name)
+	var fi os.FileInfo
+	if isFsProp {
+		if needFi {
+			fi, err = fs.Stat(ctx, name)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		return dph, fi, nil, nil
+	}
+
+	f, err := fs.OpenFile(ctx, name, flag, 0)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if needFi {
+		fi, err = f.Stat()
+		if err != nil {
+			f.Close()
+			return nil, nil, nil, err
+		}
+	}
+	if dph, ok := f.(DeadPropsHolder); ok {
+		return dph, fi, f.Close, nil
+	}
+	return nil, fi, f.Close, nil
+}
 
 // props returns the status of the properties named pnames for resource name.
 //
 // Each Propstat has a unique status and each property name will only be part
 // of one Propstat element.
 func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pnames []xml.Name) ([]Propstat, error) {
-	f, err := fs.OpenFile(ctx, name, os.O_RDONLY, 0)
+	dph, fi, closeFunc, err := getDeadPropsHolder(ctx, fs, name, os.O_RDONLY, true)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
+	if closeFunc != nil {
+		defer closeFunc()
 	}
 	isDir := fi.IsDir()
 
 	var deadProps map[xml.Name]Property
-	if dph, ok := f.(DeadPropsHolder); ok {
+	if dph != nil {
 		deadProps, err = dph.DeadProps()
 		if err != nil {
 			return nil, err
@@ -215,19 +255,17 @@ func props(ctx context.Context, fs FileSystem, ls LockSystem, name string, pname
 
 // propnames returns the property names defined for resource name.
 func propnames(ctx context.Context, fs FileSystem, ls LockSystem, name string) ([]xml.Name, error) {
-	f, err := fs.OpenFile(ctx, name, os.O_RDONLY, 0)
+	dph, fi, closeFunc, err := getDeadPropsHolder(ctx, fs, name, os.O_RDONLY, true)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
+	if closeFunc != nil {
+		defer closeFunc()
 	}
 	isDir := fi.IsDir()
 
 	var deadProps map[xml.Name]Property
-	if dph, ok := f.(DeadPropsHolder); ok {
+	if dph != nil {
 		deadProps, err = dph.DeadProps()
 		if err != nil {
 			return nil, err
@@ -305,12 +343,15 @@ loop:
 		return makePropstats(pstatForbidden, pstatFailedDep), nil
 	}
 
-	f, err := fs.OpenFile(ctx, name, os.O_RDWR, 0)
+	dph, _, closer, err := getDeadPropsHolder(ctx, fs, name, os.O_RDWR, false)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	if dph, ok := f.(DeadPropsHolder); ok {
+	if closer != nil {
+		defer closer()
+	}
+
+	if dph != nil {
 		ret, err := dph.Patch(patches)
 		if err != nil {
 			return nil, err

@@ -45,6 +45,10 @@ type FileSystem interface {
 	Stat(ctx context.Context, name string) (os.FileInfo, error)
 }
 
+type FileSystemProps interface {
+	Props(ctx context.Context, name string) (DeadPropsHolder, error)
+}
+
 // A File is returned by a FileSystem's OpenFile method and can be served by a
 // Handler.
 //
@@ -642,15 +646,35 @@ func moveFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 	return http.StatusNoContent, nil
 }
 
-func copyProps(dst, src File) error {
-	d, ok := dst.(DeadPropsHolder)
-	if !ok {
+func copyProps(ctx context.Context, fs FileSystem, dstName, srcName string, dst, src File) error {
+	d, hasDstFSProp, err := getProps(ctx, fs, dstName)
+	if err != nil {
+		return err
+	}
+	s, hasSrcFSProp, err := getProps(ctx, fs, srcName)
+	if err != nil {
+		return err
+	}
+
+	if !hasDstFSProp {
+		var ok bool
+		d, ok = dst.(DeadPropsHolder)
+		if !ok {
+			return nil
+		}
+	}
+	if !hasSrcFSProp {
+		var ok bool
+		s, ok = src.(DeadPropsHolder)
+		if !ok {
+			return nil
+		}
+	}
+
+	if d == nil || s == nil {
 		return nil
 	}
-	s, ok := src.(DeadPropsHolder)
-	if !ok {
-		return nil
-	}
+
 	m, err := s.DeadProps()
 	if err != nil {
 		return err
@@ -739,7 +763,7 @@ func copyFiles(ctx context.Context, fs FileSystem, src, dst string, overwrite bo
 
 		}
 		_, copyErr := io.Copy(dstFile, srcFile)
-		propsErr := copyProps(dstFile, srcFile)
+		propsErr := copyProps(ctx, fs, dst, src, dstFile, srcFile)
 		closeErr := dstFile.Close()
 		if copyErr != nil {
 			return http.StatusInternalServerError, copyErr
