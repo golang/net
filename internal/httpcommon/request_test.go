@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/idna"
 )
 
 func TestEncodeHeaders(t *testing.T) {
@@ -480,6 +482,44 @@ func TestEncodeHeaders(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestEncodeHeadersIDNAMapping verifies that the :authority pseudo-header is
+// computed with the same UTS #46 processing (with mapping) used to pick the
+// address the request is dialed to, so the header cannot disagree with the
+// dialed address. See https://go.dev/issue/80417.
+func TestEncodeHeadersIDNAMapping(t *testing.T) {
+	// uniHost maps to a different name under UTS #46 processing (idna.Lookup,
+	// used to pick the dial address) than under Punycode-only processing
+	// (idna.ToASCII, which used to be used for the header). Verify the two
+	// disagree so this test actually exercises the mapping.
+	const uniHost = "ⓖⓞⓟⓑⓔⓡ.example" // "ⓖⓞⓟⓗⓔⓡ.example"
+	mapped, err := idna.Lookup.ToASCII(uniHost)
+	if err != nil {
+		t.Fatalf("idna.Lookup.ToASCII(%q) = %v", uniHost, err)
+	}
+	if puny, err := idna.ToASCII(uniHost); err == nil && puny == mapped {
+		t.Fatalf("test host %q does not distinguish IDNA profiles", uniHost)
+	}
+
+	req := newReq(func() *http.Request {
+		r := must(http.NewRequest("GET", "https://example.tld/", nil))
+		r.Host = uniHost
+		return r
+	})
+
+	var authority string
+	_, err = EncodeHeaders(context.Background(), EncodeHeadersParam{Request: req}, func(name, value string) {
+		if name == ":authority" {
+			authority = value
+		}
+	})
+	if err != nil {
+		t.Fatalf("EncodeHeaders = %v", err)
+	}
+	if authority != mapped {
+		t.Errorf(":authority = %q, want %q", authority, mapped)
 	}
 }
 
