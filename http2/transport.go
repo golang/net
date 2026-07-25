@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -1443,13 +1444,36 @@ var (
 	errReqBodyTooLong = errors.New("http2: request body larger than specified content length")
 )
 
+var (
+	xrayScratchOnce sync.Once
+	xrayScratchCap  int64
+)
+
+func xrayMaxScratchBufferLen() int64 {
+	xrayScratchOnce.Do(func() {
+		xrayScratchCap = 32 << 10
+		if v := os.Getenv("XRAY_H2_MAX_SCRATCH"); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				if n < 4<<10 {
+					n = 4 << 10
+				}
+				if n > 512<<10 {
+					n = 512 << 10
+				}
+				xrayScratchCap = n
+			}
+		}
+	})
+	return xrayScratchCap
+}
+
 // frameScratchBufferLen returns the length of a buffer to use for
 // outgoing request bodies to read/write to/from.
 //
 // It returns max(1, min(peer's advertised max frame size,
 // Request.ContentLength+1, 512KB)).
 func (cs *clientStream) frameScratchBufferLen(maxFrameSize int) int {
-	const max = 512 << 10
+	max := xrayMaxScratchBufferLen()
 	n := int64(maxFrameSize)
 	if n > max {
 		n = max
