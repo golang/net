@@ -14,7 +14,6 @@ import (
 
 func TestHeaderFieldTable(t *testing.T) {
 	table := &headerFieldTable{}
-	table.init()
 	table.addEntry(pair("key1", "value1-1"))
 	table.addEntry(pair("key2", "value2-1"))
 	table.addEntry(pair("key1", "value1-2"))
@@ -91,13 +90,15 @@ func TestHeaderFieldTable(t *testing.T) {
 
 func TestHeaderFieldTable_LookupMapEviction(t *testing.T) {
 	table := &headerFieldTable{}
-	table.init()
 	table.addEntry(pair("key1", "value1-1"))
 	table.addEntry(pair("key2", "value2-1"))
 	table.addEntry(pair("key1", "value1-2"))
 	table.addEntry(pair("key3", "value3-1"))
 	table.addEntry(pair("key4", "value4-1"))
 	table.addEntry(pair("key2", "value2-2"))
+
+	// Build the lookup maps so eviction has maps to maintain.
+	table.search(pair("key1", "value1-1"))
 
 	// evict all pairs
 	table.evictOldest(table.len())
@@ -112,6 +113,44 @@ func TestHeaderFieldTable_LookupMapEviction(t *testing.T) {
 
 	if l := len(table.byNameValue); l > 0 {
 		t.Errorf("len(table.byNameValue) = %d, want 0", l)
+	}
+}
+
+// TestHeaderFieldTable_MapsBuiltLazily verifies that a table used without
+// search (as by decoders) never allocates its lookup maps, and that maps
+// built after evictions reflect only the surviving entries.
+func TestHeaderFieldTable_MapsBuiltLazily(t *testing.T) {
+	table := &headerFieldTable{}
+	table.addEntry(pair("key1", "value1-1"))
+	table.addEntry(pair("key2", "value2-1"))
+	table.addEntry(pair("key1", "value1-2"))
+	table.evictOldest(1)
+
+	if table.byName != nil || table.byNameValue != nil {
+		t.Fatalf("lookup maps allocated without search")
+	}
+
+	// The first search builds the maps from the surviving entries.
+	if i, match := table.search(pair("key1", "value1-2")); i != 1 || !match {
+		t.Errorf("search(key1, value1-2) = %v, %v; want 1, true", i, match)
+	}
+	if i, match := table.search(pair("key2", "wrong-value")); i != 2 || match {
+		t.Errorf("search(key2, wrong-value) = %v, %v; want 2, false", i, match)
+	}
+	if _, ok := table.byName["key1"]; !ok {
+		t.Errorf("byName missing key1")
+	}
+	if got, want := len(table.byName), 2; got != want {
+		t.Errorf("len(byName) = %d, want %d", got, want)
+	}
+	if got, want := len(table.byNameValue), 2; got != want {
+		t.Errorf("len(byNameValue) = %d, want %d", got, want)
+	}
+
+	// Entries added after the maps exist keep them up to date.
+	table.addEntry(pair("key3", "value3-1"))
+	if i, match := table.search(pair("key3", "value3-1")); i != 1 || !match {
+		t.Errorf("search(key3, value3-1) = %v, %v; want 1, true", i, match)
 	}
 }
 
