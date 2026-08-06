@@ -854,7 +854,12 @@ func (cc *ClientConn) sendGoAway() error {
 	cc.mu.Lock()
 	closing := cc.closing
 	cc.closing = true
-	maxStreamID := cc.nextStreamID
+		// Last-Stream-ID must be in the peer's stream-id space: for a client
+	// that's a server-initiated (even) id, or 0. The odd nextStreamID isn't
+	// valid there, so a strict server (nghttp2) rejects the GOAWAY as
+	// PROTOCOL_ERROR. Since the client has no server-initiated streams
+	// (push is off), 0 is correct.
+	maxStreamID := uint32(0)
 	cc.mu.Unlock()
 	if closing {
 		// GOAWAY sent already
