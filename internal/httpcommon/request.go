@@ -49,12 +49,67 @@ type EncodeHeadersParam struct {
 	// DefaultUserAgent is the User-Agent header to send when the request
 	// neither contains a User-Agent nor disables it.
 	DefaultUserAgent string
+
+	// NARA: fingerprint controls. Upstream emits regular headers by ranging
+	// req.Header — a Go map, so the order is randomised on every request — and
+	// hardcodes the pseudo-header order. Both are fingerprinted (SCAN-101).
+	//
+	// HeaderOrder, when non-empty, lists lowercase header names in the order
+	// they should be emitted. Names present in the request but absent here are
+	// emitted afterwards in sorted order, so the result is always deterministic
+	// even for headers the profile did not anticipate.
+	HeaderOrder []string
+
+	// PseudoHeaderOrder, when non-empty, lists the request pseudo-headers in
+	// emission order, e.g. {":method", ":authority", ":scheme", ":path"}.
+	// Entries that do not apply to the request are skipped.
+	PseudoHeaderOrder []string
 }
 
 // EncodeHeadersParam is the result of EncodeHeaders.
 type EncodeHeadersResult struct {
 	HasBody     bool
 	HasTrailers bool
+}
+
+// orderedHeaderKeys returns the keys of h in the order they should be emitted.
+//
+// NARA (SCAN-101): upstream ranges the header map directly, so emission order is
+// randomised per request — a signal no real client produces, and one that makes
+// us match nothing in any fingerprint database rather than merely matching the
+// wrong thing.
+//
+// Keys named in order come first, in that order. Anything left over follows in
+// sorted order, so the result is deterministic even for headers the browser
+// profile did not anticipate. Matching is case-insensitive because http.Header
+// keys are canonicalised ("Sec-Ch-Ua") while profiles are written in the
+// lowercase form HTTP/2 actually puts on the wire ("sec-ch-ua").
+func orderedHeaderKeys(h map[string][]string, order []string) []string {
+	keys := make([]string, 0, len(h))
+	if len(order) == 0 {
+		for k := range h {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys
+	}
+
+	remaining := make(map[string]string, len(h)) // lowercase name -> actual key
+	for k := range h {
+		remaining[strings.ToLower(k)] = k
+	}
+	for _, want := range order {
+		if k, ok := remaining[strings.ToLower(want)]; ok {
+			keys = append(keys, k)
+			delete(remaining, strings.ToLower(want))
+		}
+	}
+	rest := make([]string, 0, len(remaining))
+	for _, k := range remaining {
+		rest = append(rest, k)
+	}
+	sort.Strings(rest)
+	return append(keys, rest...)
 }
 
 // EncodeHeaders constructs request headers common to HTTP/2 and HTTP/3.
@@ -135,15 +190,35 @@ func EncodeHeaders(ctx context.Context, param EncodeHeadersParam, headerf func(n
 		// target URI (the path-absolute production and optionally a '?' character
 		// followed by the query production, see Sections 3.3 and 3.4 of
 		// [RFC3986]).
-		f(":authority", host)
 		m := req.Method
 		if m == "" {
 			m = "GET"
 		}
-		f(":method", m)
-		if !isNormalConnect {
-			f(":path", path)
-			f(":scheme", req.URL.Scheme)
+		// NARA: pseudo-header order is fingerprinted (it is the last component of
+		// the Akamai HTTP/2 fingerprint). Upstream hardcodes authority/method/
+		// path/scheme; PseudoHeaderOrder lets a browser profile override it.
+		pseudo := map[string]func(){
+			":authority": func() { f(":authority", host) },
+			":method":    func() { f(":method", m) },
+			":path": func() {
+				if !isNormalConnect {
+					f(":path", path)
+				}
+			},
+			":scheme": func() {
+				if !isNormalConnect {
+					f(":scheme", req.URL.Scheme)
+				}
+			},
+		}
+		order := param.PseudoHeaderOrder
+		if len(order) == 0 {
+			order = []string{":authority", ":method", ":path", ":scheme"}
+		}
+		for _, name := range order {
+			if emit, ok := pseudo[name]; ok {
+				emit()
+			}
 		}
 		if protocol != "" {
 			f(":protocol", protocol)
@@ -153,7 +228,8 @@ func EncodeHeaders(ctx context.Context, param EncodeHeadersParam, headerf func(n
 		}
 
 		var didUA bool
-		for k, vv := range req.Header {
+		for _, k := range orderedHeaderKeys(req.Header, param.HeaderOrder) {
+			vv := req.Header[k]
 			if asciiEqualFold(k, "host") || asciiEqualFold(k, "content-length") {
 				// Host is :authority, already sent.
 				// Content-Length is automatic, set below.

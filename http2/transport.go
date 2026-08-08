@@ -136,6 +136,31 @@ type Transport struct {
 	// the default value of 4096 is used.
 	MaxEncoderHeaderTableSize uint32
 
+	// NARA (SCAN-101): browser-impersonation controls. All four components of
+	// the Akamai HTTP/2 fingerprint — SETTINGS, WINDOW_UPDATE, stream priority
+	// and pseudo-header order — plus regular header order are otherwise fixed by
+	// this package and identify the client as Go. Leaving these zero/nil keeps
+	// upstream behaviour exactly.
+
+	// InitialSettings, when non-empty, replaces the SETTINGS frame sent at the
+	// start of a connection, preserving both values and order.
+	InitialSettings []Setting
+
+	// ConnectionWindowUpdate, when non-zero, is the increment of the initial
+	// connection-level WINDOW_UPDATE. Only consulted alongside InitialSettings,
+	// since sending a browser's window with Go's SETTINGS would be incoherent.
+	ConnectionWindowUpdate uint32
+
+	// HeaderOrder, when non-empty, lists lowercase header names in the order
+	// they should be emitted. Headers not named here follow in sorted order, so
+	// emission is deterministic regardless. Upstream ranges the header map,
+	// which randomises the order on every request.
+	HeaderOrder []string
+
+	// PseudoHeaderOrder, when non-empty, sets the order of request
+	// pseudo-headers, e.g. {":method", ":authority", ":scheme", ":path"}.
+	PseudoHeaderOrder []string
+
 	// StrictMaxConcurrentStreams controls whether the server's
 	// SETTINGS_MAX_CONCURRENT_STREAMS should be respected
 	// globally. If false, new TCP connections are created to the
@@ -881,22 +906,40 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		cc.tlsState = &state
 	}
 
-	initialSettings := []Setting{
-		{ID: SettingEnablePush, Val: 0},
-		{ID: SettingInitialWindowSize, Val: uint32(cc.initialStreamRecvWindowSize)},
-	}
-	initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: conf.MaxReadFrameSize})
-	if max := t.maxHeaderListSize(); max != 0 {
-		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
-	}
-	if maxHeaderTableSize != initialHeaderTableSize {
-		initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: maxHeaderTableSize})
+	// NARA (SCAN-101): the SETTINGS frame and the initial connection
+	// WINDOW_UPDATE are two of the four components of the Akamai HTTP/2
+	// fingerprint. Go's defaults identify us as Go; a browser profile can
+	// replace them wholesale, preserving both the values and their order.
+	initialSettings := t.InitialSettings
+	connWindowUpdate := uint32(conf.MaxUploadBufferPerConnection)
+	if len(initialSettings) == 0 {
+		initialSettings = []Setting{
+			{ID: SettingEnablePush, Val: 0},
+			{ID: SettingInitialWindowSize, Val: uint32(cc.initialStreamRecvWindowSize)},
+		}
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: conf.MaxReadFrameSize})
+		if max := t.maxHeaderListSize(); max != 0 {
+			initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: max})
+		}
+		if maxHeaderTableSize != initialHeaderTableSize {
+			initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: maxHeaderTableSize})
+		}
+	} else if t.ConnectionWindowUpdate != 0 {
+		connWindowUpdate = t.ConnectionWindowUpdate
 	}
 
 	cc.bw.Write(clientPreface)
 	cc.fr.WriteSettings(initialSettings...)
-	cc.fr.WriteWindowUpdate(0, uint32(conf.MaxUploadBufferPerConnection))
-	cc.inflow.init(conf.MaxUploadBufferPerConnection + initialWindowSize)
+	cc.fr.WriteWindowUpdate(0, connWindowUpdate)
+	// NARA: our receive accounting must cover whatever window we advertised
+	// above, or a peer taking us at our word could overrun it and trip a flow
+	// control error. A browser profile normally shrinks the advertised window
+	// (Chrome's is far smaller than Go's), so this usually changes nothing.
+	inflowWindow := conf.MaxUploadBufferPerConnection
+	if int64(connWindowUpdate) > int64(inflowWindow) {
+		inflowWindow = int32(min(int64(connWindowUpdate), int64(math.MaxInt32-initialWindowSize)))
+	}
+	cc.inflow.init(inflowWindow + initialWindowSize)
 	cc.bw.Flush()
 	if cc.werr != nil {
 		cc.Close()
@@ -1609,7 +1652,7 @@ func (cs *clientStream) encodeAndWriteHeaders(req *http.Request) error {
 	// sent by writeRequestBody below, along with any Trailers,
 	// again in form HEADERS{1}, CONTINUATION{0,})
 	cc.hbuf.Reset()
-	res, err := encodeRequestHeaders(req, cs.requestedGzip, cc.peerMaxHeaderListSize, func(name, value string) {
+	res, err := encodeRequestHeadersFor(cc.t, req, cs.requestedGzip, cc.peerMaxHeaderListSize, func(name, value string) {
 		cc.writeHeader(name, value)
 	})
 	if err != nil {
@@ -1626,6 +1669,19 @@ func (cs *clientStream) encodeAndWriteHeaders(req *http.Request) error {
 }
 
 func encodeRequestHeaders(req *http.Request, addGzipHeader bool, peerMaxHeaderListSize uint64, headerf func(name, value string)) (httpcommon.EncodeHeadersResult, error) {
+	return encodeRequestHeadersFor(nil, req, addGzipHeader, peerMaxHeaderListSize, headerf)
+}
+
+// NARA (SCAN-101): as encodeRequestHeaders, but taking the Transport so a
+// browser profile's header and pseudo-header ordering can be applied. Added
+// alongside the original rather than replacing it, so that upstream's own tests
+// continue to compile against this fork and a rebase stays mechanical. A nil
+// Transport gives exactly upstream's behaviour.
+func encodeRequestHeadersFor(t *Transport, req *http.Request, addGzipHeader bool, peerMaxHeaderListSize uint64, headerf func(name, value string)) (httpcommon.EncodeHeadersResult, error) {
+	var headerOrder, pseudoHeaderOrder []string
+	if t != nil {
+		headerOrder, pseudoHeaderOrder = t.HeaderOrder, t.PseudoHeaderOrder
+	}
 	return httpcommon.EncodeHeaders(req.Context(), httpcommon.EncodeHeadersParam{
 		Request: httpcommon.Request{
 			Header:              req.Header,
@@ -1638,6 +1694,8 @@ func encodeRequestHeaders(req *http.Request, addGzipHeader bool, peerMaxHeaderLi
 		AddGzipHeader:         addGzipHeader,
 		PeerMaxHeaderListSize: peerMaxHeaderListSize,
 		DefaultUserAgent:      defaultUserAgent,
+		HeaderOrder:           headerOrder,
+		PseudoHeaderOrder:     pseudoHeaderOrder,
 	}, headerf)
 }
 
