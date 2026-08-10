@@ -1039,6 +1039,20 @@ func TestServerInfersHeaders(t *testing.T) {
 			},
 		},
 		{
+			name:           "infers content type for response with empty content encoding",
+			responseStatus: 200,
+			declaredHeader: http.Header{
+				"Content-Encoding":  {""},
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Content-Encoding":  {""},
+				"Content-Type":      {"text/html; charset=utf-8"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
 			name:           "does not infer content type when header is flushed before body is written",
 			responseStatus: 200,
 			flushedEarly:   true,

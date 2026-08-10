@@ -915,7 +915,7 @@ func (bb *bodyBuffer) inferHeader(h http.Header, status int) {
 	}
 	// If the Content-Encoding is non-blank, we shouldn't
 	// sniff the body. See Issue golang.org/issue/31753.
-	_, hasCE := h["Content-Encoding"]
+	hasCE := len(h.Get("Content-Encoding")) > 0
 	_, hasCT := h["Content-Type"]
 	if !hasCE && !hasCT && responseCanHaveBody(status) && len(*bb) > 0 {
 		h.Set("Content-Type", http.DetectContentType(*bb))
