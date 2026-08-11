@@ -372,6 +372,132 @@ func TestServerInvalidHeader(t *testing.T) {
 	})
 }
 
+func TestServerAuthorityAndHostHeader(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		h        http.Header
+		valid    bool
+		wantHost string
+	}{{
+		name: "authority host mismatch",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"other.tld"},
+		},
+	}, {
+		// The RFCs aren't explicit on whether a :authority and host that
+		// differ only in case is a mismatch. We treat it as a mismatch because
+		// there doesn't seem to be a good reason not to.
+		name: "authority host case differs",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"EXAMPLE.TLD"},
+		},
+	}, {
+		name: "authority and multiple host",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "multiple host only",
+		h: http.Header{
+			"host": {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "multiple authority only",
+		h: http.Header{
+			":authority": {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "empty authority",
+		h: http.Header{
+			":authority": {""},
+		},
+	}, {
+		name: "invalid authority",
+		h: http.Header{
+			":authority": {"example . tld"},
+		},
+	}, {
+		name: "invalid host",
+		h: http.Header{
+			"host": {"example . tld"},
+		},
+	}, {
+		name: "authority only",
+		h: http.Header{
+			":authority": {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "host only",
+		h: http.Header{
+			"host": {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "authority host match",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "authority host match with port",
+		h: http.Header{
+			":authority": {"example.tld:443"},
+			"host":       {"example.tld:443"},
+		},
+		valid:    true,
+		wantHost: "example.tld:443",
+	}, {
+		name: "authority host mismatch with port",
+		h: http.Header{
+			":authority": {"example.tld:80"},
+			"host":       {"example.tld:443"},
+		},
+	}, {
+		name: "userinfo in authority",
+		h: http.Header{
+			":authority": {"user:pass@example.tld"},
+		},
+	}, {
+		name: "userinfo in host",
+		h: http.Header{
+			"host": {"user:pass@example.tld"},
+		},
+	}, {
+		name:     "neither authority nor host",
+		h:        http.Header{},
+		valid:    true,
+		wantHost: "",
+	}} {
+		synctestSubtest(t, test.name, func(t *testing.T) {
+			ts := newTestServer(t, nil)
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(test.h))
+			if test.valid {
+				call := tc.nextHandlerCall()
+				if call == nil {
+					t.Fatal("no server handler call; want one")
+				}
+				if got, want := call.req.Host, test.wantHost; got != want {
+					t.Errorf("handler got Host %q, want %q", got, want)
+				}
+			} else {
+				reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
+			}
+		})
+	}
+}
+
 func TestServerInvalidStatus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		gotpanic := make(chan bool)

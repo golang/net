@@ -370,6 +370,12 @@ func (sc *serverConn) parseHeader(st *stream) (http.Header, pseudoHeader, error)
 		if !httpguts.ValidHeaderFieldValue(value) {
 			return &streamError{errH3MessageError, "invalid field value"}
 		}
+		if name == "" || (name[0] == ':' && value == "") {
+			// Reject 0-length pseudo-header values up front,
+			// to avoid any confusion down the line between
+			// "present but zero-length" and "absent".
+			return &streamError{errH3MessageError, "invalid field"}
+		}
 		switch name {
 		case ":method":
 			if hasMethod {
@@ -514,7 +520,7 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	req := (&http.Request{
 		Proto:         "HTTP/3.0",
 		Method:        pHeader.method,
-		Host:          pHeader.authority,
+		Host:          reqInfo.Host,
 		URL:           reqInfo.URL,
 		RequestURI:    reqInfo.RequestURI,
 		Trailer:       reqInfo.Trailer,

@@ -270,7 +270,7 @@ func (ts *testQUICStream) wantIdle(reason string) {
 	if _, err := qs.Read(make([]byte, 1)); !errors.Is(err, context.Canceled) {
 		ts.t.Fatalf("%v: want stream to be idle, but stream has content", reason)
 	}
-	qs.SetReadContext(nil)
+	qs.SetReadContext(context.Background())
 }
 
 // wantFrameHeader calls readFrameHeader and asserts that the frame is of a given type.
