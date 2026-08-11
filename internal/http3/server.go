@@ -507,7 +507,7 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 	}
 
 	contentLength := int64(-1)
-	if n, err := strconv.Atoi(header.Get("Content-Length")); err == nil {
+	if n, err := strconv.ParseUint(header.Get("Content-Length"), 10, 63); err == nil {
 		contentLength = int64(n)
 	}
 
@@ -603,11 +603,11 @@ type responseWriter struct {
 	snapHeaders    http.Header // Snapshot of headers at WriteHeader time
 	trailer        http.Header
 	bb             bodyBuffer
-	wroteHeader    bool // Non-1xx header has been (logically) written.
-	statusCode     int  // Non-1xx status of the response that will be sent in HEADERS frame. Zero means none has been set.
-	sent100        bool // Status 100 has been sent by the server.
-	cannotHaveBody bool // Response should not have a body (e.g. response to a HEAD request).
-	bodyLenLeft    int  // How much of the content body is left to be sent, set via "Content-Length" header. -1 if unknown.
+	wroteHeader    bool  // Non-1xx header has been (logically) written.
+	statusCode     int   // Non-1xx status of the response that will be sent in HEADERS frame. Zero means none has been set.
+	sent100        bool  // Status 100 has been sent by the server.
+	cannotHaveBody bool  // Response should not have a body (e.g. response to a HEAD request).
+	bodyLenLeft    int64 // How much of the content body is left to be sent, set via "Content-Length" header. -1 if unknown.
 }
 
 func (rw *responseWriter) Header() http.Header {
@@ -755,13 +755,14 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 
 	// Non-informational headers should only be set once, and should be
 	// buffered.
-	rw.statusCode = statusCode
-	rw.snapHeaders = rw.headers.Clone()
-	if n, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil {
-		rw.bodyLenLeft = n
+	if n, err := strconv.ParseUint(rw.headers.Get("Content-Length"), 10, 63); err == nil {
+		rw.bodyLenLeft = int64(n)
 	} else {
+		rw.headers.Del("Content-Length")
 		rw.bodyLenLeft = -1 // Unknown.
 	}
+	rw.statusCode = statusCode
+	rw.snapHeaders = rw.headers.Clone()
 }
 
 // trimWriteLocked trims a byte slice, b, such that the length of b will not
@@ -772,9 +773,9 @@ func (rw *responseWriter) trimWriteLocked(b []byte) ([]byte, bool) {
 	if rw.bodyLenLeft < 0 {
 		return b, false
 	}
-	n := min(len(b), rw.bodyLenLeft)
+	n := min(int64(len(b)), rw.bodyLenLeft)
 	rw.bodyLenLeft -= n
-	return b[:n], n != len(b)
+	return b[:n], n != int64(len(b))
 }
 
 func (rw *responseWriter) Write(b []byte) (n int, err error) {
