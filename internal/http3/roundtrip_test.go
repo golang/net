@@ -902,7 +902,7 @@ func TestRoundTripGzipDisabled(t *testing.T) {
 				":method":    []string{"GET"},
 				":path":      []string{"/"},
 				":scheme":    []string{"https"},
-				"User-Agent": []string{"Go-http-client/3"},
+				"User-Agent": []string{"Go-http-client/3.0"},
 			}
 			tt.setup(tc, req, wantHeaders)
 			tc.greet()
