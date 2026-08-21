@@ -462,6 +462,61 @@ func TestAPITransportCountError(t *testing.T) {
 	})
 }
 
+func TestAPITransportIDNA(t *testing.T) {
+	type dialErr struct {
+		error
+		address string
+	}
+	tr := &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, address string, conf *tls.Config) (net.Conn, error) {
+			host, _, _ := net.SplitHostPort(address)
+			return nil, dialErr{
+				error:   errors.New("dial error"),
+				address: host,
+			}
+		},
+	}
+	for _, test := range []struct {
+		url          string
+		wantDialAddr string
+		skip         bool
+	}{{
+		url:          "https://example.tld/",
+		wantDialAddr: "example.tld",
+	}, {
+		// Invalid host, but permitted because all-ASCII.
+		url:          "https://xn-example-.tld/",
+		wantDialAddr: "xn-example-.tld",
+	}, {
+		url:          "https://гофер.го/",
+		wantDialAddr: "xn--c1ae0ajs.xn--c1aw",
+	}, {
+		// IDNA translation returns an error, we try using the untranslated string.
+		url:          "https://a⒈com/",
+		wantDialAddr: "a⒈com",
+	}, {
+		// Unicode name converted to the empty string.
+		url:          "https://\u00ad/",
+		wantDialAddr: "\u00ad",
+		// When !http2legacy, this relies on a fix added in Go 1.28.
+		// Just skip the test here when wrapping net/http.
+		skip: wrappedAPI,
+	}} {
+		if test.skip {
+			continue
+		}
+		req, _ := http.NewRequest("GET", test.url, nil)
+		_, err := tr.RoundTrip(req)
+		e, ok := err.(dialErr)
+		if !ok {
+			t.Fatalf("RoundTrip error %v; want dialErr", err)
+		}
+		if got, want := e.address, test.wantDialAddr; got != want {
+			t.Errorf("RoundTrip for %q dialed %q, want %q", test.url, got, want)
+		}
+	}
+}
+
 type testClientConnPool struct {
 	t        *testing.T
 	li       *synctestNetListener

@@ -316,8 +316,15 @@ func authorityAddr(scheme string, authority string) (addr string) {
 			port = "80"
 		}
 	}
-	if a, err := idna.ToASCII(host); err == nil {
-		host = a
+	// Skip IDNA processing on hosts which are already ASCII.
+	// This is consistent with net/http and the WHATWG URL Specification.
+	// (We currently don't follow all of WHATWG, but we're aligned on
+	// permitting all-ASCII hostnames which fail IDNA validation.
+	// There are existing, valid domain names which TR #46 processing rejects.)
+	if !isASCII(host) {
+		if a, err := idna.Lookup.ToASCII(host); err == nil && a != "" {
+			host = a
+		}
 	}
 	// IPv6 address literal, without a port:
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
