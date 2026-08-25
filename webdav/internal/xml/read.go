@@ -359,10 +359,7 @@ func (p *Decoder) unmarshal(val reflect.Value, start *StartElement) error {
 		// Grow slice.
 		n := v.Len()
 		if n >= v.Cap() {
-			ncap := 2 * n
-			if ncap < 4 {
-				ncap = 4
-			}
+			ncap := max(2*n, 4)
 			new := reflect.MakeSlice(typ, n, ncap)
 			reflect.Copy(new, v)
 			v.Set(new)
