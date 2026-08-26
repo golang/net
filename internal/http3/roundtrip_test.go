@@ -385,6 +385,54 @@ func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
 	})
 }
 
+func TestRoundTripRequestBodyIgnored(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		sendPartialBody bool
+	}{{
+		name:            "after partial body",
+		sendPartialBody: true,
+	}, {
+		name:            "before any body",
+		sendPartialBody: false,
+	}} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			bodyr, bodyw := io.Pipe()
+			req, _ := http.NewRequest("POST", "https://example.tld/", bodyr)
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			if tt.sendPartialBody {
+				bodyw.Write([]byte("hello"))
+				st.wantData([]byte("hello"))
+			}
+
+			// Server stops reading the request because it has enough
+			// information already to construct its response.
+			st.CloseRead()
+			st.writeHeaders(http.Header{
+				":status": {"200"},
+			})
+			synctest.Wait()
+
+			// Further writes will fail due to the stream being reset after the
+			// server closes its read. In this case, the transport should
+			// gracefully stop writing and surface the response it has
+			// received, rather than erroring out.
+			bodyw.Write([]byte("hello again"))
+			synctest.Wait()
+			rt.wantStatus(200)
+			if err := rt.response().Body.Close(); err != nil {
+				t.Fatalf("Response.Body.Close() = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestRoundTripExpect100Continue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var callCount1xx, callCount100, callCount100Wait int

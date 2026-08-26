@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/internal/httpcommon"
+	"golang.org/x/net/quic"
 )
 
 type roundTripState struct {
@@ -259,6 +260,23 @@ func actualContentLength(req *http.Request) int64 {
 	return -1
 }
 
+// reqBodyIgnored reports whether err is an error caused by the server
+// requesting that the client stop sending the request body. Per RFC 9114
+// Section 4.1, a server can send a complete response prior to the client
+// sending an entire request if the response does not depend on any portion of
+// the unsent request. When this happens, the server will use the H3_NO_ERROR
+// code, and the client MUST NOT discard the response.
+func reqBodyIgnored(err error) bool {
+	if streamErr, ok := errors.AsType[quic.StreamErrorCode](err); ok {
+		// TODO: the H3_NO_ERROR should arrive in a QUIC STOP_SENDING frame.
+		// However, the quic package currently only sends code 0 in the
+		// STOP_SENDING frame due to its API limitation.
+		// For now, accept 0, in addition to H3_NO_ERROR.
+		return streamErr == 0 || http3Error(streamErr) == errH3NoError
+	}
+	return false
+}
+
 // writeBodyAndTrailer handles writing the body and trailer for a given
 // request, if any. This function will close the write direction of the stream.
 func (cc *clientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request) {
@@ -274,7 +292,11 @@ func (cc *clientConn) writeBodyAndTrailer(rt *roundTripState, req *http.Request)
 	rt.reqBodyWriter.enc = &cc.enc
 
 	if _, err := io.Copy(&rt.reqBodyWriter, rt.reqBody); err != nil {
+		if reqBodyIgnored(err) {
+			return
+		}
 		rt.abort(err)
+		return
 	}
 	// Get rid of any trailer that was not declared beforehand, before we
 	// close the request body which will cause the trailer headers to be
@@ -303,18 +325,15 @@ var errRespBodyClosed = errors.New("response body closed")
 // Closing the response body is how the caller signals that they're done with a request.
 func (b *transportResponseBody) Close() error {
 	rt := (*roundTripState)(b)
-	// Close the request body, which should wake up copyRequestBody if it's
-	// currently blocked reading the body.
-	rt.closeReqBody()
-	// Close the request stream, since we're done with the request.
-	// Reset closes the sending half of the stream.
-	rt.st.Reset(uint64(errH3NoError))
 	// respBody.Close is responsible for closing the receiving half.
 	err := rt.respBody.Close()
 	if err == nil {
 		err = errRespBodyClosed
 	}
 	err = rt.abort(err)
+	// Close the request body, which should wake up writeBodyAndTrailer if it's
+	// currently blocked reading the body.
+	rt.closeReqBody()
 	if err == errRespBodyClosed {
 		// No other errors occurred before closing Response.Body,
 		// so consider this a successful request.
