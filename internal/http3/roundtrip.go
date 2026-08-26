@@ -183,25 +183,18 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				return nil, err
 			}
 
-			// TODO: Handle 1xx responses.
 			if isInfoStatus(statusCode) {
 				if err := rt.maybeCallGot1xxResponse(statusCode, h); err != nil {
 					return nil, err
 				}
-				switch statusCode {
-				case 100:
+				if statusCode == 100 {
 					rt.maybeCallGot100Continue()
 					if is100ContinueReq && !bodyAndTrailerWritten {
 						bodyAndTrailerWritten = true
 						go cc.writeBodyAndTrailer(rt, req)
-						continue
 					}
-					// If we did not send "Expect: 100-continue" request but
-					// received status 100 anyways, just continue per usual and
-					// let the caller decide what to do with the response.
-				default:
-					continue
 				}
+				continue
 			}
 
 			// We have the response headers.

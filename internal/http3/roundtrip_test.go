@@ -442,6 +442,78 @@ func TestRoundTripExpect100Continue(t *testing.T) {
 	})
 }
 
+// TestRoundTripInformationalHeaders verifies that informational 1xx statuses
+// are never treated as the final status of a response.
+func TestRoundTripInformationalHeaders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		sendExpect100 bool
+		infoStatuses  []int
+	}{
+		{
+			name:          "unexpected 100 without expect header",
+			sendExpect100: false,
+			infoStatuses:  []int{100},
+		},
+		{
+			name:          "duplicate 100 continue",
+			sendExpect100: true,
+			infoStatuses:  []int{100, 100},
+		},
+		{
+			name:          "interleaved 1xx and 100 continue",
+			sendExpect100: true,
+			infoStatuses:  []int{103, 100, 102},
+		},
+		{
+			name:          "1xx with no 100 continue",
+			sendExpect100: true, // Client sends Expect: 100-continue, but server never sends 100.
+			infoStatuses:  []int{103, 102},
+		},
+	} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			body := []byte("request payload")
+			req, _ := http.NewRequest("POST", "https://example.tld/", bytes.NewReader(body))
+			if tt.sendExpect100 {
+				req.Header.Set("Expect", "100-continue")
+			}
+
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			bodySent := !tt.sendExpect100
+			if bodySent {
+				st.wantData(body)
+				st.wantClosed("body sent")
+			}
+
+			for _, status := range tt.infoStatuses {
+				st.writeHeaders(http.Header{
+					":status": {strconv.Itoa(status)},
+				})
+				if status == 100 && !bodySent {
+					bodySent = true
+					st.wantData(body)
+					st.wantClosed("body sent after 100 continue")
+				}
+			}
+
+			st.writeHeaders(http.Header{
+				":status": {"200"},
+			})
+			st.writeData([]byte("response payload"))
+			st.CloseWrite()
+
+			rt.wantStatus(200)
+			rt.wantBody([]byte("response payload"))
+		})
+	}
+}
+
 func TestRoundTripExpect100ContinueRejected(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var callCount1xx, callCount100, callCount100Wait int
