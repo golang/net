@@ -7,20 +7,72 @@ package http3
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"math"
+	"net"
 	"net/http"
 	"reflect"
 	"slices"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"golang.org/x/net/internal/quic/quicwire"
 	"golang.org/x/net/quic"
 )
+
+// unusablePacketConn is a net.PacketConn whose LocalAddr is not a valid
+// UDP address, which makes quic.NewEndpoint fail.
+type unusablePacketConn struct {
+	net.PacketConn
+	closed bool
+}
+
+func (c *unusablePacketConn) LocalAddr() net.Addr {
+	return &net.UnixAddr{Name: "unusable", Net: "unix"}
+}
+
+func (c *unusablePacketConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+// TestTransportInitEndpointError verifies that a transport which fails to
+// create its QUIC endpoint reports the error, rather than proceeding with a
+// nil endpoint.
+func TestTransportInitEndpointError(t *testing.T) {
+	conn := &unusablePacketConn{}
+	tr := &transport{
+		tr1: &http.Transport{TLSClientConfig: &tls.Config{}},
+		opts: TransportOpts{
+			ListenPacket: func(network, addr string) (net.PacketConn, error) {
+				return conn, nil
+			},
+		},
+		activeConns: make(map[*clientConn]struct{}),
+	}
+
+	if err := tr.initEndpoint(); err == nil {
+		t.Fatal("initEndpoint() = nil, want error")
+	}
+	if tr.endpoint != nil {
+		t.Errorf("after failed initEndpoint, transport.endpoint = %v, want nil", tr.endpoint)
+	}
+	if !conn.closed {
+		t.Errorf("after failed initEndpoint, the net.PacketConn was not closed")
+	}
+
+	// dial must report the error rather than panicking on the nil endpoint.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := tr.dial(ctx, "127.0.0.1:443", &tls.Config{}, nil); err == nil {
+		t.Fatal("dial() = nil error, want error")
+	}
+}
 
 func TestTransportServerCreatesBidirectionalStream(t *testing.T) {
 	// "Clients MUST treat receipt of a server-initiated bidirectional
