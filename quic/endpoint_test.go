@@ -6,7 +6,9 @@ package quic
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -149,6 +151,20 @@ func TestEndpointClosePacketConn(t *testing.T) {
 			t.Errorf("Accept succeeded; want error")
 		}
 	})
+}
+
+func TestEndpointCloseCanceledContext(t *testing.T) {
+	cli, _ := newLocalConnPair(t, &Config{}, &Config{})
+	// Closing an endpoint with a canceled context terminates connections
+	// immediately, without waiting for peer acknowledgement. However, it
+	// should still wait until the endpoint is actually closed before
+	// returning.
+	if err := cli.endpoint.Close(canceledContext()); !errors.Is(err, context.Canceled) {
+		t.Errorf("Endpoint.Close(canceledContext()) = %v, want %v", err, context.Canceled)
+	}
+	if err := cli.Wait(canceledContext()); !errors.Is(err, errConnClosed) {
+		t.Errorf("Conn.Wait(canceledContext()) = %v, want %v", err, errConnClosed)
+	}
 }
 
 func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
