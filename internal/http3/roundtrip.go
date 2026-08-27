@@ -121,9 +121,26 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 	if rt.reqBody == nil {
 		rt.reqBody = http.NoBody
 	}
+	// wg tracks the writeBodyAndTrailer goroutine, if we start one.
+	var wg sync.WaitGroup
 	defer func() {
 		if err != nil {
 			err = rt.abort(err)
+
+			// Close the request body, and wait for writeBodyAndTrailer to
+			// finish with it, before returning.
+			//
+			// Closing the body here wakes up writeBodyAndTrailer if it is
+			// blocked reading from it; abort has already reset the stream,
+			// so a blocked write fails rather than hanging.
+			//
+			// net/http inspects the request body as soon as RoundTrip returns,
+			// to see whether it was read from or closed, so the close has to
+			// happen before we return rather than concurrently with the
+			// caller. The HTTP/2 transport does the same thing;
+			// see golang/go#60041.
+			rt.closeReqBody()
+			wg.Wait()
 		}
 	}()
 
@@ -168,7 +185,7 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 		rt.maybeCallWait100Continue()
 	} else {
 		bodyAndTrailerWritten = true
-		go cc.writeBodyAndTrailer(rt, req)
+		wg.Go(func() { cc.writeBodyAndTrailer(rt, req) })
 	}
 
 	// Read the response headers.
@@ -192,7 +209,7 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 					rt.maybeCallGot100Continue()
 					if is100ContinueReq && !bodyAndTrailerWritten {
 						bodyAndTrailerWritten = true
-						go cc.writeBodyAndTrailer(rt, req)
+						wg.Go(func() { cc.writeBodyAndTrailer(rt, req) })
 					}
 				}
 				continue

@@ -433,6 +433,51 @@ func TestRoundTripRequestBodyIgnored(t *testing.T) {
 	}
 }
 
+// TestRoundTripClosesRequestBodyOnError verifies that a RoundTrip which fails
+// closes the request body before returning, rather than leaving the body
+// writer goroutine to close it at some later point.
+//
+// net/http inspects the request body as soon as RoundTrip returns to decide
+// whether it needs to close the body itself, so a close which happens
+// concurrently with the return is too late. See golang/go#60041.
+func TestRoundTripClosesRequestBodyOnError(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		sendExpect100 bool
+	}{{
+		// The body writer has started, and is blocked reading from the body.
+		name:          "body writer started",
+		sendExpect100: false,
+	}, {
+		// The body writer never started, because the client is still waiting
+		// for the server to send 100 Continue.
+		name:          "body writer not started",
+		sendExpect100: true,
+	}} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			body := newTestRequestBody()
+			req, _ := http.NewRequest("POST", "https://example.tld/", body)
+			if tt.sendExpect100 {
+				req.Header.Set("Expect", "100-continue")
+			}
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			// The server resets the request stream, failing the request.
+			st.Reset(uint64(errH3InternalError))
+			rt.wantError("server reset the request stream")
+
+			if got := body.closeCount(); got != 1 {
+				t.Errorf("Request.Body closed %v times when RoundTrip returned, want 1", got)
+			}
+		})
+	}
+}
+
 func TestRoundTripExpect100Continue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var callCount1xx, callCount100, callCount100Wait int
