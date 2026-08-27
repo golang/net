@@ -47,7 +47,7 @@ func (c *unusablePacketConn) Close() error {
 func TestTransportInitEndpointError(t *testing.T) {
 	conn := &unusablePacketConn{}
 	tr := &transport{
-		tr1: &http.Transport{TLSClientConfig: &tls.Config{}},
+		tr1: new(http.Transport), // TLSClientConfig is nil, as by default
 		opts: TransportOpts{
 			ListenPacket: func(network, addr string) (net.PacketConn, error) {
 				return conn, nil
