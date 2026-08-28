@@ -154,16 +154,27 @@ func TestEndpointClosePacketConn(t *testing.T) {
 }
 
 func TestEndpointCloseCanceledContext(t *testing.T) {
-	cli, _ := newLocalConnPair(t, &Config{}, &Config{})
-	// Closing an endpoint with a canceled context terminates connections
-	// immediately, without waiting for peer acknowledgement. However, it
-	// should still wait until the endpoint is actually closed before
-	// returning.
-	if err := cli.endpoint.Close(canceledContext()); !errors.Is(err, context.Canceled) {
-		t.Errorf("Endpoint.Close(canceledContext()) = %v, want %v", err, context.Canceled)
-	}
-	if err := cli.Wait(canceledContext()); !errors.Is(err, errConnClosed) {
-		t.Errorf("Conn.Wait(canceledContext()) = %v, want %v", err, errConnClosed)
+	for _, closePacketConn := range []bool{false, true} {
+		name := "packet conn open"
+		if closePacketConn {
+			name = "packet conn closed"
+		}
+		t.Run(name, func(t *testing.T) {
+			cli, _ := newLocalConnPair(t, &Config{}, &Config{})
+			if closePacketConn {
+				cli.endpoint.packetConn.Close()
+			}
+			// Closing an endpoint with a canceled context terminates connections
+			// immediately, without waiting for peer acknowledgement. However, it
+			// should still wait until the endpoint is actually closed before
+			// returning.
+			if err := cli.endpoint.Close(canceledContext()); !errors.Is(err, context.Canceled) {
+				t.Errorf("Endpoint.Close(canceledContext()) = %v, want %v", err, context.Canceled)
+			}
+			if err := cli.Wait(canceledContext()); !errors.Is(err, errConnClosed) {
+				t.Errorf("Conn.Wait(canceledContext()) = %v, want %v", err, errConnClosed)
+			}
+		})
 	}
 }
 

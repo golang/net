@@ -153,15 +153,21 @@ func (e *Endpoint) Close(ctx context.Context) error {
 	for _, c := range conns {
 		c.Abort(localTransportError{code: errNo})
 	}
+
 	select {
-	case <-e.closec:
 	case <-ctx.Done():
-		for _, c := range conns {
-			c.exit()
-		}
-		<-e.closec
+	case <-e.closec:
 	}
-	return ctx.Err() // nil if context hasn't expired
+	for _, c := range conns {
+		c.exit()
+	}
+	// We should only return once all conn loops and the listen loop exit.
+	// That is, there should no longer be any lingering goroutines.
+	for _, c := range conns {
+		<-c.donec
+	}
+	<-e.closec
+	return ctx.Err()
 }
 
 // Accept waits for and returns the next connection.
