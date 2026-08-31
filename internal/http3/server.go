@@ -572,7 +572,7 @@ func (sc *serverConn) handleRequestStream(st *stream) error {
 // abort closes the connection with an error.
 func (sc *serverConn) abort(err error) {
 	if e, ok := err.(*connectionError); ok {
-		sc.qconn.Abort(&quic.ApplicationError{
+		sc.qconn.Abort(&quic.ConnectionCloseError{
 			Code:   uint64(e.code),
 			Reason: e.message,
 		})

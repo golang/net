@@ -96,9 +96,7 @@ func testConnCloseWithPeerResponse(t *testing.T) {
 		code: 20,
 	})
 
-	wantErr := &ApplicationError{
-		Code: 20,
-	}
+	wantErr := &ConnectionCloseError{Code: 20}
 	if _, err := waiting.result(); !errors.Is(err, wantErr) {
 		t.Errorf("blocked conn.Wait() = %v, want %v", err, wantErr)
 	}
@@ -123,7 +121,7 @@ func testConnClosePeerCloses(t *testing.T) {
 	tc := newTestConn(t, clientSide, qr.config)
 	tc.handshake()
 
-	wantErr := &ApplicationError{
+	wantErr := &ConnectionCloseError{
 		Code:   42,
 		Reason: "why?",
 	}
@@ -133,11 +131,12 @@ func testConnClosePeerCloses(t *testing.T) {
 	})
 	tc.wantIdle("CONN_CLOSE response not sent until user closes this side")
 
-	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, wantErr) {
+	err := tc.conn.Wait(canceledContext())
+	if e, ok := errors.AsType[*ConnectionCloseError](err); !ok || *e != *wantErr {
 		t.Errorf("conn.Wait() = %v, want %v", err, wantErr)
 	}
 
-	tc.conn.Abort(&ApplicationError{
+	tc.conn.Abort(&ConnectionCloseError{
 		Code:   9,
 		Reason: "because",
 	})
@@ -175,7 +174,7 @@ func testConnCloseReceiveInInitial(t *testing.T) {
 		t.Errorf("conn.Wait() = %v, want %v", err, wantErr)
 	}
 
-	tc.conn.Abort(&ApplicationError{Code: 1})
+	tc.conn.Abort(&ConnectionCloseError{Code: 1})
 	tc.wantFrame("CONN_CLOSE in Initial frame is APPLICATION_ERROR",
 		packetTypeInitial, debugFrameConnectionCloseTransport{
 			code: errApplicationError,
@@ -207,7 +206,7 @@ func testConnCloseReceiveInHandshake(t *testing.T) {
 	}
 
 	// The conn has Initial and Handshake keys, so it will send CONN_CLOSE in both spaces.
-	tc.conn.Abort(&ApplicationError{Code: 1})
+	tc.conn.Abort(&ConnectionCloseError{Code: 1})
 	tc.wantFrame("CONN_CLOSE in Initial frame is APPLICATION_ERROR",
 		packetTypeInitial, debugFrameConnectionCloseTransport{
 			code: errApplicationError,

@@ -275,7 +275,7 @@ func (tq *testQUICConn) wantClosed(reason string, want error) {
 	synctest.Wait()
 
 	if e, ok := want.(http3Error); ok {
-		want = &quic.ApplicationError{Code: uint64(e)}
+		want = &quic.ConnectionCloseError{Code: uint64(e)}
 	}
 	got := tq.qconn.Wait(canceledCtx)
 	if errors.Is(got, context.Canceled) {
@@ -508,14 +508,14 @@ func (ts *testQUICStream) wantClosed(reason string) {
 	}
 }
 
-func (ts *testQUICStream) wantError(want quic.StreamErrorCode) {
+func (ts *testQUICStream) wantError(want quic.StreamError) {
 	ts.t.Helper()
 	synctest.Wait()
 	_, err := ts.ReadByte()
 	if err == nil {
 		ts.t.Fatalf("successfully read from stream; want stream error code %v", want)
 	}
-	var got quic.StreamErrorCode
+	var got quic.StreamError
 	if !errors.As(err, &got) {
 		ts.t.Fatalf("stream error = %v; want %v", err, want)
 	}
