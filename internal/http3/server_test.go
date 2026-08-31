@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -540,6 +541,72 @@ func TestServerInvalidStatus(t *testing.T) {
 		})
 		reqStream.wantClosed("request is complete")
 	})
+}
+
+func TestServerHeaderLimits(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		h                   http.Header
+		valid               bool
+		maxHeaderBytes      int
+		maxHeaderValueCount int
+	}{{
+		name: "within limits",
+		h: http.Header{
+			"x-foo": {strings.Repeat("x", 1000)},
+		},
+		maxHeaderBytes: 1500,
+		valid:          true,
+	}, {
+		name: "too many header bytes",
+		h: http.Header{
+			"x-foo": {strings.Repeat("x", 1000)},
+			"x-bar": {strings.Repeat("x", 1000)},
+		},
+		maxHeaderBytes: 1500,
+	}, {
+		name: "field count within limit",
+		h: http.Header{
+			// :method, :scheme, :path, plus:
+			"x-foo": {"4"},
+			"x-bar": {"5"},
+		},
+		maxHeaderBytes:      1500,
+		maxHeaderValueCount: 5,
+		valid:               true,
+	}, {
+		name: "field count over limit",
+		h: http.Header{
+			// :method, :scheme, :path, plus:
+			"x-foo": {"4"},
+			"x-bar": {"5"},
+		},
+		maxHeaderBytes:      1500,
+		maxHeaderValueCount: 4,
+	}} {
+		synctestSubtest(t, test.name, func(t *testing.T) {
+			if test.maxHeaderValueCount != 0 {
+				t.Skip("TODO: when we support only go1.27")
+			}
+			ts := newTestServer(t, nil)
+			ts.s.srv1.MaxHeaderBytes = test.maxHeaderBytes
+			// TODO: When we only support go1.27.
+			//ts.s.srv1.MaxHeaderValueCount = test.maxHeaderValueCount
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(test.h))
+			if test.valid {
+				call := tc.nextHandlerCall()
+				if call == nil {
+					t.Fatal("no server handler call; want one")
+				}
+			} else {
+				reqStream.wantError(quic.StreamErrorCode(errH3RequestRejected))
+			}
+		})
+	}
 }
 
 func TestServerBody(t *testing.T) {
