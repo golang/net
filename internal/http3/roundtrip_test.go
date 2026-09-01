@@ -413,7 +413,7 @@ func TestRoundTripRequestBodyIgnored(t *testing.T) {
 
 			// Server stops reading the request because it has enough
 			// information already to construct its response.
-			st.CloseRead()
+			st.CloseRead(uint64(errH3NoError))
 			st.writeHeaders(http.Header{
 				":status": {"200"},
 			})

@@ -5,8 +5,11 @@
 package http3
 
 import (
+	"errors"
 	"testing"
 	"testing/synctest"
+
+	"golang.org/x/net/quic"
 )
 
 // Tests which apply to both client and server connections.
@@ -31,8 +34,9 @@ func TestConnUnknownUnidirectionalStream(t *testing.T) {
 		// The endpoint should send a STOP_SENDING for this stream,
 		// but it should not close the connection.
 		synctest.Wait()
-		if _, err := st.Write([]byte("hello")); err == nil {
-			t.Fatalf("write to send-only stream with an unknown type succeeded; want error")
+		wantErr := quic.StreamError(errH3StreamCreationError)
+		if _, err := st.Write([]byte("hello")); !errors.Is(err, wantErr) {
+			t.Fatalf("write to send-only stream with an unknown type returned error %v; want %v", err, wantErr)
 		}
 		tc.wantNotClosed("after receiving unknown unidirectional stream type")
 	})

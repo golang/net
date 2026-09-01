@@ -53,10 +53,10 @@ func (rt *roundTripState) abort(err error) error {
 		case *connectionError:
 			rt.cc.abort(e)
 		case *streamError:
-			rt.st.CloseRead()
+			rt.st.CloseRead(uint64(e.code))
 			rt.st.Reset(uint64(e.code))
 		default:
-			rt.st.CloseRead()
+			rt.st.CloseRead(uint64(errH3NoError))
 			rt.st.Reset(uint64(errH3NoError))
 		}
 	})
@@ -285,11 +285,7 @@ func actualContentLength(req *http.Request) int64 {
 // code, and the client MUST NOT discard the response.
 func reqBodyIgnored(err error) bool {
 	if streamErr, ok := errors.AsType[quic.StreamError](err); ok {
-		// TODO: the H3_NO_ERROR should arrive in a QUIC STOP_SENDING frame.
-		// However, the quic package currently only sends code 0 in the
-		// STOP_SENDING frame due to its API limitation.
-		// For now, accept 0, in addition to H3_NO_ERROR.
-		return streamErr == 0 || http3Error(streamErr) == errH3NoError
+		return http3Error(streamErr) == errH3NoError
 	}
 	return false
 }
