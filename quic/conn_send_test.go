@@ -5,6 +5,7 @@
 package quic
 
 import (
+	"crypto/tls"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -88,5 +89,77 @@ func testSendPacketNumberSize(t *testing.T) {
 		if gotPnumLen != wantPnumLen {
 			t.Fatalf("packet number 0x%x encoded with %v bytes, want %v (max acked = %v)", p.num, gotPnumLen, wantPnumLen, maxAcked)
 		}
+	}
+}
+
+func TestConnSendAntiAmplificationInitialFlightBlocked(t *testing.T) {
+	synctest.Test(t, testConnSendAntiAmplificationInitialFlightBlocked)
+}
+func testConnSendAntiAmplificationInitialFlightBlocked(t *testing.T) {
+	tc := newTestConn(t, serverSide, permissiveTransportParameters, func(c *Config) {
+		c.TLSConfig.Certificates = []tls.Certificate{bigCert}
+	})
+
+	// Client sends an Initial packet, datagram padded to 1200 bytes.
+	tc.writeFrames(packetTypeInitial,
+		debugFrameCrypto{
+			data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+		})
+	bytesSent := 1200
+
+	// Server sends as much data as it can.
+	// Each packet is padded to 1200 bytes.
+	// Server is blocked by the anti-amplification limit.
+	bytesRead := 0
+	for {
+		dgram := tc.endpoint.read()
+		if dgram == nil {
+			break
+		}
+		bytesRead += len(dgram)
+	}
+	if got, want := bytesRead, 3*bytesSent; got != want {
+		t.Fatalf("server sent %v bytes in its initial flight; want %v", got, want)
+	}
+
+	// Wait until the server's PTO timer fires.
+	// The server can't send a PTO probe, however,
+	// because it's still blocked by the anti-amplification limit.
+	time.Sleep(2 * time.Second)
+
+	// Client sends a small packet, increasing the anti-amplification limit
+	// but not by enough to permit the server to send another fully-padded packet.
+	//
+	// The following is a hand-crafted 0-RTT-ish packet.
+	// It isn't valid, but it has the right DCID so it gets routed to our conn
+	// and increases the anti-amplification limit.
+	dcid := tc.conn.connIDState.local[0].cid
+	pkt := []byte{
+		0b11010000,
+		0, 0, 0, 1,
+		byte(len(dcid)),
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+	}
+	copy(pkt[6:], dcid)
+	tc.endpoint.write(&datagram{
+		b:        pkt,
+		peerAddr: tc.conn.peerAddr,
+	})
+	bytesSent += len(pkt)
+
+	// We've just increased the server's anti-amplification limit.
+	// Ensure it doesn't exceed the limit with whatever it sends now.
+	for {
+		dgram := tc.endpoint.read()
+		if dgram == nil {
+			break
+		}
+		bytesRead += len(dgram)
+	}
+	if bytesRead > 3*bytesSent {
+		t.Fatalf("server exceeded anti-amplification limit: sent %v bytes > 3*%v bytes received", bytesRead, bytesSent)
 	}
 }

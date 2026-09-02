@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"testing"
@@ -19,7 +20,6 @@ import (
 
 	"golang.org/x/net/internal/http3"
 	"golang.org/x/net/internal/testcert"
-	"golang.org/x/net/quic"
 )
 
 //go:linkname protocolSetHTTP3
@@ -51,29 +51,30 @@ func TestNetHTTPIntegration(t *testing.T) {
 		Handler:   handler,
 		TLSConfig: newTestTLSConfig(),
 	}
+	if err := http3.RegisterServer(srv, http3.ServerOpts{}); err != nil {
+		t.Skipf("cannot register server: %v", err)
+	}
 	srv.Protocols = &http.Protocols{}
 	protocolSetHTTP3(srv.Protocols)
 
-	var listenAddr string
-	listenAddrSet := make(chan any)
-	http3.RegisterServer(srv, http3.ServerOpts{
-		ListenQUIC: func(addr string, config *quic.Config) (*quic.Endpoint, error) {
-			e, err := quic.Listen("udp", addr, config)
-			listenAddr = e.LocalAddr().String()
-			listenAddrSet <- struct{}{}
-			return e, err
-		},
-	})
-	go func() {
-		if err := srv.ListenAndServeTLS("", ""); err != nil {
-			panic(err)
-		}
-	}()
+	// We do not yet have a public API for serving on a system-chosen port
+	// that lets us find out what that port is. (ListenAndServeTLS will listen on
+	// a system-chosen port, but we can't find out what port it picked.)
+	// So use ServeTLS with an pro tem mechanism for passing in a PacketConn.
+	nc, err := net.ListenPacket("udp", srv.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	go srv.ServeTLS(http3ServeConn{nc}, "", "")
 
 	tr := &http.Transport{TLSClientConfig: newTestTLSConfig()}
 	tr.Protocols = &http.Protocols{}
 	protocolSetHTTP3(tr.Protocols)
-	http3.RegisterTransport(tr, http3.TransportOpts{})
+	if err := http3.RegisterTransport(tr, http3.TransportOpts{}); err != nil {
+		// If RegisterServer above succeeded, this should as well.
+		t.Fatalf("cannot register transport: %v", err)
+	}
 
 	client := &http.Client{
 		Transport: tr,
@@ -81,10 +82,9 @@ func TestNetHTTPIntegration(t *testing.T) {
 		// that we use for e.g. plan9.
 		Timeout: 5 * time.Second,
 	}
-	<-listenAddrSet
 
 	for range 5 {
-		req, err := http.NewRequest("GET", "https://"+listenAddr, nil)
+		req, err := http.NewRequest("GET", "https://"+nc.LocalAddr().String(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,4 +117,16 @@ func TestNetHTTPIntegration(t *testing.T) {
 	if err := srv.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type http3ServeConn struct {
+	conn net.PacketConn
+}
+
+func (c http3ServeConn) Accept() (net.Conn, error) { return nil, net.ErrClosed }
+func (c http3ServeConn) Close() error              { return nil }
+func (c http3ServeConn) Addr() net.Addr            { return nil }
+
+func (c http3ServeConn) HTTP3PacketConn() net.PacketConn {
+	return c.conn
 }

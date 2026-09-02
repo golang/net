@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -233,4 +234,43 @@ func testIdleLongTermKeepAliveReceived(t *testing.T) {
 	if err := tc.conn.Wait(ctx); err != context.Canceled {
 		t.Fatalf("conn.Wait() = %v, want Canceled", err)
 	}
+}
+
+func TestIdleKeepAliveBlockedByCongestionControl(t *testing.T) {
+	synctest.Test(t, testIdleKeepAliveBlockedByCongestionControl)
+}
+func testIdleKeepAliveBlockedByCongestionControl(t *testing.T) {
+	const keepAlivePeriod = 20 * time.Millisecond
+	tc, s := newTestConnAndLocalStream(t, serverSide, bidiStream, permissiveTransportParameters, func(c *Config) {
+		c.KeepAlivePeriod = keepAlivePeriod
+		c.MaxIdleTimeout = -1
+	})
+
+	// Fill the initial congestion window by writing to the stream until we block.
+	s.SetWriteContext(canceledContext())
+	io.Copy(s, &testReader{
+		read: func(p []byte) (n int, err error) {
+			return len(p), nil
+		},
+	})
+	tc.ignoreFrame(frameTypeStreamBase)
+	tc.wantIdle("connection is idle after filling congestion window")
+	delete(tc.ignoreFrames, frameTypeStreamBase)
+
+	// Peer sends a PING frame, which resets the keep-alive timer.
+	// The ACK won't be sent until after a delay, but just ignore it.
+	tc.writeFrames(packetType1RTT, debugFramePing{})
+	tc.ignoreFrame(frameTypeAck)
+	tc.wantIdle("connection is idle after receiving PING")
+
+	// Advance past the keep-alive period.
+	// The conn wants to send a keep-alive PING, but it can't because it's still
+	// blocked by congestion control.
+	//
+	// Then close the stream, causing the conn's event loop to run.
+	// Prior to the fix which we're validating, the loop would then busyloop trying to
+	// execute the keep-alive timer event.
+	time.Sleep(keepAlivePeriod + 1)
+	s.Close()
+	tc.wantIdle("server connection is idle after stream close")
 }

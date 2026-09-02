@@ -6,9 +6,12 @@ package quic
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"sync"
 	"testing"
@@ -136,6 +139,45 @@ func TestStreamCloseWhileReading(t *testing.T) {
 	wg.Wait()
 }
 
+func TestEndpointClosePacketConn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		e := newTestEndpoint(t, nil)
+
+		// Close the endpoint's PacketConn.
+		udpConn := (*testEndpointUDPConn)(e)
+		udpConn.Close()
+
+		if _, err := e.e.Accept(t.Context()); err == nil {
+			t.Errorf("Accept succeeded; want error")
+		}
+	})
+}
+
+func TestEndpointCloseCanceledContext(t *testing.T) {
+	for _, closePacketConn := range []bool{false, true} {
+		name := "packet conn open"
+		if closePacketConn {
+			name = "packet conn closed"
+		}
+		t.Run(name, func(t *testing.T) {
+			cli, _ := newLocalConnPair(t, &Config{}, &Config{})
+			if closePacketConn {
+				cli.endpoint.packetConn.Close()
+			}
+			// Closing an endpoint with a canceled context terminates connections
+			// immediately, without waiting for peer acknowledgement. However, it
+			// should still wait until the endpoint is actually closed before
+			// returning.
+			if err := cli.endpoint.Close(canceledContext()); !errors.Is(err, context.Canceled) {
+				t.Errorf("Endpoint.Close(canceledContext()) = %v, want %v", err, context.Canceled)
+			}
+			if err := cli.Wait(canceledContext()); !errors.Is(err, errConnClosed) {
+				t.Errorf("Conn.Wait(canceledContext()) = %v, want %v", err, errConnClosed)
+			}
+		})
+	}
+}
+
 func newLocalConnPair(t testing.TB, conf1, conf2 *Config) (clientConn, serverConn *Conn) {
 	t.Helper()
 	ctx := t.Context()
@@ -187,6 +229,7 @@ func makeTestConfig(conf *Config, side connSide) *Config {
 type testEndpoint struct {
 	t                     *testing.T
 	e                     *Endpoint
+	closeOnce             sync.Once
 	recvc                 chan *datagram
 	idlec                 chan struct{}
 	conns                 map[*Conn]*testConn
@@ -344,7 +387,9 @@ func (te *testEndpointHooks) newConn(c *Conn, cids newServerConnIDs) {
 type testEndpointUDPConn testEndpoint
 
 func (te *testEndpointUDPConn) Close() error {
-	close(te.recvc)
+	te.closeOnce.Do(func() {
+		close(te.recvc)
+	})
 	return nil
 }
 
@@ -352,12 +397,12 @@ func (te *testEndpointUDPConn) LocalAddr() netip.AddrPort {
 	return netip.MustParseAddrPort("127.0.0.1:443")
 }
 
-func (te *testEndpointUDPConn) Read(f func(*datagram)) {
+func (te *testEndpointUDPConn) Read(f func(*datagram)) error {
 	for {
 		select {
 		case d, ok := <-te.recvc:
 			if !ok {
-				return
+				return net.ErrClosed
 			}
 			f(d)
 		case <-te.idlec:

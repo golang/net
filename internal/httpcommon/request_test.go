@@ -7,8 +7,7 @@ package httpcommon
 import (
 	"cmp"
 	"context"
-	"io"
-	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -30,9 +29,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}{{
 		name: "simple request",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				return must(http.NewRequest("GET", "https://example.tld/", nil))
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -50,12 +51,10 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "host set from URL",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Host = ""
-				req.URL.Host = "example.tld"
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    &url.URL{Scheme: "https", Host: "example.tld", Path: "/"},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -73,11 +72,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "chunked transfer-encoding",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Transfer-Encoding", "chunked") // ignored
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Transfer-Encoding": {"chunked"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -95,11 +97,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "connection close",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Connection", "close")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Connection": {"close"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -117,11 +122,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "connection keep-alive",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Connection", "keep-alive")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Connection": {"keep-alive"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -139,9 +147,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "normal connect",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				return must(http.NewRequest("CONNECT", "https://example.tld/", nil))
-			}),
+			Request: Request{
+				Method: "CONNECT",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -157,11 +167,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "extended connect",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("CONNECT", "https://example.tld/", nil))
-				req.Header.Set(":protocol", "foo")
-				return req
-			}),
+			Request: Request{
+				Method: "CONNECT",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					":protocol": {"foo"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -180,13 +193,15 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "trailers",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Trailer = make(http.Header)
-				req.Trailer.Set("a", "1")
-				req.Trailer.Set("b", "2")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Trailer: map[string][]string{
+					"A": {"1"},
+					"B": {"2"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -205,11 +220,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "override user-agent",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("User-Agent", "GopherTron 9000")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"User-Agent": {"GopherTron 9000"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -227,11 +245,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "disable user-agent",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header["User-Agent"] = nil
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"User-Agent": nil,
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -248,11 +269,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "ignore host header",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Host", "gophers.tld/") // ignored
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Host": {"gophers.tld/"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -270,11 +294,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "crumble cookie header",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Cookie", "a=b; b=c; c=d")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Cookie": {"a=b; b=c; c=d"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -296,9 +323,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with nil body",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				return must(http.NewRequest("POST", "https://example.tld/", nil))
-			}),
+			Request: Request{
+				Method: "POST",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -317,9 +346,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with NoBody",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				return must(http.NewRequest("POST", "https://example.tld/", http.NoBody))
-			}),
+			Request: Request{
+				Method: "POST",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -338,12 +369,12 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with Content-Length",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				type reader struct{ io.ReadCloser }
-				req := must(http.NewRequest("POST", "https://example.tld/", reader{}))
-				req.ContentLength = 10
-				return req
-			}),
+			Request: Request{
+				Method:              "POST",
+				URL:                 must(url.Parse("https://example.tld/")),
+				Host:                "example.tld",
+				ActualContentLength: 10,
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -362,11 +393,12 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "post with unknown Content-Length",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				type reader struct{ io.ReadCloser }
-				req := must(http.NewRequest("POST", "https://example.tld/", reader{}))
-				return req
-			}),
+			Request: Request{
+				Method:              "POST",
+				URL:                 must(url.Parse("https://example.tld/")),
+				Host:                "example.tld",
+				ActualContentLength: -1,
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -384,11 +416,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "explicit accept-encoding",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Accept-Encoding", "deflate")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Accept-Encoding": {"deflate"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -406,9 +441,11 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "head request",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				return must(http.NewRequest("HEAD", "https://example.tld/", nil))
-			}),
+			Request: Request{
+				Method: "HEAD",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -425,11 +462,14 @@ func TestEncodeHeaders(t *testing.T) {
 	}, {
 		name: "range request",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("HEAD", "https://example.tld/", nil))
-				req.Header.Set("Range", "bytes=0-10")
-				return req
-			}),
+			Request: Request{
+				Method: "HEAD",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Range": {"bytes=0-10"},
+				},
+			},
 			DefaultUserAgent: "default-user-agent",
 		},
 		want: EncodeHeadersResult{
@@ -531,145 +571,177 @@ func TestEncodeHeaderErrors(t *testing.T) {
 	}{{
 		name: "URL is nil",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.URL = nil
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				Host:   "example.tld",
+			},
 		},
 		want: "URL is nil",
 	}, {
 		name: "upgrade header is set",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Upgrade", "foo")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Upgrade": {"foo"},
+				},
+			},
 		},
 		want: "Upgrade",
 	}, {
 		name: "unsupported transfer-encoding header",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Transfer-Encoding", "identity")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Transfer-Encoding": {"identity"},
+				},
+			},
 		},
 		want: "Transfer-Encoding",
 	}, {
 		name: "unsupported connection header",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("Connection", "x")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"Connection": {"x"},
+				},
+			},
 		},
 		want: "Connection",
 	}, {
 		name: "invalid host",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Host = "\x00.tld"
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "\x00.tld",
+			},
 		},
 		want: "Host",
 	}, {
 		name: "protocol header is set",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set(":protocol", "foo")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					":protocol": {"foo"},
+				},
+			},
 		},
 		want: ":protocol",
 	}, {
 		name: "invalid path",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.URL.Path = "no_leading_slash"
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   "example.tld",
+					Path:   "no_leading_slash",
+				},
+				Host: "example.tld",
+			},
 		},
 		want: "path",
 	}, {
 		name: "invalid header name",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("x\ny", "foo")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"x\ny": {"foo"},
+				},
+			},
 		},
 		want: "header",
 	}, {
 		name: "invalid header value",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("x", "foo\nbar")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"x": {"foo\nbar"},
+				},
+			},
 		},
 		want: "header",
 	}, {
 		name: "invalid trailer",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Trailer = make(http.Header)
-				req.Trailer.Set("x\ny", "foo")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Trailer: map[string][]string{
+					"x\ny": {"foo"},
+				},
+			},
 		},
 		want: "trailer",
 	}, {
 		name: "transfer-encoding trailer",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Trailer = make(http.Header)
-				req.Trailer.Set("Transfer-Encoding", "chunked")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Trailer: map[string][]string{
+					"Transfer-Encoding": {"chunked"},
+				},
+			},
 		},
 		want: "Trailer",
 	}, {
 		name: "trailer trailer",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Trailer = make(http.Header)
-				req.Trailer.Set("Trailer", "chunked")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Trailer: map[string][]string{
+					"Trailer": {"chunked"},
+				},
+			},
 		},
 		want: "Trailer",
 	}, {
 		name: "content-length trailer",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Trailer = make(http.Header)
-				req.Trailer.Set("Content-Length", "0")
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Trailer: map[string][]string{
+					"Content-Length": {"0"},
+				},
+			},
 		},
 		want: "Trailer",
 	}, {
 		name: "too many headers",
 		in: EncodeHeadersParam{
-			Request: newReq(func() *http.Request {
-				req := must(http.NewRequest("GET", "https://example.tld/", nil))
-				req.Header.Set("X-Foo", strings.Repeat("x", 1000))
-				return req
-			}),
+			Request: Request{
+				Method: "GET",
+				URL:    must(url.Parse("https://example.tld/")),
+				Host:   "example.tld",
+				Header: map[string][]string{
+					"X-Foo": {strings.Repeat("x", 1000)},
+				},
+			},
 			PeerMaxHeaderListSize: 1000,
 		},
 		want: "limit",
@@ -683,24 +755,6 @@ func TestEncodeHeaderErrors(t *testing.T) {
 				t.Fatalf("EncodeHeaders = %q, want error containing %q", err, test.want)
 			}
 		})
-	}
-}
-
-func newReq(f func() *http.Request) Request {
-	req := f()
-	contentLength := req.ContentLength
-	if req.Body == nil || req.Body == http.NoBody {
-		contentLength = 0
-	} else if contentLength == 0 {
-		contentLength = -1
-	}
-	return Request{
-		Header:              req.Header,
-		Trailer:             req.Trailer,
-		URL:                 req.URL,
-		Host:                req.Host,
-		Method:              req.Method,
-		ActualContentLength: contentLength,
 	}
 }
 

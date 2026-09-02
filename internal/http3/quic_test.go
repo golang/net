@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,51 @@ import (
 	"golang.org/x/net/internal/testcert"
 	"golang.org/x/net/quic"
 )
+
+// TestNewQUICConfig verifies that newQUICConfig always produces a config with
+// an "h3" ALPN, without modifying the caller's tls.Config.
+func TestNewQUICConfig(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		tlsConfig *tls.Config
+	}{{
+		// net/http.Transport.TLSClientConfig is nil by default.
+		name:      "nil",
+		tlsConfig: nil,
+	}, {
+		name:      "no NextProtos",
+		tlsConfig: &tls.Config{ServerName: "example.tld"},
+	}, {
+		name:      "other NextProtos",
+		tlsConfig: &tls.Config{NextProtos: []string{"http/1.1"}},
+	}, {
+		name:      "h3 already set",
+		tlsConfig: &tls.Config{NextProtos: []string{"h3"}},
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			var origNextProtos []string
+			if test.tlsConfig != nil {
+				origNextProtos = slices.Clone(test.tlsConfig.NextProtos)
+			}
+
+			config := newQUICConfig(nil, test.tlsConfig)
+			if config == nil {
+				t.Fatal("newQUICConfig returned nil config")
+			}
+			if config.TLSConfig == nil {
+				t.Fatal("newQUICConfig returned config with nil TLSConfig")
+			}
+			if got := config.TLSConfig.NextProtos; !slices.Equal(got, []string{"h3"}) {
+				t.Errorf("TLSConfig.NextProtos = %q, want [h3]", got)
+			}
+			if test.tlsConfig != nil {
+				if got := test.tlsConfig.NextProtos; !slices.Equal(got, origNextProtos) {
+					t.Errorf("newQUICConfig modified the caller's TLSConfig.NextProtos: got %q, want %q", got, origNextProtos)
+				}
+			}
+		})
+	}
+}
 
 // newLocalQUICEndpoint returns a QUIC Endpoint listening on localhost.
 func newLocalQUICEndpoint(t *testing.T) *quic.Endpoint {

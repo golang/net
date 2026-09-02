@@ -337,7 +337,7 @@ func TestRoundTripRequestBodyErrors(t *testing.T) {
 			for {
 				_, err := st.readFrameHeader()
 				if err != nil {
-					var code quic.StreamErrorCode
+					var code quic.StreamError
 					if !errors.As(err, &code) {
 						t.Fatalf("request stream closed with error %v: want QUIC stream error", err)
 					}
@@ -377,12 +377,105 @@ func TestRoundTripRequestBodyErrorAfterHeaders(t *testing.T) {
 		bodyw.Write(make([]byte, req.ContentLength+1))
 
 		//io.Copy(io.Discard, st)
-		st.wantError(quic.StreamErrorCode(errH3InternalError))
+		st.wantError(quic.StreamError(errH3InternalError))
 
 		if err := rt.response().Body.Close(); err == nil {
 			t.Fatalf("Response.Body.Close() = %v, want error", err)
 		}
 	})
+}
+
+func TestRoundTripRequestBodyIgnored(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		sendPartialBody bool
+	}{{
+		name:            "after partial body",
+		sendPartialBody: true,
+	}, {
+		name:            "before any body",
+		sendPartialBody: false,
+	}} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			bodyr, bodyw := io.Pipe()
+			req, _ := http.NewRequest("POST", "https://example.tld/", bodyr)
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			if tt.sendPartialBody {
+				bodyw.Write([]byte("hello"))
+				st.wantData([]byte("hello"))
+			}
+
+			// Server stops reading the request because it has enough
+			// information already to construct its response.
+			st.CloseRead(uint64(errH3NoError))
+			st.writeHeaders(http.Header{
+				":status": {"200"},
+			})
+			synctest.Wait()
+
+			// Further writes will fail due to the stream being reset after the
+			// server closes its read. In this case, the transport should
+			// gracefully stop writing and surface the response it has
+			// received, rather than erroring out.
+			bodyw.Write([]byte("hello again"))
+			synctest.Wait()
+			rt.wantStatus(200)
+			if err := rt.response().Body.Close(); err != nil {
+				t.Fatalf("Response.Body.Close() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestRoundTripClosesRequestBodyOnError verifies that a RoundTrip which fails
+// closes the request body before returning, rather than leaving the body
+// writer goroutine to close it at some later point.
+//
+// net/http inspects the request body as soon as RoundTrip returns to decide
+// whether it needs to close the body itself, so a close which happens
+// concurrently with the return is too late. See golang/go#60041.
+func TestRoundTripClosesRequestBodyOnError(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		sendExpect100 bool
+	}{{
+		// The body writer has started, and is blocked reading from the body.
+		name:          "body writer started",
+		sendExpect100: false,
+	}, {
+		// The body writer never started, because the client is still waiting
+		// for the server to send 100 Continue.
+		name:          "body writer not started",
+		sendExpect100: true,
+	}} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			body := newTestRequestBody()
+			req, _ := http.NewRequest("POST", "https://example.tld/", body)
+			if tt.sendExpect100 {
+				req.Header.Set("Expect", "100-continue")
+			}
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			// The server resets the request stream, failing the request.
+			st.Reset(uint64(errH3InternalError))
+			rt.wantError("server reset the request stream")
+
+			if got := body.closeCount(); got != 1 {
+				t.Errorf("Request.Body closed %v times when RoundTrip returned, want 1", got)
+			}
+		})
+	}
 }
 
 func TestRoundTripExpect100Continue(t *testing.T) {
@@ -440,6 +533,78 @@ func TestRoundTripExpect100Continue(t *testing.T) {
 			t.Errorf("Got1xxResponse, Got100Continue, and Wait100Continue was called %v times respectively, want [1 1 1]", gotCount)
 		}
 	})
+}
+
+// TestRoundTripInformationalHeaders verifies that informational 1xx statuses
+// are never treated as the final status of a response.
+func TestRoundTripInformationalHeaders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		sendExpect100 bool
+		infoStatuses  []int
+	}{
+		{
+			name:          "unexpected 100 without expect header",
+			sendExpect100: false,
+			infoStatuses:  []int{100},
+		},
+		{
+			name:          "duplicate 100 continue",
+			sendExpect100: true,
+			infoStatuses:  []int{100, 100},
+		},
+		{
+			name:          "interleaved 1xx and 100 continue",
+			sendExpect100: true,
+			infoStatuses:  []int{103, 100, 102},
+		},
+		{
+			name:          "1xx with no 100 continue",
+			sendExpect100: true, // Client sends Expect: 100-continue, but server never sends 100.
+			infoStatuses:  []int{103, 102},
+		},
+	} {
+		synctestSubtest(t, tt.name, func(t *testing.T) {
+			tc := newTestClientConn(t)
+			tc.greet()
+
+			body := []byte("request payload")
+			req, _ := http.NewRequest("POST", "https://example.tld/", bytes.NewReader(body))
+			if tt.sendExpect100 {
+				req.Header.Set("Expect", "100-continue")
+			}
+
+			rt := tc.roundTrip(req)
+			st := tc.wantStream(streamTypeRequest)
+			st.wantHeaders(nil)
+
+			bodySent := !tt.sendExpect100
+			if bodySent {
+				st.wantData(body)
+				st.wantClosed("body sent")
+			}
+
+			for _, status := range tt.infoStatuses {
+				st.writeHeaders(http.Header{
+					":status": {strconv.Itoa(status)},
+				})
+				if status == 100 && !bodySent {
+					bodySent = true
+					st.wantData(body)
+					st.wantClosed("body sent after 100 continue")
+				}
+			}
+
+			st.writeHeaders(http.Header{
+				":status": {"200"},
+			})
+			st.writeData([]byte("response payload"))
+			st.CloseWrite()
+
+			rt.wantStatus(200)
+			rt.wantBody([]byte("response payload"))
+		})
+	}
 }
 
 func TestRoundTripExpect100ContinueRejected(t *testing.T) {
@@ -902,7 +1067,7 @@ func TestRoundTripGzipDisabled(t *testing.T) {
 				":method":    []string{"GET"},
 				":path":      []string{"/"},
 				":scheme":    []string{"https"},
-				"User-Agent": []string{"Go-http-client/3"},
+				"User-Agent": []string{"Go-http-client/3.0"},
 			}
 			tt.setup(tc, req, wantHeaders)
 			tc.greet()

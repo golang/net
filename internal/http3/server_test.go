@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -202,7 +203,7 @@ func TestServerHeaderInvalid(t *testing.T) {
 			reqStream.writeHeadersRaw(requestHeader(tt.header))
 
 			if tt.wantError {
-				reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
+				reqStream.wantError(quic.StreamError(errH3MessageError))
 			} else {
 				reqStream.wantHeaders(nil)
 				reqStream.wantData(body)
@@ -255,7 +256,7 @@ func TestServerPseudoHeader(t *testing.T) {
 
 		reqStream = tc.newStream(streamTypeRequest)
 		reqStream.writeHeaders(http.Header{}) // Missing pseudo-header.
-		reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
+		reqStream.wantError(quic.StreamError(errH3MessageError))
 	})
 }
 
@@ -338,7 +339,7 @@ func TestServerPseudoHeaderCount(t *testing.T) {
 			reqStream.writeHeaders(tt.header)
 
 			if tt.wantError {
-				reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
+				reqStream.wantError(quic.StreamError(errH3MessageError))
 			} else {
 				reqStream.wantHeaders(nil)
 				reqStream.wantData(body)
@@ -370,6 +371,135 @@ func TestServerInvalidHeader(t *testing.T) {
 		})
 		reqStream.wantClosed("request is complete")
 	})
+}
+
+func TestServerAuthorityAndHostHeader(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		h        http.Header
+		valid    bool
+		wantHost string
+	}{{
+		name: "authority host mismatch",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"other.tld"},
+		},
+	}, {
+		// The RFCs aren't explicit on whether a :authority and host that
+		// differ only in case is a mismatch. We treat it as a mismatch because
+		// there doesn't seem to be a good reason not to.
+		name: "authority host case differs",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"EXAMPLE.TLD"},
+		},
+	}, {
+		name: "authority and multiple host",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "multiple host only",
+		h: http.Header{
+			"host": {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "multiple authority only",
+		h: http.Header{
+			":authority": {"example.tld", "example.tld"},
+		},
+	}, {
+		name: "empty authority",
+		h: http.Header{
+			":authority": {""},
+		},
+	}, {
+		name: "invalid authority",
+		h: http.Header{
+			":authority": {"example . tld"},
+		},
+	}, {
+		name: "invalid host",
+		h: http.Header{
+			"host": {"example . tld"},
+		},
+	}, {
+		name: "authority only",
+		h: http.Header{
+			":authority": {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "host only",
+		h: http.Header{
+			"host": {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "authority host match",
+		h: http.Header{
+			":authority": {"example.tld"},
+			"host":       {"example.tld"},
+		},
+		valid:    true,
+		wantHost: "example.tld",
+	}, {
+		name: "authority host match with port",
+		h: http.Header{
+			":authority": {"example.tld:443"},
+			"host":       {"example.tld:443"},
+		},
+		valid:    true,
+		wantHost: "example.tld:443",
+	}, {
+		name: "authority host mismatch with port",
+		h: http.Header{
+			":authority": {"example.tld:80"},
+			"host":       {"example.tld:443"},
+		},
+	}, {
+		name: "userinfo in authority",
+		h: http.Header{
+			":authority": {"user:pass@example.tld"},
+		},
+	}, {
+		name: "userinfo in host",
+		h: http.Header{
+			"host": {"user:pass@example.tld"},
+		},
+	}, {
+		name:     "neither authority nor host",
+		h:        http.Header{},
+		valid:    true,
+		wantHost: "",
+	}} {
+		synctestSubtest(t, test.name, func(t *testing.T) {
+			ts := newTestServer(t, nil)
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(test.h))
+			if test.valid {
+				call := tc.nextHandlerCall()
+				if call == nil {
+					t.Fatal("no server handler call; want one")
+				}
+				if got, want := call.req.Host, test.wantHost; got != want {
+					t.Errorf("handler got Host %q, want %q", got, want)
+				}
+				if h, ok := call.req.Header["Host"]; ok {
+					t.Errorf(`handler got Header["Host"] = %q, want unset`, h)
+				}
+			} else {
+				reqStream.wantError(quic.StreamError(errH3MessageError))
+			}
+		})
+	}
 }
 
 func TestServerInvalidStatus(t *testing.T) {
@@ -411,6 +541,72 @@ func TestServerInvalidStatus(t *testing.T) {
 		})
 		reqStream.wantClosed("request is complete")
 	})
+}
+
+func TestServerHeaderLimits(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		h                   http.Header
+		valid               bool
+		maxHeaderBytes      int
+		maxHeaderValueCount int
+	}{{
+		name: "within limits",
+		h: http.Header{
+			"x-foo": {strings.Repeat("x", 1000)},
+		},
+		maxHeaderBytes: 1500,
+		valid:          true,
+	}, {
+		name: "too many header bytes",
+		h: http.Header{
+			"x-foo": {strings.Repeat("x", 1000)},
+			"x-bar": {strings.Repeat("x", 1000)},
+		},
+		maxHeaderBytes: 1500,
+	}, {
+		name: "field count within limit",
+		h: http.Header{
+			// :method, :scheme, :path, plus:
+			"x-foo": {"4"},
+			"x-bar": {"5"},
+		},
+		maxHeaderBytes:      1500,
+		maxHeaderValueCount: 5,
+		valid:               true,
+	}, {
+		name: "field count over limit",
+		h: http.Header{
+			// :method, :scheme, :path, plus:
+			"x-foo": {"4"},
+			"x-bar": {"5"},
+		},
+		maxHeaderBytes:      1500,
+		maxHeaderValueCount: 4,
+	}} {
+		synctestSubtest(t, test.name, func(t *testing.T) {
+			if test.maxHeaderValueCount != 0 {
+				t.Skip("TODO: when we support only go1.27")
+			}
+			ts := newTestServer(t, nil)
+			ts.s.srv1.MaxHeaderBytes = test.maxHeaderBytes
+			// TODO: When we only support go1.27.
+			//ts.s.srv1.MaxHeaderValueCount = test.maxHeaderValueCount
+			tc := ts.connect()
+			tc.greet()
+
+			reqStream := tc.newStream(streamTypeRequest)
+			reqStream.writeHeaders(requestHeader(test.h))
+			if test.valid {
+				call := tc.nextHandlerCall()
+				if call == nil {
+					t.Fatal("no server handler call; want one")
+				}
+			} else {
+				reqStream.wantError(quic.StreamErrorCode(errH3RequestRejected))
+			}
+		})
+	}
 }
 
 func TestServerBody(t *testing.T) {
@@ -570,48 +766,80 @@ func TestServerHandlerStreaming(t *testing.T) {
 	})
 }
 
-func TestServerHandlerTrimsContentBody(t *testing.T) {
+func TestServerHandlerDeclaresContentLength(t *testing.T) {
 	tests := []struct {
-		name                      string
-		declaredContentLen        int
-		declaredInvalidContentLen bool
-		actualContentLen          int
-		wantTrimmed               bool
+		name             string
+		contentLen       string
+		actualContentLen int
+		wantWrittenLen   int
+		wantTrimmed      bool
+		wantCLHeader     bool
 	}{
 		{
-			name:               "declared accurate content length",
-			declaredContentLen: 100,
-			actualContentLen:   100,
+			name:             "accurate content length",
+			contentLen:       "100",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+			wantCLHeader:     true,
 		},
 		{
-			name:               "declared larger content length",
-			declaredContentLen: 100,
-			actualContentLen:   10,
+			name:             "larger content length",
+			contentLen:       "100",
+			actualContentLen: 10,
+			wantWrittenLen:   10,
+			wantCLHeader:     true,
 		},
 		{
-			name:               "declared smaller content length",
-			declaredContentLen: 10,
-			actualContentLen:   100,
-			wantTrimmed:        true,
+			name:             "smaller content length",
+			contentLen:       "10",
+			actualContentLen: 100,
+			wantWrittenLen:   10,
+			wantTrimmed:      true,
+			wantCLHeader:     true,
 		},
 		{
-			name:                      "declared invalid content length",
-			declaredInvalidContentLen: true,
-			actualContentLen:          100,
+			name:             "non-numeric string",
+			contentLen:       "intentional gibberish",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+		},
+		{
+			name:             "negative number",
+			contentLen:       "-10",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+		},
+		{
+			name:             "plus sign",
+			contentLen:       "+10",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+		},
+		{
+			name:             "empty",
+			contentLen:       "",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+		},
+		{
+			name:             "large valid content length",
+			contentLen:       "3000000000",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
+			wantCLHeader:     true,
+		},
+		{
+			name:             "content length overflowing int64",
+			contentLen:       "9223372036854775808",
+			actualContentLen: 100,
+			wantWrittenLen:   100,
 		},
 	}
 
 	for _, tt := range tests {
-		wantWrittenLen := min(tt.actualContentLen, tt.declaredContentLen)
-		if tt.declaredInvalidContentLen {
-			wantWrittenLen = tt.actualContentLen
-		}
 		synctestSubtest(t, tt.name, func(t *testing.T) {
 			ts := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Length", strconv.Itoa(tt.declaredContentLen))
-				if tt.declaredInvalidContentLen {
-					w.Header().Set("Content-Length", "not a number, should be ignored")
-				}
+				w.Header().Set("Content-Length", tt.contentLen)
 				var written int
 				var lastErr error
 				for range tt.actualContentLen {
@@ -622,8 +850,8 @@ func TestServerHandlerTrimsContentBody(t *testing.T) {
 				if tt.wantTrimmed != (lastErr != nil) {
 					t.Errorf("got %v error when writing response body, even though wantTrimmed is %v", lastErr, tt.wantTrimmed)
 				}
-				if written != wantWrittenLen {
-					t.Errorf("got %v bytes written by the server, want %v bytes", written, wantWrittenLen)
+				if written != tt.wantWrittenLen {
+					t.Errorf("got %v bytes written by the server, want %v bytes", written, tt.wantWrittenLen)
 				}
 			}))
 			tc := ts.connect()
@@ -631,8 +859,16 @@ func TestServerHandlerTrimsContentBody(t *testing.T) {
 
 			reqStream := tc.newStream(streamTypeRequest)
 			reqStream.writeHeaders(requestHeader(nil))
-			reqStream.wantHeaders(nil)
-			reqStream.wantData(slices.Repeat([]byte("a"), wantWrittenLen))
+			expectedHeaders := http.Header{
+				":status":      {"200"},
+				"Content-Type": {"text/plain; charset=utf-8"},
+				"Date":         {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+			}
+			if tt.wantCLHeader {
+				expectedHeaders.Set("Content-Length", tt.contentLen)
+			}
+			reqStream.wantHeaders(expectedHeaders)
+			reqStream.wantData(slices.Repeat([]byte("a"), tt.wantWrittenLen))
 			reqStream.wantClosed("request is complete")
 		})
 	}
@@ -1039,6 +1275,20 @@ func TestServerInfersHeaders(t *testing.T) {
 			},
 		},
 		{
+			name:           "infers content type for response with empty content encoding",
+			responseStatus: 200,
+			declaredHeader: http.Header{
+				"Content-Encoding":  {""},
+				"Some-Other-Header": {"some value"},
+			},
+			want: http.Header{
+				"Date":              {"Sat, 01 Jan 2000 00:00:00 GMT"}, // Synctest starting time.
+				"Content-Encoding":  {""},
+				"Content-Type":      {"text/html; charset=utf-8"},
+				"Some-Other-Header": {"some value"},
+			},
+		},
+		{
 			name:           "does not infer content type when header is flushed before body is written",
 			responseStatus: 200,
 			flushedEarly:   true,
@@ -1273,7 +1523,7 @@ func TestServerInvalidPathHeader(t *testing.T) {
 			reqStream.writeHeaders(requestHeader(http.Header{
 				":path": []string{test.path},
 			}))
-			reqStream.wantError(quic.StreamErrorCode(errH3MessageError))
+			reqStream.wantError(quic.StreamError(errH3MessageError))
 		})
 	}
 }
@@ -1338,7 +1588,7 @@ func TestServerPastWriteDeadline(t *testing.T) {
 		reqStream.wantData([]byte("one"))
 		time.Sleep(2 * time.Second) // T+2.
 		synctest.Wait()
-		reqStream.wantError(quic.StreamErrorCode(errH3RequestCancelled))
+		reqStream.wantError(quic.StreamError(errH3RequestCancelled))
 	})
 }
 
@@ -1405,7 +1655,7 @@ func TestServerFutureWriteDeadline(t *testing.T) {
 		time.Sleep(3 * time.Second) // T+3. After "three" is written.
 		reqStream.wantData([]byte("three"))
 		time.Sleep(3 * time.Second) // T+6. After server exceeds deadline.
-		reqStream.wantError(quic.StreamErrorCode(errH3RequestCancelled))
+		reqStream.wantError(quic.StreamError(errH3RequestCancelled))
 	})
 }
 
@@ -1529,7 +1779,7 @@ func TestServerReadHeaderTimeout(t *testing.T) {
 		time.Sleep(timeout - 1)
 		reqStream.wantIdle("timeout has not been reached")
 		time.Sleep(1)
-		reqStream.wantError(quic.StreamErrorCode(errH3RequestRejected))
+		reqStream.wantError(quic.StreamError(errH3RequestRejected))
 		if tc.nextHandlerCall() != nil {
 			t.Error("server handler should not be called")
 		}
@@ -1632,7 +1882,7 @@ func TestServerWriteTimeout(t *testing.T) {
 			t.Errorf("Write() after timeout = %v, want os.ErrDeadlineExceeded", err)
 		}
 		call.exit()
-		reqStream.wantError(quic.StreamErrorCode(errH3RequestCancelled))
+		reqStream.wantError(quic.StreamError(errH3RequestCancelled))
 	})
 }
 
@@ -1667,9 +1917,10 @@ func TestServerWriteTimeoutInProgress(t *testing.T) {
 }
 
 type testServer struct {
-	t  testing.TB
-	s  *server
-	tn testNet
+	t           testing.TB
+	s           *server
+	tn          testNet
+	testHandler *testServerHandler
 	*testQUICEndpoint
 
 	addr netip.AddrPort
@@ -1708,21 +1959,20 @@ func newTestServer(t testing.TB, handler http.Handler) *testServer {
 		t: t,
 	}
 	if handler == nil {
-		handler = &testServerHandler{
+		ts.testHandler = &testServerHandler{
 			ts:    ts,
 			calls: []*serverHandlerCall{},
 		}
+		handler = ts.testHandler
 	}
 	ts.s = &server{
-		config: &quic.Config{
-			TLSConfig: testTLSConfig,
-		},
-		srv1:    &http.Server{},
-		handler: handler,
+		srv1: &http.Server{},
 	}
-	e := ts.tn.newQUICEndpoint(t, ts.s.config)
+	e := ts.tn.newQUICEndpoint(t, &quic.Config{
+		TLSConfig: testTLSConfig,
+	})
 	ts.addr = e.LocalAddr()
-	go ts.s.serve(e)
+	go ts.s.serve(t.Context(), e, handler)
 	return ts
 }
 
@@ -1756,8 +2006,8 @@ func (tc *testServerConn) greet() {
 // nextHandlerCall returns the next handler call that has been initiated by tc.
 // If there is no handler call, nil is returned.
 func (tc *testServerConn) nextHandlerCall() *serverHandlerCall {
-	h, ok := tc.ts.s.handler.(*testServerHandler)
-	if !ok {
+	h := tc.ts.testHandler
+	if h == nil {
 		tc.t.Fatal("nextHandlerCall is called for a testServer with non-nil handler")
 	}
 	tc.t.Helper()

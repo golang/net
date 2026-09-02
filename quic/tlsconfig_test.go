@@ -52,3 +52,11 @@ var testCert = func() tls.Certificate {
 	}
 	return cert
 }()
+
+var bigCert = func() tls.Certificate {
+	cert, err := tls.X509KeyPair(testcert.BigCert, testcert.BigKey)
+	if err != nil {
+		panic(err)
+	}
+	return cert
+}()

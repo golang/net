@@ -71,3 +71,9 @@ func synctestSubtest(t *testing.T, name string, f func(t *testing.T)) {
 		synctest.Test(t, f)
 	})
 }
+
+type testReader struct {
+	read func([]byte) (n int, err error)
+}
+
+func (r *testReader) Read(p []byte) (n int, err error) { return r.read(p) }

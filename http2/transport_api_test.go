@@ -462,6 +462,61 @@ func TestAPITransportCountError(t *testing.T) {
 	})
 }
 
+func TestAPITransportIDNA(t *testing.T) {
+	type dialErr struct {
+		error
+		address string
+	}
+	tr := &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, address string, conf *tls.Config) (net.Conn, error) {
+			host, _, _ := net.SplitHostPort(address)
+			return nil, dialErr{
+				error:   errors.New("dial error"),
+				address: host,
+			}
+		},
+	}
+	for _, test := range []struct {
+		url          string
+		wantDialAddr string
+		skip         bool
+	}{{
+		url:          "https://example.tld/",
+		wantDialAddr: "example.tld",
+	}, {
+		// Invalid host, but permitted because all-ASCII.
+		url:          "https://xn-example-.tld/",
+		wantDialAddr: "xn-example-.tld",
+	}, {
+		url:          "https://гофер.го/",
+		wantDialAddr: "xn--c1ae0ajs.xn--c1aw",
+	}, {
+		// IDNA translation returns an error, we try using the untranslated string.
+		url:          "https://a⒈com/",
+		wantDialAddr: "a⒈com",
+	}, {
+		// Unicode name converted to the empty string.
+		url:          "https://\u00ad/",
+		wantDialAddr: "\u00ad",
+		// When !http2legacy, this relies on a fix added in Go 1.28.
+		// Just skip the test here when wrapping net/http.
+		skip: wrappedAPI,
+	}} {
+		if test.skip {
+			continue
+		}
+		req, _ := http.NewRequest("GET", test.url, nil)
+		_, err := tr.RoundTrip(req)
+		e, ok := err.(dialErr)
+		if !ok {
+			t.Fatalf("RoundTrip error %v; want dialErr", err)
+		}
+		if got, want := e.address, test.wantDialAddr; got != want {
+			t.Errorf("RoundTrip for %q dialed %q, want %q", test.url, got, want)
+		}
+	}
+}
+
 type testClientConnPool struct {
 	t        *testing.T
 	li       *synctestNetListener
@@ -767,6 +822,98 @@ func TestAPIClientConnPing(t *testing.T) {
 		if got, want := time.Since(start), timeout; got != want {
 			t.Fatalf("cc.Ping() returned after %v, want %v", got, want)
 		}
+	})
+}
+
+// TestAPITransportClientConnReserveNewRequest tests the ClientConn ReserveNewRequest method.
+func TestAPITransportClientConnReserveNewRequest(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tt := newTestTransport(t, roundTripXNetHTTP2)
+
+		nc := tt.li.newConn()
+		cc, err := tt.tr.NewClientConn(nc)
+		if err != nil {
+			t.Fatalf("NewClientConn: %v", err)
+		}
+
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.writeSettings(http2.Setting{
+			ID:  http2.SettingMaxConcurrentStreams,
+			Val: 1,
+		})
+		tc1.wantFrameType(http2.FrameSettings) // ACK
+
+		synctest.Wait()
+		wantClientConnState(t, cc.State(), http2.ClientConnState{
+			MaxConcurrentStreams: 1,
+		})
+
+		if got, want := cc.ReserveNewRequest(), true; got != want {
+			t.Fatalf("cc.ReserveNewRequest() = %v, want %v", got, want)
+		}
+		wantClientConnState(t, cc.State(), http2.ClientConnState{
+			MaxConcurrentStreams: 1,
+			StreamsReserved:      1,
+		})
+
+		// Issue #80680: Deadlock when ReserveNewRequest invokes the state hook.
+		go func() {
+			for i := range 100 {
+				tc1.writeSettings(http2.Setting{
+					ID:  http2.SettingMaxConcurrentStreams,
+					Val: uint32(i * 2),
+				})
+			}
+		}()
+		go func() {
+			for range 100 {
+				cc.ReserveNewRequest()
+			}
+		}()
+		synctest.Wait()
+	})
+}
+
+func TestAPITransportSettingsRoundTripRace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tt := newTestTransport(t, roundTripXNetHTTP2)
+
+		nc := tt.li.newConn()
+		cc, err := tt.tr.NewClientConn(nc)
+		if err != nil {
+			t.Fatalf("NewClientConn: %v", err)
+		}
+
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.writeSettings(http2.Setting{
+			ID:  http2.SettingMaxConcurrentStreams,
+			Val: 1,
+		})
+		tc1.wantFrameType(http2.FrameSettings) // ACK
+		synctest.Wait()
+
+		go func() {
+			for i := range 100 {
+				tc1.writeSettings(http2.Setting{
+					ID:  http2.SettingMaxConcurrentStreams,
+					Val: uint32(i * 2),
+				})
+			}
+		}()
+		go func() {
+			for range 100 {
+				req, _ := http.NewRequest("GET", "http://example.tld/", nil)
+				resp, err := cc.RoundTrip(req)
+				if err == nil {
+					resp.Body.Close()
+				}
+			}
+		}()
+		synctest.Wait()
 	})
 }
 

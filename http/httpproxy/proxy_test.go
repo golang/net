@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -260,10 +259,10 @@ func TestProxyForURL(t *testing.T) {
 }
 
 func TestFromEnvironment(t *testing.T) {
-	os.Setenv("HTTP_PROXY", "httpproxy")
-	os.Setenv("HTTPS_PROXY", "httpsproxy")
-	os.Setenv("NO_PROXY", "noproxy")
-	os.Setenv("REQUEST_METHOD", "")
+	t.Setenv("HTTP_PROXY", "httpproxy")
+	t.Setenv("HTTPS_PROXY", "httpsproxy")
+	t.Setenv("NO_PROXY", "noproxy")
+	t.Setenv("REQUEST_METHOD", "")
 	got := httpproxy.FromEnvironment()
 	want := httpproxy.Config{
 		HTTPProxy:  "httpproxy",
@@ -276,10 +275,10 @@ func TestFromEnvironment(t *testing.T) {
 }
 
 func TestFromEnvironmentWithRequestMethod(t *testing.T) {
-	os.Setenv("HTTP_PROXY", "httpproxy")
-	os.Setenv("HTTPS_PROXY", "httpsproxy")
-	os.Setenv("NO_PROXY", "noproxy")
-	os.Setenv("REQUEST_METHOD", "PUT")
+	t.Setenv("HTTP_PROXY", "httpproxy")
+	t.Setenv("HTTPS_PROXY", "httpsproxy")
+	t.Setenv("NO_PROXY", "noproxy")
+	t.Setenv("REQUEST_METHOD", "PUT")
 	got := httpproxy.FromEnvironment()
 	want := httpproxy.Config{
 		HTTPProxy:  "httpproxy",
@@ -293,15 +292,34 @@ func TestFromEnvironmentWithRequestMethod(t *testing.T) {
 }
 
 func TestFromEnvironmentLowerCase(t *testing.T) {
-	os.Setenv("http_proxy", "httpproxy")
-	os.Setenv("https_proxy", "httpsproxy")
-	os.Setenv("no_proxy", "noproxy")
-	os.Setenv("REQUEST_METHOD", "")
+	t.Setenv("http_proxy", "httpproxy")
+	t.Setenv("https_proxy", "httpsproxy")
+	t.Setenv("no_proxy", "noproxy")
+	t.Setenv("REQUEST_METHOD", "")
 	got := httpproxy.FromEnvironment()
 	want := httpproxy.Config{
 		HTTPProxy:  "httpproxy",
 		HTTPSProxy: "httpsproxy",
 		NoProxy:    "noproxy",
+	}
+	if *got != want {
+		t.Errorf("unexpected proxy config, got %#v want %#v", got, want)
+	}
+}
+
+func TestFromEnvironmentUpperAndLowerCase(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "httpproxyupper")
+	t.Setenv("HTTPS_PROXY", "httpsproxyupper")
+	t.Setenv("NO_PROXY", "noproxyupper")
+	t.Setenv("http_proxy", "httpproxylower")
+	t.Setenv("https_proxy", "httpsproxylower")
+	t.Setenv("no_proxy", "noproxylower")
+	t.Setenv("REQUEST_METHOD", "")
+	got := httpproxy.FromEnvironment()
+	want := httpproxy.Config{
+		HTTPProxy:  "httpproxylower",
+		HTTPSProxy: "httpsproxylower",
+		NoProxy:    "noproxylower",
 	}
 	if *got != want {
 		t.Errorf("unexpected proxy config, got %#v want %#v", got, want)
