@@ -206,6 +206,71 @@ func TestRenderTextNodes(t *testing.T) {
 	}
 }
 
+// When scripting is disabled the parser descends into <noscript> and decodes
+// character references in its contents, so the resulting text node can hold
+// markup. Rendering it literally would let that markup close the element and be
+// re-parsed as live nodes, which turns inert input into an executing element.
+func TestRenderNoscriptScriptingDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{
+			in: `<body><noscript>&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;</noscript>`,
+			want: "<html><head></head><body><noscript>&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;" +
+				"</noscript></body></html>",
+		},
+		{
+			in:   `<table><noscript>&lt;/noscript&gt;&lt;img src=x&gt;</noscript></table>`,
+			want: "<html><head></head><body><noscript>&lt;/noscript&gt;&lt;img src=x&gt;</noscript><table></table></body></html>",
+		},
+		{
+			in:   `<svg><desc><noscript>&lt;/noscript&gt;&lt;img src=x&gt;</noscript>`,
+			want: "<html><head></head><body><svg><desc><noscript>&lt;/noscript&gt;&lt;img src=x&gt;</noscript></desc></svg></body></html>",
+		},
+		{
+			// An end tag that the tokenizer would not have accepted must still be
+			// written literally.
+			in:   `<body><noscript>&lt;/noscriptZ&gt;</noscript>`,
+			want: "<html><head></head><body><noscript></noscriptZ></noscript></body></html>",
+		},
+	} {
+		d, err := ParseWithOptions(strings.NewReader(tc.in), ParseOptionEnableScripting(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := bytes.NewBuffer(nil)
+		if err := Render(buf, d); err != nil {
+			t.Fatal(err)
+		}
+		if buf.String() != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.in, buf.String(), tc.want)
+			continue
+		}
+
+		// The round trip must not introduce elements that the parsed tree did not
+		// contain.
+		d2, err := ParseWithOptions(bytes.NewReader(buf.Bytes()), ParseOptionEnableScripting(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := countElements(d2), countElements(d); got != want {
+			t.Errorf("%s: element count changed across render: got %d, want %d", tc.in, got, want)
+		}
+	}
+}
+
+func countElements(n *Node) int {
+	c := 0
+	if n.Type == ElementNode {
+		c++
+	}
+	for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
+		c += countElements(ch)
+	}
+	return c
+}
+
 func TestRenderFosteredForeignContent(t *testing.T) {
 	a := `<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>`
 	d, err := Parse(strings.NewReader(a))
