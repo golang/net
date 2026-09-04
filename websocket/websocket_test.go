@@ -136,6 +136,53 @@ func newConfig(t *testing.T, path string) *Config {
 	return config
 }
 
+func doWriteRead(t *testing.T, conn *Conn) {
+	var buf bytes.Buffer
+	for i := 0; i < 5; i++ {
+		n, err := conn.Write([]byte(fmt.Sprintf("websocket_test:%d", i)))
+		if err != nil {
+			t.Fatal("write:", err)
+			return
+		}
+		for {
+			var b [2]byte
+			n, err = conn.Read(b[:])
+			if n > 0 {
+				buf.Write(b[:n])
+			} else if err != nil {
+				t.Fatal("err:", err)
+				return
+			}
+			if buf.Len() == int(conn.FrameDataLength()) {
+				t.Log("read:", string(buf.Bytes()))
+				buf.Reset()
+				break
+			}
+		}
+	}
+}
+
+func TestNewClient2(t *testing.T) {
+	once.Do(startServer)
+
+	// websocket.Dial()
+	client, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		t.Fatal("dialing", err)
+	}
+	conn, resp, err := NewClient2(newConfig(t, "/echo"), client)
+	if err != nil {
+		if resp != nil {
+			t.Fatal("newClient2:StatusCode:", resp.StatusCode, " err:", err)
+		} else {
+			t.Fatal("newClient2:StatusCode:", 0, " err:", err)
+		}
+		return
+	}
+	
+	doWriteRead(t, conn)
+}
+
 func TestEcho(t *testing.T) {
 	once.Do(startServer)
 

@@ -105,6 +105,8 @@ func (frame *hybiFrameReader) TrailerReader() io.Reader { return nil }
 
 func (frame *hybiFrameReader) Len() (n int) { return frame.length }
 
+func (frame *hybiFrameReader) FrameDataLength() (n int64) { return frame.header.Length }
+
 // A hybiFrameReaderFactory creates new frame reader based on its frame type.
 type hybiFrameReaderFactory struct {
 	*bufio.Reader
@@ -401,7 +403,7 @@ func getNonceAccept(nonce []byte) (expected []byte, err error) {
 }
 
 // Client handshake described in draft-ietf-hybi-thewebsocket-protocol-17
-func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (err error) {
+func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (resp *http.Response, err error) {
 	bw.WriteString("GET " + config.Location.RequestURI() + " HTTP/1.1\r\n")
 
 	// According to RFC 6874, an HTTP client, proxy, or other
@@ -418,7 +420,7 @@ func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (er
 	bw.WriteString("Origin: " + strings.ToLower(config.Origin.String()) + "\r\n")
 
 	if config.Version != ProtocolVersionHybi13 {
-		return ErrBadProtocolVersion
+		return nil, ErrBadProtocolVersion
 	}
 
 	bw.WriteString("Sec-WebSocket-Version: " + fmt.Sprintf("%d", config.Version) + "\r\n")
@@ -428,35 +430,35 @@ func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (er
 	// TODO(ukai): send Sec-WebSocket-Extensions.
 	err = config.Header.WriteSubset(bw, handshakeHeader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	bw.WriteString("\r\n")
 	if err = bw.Flush(); err != nil {
-		return err
+		return nil, err
 	}
 
-	resp, err := http.ReadResponse(br, &http.Request{Method: "GET"})
+	resp, err = http.ReadResponse(br, &http.Request{Method: "GET"})
 	if err != nil {
-		return err
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 101 {
-		return ErrBadStatus
+		return resp, ErrBadStatus
 	}
 	if strings.ToLower(resp.Header.Get("Upgrade")) != "websocket" ||
 		strings.ToLower(resp.Header.Get("Connection")) != "upgrade" {
-		return ErrBadUpgrade
+		return resp, ErrBadUpgrade
 	}
 	expectedAccept, err := getNonceAccept(nonce)
 	if err != nil {
-		return err
+		return resp, err
 	}
 	if resp.Header.Get("Sec-WebSocket-Accept") != string(expectedAccept) {
-		return ErrChallengeResponse
+		return resp, ErrChallengeResponse
 	}
 	if resp.Header.Get("Sec-WebSocket-Extensions") != "" {
-		return ErrUnsupportedExtensions
+		return resp, ErrUnsupportedExtensions
 	}
 	offeredProtocol := resp.Header.Get("Sec-WebSocket-Protocol")
 	if offeredProtocol != "" {
@@ -468,12 +470,12 @@ func hybiClientHandshake(config *Config, br *bufio.Reader, bw *bufio.Writer) (er
 			}
 		}
 		if !protocolMatched {
-			return ErrBadWebSocketProtocol
+			return resp, ErrBadWebSocketProtocol
 		}
 		config.Protocol = []string{offeredProtocol}
 	}
 
-	return nil
+	return resp, nil
 }
 
 // newHybiClientConn creates a client WebSocket connection after handshake.
