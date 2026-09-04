@@ -603,7 +603,7 @@ func TestServerHeaderLimits(t *testing.T) {
 					t.Fatal("no server handler call; want one")
 				}
 			} else {
-				reqStream.wantError(quic.StreamErrorCode(errH3RequestRejected))
+				reqStream.wantError(quic.StreamError(errH3RequestRejected))
 			}
 		})
 	}
