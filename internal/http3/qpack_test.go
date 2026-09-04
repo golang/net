@@ -153,6 +153,27 @@ func TestPrefixedString(t *testing.T) {
 	}
 }
 
+func TestPrefixedStringTooLong(t *testing.T) {
+	st1, st2 := newStreamPair(t)
+	// A string longer than maxQPACKStringLen must be rejected based on its
+	// length alone, before allocating a buffer or consuming the string data.
+	st1.Write(appendPrefixedInt(nil, 0, 7, maxQPACKStringLen+1))
+	const sentinel = 0xff
+	st1.Write([]byte{sentinel})
+	if err := st1.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	st1.CloseWrite()
+	if b, v, err := st2.readPrefixedString(7); err == nil {
+		t.Fatalf("readPrefixedString(7) = %x, %q, nil; want error", b, v)
+	}
+	// The string data is left unread, indicating that we rejected the string
+	// before attempting to buffer it.
+	if b, err := st2.ReadByte(); err != nil || b != sentinel {
+		t.Errorf("after oversized string, ReadByte() = %x, %v; want %x, nil", b, err, sentinel)
+	}
+}
+
 func TestHuffmanDecodingFailure(t *testing.T) {
 	st1, st2 := newStreamPair(t)
 	st1.Write([]byte{
