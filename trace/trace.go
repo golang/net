@@ -184,13 +184,14 @@ func Render(w io.Writer, req *http.Request, sensitive bool) {
 		CompletedTraces  map[string]*family
 
 		// Set when a bucket has been selected.
-		Traces        traceList
-		Family        string
-		Bucket        int
-		Expanded      bool
-		Traced        bool
-		Active        bool
-		ShowSensitive bool // whether to show sensitive events
+		Traces          traceList
+		Family          string
+		Bucket          int
+		Expanded        bool
+		Traced          bool
+		Active          bool
+		MaxActiveTraces int
+		ShowSensitive   bool // whether to show sensitive events
 
 		Histogram       template.HTML
 		HistogramWindow string // e.g. "last minute", "last hour", "all time"
@@ -200,6 +201,7 @@ func Render(w io.Writer, req *http.Request, sensitive bool) {
 		Total int
 	}{
 		CompletedTraces: completedTraces,
+		MaxActiveTraces: maxActiveTraces,
 	}
 
 	data.ShowSensitive = sensitive
@@ -213,8 +215,15 @@ func Render(w io.Writer, req *http.Request, sensitive bool) {
 		if exp, err := strconv.ParseBool(req.FormValue("exp")); err == nil {
 			data.Expanded = exp
 		}
-		if exp, err := strconv.ParseBool(req.FormValue("rtraced")); err == nil {
-			data.Traced = exp
+		if rtraced, err := strconv.ParseBool(req.FormValue("rtraced")); err == nil {
+			data.Traced = rtraced
+		}
+		// strconv.Atoi allocates an *strconv.NumError when passed an empty
+		// string, so only call into it if a max_active argument is provided.
+		if maxActiveStr := req.FormValue("max_active"); maxActiveStr != "" {
+			if maxActive, err := strconv.Atoi(maxActiveStr); err == nil && maxActive > 0 {
+				data.MaxActiveTraces = maxActive
+			}
 		}
 	}
 
@@ -243,7 +252,7 @@ func Render(w io.Writer, req *http.Request, sensitive bool) {
 	case data.Bucket == -1:
 		data.Active = true
 		n := data.ActiveTraceCount[data.Family]
-		data.Traces = getActiveTraces(data.Family)
+		data.Traces = getActiveTraces(data.Family, data.MaxActiveTraces)
 		if len(data.Traces) < n {
 			data.Total = n
 		}
@@ -529,14 +538,14 @@ func (ts *traceSet) FirstN(n int) traceList {
 	return trl
 }
 
-func getActiveTraces(fam string) traceList {
+func getActiveTraces(fam string, n int) traceList {
 	activeMu.RLock()
 	s := activeTraces[fam]
 	activeMu.RUnlock()
 	if s == nil {
 		return nil
 	}
-	return s.FirstN(maxActiveTraces)
+	return s.FirstN(n)
 }
 
 func getFamily(fam string, allocNew bool) *family {
