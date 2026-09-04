@@ -57,14 +57,20 @@ func (w *wireFormat) parseRouteMessage(typ RIBType, b []byte) (Message, error) {
 		Type:    int(b[3]),
 		Flags:   int(nativeEndian.Uint32(b[8:12])),
 		Index:   int(nativeEndian.Uint16(b[4:6])),
-		ID:      uintptr(nativeEndian.Uint32(b[16:20])),
-		Seq:     int(nativeEndian.Uint32(b[20:24])),
 		extOff:  w.extOff,
 		raw:     b[:l],
 	}
-	errno := syscall.Errno(nativeEndian.Uint32(b[28:32]))
-	if errno != 0 {
-		m.Err = errno
+	if w.idOff > 0 {
+		m.ID = uintptr(nativeEndian.Uint32(b[w.idOff : w.idOff+4]))
+	}
+	if w.seqOff > 0 {
+		m.Seq = int(nativeEndian.Uint32(b[w.seqOff : w.seqOff+4]))
+	}
+	if w.errOff > 0 {
+		errno := syscall.Errno(nativeEndian.Uint32(b[w.errOff : w.errOff+4]))
+		if errno != 0 {
+			m.Err = errno
+		}
 	}
 	var err error
 	m.Addrs, err = parseAddrs(uint(nativeEndian.Uint32(b[12:16])), parseKernelInetAddr, b[w.bodyOff:])
