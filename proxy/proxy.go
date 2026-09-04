@@ -65,11 +65,14 @@ func FromEnvironmentUsing(forward Dialer) Dialer {
 // proxySchemes is a map from URL schemes to a function that creates a Dialer
 // from a URL with such a scheme.
 var proxySchemes map[string]func(*url.URL, Dialer) (Dialer, error)
+var schemesMut sync.Mutex
 
 // RegisterDialerType takes a URL scheme and a function to generate Dialers from
 // a URL with that scheme and a forwarding Dialer. Registered schemes are used
 // by FromURL.
 func RegisterDialerType(scheme string, f func(*url.URL, Dialer) (Dialer, error)) {
+  schemesMut.Lock()
+  defer schemesMut.Unlock()
 	if proxySchemes == nil {
 		proxySchemes = make(map[string]func(*url.URL, Dialer) (Dialer, error))
 	}
@@ -100,6 +103,8 @@ func FromURL(u *url.URL, forward Dialer) (Dialer, error) {
 
 	// If the scheme doesn't match any of the built-in schemes, see if it
 	// was registered by another package.
+  schemesMut.Lock()
+  defer schemesMut.Unlock()
 	if proxySchemes != nil {
 		if f, ok := proxySchemes[u.Scheme]; ok {
 			return f(u, forward)
