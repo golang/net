@@ -67,6 +67,8 @@ type serverTester struct {
 	sc           *ServerConn
 	testConnFramer
 
+	realConn bool
+
 	callsMu sync.Mutex
 	calls   []*serverHandlerCall
 
@@ -495,6 +497,9 @@ func (st *serverTester) bodylessReq1(headers ...string) {
 
 // sync waits for all goroutines to idle.
 func (st *serverTester) sync() {
+	if st.realConn {
+		return
+	}
 	synctest.Wait()
 }
 

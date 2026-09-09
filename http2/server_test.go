@@ -119,7 +119,8 @@ func newServerTesterWithRealConn(t testing.TB, handler http.HandlerFunc, opts ..
 	ts.Config.TLSConfig.MinVersion = tls.VersionTLS10
 
 	st := &serverTester{
-		t: t,
+		t:        t,
+		realConn: true,
 	}
 	st.hpackEnc = hpack.NewEncoder(&st.headerBuf)
 
