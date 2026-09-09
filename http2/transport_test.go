@@ -9,9 +9,7 @@ package http2_test
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
-	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -3635,125 +3633,6 @@ func testTransportHandlesInvalidStatuslessResponse(t testing.TB) {
 		),
 	})
 	tc.writeData(rt.streamID(), true, []byte("payload"))
-}
-
-func BenchmarkClientRequestHeaders(b *testing.B) {
-	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 0) })
-	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 10, 0) })
-	b.Run(" 100 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 100, 0) })
-	b.Run("1000 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 1000, 0) })
-}
-
-func BenchmarkClientResponseHeaders(b *testing.B) {
-	b.Run("   0 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 0) })
-	b.Run("  10 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 10) })
-	b.Run(" 100 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 100) })
-	b.Run("1000 Headers", func(b *testing.B) { benchSimpleRoundTrip(b, 0, 1000) })
-}
-
-func BenchmarkDownloadFrameSize(b *testing.B) {
-	b.Run(" 16k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 16*1024) })
-	b.Run(" 64k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 64*1024) })
-	b.Run("128k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 128*1024) })
-	b.Run("256k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 256*1024) })
-	b.Run("512k Frame", func(b *testing.B) { benchLargeDownloadRoundTrip(b, 512*1024) })
-}
-func benchLargeDownloadRoundTrip(b *testing.B, frameSize uint32) {
-	DisableGoroutineTracking(b)
-	const transferSize = 1024 * 1024 * 1024 // must be multiple of 1M
-	b.ReportAllocs()
-	ts := newTestServer(b,
-		func(w http.ResponseWriter, r *http.Request) {
-			// test 1GB transfer
-			w.Header().Set("Content-Length", strconv.Itoa(transferSize))
-			w.Header().Set("Content-Transfer-Encoding", "binary")
-			var data [1024 * 1024]byte
-			for i := 0; i < transferSize/(1024*1024); i++ {
-				w.Write(data[:])
-			}
-		}, optQuiet,
-	)
-
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure, MaxReadFrameSize: frameSize}
-	defer tr.CloseIdleConnections()
-
-	req, err := http.NewRequest("GET", ts.URL, nil)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.N = 3
-	b.SetBytes(transferSize)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			if res != nil {
-				res.Body.Close()
-			}
-			b.Fatalf("RoundTrip err = %v; want nil", err)
-		}
-		data, _ := io.ReadAll(res.Body)
-		if len(data) != transferSize {
-			b.Fatalf("Response length invalid")
-		}
-		res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			b.Fatalf("Response code = %v; want %v", res.StatusCode, http.StatusOK)
-		}
-	}
-}
-
-func BenchmarkClientGzip(b *testing.B) {
-	DisableGoroutineTracking(b)
-	b.ReportAllocs()
-
-	const responseSize = 1024 * 1024
-
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if _, err := io.CopyN(gz, crand.Reader, responseSize); err != nil {
-		b.Fatal(err)
-	}
-	gz.Close()
-
-	data := buf.Bytes()
-	ts := newTestServer(b,
-		func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Encoding", "gzip")
-			w.Write(data)
-		},
-		optQuiet,
-	)
-
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
-	req, err := http.NewRequest("GET", ts.URL, nil)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		res, err := tr.RoundTrip(req)
-		if err != nil {
-			b.Fatalf("RoundTrip err = %v; want nil", err)
-		}
-		if res.StatusCode != http.StatusOK {
-			b.Fatalf("Response code = %v; want %v", res.StatusCode, http.StatusOK)
-		}
-		n, err := io.Copy(io.Discard, res.Body)
-		res.Body.Close()
-		if err != nil {
-			b.Fatalf("RoundTrip err = %v; want nil", err)
-		}
-		if n != responseSize {
-			b.Fatalf("RoundTrip expected %d bytes, got %d", responseSize, n)
-		}
-	}
 }
 
 // The client closes the connection just after the server got the client's HEADERS
