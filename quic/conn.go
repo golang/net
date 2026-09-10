@@ -101,8 +101,13 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 		}
 	}()
 
+	localAddr, err := e.packetConn.LocalAddrFor(peerAddr)
+	if err != nil {
+		return nil, err
+	}
 	c.path = pathAddrs{
-		peer: unmapAddrPort(peerAddr),
+		local: unmapAddrPort(localAddr),
+		peer:  unmapAddrPort(peerAddr),
 	}
 
 	// A one-element buffer allows us to wake a Conn's event loop as a

@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -229,6 +230,7 @@ func makeTestConfig(conf *Config, side connSide) *Config {
 type testEndpoint struct {
 	t                     *testing.T
 	e                     *Endpoint
+	localAddr             netip.AddrPort
 	closeOnce             sync.Once
 	recvc                 chan *datagram
 	idlec                 chan struct{}
@@ -240,15 +242,16 @@ type testEndpoint struct {
 	lastInitialDstConnID  []byte // for parsing Retry packets
 
 	sentDatagramsMu sync.Mutex
-	sentDatagrams   [][]byte
+	sentDatagrams   []*datagram
 }
 
 func newTestEndpoint(t *testing.T, config *Config) *testEndpoint {
 	te := &testEndpoint{
-		t:     t,
-		recvc: make(chan *datagram),
-		idlec: make(chan struct{}),
-		conns: make(map[*Conn]*testConn),
+		t:         t,
+		recvc:     make(chan *datagram),
+		idlec:     make(chan struct{}),
+		conns:     make(map[*Conn]*testConn),
+		localAddr: testServerAddr,
 	}
 	var err error
 	te.e, err = newEndpoint((*testEndpointUDPConn)(te), config, (*testEndpointHooks)(te))
@@ -275,14 +278,25 @@ func (te *testEndpoint) accept() *testConn {
 }
 
 func (te *testEndpoint) write(d *datagram) {
+	if d.path == (pathAddrs{}) {
+		d.path = pathAddrs{local: te.localAddr, peer: testClientAddr}
+	}
 	te.recvc <- d
 	synctest.Wait()
 }
 
-var testClientAddr = netip.MustParseAddrPort("10.0.0.1:8000")
+var (
+	testServerAddr = netip.MustParseAddrPort("10.0.0.1:443")
+	testClientAddr = netip.MustParseAddrPort("10.0.0.2:999")
+
+	defaultEndpointPath = pathAddrs{local: testServerAddr, peer: testClientAddr}
+)
 
 func (te *testEndpoint) writeDatagram(d *testDatagram) {
 	te.t.Helper()
+	if d.path == (pathAddrs{}) {
+		te.t.Fatal("writeDatagram with no path")
+	}
 	logDatagram(te.t, "<- endpoint under test receives", d)
 	var buf []byte
 	for _, p := range d.packets {
@@ -335,6 +349,17 @@ func (te *testEndpoint) connForSource(srcConnID []byte) *testConn {
 
 func (te *testEndpoint) read() []byte {
 	te.t.Helper()
+	d := te.readdgram()
+	if d == nil {
+		return nil
+	}
+	return d.b
+}
+
+// readdgram is not a good name, but read and readDatagram were taken and I'm not ready to
+// refactor all the callers yet.
+func (te *testEndpoint) readdgram() *datagram {
+	te.t.Helper()
 	synctest.Wait()
 	te.sentDatagramsMu.Lock()
 	defer te.sentDatagramsMu.Unlock()
@@ -348,13 +373,14 @@ func (te *testEndpoint) read() []byte {
 
 func (te *testEndpoint) readDatagram() *testDatagram {
 	te.t.Helper()
-	buf := te.read()
-	if buf == nil {
+	dgram := te.readdgram()
+	if dgram == nil {
 		return nil
 	}
-	p, _ := parseGenericLongHeaderPacket(buf)
+	p, _ := parseGenericLongHeaderPacket(dgram.b)
 	tc := te.connForSource(p.dstConnID)
-	d := parseTestDatagram(te.t, te, tc, buf)
+	d := parseTestDatagram(te.t, te, tc, dgram.b)
+	d.path = dgram.path
 	logDatagram(te.t, "-> endpoint under test sends", d)
 	return d
 }
@@ -380,6 +406,7 @@ type testEndpointHooks testEndpoint
 
 func (te *testEndpointHooks) newConn(c *Conn, cids newServerConnIDs) {
 	tc := newTestConnForConn(te.t, (*testEndpoint)(te), c, cids)
+	tc.path = pathAddrs{local: te.localAddr, peer: c.path.peer}
 	te.conns[c] = tc
 }
 
@@ -394,7 +421,11 @@ func (te *testEndpointUDPConn) Close() error {
 }
 
 func (te *testEndpointUDPConn) LocalAddr() netip.AddrPort {
-	return netip.MustParseAddrPort("127.0.0.1:443")
+	return te.localAddr
+}
+
+func (te *testEndpointUDPConn) LocalAddrFor(remote netip.AddrPort) (netip.AddrPort, error) {
+	return te.localAddr, nil
 }
 
 func (te *testEndpointUDPConn) Read(f func(*datagram)) error {
@@ -413,6 +444,11 @@ func (te *testEndpointUDPConn) Read(f func(*datagram)) error {
 func (te *testEndpointUDPConn) Write(dgram datagram) error {
 	te.sentDatagramsMu.Lock()
 	defer te.sentDatagramsMu.Unlock()
-	te.sentDatagrams = append(te.sentDatagrams, append([]byte(nil), dgram.b...))
+	dgram.b = slices.Clone(dgram.b)
+	if !dgram.path.local.IsValid() {
+		// Sender didn't set a local address to send from, so set it here.
+		dgram.path.local = te.localAddr
+	}
+	te.sentDatagrams = append(te.sentDatagrams, &dgram)
 	return nil
 }

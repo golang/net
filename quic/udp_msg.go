@@ -64,6 +64,10 @@ func (c *netUDPConn) LocalAddr() netip.AddrPort {
 	return a.AddrPort()
 }
 
+func (c *netUDPConn) LocalAddrFor(remote netip.AddrPort) (netip.AddrPort, error) {
+	return localAddrFor(c.LocalAddr(), remote)
+}
+
 func (c *netUDPConn) Read(f func(*datagram)) error {
 	// We shouldn't ever see all of these messages at the same time,
 	// but the total is small so just allocate enough space for everything we use.

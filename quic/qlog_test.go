@@ -256,7 +256,8 @@ func testQLogPacketDropped(t *testing.T) {
 		[]byte{1, 2, 3, 4}, // random data, to avoid this looking like a stateless reset
 	}, nil)
 	tc.endpoint.write(&datagram{
-		b: dgram,
+		b:    dgram,
+		path: tc.path,
 	})
 
 	qr.wantEvents(t, jsonEvent{

@@ -37,6 +37,14 @@ func (c *netPacketConn) LocalAddr() netip.AddrPort {
 	return c.localAddr
 }
 
+func (c *netPacketConn) LocalAddrFor(remote netip.AddrPort) (netip.AddrPort, error) {
+	if c.localAddr.Addr().IsUnspecified() {
+		// If this is the unspec address, we have no way to pick a better one.
+		return netip.AddrPort{}, nil
+	}
+	return c.localAddr, nil
+}
+
 func (c *netPacketConn) Read(f func(*datagram)) error {
 	for {
 		dgram := newDatagram()

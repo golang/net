@@ -12,12 +12,6 @@ import (
 )
 
 func (c *Conn) handleDatagram(now time.Time, dgram *datagram) (handled bool) {
-	if !c.path.local.IsValid() {
-		// We don't have any way to tell in the general case what address we're
-		// sending packets from. Set our address from the destination address of
-		// the first packet received from the peer.
-		c.path.local = dgram.path.local
-	}
 	if dgram.path.peer.IsValid() && dgram.path.peer != c.path.peer {
 		if c.side == clientSide {
 			// "If a client receives packets from an unknown server address,

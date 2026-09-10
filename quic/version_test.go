@@ -65,7 +65,8 @@ func testVersionNegotiationClientAborts(t *testing.T) {
 	tc := newTestConn(t, clientSide)
 	p := tc.readPacket() // client Initial packet
 	tc.endpoint.write(&datagram{
-		b: appendVersionNegotiation(nil, p.srcConnID, p.dstConnID, 10),
+		b:    appendVersionNegotiation(nil, p.srcConnID, p.dstConnID, 10),
+		path: tc.path,
 	})
 	tc.wantIdle("connection does not send a CONNECTION_CLOSE")
 	if err := tc.conn.waitReady(canceledContext()); err != errVersionNegotiation {

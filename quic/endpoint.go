@@ -46,6 +46,13 @@ type packetConn interface {
 	LocalAddr() netip.AddrPort
 	Read(f func(*datagram)) error
 	Write(datagram) error
+
+	// LocalAddrFor reports the local address to use to send to a remote address.
+	// If the networking implementation doesn't support asking this question,
+	// it returns an invalid address and no error.
+	// If the implementation does support the question but the question cannot be answered
+	// (because there is no route, say), it returns an error.
+	LocalAddrFor(remoteAddr netip.AddrPort) (netip.AddrPort, error)
 }
 
 // Listen listens on a local network address.

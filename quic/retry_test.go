@@ -53,6 +53,7 @@ func newRetryServerTest(t *testing.T) *retryServerTest {
 				},
 			},
 		}},
+		path:       defaultEndpointPath,
 		paddedSize: 1200,
 	})
 	got := te.readDatagram()
@@ -98,6 +99,7 @@ func testRetryServerSucceeds(t *testing.T) {
 				},
 			},
 		}},
+		path:       defaultEndpointPath,
 		paddedSize: 1200,
 	})
 	tc := te.accept()
@@ -144,12 +146,14 @@ func testRetryServerTokenInvalid(t *testing.T) {
 				},
 			},
 		}},
+		path:       defaultEndpointPath,
 		paddedSize: 1200,
 	})
 	te.wantDatagram("server closes connection after Initial with invalid Retry token",
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
+			defaultEndpointPath,
 			errInvalidToken))
 }
 
@@ -176,12 +180,14 @@ func testRetryServerTokenTooOld(t *testing.T) {
 				},
 			},
 		}},
+		path:       defaultEndpointPath,
 		paddedSize: 1200,
 	})
 	te.wantDatagram("server closes connection after Initial with expired token",
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
+			defaultEndpointPath,
 			errInvalidToken))
 }
 
@@ -195,7 +201,8 @@ func testRetryServerTokenWrongIP(t *testing.T) {
 	rt := newRetryServerTest(t)
 	te := rt.te
 	path := pathAddrs{
-		peer: netip.MustParseAddrPort("10.0.0.2:8000"),
+		local: te.localAddr,
+		peer:  netip.MustParseAddrPort("10.0.0.2:8000"),
 	}
 	te.writeDatagram(&testDatagram{
 		packets: []*testPacket{{
@@ -218,6 +225,7 @@ func testRetryServerTokenWrongIP(t *testing.T) {
 		initialConnectionCloseDatagram(
 			rt.retry.srcConnID,
 			rt.originalSrcConnID,
+			path,
 			errInvalidToken))
 }
 
@@ -243,12 +251,14 @@ func testRetryServerShortDstConnID(t *testing.T) {
 				},
 			},
 		}},
+		path:       defaultEndpointPath,
 		paddedSize: 1200,
 	})
 	te.wantDatagram("server closes connection after Initial from wrong address",
 		initialConnectionCloseDatagram(
 			[]byte("short id"),
 			rt.originalSrcConnID,
+			defaultEndpointPath,
 			errInvalidToken))
 }
 
@@ -615,7 +625,7 @@ func initialClientCrypto(t *testing.T, e *testEndpoint, p transportParameters) [
 	}
 }
 
-func initialConnectionCloseDatagram(srcConnID, dstConnID []byte, code transportError) *testDatagram {
+func initialConnectionCloseDatagram(srcConnID, dstConnID []byte, path pathAddrs, code transportError) *testDatagram {
 	return &testDatagram{
 		packets: []*testPacket{{
 			ptype:     packetTypeInitial,
@@ -629,5 +639,6 @@ func initialConnectionCloseDatagram(srcConnID, dstConnID []byte, code transportE
 				},
 			},
 		}},
+		path: path,
 	}
 }
