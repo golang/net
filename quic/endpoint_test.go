@@ -306,8 +306,8 @@ func (te *testEndpoint) writeDatagram(d *testDatagram) {
 		buf = append(buf, 0)
 	}
 	te.write(&datagram{
-		b:        buf,
-		peerAddr: d.addr,
+		b:    buf,
+		path: d.path,
 	})
 }
 

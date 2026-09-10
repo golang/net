@@ -69,7 +69,7 @@ func testConnTestConn(t *testing.T) {
 type testDatagram struct {
 	packets    []*testPacket
 	paddedSize int
-	addr       netip.AddrPort
+	path       pathAddrs
 }
 
 func (d testDatagram) String() string {
@@ -412,7 +412,7 @@ func (tc *testConn) writeFrames(ptype packetType, frames ...debugFrame) {
 			dstConnID:   dstConnID,
 			srcConnID:   tc.peerConnID,
 		}},
-		addr: tc.conn.peerAddr,
+		path: tc.conn.path,
 	}
 	if ptype == packetTypeInitial && tc.conn.side == serverSide {
 		d.paddedSize = 1200
@@ -595,7 +595,7 @@ func datagramEqual(a, b *testDatagram) bool {
 		return false
 	}
 	if a.paddedSize != b.paddedSize ||
-		a.addr != b.addr ||
+		a.path != b.path ||
 		len(a.packets) != len(b.packets) {
 		return false
 	}

@@ -24,8 +24,7 @@ type Conn struct {
 	endpoint  *Endpoint
 	config    *Config
 	testHooks connTestHooks
-	peerAddr  netip.AddrPort
-	localAddr netip.AddrPort
+	path      pathAddrs
 	prng      *rand.Rand
 
 	msgc  chan any
@@ -38,7 +37,7 @@ type Conn struct {
 	connIDState connIDState
 	loss        lossState
 	streams     streamsState
-	path        pathState
+	pstate      pathState
 	skip        skipState
 
 	// Packet protection keys, CRYPTO streams, and TLS state.
@@ -90,7 +89,6 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 		side:                 side,
 		endpoint:             e,
 		config:               config,
-		peerAddr:             unmapAddrPort(peerAddr),
 		donec:                make(chan struct{}),
 		peerAckDelayExponent: -1,
 	}
@@ -102,6 +100,10 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 			close(c.donec)
 		}
 	}()
+
+	c.path = pathAddrs{
+		peer: unmapAddrPort(peerAddr),
+	}
 
 	// A one-element buffer allows us to wake a Conn's event loop as a
 	// non-blocking operation.
@@ -172,17 +174,17 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 }
 
 func (c *Conn) String() string {
-	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.peerAddr)
+	return fmt.Sprintf("quic.Conn(%v,->%v)", c.side, c.path.peer)
 }
 
 // LocalAddr returns the local network address, if known.
 func (c *Conn) LocalAddr() netip.AddrPort {
-	return c.localAddr
+	return c.path.local
 }
 
 // RemoteAddr returns the remote network address, if known.
 func (c *Conn) RemoteAddr() netip.AddrPort {
-	return c.peerAddr
+	return c.path.peer
 }
 
 // ConnectionState returns basic TLS details about the connection.

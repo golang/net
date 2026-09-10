@@ -295,7 +295,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	// If this is a 1-RTT packet, there's nothing productive we can do with it.
 	// Send a stateless reset if possible.
 	if !isLongHeader(m.b[0]) {
-		e.maybeSendStatelessReset(m.b, m.peerAddr)
+		e.maybeSendStatelessReset(m.b, m.path.peer)
 		return
 	}
 	p, ok := parseGenericLongHeaderPacket(m.b)
@@ -309,7 +309,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		return
 	default:
 		// Unknown version.
-		e.sendVersionNegotiation(p, m.peerAddr)
+		e.sendVersionNegotiation(p, m.path.peer)
 		return
 	}
 	if getPacketType(m.b) != packetTypeInitial {
@@ -337,7 +337,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	if e.listenConfig.RequireAddressValidation {
 		var ok bool
 		cids.retrySrcConnID = p.dstConnID
-		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.peerAddr)
+		cids.originalDstConnID, ok = e.validateInitialAddress(now, p, m.path.peer)
 		if !ok {
 			return
 		}
@@ -345,7 +345,7 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 		cids.originalDstConnID = p.dstConnID
 	}
 	var err error
-	c, err := e.newConn(now, e.listenConfig, serverSide, cids, "", m.peerAddr)
+	c, err := e.newConn(now, e.listenConfig, serverSide, cids, "", m.path.peer)
 	if err != nil {
 		// The accept queue is probably full.
 		// We could send a CONNECTION_CLOSE to the peer to reject the connection.
@@ -399,15 +399,15 @@ func (e *Endpoint) maybeSendStatelessReset(b []byte, peerAddr netip.AddrPort) {
 	b[0] |= fixedBit        // set fixed bit
 	copy(b[len(b)-statelessResetTokenLen:], token[:])
 	e.sendDatagram(datagram{
-		b:        b,
-		peerAddr: peerAddr,
+		b:    b,
+		path: pathAddrs{peer: peerAddr},
 	})
 }
 
 func (e *Endpoint) sendVersionNegotiation(p genericLongPacket, peerAddr netip.AddrPort) {
 	m := newDatagram()
 	m.b = appendVersionNegotiation(m.b[:0], p.srcConnID, p.dstConnID, quicVersion1)
-	m.peerAddr = peerAddr
+	m.path.peer = peerAddr
 	e.sendDatagram(*m)
 	m.recycle()
 }
@@ -432,8 +432,8 @@ func (e *Endpoint) sendConnectionClose(in genericLongPacket, peerAddr netip.Addr
 		return
 	}
 	e.sendDatagram(datagram{
-		b:        buf,
-		peerAddr: peerAddr,
+		b:    buf,
+		path: pathAddrs{peer: peerAddr},
 	})
 }
 

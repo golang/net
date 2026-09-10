@@ -145,8 +145,8 @@ func testConnSendAntiAmplificationInitialFlightBlocked(t *testing.T) {
 	}
 	copy(pkt[6:], dcid)
 	tc.endpoint.write(&datagram{
-		b:        pkt,
-		peerAddr: tc.conn.peerAddr,
+		b:    pkt,
+		path: pathAddrs{peer: tc.conn.path.peer},
 	})
 	bytesSent += len(pkt)
 

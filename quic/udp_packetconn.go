@@ -44,7 +44,7 @@ func (c *netPacketConn) Read(f func(*datagram)) error {
 		if err != nil {
 			return err
 		}
-		dgram.peerAddr, err = addrPortFromAddr(peerAddr)
+		dgram.path.peer, err = addrPortFromAddr(peerAddr)
 		if err != nil {
 			continue
 		}
@@ -54,7 +54,7 @@ func (c *netPacketConn) Read(f func(*datagram)) error {
 }
 
 func (c *netPacketConn) Write(dgram datagram) error {
-	_, err := c.c.WriteTo(dgram.b, net.UDPAddrFromAddrPort(dgram.peerAddr))
+	_, err := c.c.WriteTo(dgram.b, net.UDPAddrFromAddrPort(dgram.path.peer))
 	return err
 }
 

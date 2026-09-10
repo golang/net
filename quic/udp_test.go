@@ -19,8 +19,8 @@ func TestUDPSourceUnspecified(t *testing.T) {
 		t.Logf("%v", test.dstAddr)
 		data := []byte("source unspecified")
 		if err := test.src.Write(datagram{
-			b:        data,
-			peerAddr: test.dstAddr,
+			b:    data,
+			path: pathAddrs{peer: test.dstAddr},
 		}); err != nil {
 			t.Fatalf("Write: %v", err)
 		}
@@ -36,9 +36,11 @@ func TestUDPSourceSpecified(t *testing.T) {
 	runUDPTest(t, func(t *testing.T, test udpTest) {
 		data := []byte("source specified")
 		if err := test.src.Write(datagram{
-			b:         data,
-			peerAddr:  test.dstAddr,
-			localAddr: test.src.LocalAddr(),
+			b: data,
+			path: pathAddrs{
+				peer:  test.dstAddr,
+				local: test.src.LocalAddr(),
+			},
 		}); err != nil {
 			t.Fatalf("Write: %v", err)
 		}
@@ -63,9 +65,11 @@ func TestUDPSourceInvalid(t *testing.T) {
 		}
 		data := []byte("source invalid")
 		if err := test.src.Write(datagram{
-			b:         data,
-			peerAddr:  test.dstAddr,
-			localAddr: localAddr,
+			b: data,
+			path: pathAddrs{
+				peer:  test.dstAddr,
+				local: localAddr,
+			},
 		}); err == nil {
 			t.Errorf("Write with invalid localAddr succeeded; want error")
 		}
@@ -80,9 +84,9 @@ func TestUDPECN(t *testing.T) {
 	runUDPTest(t, func(t *testing.T, test udpTest) {
 		for _, ecn := range []ecnBits{ecnNotECT, ecnECT1, ecnECT0, ecnCE} {
 			if err := test.src.Write(datagram{
-				b:        []byte{1, 2, 3, 4},
-				peerAddr: test.dstAddr,
-				ecn:      ecn,
+				b:    []byte{1, 2, 3, 4},
+				path: pathAddrs{peer: test.dstAddr},
+				ecn:  ecn,
 			}); err != nil {
 				t.Fatalf("Write: %v", err)
 			}
