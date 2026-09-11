@@ -246,7 +246,7 @@ func (cc *clientConn) RoundTrip(req *http.Request) (_ *http.Response, err error)
 				Body:          (*transportResponseBody)(rt),
 			}
 			if addedGzip && strings.EqualFold(h.Get("Content-Encoding"), "gzip") {
-				resp.Body = &gzipReader{body: resp.Body}
+				resp.Body = &httpcommon.GzipReader{Body: resp.Body}
 				h.Del("Content-Encoding")
 				h.Del("Content-Length")
 				resp.ContentLength = -1
