@@ -1335,6 +1335,90 @@ func TestLossCongestionWindowUnderutilized(t *testing.T) {
 	test.wantVar("congestion_window", 24000)
 }
 
+func TestLossSentOffPathRTT(t *testing.T) {
+	test := newLossTest(t, clientSide, lossTestOpts{})
+
+	test.send(appDataSpace, 0, testOffPath(true))
+	test.advance(10 * time.Millisecond)
+	test.ack(appDataSpace, 0*time.Millisecond, i64range[packetNumber]{0, 1})
+	test.wantAck(appDataSpace, 0)
+
+	t.Logf("# off-path packet does not contribute to RTT")
+	test.wantVar("latest_rtt", 0*time.Millisecond)
+}
+
+func TestLossSentOffPathBytesInFlight(t *testing.T) {
+	test := newLossTest(t, clientSide, lossTestOpts{})
+
+	t.Logf("# off-path packet does not contribute to bytes-in-flight")
+	test.send(appDataSpace, 0, testSentPacketSize(100), testOffPath(true))
+	test.send(appDataSpace, 1, testSentPacketSize(300), testOffPath(true))
+	test.advance(1 * time.Millisecond)
+	test.send(appDataSpace, 2, testSentPacketSize(500), testOffPath(false))
+	test.wantVar("bytes_in_flight", 500)
+
+	t.Logf("# ack of off-path packet does not reduce bytes-in-flight")
+	test.ack(appDataSpace, 0*time.Millisecond, i64range[packetNumber]{1, 2})
+	test.wantAck(appDataSpace, 1)
+	test.wantVar("bytes_in_flight", 500)
+
+	t.Logf("# loss of off-path packet does not reduce bytes-in-flight")
+	test.advanceToLossTimer()
+	test.wantLoss(appDataSpace, 0)
+	test.wantVar("bytes_in_flight", 500)
+}
+
+func TestLossResetRTT(t *testing.T) {
+	test := newLossTest(t, clientSide, lossTestOpts{})
+
+	test.send(appDataSpace, 0, 1)
+
+	t.Logf("# ack sets RTT sample")
+	test.advance(10 * time.Millisecond)
+	test.ack(appDataSpace, 0*time.Millisecond, i64range[packetNumber]{0, 1})
+	test.wantAck(appDataSpace, 0)
+	test.wantVar("latest_rtt", 10*time.Millisecond)
+
+	t.Logf("# congestion control reset of RTT")
+	test.advance(10 * time.Millisecond)
+	test.reset()
+	test.wantVar("latest_rtt", 0*time.Millisecond)
+
+	t.Logf("# ack of packet from before reset does not set RTT sample")
+	test.advance(10 * time.Millisecond)
+	test.ack(appDataSpace, 0*time.Millisecond, i64range[packetNumber]{1, 2})
+	test.wantAck(appDataSpace, 1)
+	test.wantVar("latest_rtt", 0*time.Millisecond)
+}
+
+func TestLossResetBytesInFlight(t *testing.T) {
+	test := newLossTest(t, clientSide, lossTestOpts{})
+
+	t.Logf("# on-path packets contribute to bytes-in-flight")
+	test.send(appDataSpace, 0, testSentPacketSize(100))
+	test.send(appDataSpace, 1, testSentPacketSize(300))
+	test.advance(1 * time.Millisecond)
+	test.wantVar("bytes_in_flight", 400)
+
+	t.Logf("# congestion control reset of bytes-in-flight")
+	test.reset()
+	test.wantVar("bytes_in_flight", 0)
+
+	t.Logf("# new on-path packets contribute to bytes-in-flight")
+	test.send(appDataSpace, 2, testSentPacketSize(500))
+	test.wantVar("bytes_in_flight", 500)
+
+	t.Logf("# ack of pre-reset packet does not reduce bytes-in-flight")
+	test.ack(appDataSpace, 0*time.Millisecond, i64range[packetNumber]{1, 2})
+	test.wantAck(appDataSpace, 1)
+	test.wantVar("bytes_in_flight", 500)
+
+	t.Logf("# loss of pre-reset packet does not reduce bytes-in-flight")
+	test.advanceToLossTimer()
+	test.wantLoss(appDataSpace, 0)
+	test.wantVar("bytes_in_flight", 500)
+}
+
 type lossTest struct {
 	t      *testing.T
 	c      lossState
@@ -1422,6 +1506,15 @@ func (c *lossTest) advanceToLossTimer() {
 
 type testSentPacketSize int
 
+type testOffPath bool
+
+func (p testOffPath) String() string {
+	if p {
+		return "off-path"
+	}
+	return "on-path"
+}
+
 func (c *lossTest) send(spaceID numberSpace, opts ...any) {
 	c.t.Helper()
 	c.checkUnexpectedEvents()
@@ -1436,6 +1529,8 @@ func (c *lossTest) send(spaceID numberSpace, opts ...any) {
 			prototype = o
 		case testSentPacketSize:
 			prototype.size = int(o)
+		case testOffPath:
+			prototype.offPath = bool(o)
 		case int:
 			nums = append(nums, packetNumber(o))
 		case packetNumber:
@@ -1473,11 +1568,6 @@ func (c *lossTest) ack(spaceID numberSpace, ackDelay time.Duration, rs ...i64ran
 	c.t.Helper()
 	c.checkUnexpectedEvents()
 	c.c.receiveAckStart()
-	var acked rangeset[packetNumber]
-	for _, r := range rs {
-		c.t.Logf("ack %v delay=%v [%v,%v)", spaceID, ackDelay, r.start, r.end)
-		acked.add(r.start, r.end)
-	}
 	for i, r := range rs {
 		c.t.Logf("ack %v delay=%v [%v,%v)", spaceID, ackDelay, r.start, r.end)
 		c.c.receiveAckRange(c.now, spaceID, i, r.start, r.end, c.onAckOrLoss)
@@ -1491,6 +1581,13 @@ func (c *lossTest) onAckOrLoss(space numberSpace, sent *sentPacket, fate packetF
 		c.t.Errorf("ERROR: duplicate %v for %v %v", fate, space, sent.num)
 	}
 	c.fates[spaceNum{space, sent.num}] = fate
+}
+
+func (c *lossTest) reset() {
+	c.t.Helper()
+	c.checkUnexpectedEvents()
+	c.t.Logf("reset congestion control")
+	c.c.reset(c.now, 1200)
 }
 
 func (c *lossTest) confirmHandshake() {
