@@ -293,9 +293,10 @@ func (e *Endpoint) handleUnknownDestinationDatagram(m *datagram) {
 	// Check to see if this is a stateless reset.
 	var token statelessResetToken
 	copy(token[:], m.b[len(m.b)-len(token):])
+	peerAddr := m.path.peer
 	if c := e.connsMap.byResetToken[token]; c != nil {
 		c.sendMsg(func(now time.Time, c *Conn) {
-			c.handleStatelessReset(now, token)
+			c.handleStatelessReset(now, token, peerAddr)
 		})
 		return
 	}

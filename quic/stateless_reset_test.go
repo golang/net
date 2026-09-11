@@ -158,7 +158,8 @@ func testStatelessResetSuccessfulNewConnectionID(t *testing.T) {
 	resetToken := testPeerStatelessResetToken(1) // provided during handshake
 	dgram := append(make([]byte, 100), resetToken[:]...)
 	tc.endpoint.write(&datagram{
-		b: dgram,
+		b:    dgram,
+		path: tc.path,
 	})
 
 	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
@@ -191,7 +192,8 @@ func testStatelessResetSuccessfulTransportParameter(t *testing.T) {
 
 	dgram := append(make([]byte, 100), resetToken[:]...)
 	tc.endpoint.write(&datagram{
-		b: dgram,
+		b:    dgram,
+		path: tc.path,
 	})
 
 	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
@@ -294,10 +296,106 @@ func testStatelessResetRetiredConnID(t *testing.T) {
 	// Receive a stateless reset for connection ID 0.
 	dgram := append(make([]byte, 100), resetToken[:]...)
 	tc.endpoint.write(&datagram{
-		b: dgram,
+		b:    dgram,
+		path: tc.path,
 	})
 
 	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, context.Canceled) {
 		t.Errorf("conn.Wait() = %v, want connection to be alive", err)
 	}
+}
+
+func TestStatelessResetUnusedConnID(t *testing.T) {
+	synctest.Test(t, testStatelessResetUnusedConnID)
+}
+func testStatelessResetUnusedConnID(t *testing.T) {
+	// "An endpoint MUST NOT check for any stateless reset tokens
+	// associated with connection IDs it has not used [...]"
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3.1-3
+	tc := newTestConn(t, clientSide)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	// We receive connection ID 2.
+	resetToken := testPeerStatelessResetToken(2)
+	tc.writeFrames(packetType1RTT,
+		debugFrameNewConnectionID{
+			seq:    2,
+			token:  resetToken,
+			connID: testPeerConnID(2),
+		})
+
+	// Receive a stateless reset for unused connection ID 2.
+	dgram := append(make([]byte, 100), resetToken[:]...)
+	tc.endpoint.write(&datagram{
+		b:    dgram,
+		path: tc.path,
+	})
+
+	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, context.Canceled) {
+		t.Errorf("conn.Wait() = %v, want connection to be alive", err)
+	}
+}
+
+func TestStatelessResetWrongPath(t *testing.T) {
+	synctest.Test(t, testStatelessResetWrongPath)
+}
+func testStatelessResetWrongPath(t *testing.T) {
+	// "[...] all stateless reset tokens associated with
+	// the remote address on which the datagram was received."
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3.1-1
+	resetToken := testPeerStatelessResetToken(0)
+	tc := newTestConn(t, clientSide, func(p *transportParameters) {
+		p.statelessResetToken = resetToken[:]
+	})
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	// Receive a stateless reset for connection ID 0, but on the wrong path.
+	dgram := append(make([]byte, 100), resetToken[:]...)
+	tc.endpoint.write(&datagram{
+		b:    dgram,
+		path: tc.newPeerPath(),
+	})
+	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, context.Canceled) {
+		t.Errorf("conn.Wait() = %v, want connection to be alive", err)
+	}
+
+	// Same reset on the correct path closes the connection.
+	tc.endpoint.write(&datagram{
+		b:    dgram,
+		path: tc.path,
+	})
+	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
+		t.Errorf("conn.Wait() = %v, want errStatelessReset", err)
+	}
+	tc.wantIdle("closed connection is idle")
+}
+
+func TestStatelessResetZeroLengthDCID(t *testing.T) {
+	synctest.Test(t, testStatelessResetZeroLengthDCID)
+}
+func testStatelessResetZeroLengthDCID(t *testing.T) {
+	// "[...] all stateless reset tokens associated with
+	// the remote address on which the datagram was received."
+	// https://www.rfc-editor.org/rfc/rfc9000.html#section-10.3.1-1
+	resetToken := testPeerStatelessResetToken(0)
+	tc := newTestConn(t, clientSide, func(p *transportParameters) {
+		p.initialSrcConnID = []byte{}
+		p.statelessResetToken = resetToken[:]
+	})
+	tc.peerConnID = []byte{}
+	tc.uncheckedHandshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	// Receive a stateless reset for connection ID 0 on an unknown path.
+	dgram := append(make([]byte, 100), resetToken[:]...)
+	tc.endpoint.write(&datagram{
+		b:    dgram,
+		path: tc.newPeerPath(),
+	})
+	if err := tc.conn.Wait(canceledContext()); !errors.Is(err, errStatelessReset) {
+		t.Errorf("conn.Wait() = %v, want errStatelessReset", err)
+	}
+	tc.wantIdle("closed connection is idle")
 }

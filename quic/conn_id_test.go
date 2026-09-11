@@ -26,7 +26,7 @@ func testConnIDClientHandshake(t *testing.T) {
 	if got, want := tc.conn.connIDState.srcConnID(), testLocalConnID(0); !bytes.Equal(got, want) {
 		t.Errorf("after initialization: srcConnID = %x, want %x", got, want)
 	}
-	dstConnID, _ := tc.conn.connIDState.dstConnID()
+	dstConnID, _ := tc.conn.connIDState.dstConnIDForPath(tc.conn.path)
 	if got, want := dstConnID, testLocalConnID(-1); !bytes.Equal(got, want) {
 		t.Errorf("after initialization: dstConnID = %x, want %x", got, want)
 	}
@@ -37,7 +37,7 @@ func testConnIDClientHandshake(t *testing.T) {
 		debugFrameCrypto{
 			data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
 		})
-	dstConnID, _ = tc.conn.connIDState.dstConnID()
+	dstConnID, _ = tc.conn.connIDState.dstConnIDForPath(tc.conn.path)
 	if got, want := dstConnID, testPeerConnID(0); !bytes.Equal(got, want) {
 		t.Errorf("after receiving Initial: dstConnID = %x, want %x", got, want)
 	}
@@ -54,6 +54,7 @@ func testConnIDClientHandshake(t *testing.T) {
 			cid: testPeerConnID(0),
 			seq: 0,
 		},
+		path: tc.path,
 	}}
 	if got := tc.conn.connIDState.remote; !remoteConnIDListEqual(got, wantRemote) {
 		t.Errorf("remote ids: %v, want %v", fmtRemoteConnIDList(got), fmtRemoteConnIDList(wantRemote))
@@ -75,7 +76,7 @@ func testConnIDServerHandshake(t *testing.T) {
 	if got, want := tc.conn.connIDState.srcConnID(), testLocalConnID(0); !bytes.Equal(got, want) {
 		t.Errorf("after initClient: srcConnID = %q, want %q", got, want)
 	}
-	dstConnID, _ := tc.conn.connIDState.dstConnID()
+	dstConnID, _ := tc.conn.connIDState.dstConnIDForPath(tc.conn.path)
 	if got, want := dstConnID, testPeerConnID(0); !bytes.Equal(got, want) {
 		t.Errorf("after initClient: dstConnID = %q, want %q", got, want)
 	}
@@ -105,6 +106,7 @@ func testConnIDServerHandshake(t *testing.T) {
 			cid: testPeerConnID(0),
 			seq: 0,
 		},
+		path: tc.path,
 	}}
 	if got := tc.conn.connIDState.remote; !remoteConnIDListEqual(got, wantRemote) {
 		t.Errorf("remote ids: %v, want %v", fmtRemoteConnIDList(got), fmtRemoteConnIDList(wantRemote))
@@ -157,6 +159,9 @@ func remoteConnIDListEqual(a, b []remoteConnID) bool {
 		if a[i].resetToken != b[i].resetToken {
 			return false
 		}
+		if a[i].path != b[i].path {
+			return false
+		}
 	}
 	return true
 }
@@ -172,7 +177,7 @@ func fmtConnIDList(s []connID) string {
 func fmtRemoteConnIDList(s []remoteConnID) string {
 	var strs []string
 	for _, cid := range s {
-		strs = append(strs, fmt.Sprintf("[seq:%v cid:{%x} token:{%x}]", cid.seq, cid.cid, cid.resetToken))
+		strs = append(strs, fmt.Sprintf("[seq:%v cid:{%x} token:{%x} path:%v]", cid.seq, cid.cid, cid.resetToken, cid.path))
 	}
 	return "{" + strings.Join(strs, " ") + "}"
 }
@@ -239,12 +244,17 @@ func testConnIDPeerProvidesTooManyIDs(t *testing.T) {
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
 
-	tc.writeFrames(packetType1RTT,
-		debugFrameNewConnectionID{
-			seq:    2,
-			connID: testLocalConnID(2),
-		})
-	tc.wantFrame("peer provided 3 connection IDs, our limit is 2",
+	seq := int64(2)
+	for seq <= activeConnIDLimit {
+		tc.wantIdle("within limit, no error")
+		tc.writeFrames(packetType1RTT,
+			debugFrameNewConnectionID{
+				seq:    seq,
+				connID: testLocalConnID(seq),
+			})
+		seq++
+	}
+	tc.wantFrame("peer provided more connection IDs than our limit",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errConnectionIDLimit,
 		})
@@ -373,7 +383,8 @@ func testConnIDPeerDoesNotAcknowledgeRetirement(t *testing.T) {
 	tc.ignoreFrame(frameTypeRetireConnectionID)
 
 	// Send a number of NEW_CONNECTION_ID frames, each retiring an old one.
-	for seq := int64(0); seq < 7; seq++ {
+	for seq := range int64((3 * activeConnIDLimit) + 1) {
+		tc.wantIdle("no error yet")
 		tc.writeFrames(packetType1RTT,
 			debugFrameNewConnectionID{
 				seq:           seq + 2,
@@ -604,13 +615,18 @@ func testConnIDPeerProvidesPreferredAddrAndTooManyConnIDs(t *testing.T) {
 	tc.uncheckedHandshake()
 	tc.ignoreFrame(frameTypeAck)
 
-	tc.writeFrames(packetType1RTT,
-		debugFrameNewConnectionID{
-			seq:           2,
-			retirePriorTo: 0,
-			connID:        testPeerConnID(2),
-		})
-	tc.wantFrame("peer provided 3 connection IDs, our limit is 2",
+	seq := int64(2)
+	for seq <= activeConnIDLimit {
+		tc.wantIdle("no error yet")
+		tc.writeFrames(packetType1RTT,
+			debugFrameNewConnectionID{
+				seq:           seq,
+				retirePriorTo: 0,
+				connID:        testPeerConnID(seq),
+			})
+		seq++
+	}
+	tc.wantFrame("peer provided too many connection IDs",
 		packetType1RTT, debugFrameConnectionCloseTransport{
 			code: errConnectionIDLimit,
 		})
@@ -722,7 +738,6 @@ func testConnIDRetiredConnIDResent(t *testing.T) {
 	tc := newTestConn(t, serverSide)
 	tc.handshake()
 	tc.ignoreFrame(frameTypeAck)
-	//tc.ignoreFrame(frameTypeRetireConnectionID)
 
 	// Send CID 2, retire 0-1 (negotiated during the handshake).
 	tc.writeFrames(packetType1RTT,
@@ -831,4 +846,69 @@ func testRejectInitialDstConnIDTooLong(t *testing.T) {
 		paddedSize: 1200,
 	})
 	te.wantIdle("server should ignore Initial with too-long DCID")
+}
+
+func TestConnIDAllocationsForPath(t *testing.T) {
+	synctest.Test(t, testConnIDAllocationsForPath)
+}
+func testConnIDAllocationsForPath(t *testing.T) {
+	tc := newTestConn(t, clientSide)
+	tc.handshake()
+	tc.ignoreFrame(frameTypeAck)
+
+	type wantDstConnID struct {
+		path pathAddrs
+		cid  []byte // nil for no ID available
+	}
+	wantDstConnIDs := func(t *testing.T, expectation string, want []wantDstConnID) {
+		t.Helper()
+		for _, w := range want {
+			wantOK := w.cid != nil
+			got, ok := tc.conn.connIDState.dstConnIDForPath(w.path)
+			if ok == wantOK && bytes.Equal(got, w.cid) {
+				continue
+			}
+			t.Errorf("%v: dstConnIDForPath(%v) = {%x}, %v; want {%x}, %v", expectation, w.path, got, ok, w.cid, wantOK)
+		}
+	}
+
+	var (
+		path1 = tc.newPeerPath()
+		path2 = tc.newPeerPath()
+		path3 = tc.newPeerPath()
+		path4 = tc.newPeerPath()
+	)
+
+	// Handshake negotiated two DCIDs.
+	wantDstConnIDs(t, "two CIDs available", []wantDstConnID{
+		{tc.path, testPeerConnID(0)},
+		{path1, testPeerConnID(1)},
+		{path2, nil},
+	})
+
+	// Provide one more CID.
+	tc.writeFrames(packetType1RTT,
+		debugFrameNewConnectionID{
+			seq:           2,
+			retirePriorTo: 0,
+			connID:        testPeerConnID(2),
+			token:         testPeerStatelessResetToken(2),
+		})
+	wantDstConnIDs(t, "one more CID available", []wantDstConnID{
+		{path3, testPeerConnID(2)},
+		{path4, nil},
+	})
+	wantDstConnIDs(t, "CID assignments are stable", []wantDstConnID{
+		{tc.path, testPeerConnID(0)},
+		{path1, testPeerConnID(1)},
+		{path2, nil},
+		{path3, testPeerConnID(2)},
+		{path4, nil},
+	})
+
+	// Abandon a path.
+	tc.conn.connIDState.abandonPath(tc.conn, path1)
+	wantDstConnIDs(t, "path 1 CID no longer available", []wantDstConnID{
+		{path1, nil},
+	})
 }

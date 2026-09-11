@@ -121,16 +121,16 @@ func newConn(now time.Time, side connSide, cids newServerConnIDs, peerHostname s
 	// initialConnID is the connection ID used to generate Initial packet protection keys.
 	var initialConnID []byte
 	if c.side == clientSide {
-		if err := c.connIDState.initClient(c); err != nil {
+		if err := c.connIDState.initClient(c, c.path); err != nil {
 			return nil, err
 		}
-		initialConnID, _ = c.connIDState.dstConnID()
+		initialConnID, _ = c.connIDState.dstConnIDForPath(c.path)
 	} else {
 		initialConnID = cids.originalDstConnID
 		if cids.retrySrcConnID != nil {
 			initialConnID = cids.retrySrcConnID
 		}
-		if err := c.connIDState.initServer(c, cids); err != nil {
+		if err := c.connIDState.initServer(c, c.path, cids); err != nil {
 			return nil, err
 		}
 	}

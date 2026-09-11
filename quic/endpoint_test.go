@@ -231,6 +231,7 @@ type testEndpoint struct {
 	t                     *testing.T
 	e                     *Endpoint
 	localAddr             netip.AddrPort
+	nextAddr              netip.Addr
 	closeOnce             sync.Once
 	recvc                 chan *datagram
 	idlec                 chan struct{}
@@ -252,6 +253,7 @@ func newTestEndpoint(t *testing.T, config *Config) *testEndpoint {
 		idlec:     make(chan struct{}),
 		conns:     make(map[*Conn]*testConn),
 		localAddr: testServerAddr,
+		nextAddr:  testOffPathAddr,
 	}
 	var err error
 	te.e, err = newEndpoint((*testEndpointUDPConn)(te), config, (*testEndpointHooks)(te))
@@ -286,11 +288,18 @@ func (te *testEndpoint) write(d *datagram) {
 }
 
 var (
-	testServerAddr = netip.MustParseAddrPort("10.0.0.1:443")
-	testClientAddr = netip.MustParseAddrPort("10.0.0.2:999")
+	testServerAddr  = netip.MustParseAddrPort("10.0.0.1:443")
+	testClientAddr  = netip.MustParseAddrPort("10.0.0.2:999")
+	testOffPathAddr = netip.MustParseAddr("10.0.10.0")
 
 	defaultEndpointPath = pathAddrs{local: testServerAddr, peer: testClientAddr}
 )
+
+// newAddr returns a unique address.
+func (te *testEndpoint) newAddr() netip.Addr {
+	te.nextAddr = te.nextAddr.Next()
+	return te.nextAddr
+}
 
 func (te *testEndpoint) writeDatagram(d *testDatagram) {
 	te.t.Helper()

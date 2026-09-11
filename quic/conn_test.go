@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -347,6 +348,22 @@ func (tc *testConn) cleanup() {
 	}
 	tc.conn.exit()
 	<-tc.conn.donec
+}
+
+// newLocalPath returns path with the current peer address and a new, unique local address.
+func (tc *testConn) newLocalPath() pathAddrs {
+	return pathAddrs{
+		peer:  tc.path.peer,
+		local: netip.AddrPortFrom(tc.endpoint.newAddr(), tc.path.local.Port()),
+	}
+}
+
+// newPeerPath returns path with the current local address and a new, unique peer address.
+func (tc *testConn) newPeerPath() pathAddrs {
+	return pathAddrs{
+		peer:  netip.AddrPortFrom(tc.endpoint.newAddr(), tc.path.peer.Port()),
+		local: tc.path.local,
+	}
 }
 
 func (tc *testConn) acceptStream() *Stream {

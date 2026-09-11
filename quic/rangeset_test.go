@@ -5,7 +5,9 @@
 package quic
 
 import (
+	"math"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -310,6 +312,33 @@ func TestRangesetNumRanges(t *testing.T) {
 	}} {
 		if got, want := test.s.numRanges(), test.want; got != want {
 			t.Errorf("%+v.numRanges() = %v, want %v", test.s, got, want)
+		}
+	}
+}
+
+func TestRangesetIterNotContains(t *testing.T) {
+	for _, test := range []struct {
+		s    rangeset[int64]
+		want []i64range[int64]
+	}{{
+		s:    rangeset[int64]{},
+		want: []i64range[int64]{{0, math.MaxInt64}},
+	}, {
+		s:    rangeset[int64]{{0, 100}},
+		want: []i64range[int64]{{100, math.MaxInt64}},
+	}, {
+		s:    rangeset[int64]{{100, 200}},
+		want: []i64range[int64]{{0, 100}, {200, math.MaxInt64}},
+	}, {
+		s:    rangeset[int64]{{100, math.MaxInt64}},
+		want: []i64range[int64]{{0, 100}},
+	}, {
+		s:    rangeset[int64]{{0, 100}, {200, 300}},
+		want: []i64range[int64]{{100, 200}, {300, math.MaxInt64}},
+	}} {
+		got := slices.Collect(test.s.iterNotContains())
+		if !slices.Equal(got, test.want) {
+			t.Errorf("%+v.iterNotContains = %v, want %v", test.s, got, test.want)
 		}
 	}
 }
