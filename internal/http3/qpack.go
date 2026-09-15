@@ -266,6 +266,11 @@ func appendPrefixedInt(b []byte, firstByte byte, prefixLen uint8, i int64) []byt
 // https://www.rfc-editor.org/rfc/rfc9204.html#section-4.1.2
 // https://www.rfc-editor.org/rfc/rfc7541#section-5.2
 
+// maxQPACKStringLen is the maximum length of a field name or value
+// that we are willing to buffer while decoding a field section.
+// HTTP/2's HPACK decoder enforces a similar, configurable limit.
+const maxQPACKStringLen = 1 << 20 // 1 MiB
+
 // readPrefixedString reads an RFC 7541 string from st.
 func (st *stream) readPrefixedString(prefixLen uint8) (firstByte byte, s string, err error) {
 	firstByte, err = st.ReadByte()
@@ -284,6 +289,12 @@ func (st *stream) readPrefixedStringWithByte(firstByte byte, prefixLen uint8) (s
 		return "", errQPACKDecompressionFailed
 	}
 	if st.lim >= 0 && size > st.lim {
+		return "", errQPACKDecompressionFailed
+	}
+	if size > maxQPACKStringLen {
+		// The frame containing this field section may be arbitrarily large,
+		// so the limit above does not bound the size of the buffer we would
+		// allocate below.
 		return "", errQPACKDecompressionFailed
 	}
 
