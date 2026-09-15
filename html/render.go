@@ -198,7 +198,19 @@ func render1(w writer, n *Node) error {
 	if childTextNodesAreLiteral(n) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == TextNode {
-				if _, err := w.WriteString(c.Data); err != nil {
+				// Writing the text literally is only safe while it cannot close
+				// the element that contains it. A text node parsed in raw text
+				// mode never can, because the tokenizer would have ended the
+				// element instead, but a <noscript> parsed with scripting
+				// disabled holds decoded markup, and a programmatically built
+				// tree can hold anything. Escaping in that case keeps the text
+				// inside the element; emitting it literally would let it escape
+				// and be re-parsed as markup.
+				if endsRawText(c.Data, n.Data) {
+					if err := escape(w, c.Data); err != nil {
+						return err
+					}
+				} else if _, err := w.WriteString(c.Data); err != nil {
 					return err
 				}
 			} else {
@@ -265,6 +277,39 @@ func childTextNodesAreLiteral(n *Node) bool {
 	default:
 		return false
 	}
+}
+
+// endsRawText reports whether s contains an end tag for the element named tag,
+// which would terminate that element if s were written out literally. It mirrors
+// the tokenizer's readRawEndTag: the tag name is matched ASCII case-insensitively
+// and must be followed by a tag-name terminator.
+//
+// Two elements are excluded, and neither can reach the case this guards against:
+// <plaintext> has no end tag at all -- it consumes the rest of the input -- and
+// <script> follows the script data escaping rules in readScript, under which an
+// embedded "</script>" does not always close the element, so its text can
+// legitimately contain one and must still be written literally.
+func endsRawText(s, tag string) bool {
+	if tag == "plaintext" || tag == "script" {
+		return false
+	}
+	for i := 0; i+1 < len(s); i++ {
+		if s[i] != '<' || s[i+1] != '/' {
+			continue
+		}
+		j := i + 2
+		if len(s)-j <= len(tag) {
+			return false
+		}
+		if !strings.EqualFold(s[j:j+len(tag)], tag) {
+			continue
+		}
+		switch s[j+len(tag)] {
+		case ' ', '\n', '\r', '\t', '\f', '/', '>':
+			return true
+		}
+	}
+	return false
 }
 
 // writeDoctypeQuoted writes s to w surrounded by quotes. Normally it will use double
