@@ -203,6 +203,9 @@ func unquote(s string) string {
 		c := b[r]
 		if c == '\\' {
 			r++
+			if r >= len(b) {
+				break
+			}
 			c = b[r]
 		}
 		b[w] = c
