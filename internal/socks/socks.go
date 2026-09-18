@@ -26,6 +26,8 @@ func (cmd Command) String() string {
 		return "socks connect"
 	case cmdBind:
 		return "socks bind"
+	case CmdUDPAssociate:
+		return "socks udp associate"
 	default:
 		return "socks " + strconv.Itoa(int(cmd))
 	}
@@ -70,8 +72,9 @@ const (
 	AddrTypeFQDN = 0x03
 	AddrTypeIPv6 = 0x04
 
-	CmdConnect Command = 0x01 // establishes an active-open forward proxy connection
-	cmdBind    Command = 0x02 // establishes a passive-open forward proxy connection
+	CmdConnect      Command = 0x01 // establishes an active-open forward proxy connection
+	cmdBind         Command = 0x02 // establishes a passive-open forward proxy connection
+	CmdUDPAssociate Command = 0x03 // establishes an active-open forward proxy UDP socket
 
 	AuthMethodNotRequired         AuthMethod = 0x00 // no authentication required
 	AuthMethodUsernamePassword    AuthMethod = 0x02 // use username/password
@@ -101,6 +104,13 @@ func (a *Addr) String() string {
 	return net.JoinHostPort(a.IP.String(), port)
 }
 
+// Request represents a SOCKS request.
+type Request struct {
+	Cmd        Command
+	DstAddress string
+	UDPNetwork string
+}
+
 // A Conn represents a forward proxy connection.
 type Conn struct {
 	net.Conn
@@ -119,9 +129,8 @@ func (c *Conn) BoundAddr() net.Addr {
 
 // A Dialer holds SOCKS-specific options.
 type Dialer struct {
-	cmd          Command // either CmdConnect or cmdBind
-	proxyNetwork string  // network between a proxy server and a client
-	proxyAddress string  // proxy server address
+	proxyNetwork string // network between a proxy server and a client
+	proxyAddress string // proxy server address
 
 	// ProxyDial specifies the optional dial function for
 	// establishing the transport connection.
@@ -149,31 +158,25 @@ type Dialer struct {
 // See func Dial of the net package of standard library for a
 // description of the network and address parameters.
 func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	if err := d.validateTarget(network, address); err != nil {
+	req, err := d.newRequest(network, address)
+	if err != nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
 	if ctx == nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: errors.New("nil context")}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: errors.New("nil context")}
 	}
-	var err error
-	var c net.Conn
-	if d.ProxyDial != nil {
-		c, err = d.ProxyDial(ctx, d.proxyNetwork, d.proxyAddress)
-	} else {
-		var dd net.Dialer
-		c, err = dd.DialContext(ctx, d.proxyNetwork, d.proxyAddress)
-	}
+	c, err := d.proxyDial(ctx, d.proxyNetwork, d.proxyAddress)
 	if err != nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
-	a, err := d.connect(ctx, c, address)
+	c, a, err := d.connect(ctx, c, req)
 	if err != nil {
 		c.Close()
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
 	return &Conn{Conn: c, boundAddr: a}, nil
 }
@@ -185,18 +188,19 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 // It returns the connection's local address assigned by the SOCKS
 // server.
 func (d *Dialer) DialWithConn(ctx context.Context, c net.Conn, network, address string) (net.Addr, error) {
-	if err := d.validateTarget(network, address); err != nil {
+	req, err := d.newRequest(network, address)
+	if err != nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
 	if ctx == nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: errors.New("nil context")}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: errors.New("nil context")}
 	}
-	a, err := d.connect(ctx, c, address)
+	_, a, err := d.connect(ctx, c, req)
 	if err != nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
 	return a, nil
 }
@@ -208,40 +212,33 @@ func (d *Dialer) DialWithConn(ctx context.Context, c net.Conn, network, address 
 //
 // Deprecated: Use DialContext or DialWithConn instead.
 func (d *Dialer) Dial(network, address string) (net.Conn, error) {
-	if err := d.validateTarget(network, address); err != nil {
-		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
-	}
-	var err error
-	var c net.Conn
-	if d.ProxyDial != nil {
-		c, err = d.ProxyDial(context.Background(), d.proxyNetwork, d.proxyAddress)
-	} else {
-		c, err = net.Dial(d.proxyNetwork, d.proxyAddress)
-	}
+	req, err := d.newRequest(network, address)
 	if err != nil {
 		proxy, dst, _ := d.pathAddrs(address)
-		return nil, &net.OpError{Op: d.cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
 	}
-	if _, err := d.DialWithConn(context.Background(), c, network, address); err != nil {
+	c, err := d.proxyDial(context.Background(), d.proxyNetwork, d.proxyAddress)
+	if err != nil {
+		proxy, dst, _ := d.pathAddrs(address)
+		return nil, &net.OpError{Op: req.Cmd.String(), Net: network, Source: proxy, Addr: dst, Err: err}
+	}
+	c, _, err = d.connect(context.Background(), c, req)
+	if err != nil {
 		c.Close()
 		return nil, err
 	}
 	return c, nil
 }
 
-func (d *Dialer) validateTarget(network, address string) error {
+func (d *Dialer) newRequest(network, address string) (Request, error) {
 	switch network {
 	case "tcp", "tcp6", "tcp4":
+		return Request{Cmd: CmdConnect, DstAddress: address}, nil
+	case "udp", "udp6", "udp4":
+		return Request{Cmd: CmdUDPAssociate, DstAddress: address, UDPNetwork: network}, nil
 	default:
-		return errors.New("network not implemented")
+		return Request{Cmd: CmdConnect, DstAddress: address}, errors.New("network not implemented")
 	}
-	switch d.cmd {
-	case CmdConnect, cmdBind:
-	default:
-		return errors.New("command not implemented")
-	}
-	return nil
 }
 
 func (d *Dialer) pathAddrs(address string) (proxy, dst net.Addr, err error) {
@@ -264,10 +261,19 @@ func (d *Dialer) pathAddrs(address string) (proxy, dst net.Addr, err error) {
 	return
 }
 
+func (d *Dialer) proxyDial(ctx context.Context, network, address string) (net.Conn, error) {
+	if d.ProxyDial != nil {
+		return d.ProxyDial(ctx, network, address)
+	} else {
+		var dd net.Dialer
+		return dd.DialContext(ctx, network, address)
+	}
+}
+
 // NewDialer returns a new Dialer that dials through the provided
 // proxy server's network and address.
 func NewDialer(network, address string) *Dialer {
-	return &Dialer{proxyNetwork: network, proxyAddress: address, cmd: CmdConnect}
+	return &Dialer{proxyNetwork: network, proxyAddress: address}
 }
 
 const (
@@ -314,4 +320,19 @@ func (up *UsernamePassword) Authenticate(ctx context.Context, rw io.ReadWriter, 
 		return nil
 	}
 	return errors.New("unsupported authentication method " + strconv.Itoa(int(auth)))
+}
+
+func splitHostPort(address string) (string, int, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", 0, err
+	}
+	portnum, err := strconv.Atoi(port)
+	if err != nil {
+		return "", 0, err
+	}
+	if 1 > portnum || portnum > 0xffff {
+		return "", 0, errors.New("port number out of range " + port)
+	}
+	return host, portnum, nil
 }
