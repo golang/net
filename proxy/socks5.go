@@ -14,8 +14,9 @@ import (
 // SOCKS5 returns a Dialer that makes SOCKSv5 connections to the given
 // address with an optional username and password.
 // See RFC 1928 and RFC 1929.
-func SOCKS5(network, address string, auth *Auth, forward Dialer) (Dialer, error) {
-	d := socks.NewDialer(network, address)
+
+func socks5Internal(network, address string, auth *Auth, forward Dialer, resolver *net.Resolver) (Dialer, error) {
+	d := socks.NewDialer(network, address, resolver)
 	if forward != nil {
 		if f, ok := forward.(ContextDialer); ok {
 			d.ProxyDial = func(ctx context.Context, network string, address string) (net.Conn, error) {
@@ -39,4 +40,11 @@ func SOCKS5(network, address string, auth *Auth, forward Dialer) (Dialer, error)
 		d.Authenticate = up.Authenticate
 	}
 	return d, nil
+}
+func SOCKS5(network, address string, auth *Auth, forward Dialer) (Dialer, error) {
+	return socks5Internal(network, address, auth, forward, nil)
+}
+
+func SOCKS5WithResolver(network, address string, auth *Auth, forward Dialer, resolver *net.Resolver) (Dialer, error) {
+	return socks5Internal(network, address, auth, forward, resolver)
 }
