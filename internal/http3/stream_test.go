@@ -315,3 +315,28 @@ func newStreamPair(t testing.TB) (s1, s2 *stream) {
 	q1, q2 := newQUICStreamPair(t)
 	return newStream(q1), newStream(q2)
 }
+
+func TestReadFrameHeaderRejectsOversizedHeaders(t *testing.T) {
+	st1, st2 := newStreamPair(t)
+
+	// Write a HEADERS frame (type=0x01) with declared size = maxHeaderSectionSize + 1.
+	// This is the OOM trigger: attacker sends oversized declared length.
+	oversize := int64(maxHeaderSectionSize + 1)
+	st1.writeVarint(int64(frameTypeHeaders)) // frame type: HEADERS = 0x01
+	st1.writeVarint(oversize)                // frame length: exceeds 10MB limit
+	if err := st1.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := st2.readFrameHeader()
+	if err == nil {
+		t.Fatal("expected error for oversized HEADERS frame, got nil")
+	}
+	var connErr *connectionError
+	if !errors.As(err, &connErr) {
+		t.Fatalf("expected *connectionError, got %T: %v", err, err)
+	}
+	if connErr.code != errH3ExcessiveLoad {
+		t.Fatalf("expected errH3ExcessiveLoad, got %v", connErr.code)
+	}
+}
