@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/net/http2/hpack"
 	"golang.org/x/net/internal/httpcommon"
@@ -113,10 +114,32 @@ func (t *Transport) TestNewClientConn(c net.Conn, singleUse bool, internalStateH
 }
 
 func (t *Transport) TestSetNewClientConnHook(f func(*ClientConn)) {
-	t.transportTestHooks = &transportTestHooks{
-		newclientconn: f,
+	if t.transportTestHooks == nil {
+		t.transportTestHooks = &transportTestHooks{}
 	}
+	t.transportTestHooks.newclientconn = f
 }
+
+// TestSetReadLoopExitedHook installs f to run on a connection's read-loop
+// goroutine after its terminal exit is published and before its cleanup.
+func (t *Transport) TestSetReadLoopExitedHook(f func(*ClientConn)) {
+	if t.transportTestHooks == nil {
+		t.transportTestHooks = &transportTestHooks{}
+	}
+	t.transportTestHooks.readLoopExited = f
+}
+
+// TestSetNewHealthCheckTimerHook installs f to observe each connection's
+// health-check timer as it is created.
+func (t *Transport) TestSetNewHealthCheckTimerHook(f func(*time.Timer)) {
+	if t.transportTestHooks == nil {
+		t.transportTestHooks = &transportTestHooks{}
+	}
+	t.transportTestHooks.newHealthCheckTimer = f
+}
+
+// TestCloseForLostPing invokes the lost-ping close claim directly.
+func (cc *ClientConn) TestCloseForLostPing() { cc.closeForLostPing() }
 
 func (t *Transport) TestTransport() *http.Transport {
 	if t.t1 == nil {
