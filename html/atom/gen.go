@@ -90,11 +90,12 @@ func main() {
 
 	// Find hash that minimizes table size.
 	var best *table
+	r := rand.New(rand.NewSource(42))
 	for i := 0; i < 1000000; i++ {
 		if best != nil && 1<<(best.k-1) < len(all) {
 			break
 		}
-		h := rand.Uint32()
+		h := r.Uint32()
 		for k := uint(0); k <= 16; k++ {
 			if best != nil && k >= best.k {
 				break
