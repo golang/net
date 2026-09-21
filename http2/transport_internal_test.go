@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 type panicReader struct{}
@@ -189,6 +191,29 @@ func TestAuthorityAddr(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("authorityAddr(%q, %q) = %q; want %q", tt.scheme, tt.authority, got, tt.want)
 		}
+	}
+}
+
+// TestAuthorityAddrIDNAMapping verifies that authorityAddr, which computes the
+// connection pool key and the address to dial, applies UTS #46 processing
+// (with mapping) to the host. This must match the IDNA profile used for the
+// :authority header so the dialed address and the header cannot disagree.
+// See https://go.dev/issue/80417.
+func TestAuthorityAddrIDNAMapping(t *testing.T) {
+	// uniHost maps to a different name under UTS #46 processing (idna.Lookup)
+	// than under Punycode-only processing (idna.ToASCII, previously used here).
+	// Verify the two disagree so this test actually exercises the mapping.
+	const uniHost = "\u24d6\u24de\u24df\u24d1\u24d4\u24e1.example" // "ⓖⓞⓟⓗⓔⓡ.example"
+	mapped, err := idna.Lookup.ToASCII(uniHost)
+	if err != nil {
+		t.Fatalf("idna.Lookup.ToASCII(%q) = %v", uniHost, err)
+	}
+	if puny, err := idna.ToASCII(uniHost); err == nil && puny == mapped {
+		t.Fatalf("test host %q does not distinguish IDNA profiles", uniHost)
+	}
+	want := mapped + ":443"
+	if got := authorityAddr("https", uniHost); got != want {
+		t.Errorf("authorityAddr(%q, %q) = %q; want %q", "https", uniHost, got, want)
 	}
 }
 
