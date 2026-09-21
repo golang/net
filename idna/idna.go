@@ -787,7 +787,7 @@ func (p *Profile) validateLabel(s string, labelCode string) (err error) {
 		return nil
 	}
 	if p.checkHyphens {
-		if len(s) > 4 && s[2] == '-' && s[3] == '-' {
+		if hasHyphenAt3rdAnd4th(s) {
 			return labelError{s, "V2"}
 		}
 		if s[0] == '-' || s[len(s)-1] == '-' {
@@ -851,6 +851,17 @@ func (p *Profile) validateLabel(s string, labelCode string) (err error) {
 	}
 
 	return nil
+}
+
+func hasHyphenAt3rdAnd4th(s string) bool {
+	_, size := utf8.DecodeRuneInString(s)
+	s = s[size:]
+	if len(s) == 0 {
+		return false
+	}
+	_, size = utf8.DecodeRuneInString(s)
+	s = s[size:]
+	return len(s) >= 2 && s[0] == '-' && s[1] == '-'
 }
 
 func ascii(s string) bool {
