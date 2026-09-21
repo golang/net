@@ -29,37 +29,32 @@ type headerFieldTable struct {
 	ents       []HeaderField
 	evictCount uint64
 
-	// byName maps a HeaderField name to the unique id of the newest entry with
-	// the same name. See above for a definition of "unique id".
+	// byName maps a HeaderField name to the entries carrying it, oldest first.
+	// See above for a definition of "unique id".
 	//
-	// byName and byNameValue are used only by search, which is only called
-	// for tables used by encoders. For tables used only by decoders, the
-	// maps are never built, as a memory optimization for servers with many
-	// mostly-idle connections, each pinning a dynamic table. The maps are
-	// built lazily by the first search call and are nil until then. The two
-	// maps are always both nil or both non-nil.
-	byName map[string]uint64
-
-	// byNameValue maps a HeaderField name/value pair to the unique id of the newest
-	// entry with the same name and value. See above for a definition of "unique id".
-	// See byName for when this map is non-nil.
-	byNameValue map[pairNameValue]uint64
+	// Keying on the name alone lets search hash a string once and settle the
+	// value by comparison. A name holds few entries, and most lookups either
+	// miss the name outright or match a name whose value is not in the table.
+	//
+	// byName is used only by search, which is only called for tables used by
+	// encoders. For tables used only by decoders, the map is never built, as a
+	// memory optimization for servers with many mostly-idle connections, each
+	// pinning a dynamic table. The map is built lazily by the first search call
+	// and is nil until then.
+	byName map[string][]tableEntry
 }
 
-type pairNameValue struct {
-	name, value string
+// tableEntry is one value held under a name, with the unique id of its entry.
+type tableEntry struct {
+	value string
+	id    uint64
 }
 
-// buildMaps initializes byName and byNameValue from ents.
+// buildMaps initializes byName from ents.
 func (t *headerFieldTable) buildMaps() {
-	t.byName = make(map[string]uint64, len(t.ents))
-	t.byNameValue = make(map[pairNameValue]uint64, len(t.ents))
+	t.byName = make(map[string][]tableEntry, len(t.ents))
 	for k, f := range t.ents {
-		// Map to the newest matching entry: later (newer) entries
-		// overwrite earlier ones, matching addEntry's behavior.
-		id := t.evictCount + uint64(k) + 1
-		t.byName[f.Name] = id
-		t.byNameValue[pairNameValue{f.Name, f.Value}] = id
+		t.byName[f.Name] = append(t.byName[f.Name], tableEntry{f.Value, t.evictCount + uint64(k) + 1})
 	}
 }
 
@@ -72,8 +67,7 @@ func (t *headerFieldTable) len() int {
 func (t *headerFieldTable) addEntry(f HeaderField) {
 	if t.byName != nil {
 		id := uint64(t.len()) + t.evictCount + 1
-		t.byName[f.Name] = id
-		t.byNameValue[pairNameValue{f.Name, f.Value}] = id
+		t.byName[f.Name] = append(t.byName[f.Name], tableEntry{f.Value, id})
 	}
 	t.ents = append(t.ents, f)
 }
@@ -87,11 +81,15 @@ func (t *headerFieldTable) evictOldest(n int) {
 		for k := 0; k < n; k++ {
 			f := t.ents[k]
 			id := t.evictCount + uint64(k) + 1
-			if t.byName[f.Name] == id {
-				delete(t.byName, f.Name)
-			}
-			if p := (pairNameValue{f.Name, f.Value}); t.byNameValue[p] == id {
-				delete(t.byNameValue, p)
+			// The oldest entries go first, so the ones being dropped sit at the
+			// front of the name's list.
+			entries := t.byName[f.Name]
+			if len(entries) > 0 && entries[0].id == id {
+				if len(entries) == 1 {
+					delete(t.byName, f.Name)
+				} else {
+					t.byName[f.Name] = entries[1:]
+				}
 			}
 		}
 	}
@@ -123,15 +121,19 @@ func (t *headerFieldTable) search(f HeaderField) (i uint64, nameValueMatch bool)
 	if t.byName == nil {
 		t.buildMaps()
 	}
+	entries := t.byName[f.Name]
+	if len(entries) == 0 {
+		return 0, false
+	}
 	if !f.Sensitive {
-		if id := t.byNameValue[pairNameValue{f.Name, f.Value}]; id != 0 {
-			return t.idToIndex(id), true
+		// Newest first: a repeated name keeps its most recent entry.
+		for k := len(entries) - 1; k >= 0; k-- {
+			if entries[k].value == f.Value {
+				return t.idToIndex(entries[k].id), true
+			}
 		}
 	}
-	if id := t.byName[f.Name]; id != 0 {
-		return t.idToIndex(id), false
-	}
-	return 0, false
+	return t.idToIndex(entries[len(entries)-1].id), false
 }
 
 // idToIndex converts a unique id to an HPACK index.

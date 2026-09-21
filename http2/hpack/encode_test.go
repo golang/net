@@ -384,3 +384,28 @@ func BenchmarkEncoderSearchTable(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkEncoderWriteFieldResponse encodes the header block a server sends
+// for an ordinary response, where most names are in the static table but their
+// values are not.
+func BenchmarkEncoderWriteFieldResponse(b *testing.B) {
+	fields := []HeaderField{
+		{Name: ":status", Value: "200"},
+		{Name: "content-type", Value: "text/plain; charset=utf-8"},
+		{Name: "content-length", Value: "13"},
+		{Name: "date", Value: "Mon, 08 Aug 2026 06:00:00 GMT"},
+		{Name: "server", Value: "example"},
+		{Name: "x-request-id", Value: "01HQ8Z7K3N5P9R2T4V6W8Y0A1B"},
+	}
+	var buf bytes.Buffer
+	e := NewEncoder(&buf)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		for _, f := range fields {
+			if err := e.WriteField(f); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
