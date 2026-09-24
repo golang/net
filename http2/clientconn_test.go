@@ -100,9 +100,9 @@ func TestTestTransport(t *testing.T) {
 	})
 }
 func testTestTransport(t testing.TB, mode roundTripTestMode) {
-	tt := newTestTransport(t)
+	tt := newTestTransport(t, mode)
 
-	req := Must(http.NewRequest("GET", "https://dummy.tld/", nil))
+	req := Must(http.NewRequest("GET", "http://dummy.tld/", nil))
 	rt := tt.roundTrip(req)
 	tc := tt.getConn()
 	tc.wantFrameType(FrameSettings)
@@ -461,6 +461,16 @@ func (rt *testRoundTrip) err() error {
 	return err
 }
 
+// wantErr indicates the expected RoundTrip error (as compared with Is).
+func (rt *testRoundTrip) wantErr(want error) {
+	t := rt.t
+	t.Helper()
+	_, got := rt.result()
+	if !errors.Is(got, want) {
+		t.Fatalf("got error:\n%v\nwant:\n%v", got, want)
+	}
+}
+
 // wantStatus indicates the expected response StatusCode.
 func (rt *testRoundTrip) wantStatus(want int) {
 	t := rt.t
@@ -488,6 +498,21 @@ func (rt *testRoundTrip) wantBody(want []byte) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("unexpected response body:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// wantPartialBody indicates the next expected chunk of response body.
+func (rt *testRoundTrip) wantPartialBody(want []byte) {
+	t := rt.t
+	t.Helper()
+	got := make([]byte, len(want))
+	n, err := io.ReadFull(rt.response().Body, got)
+	got = got[:n]
+	if err != nil {
+		t.Fatalf("unexpected error reading response body: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected partial response body:\ngot:  %q\nwant: %q", got, want)
 	}
 }
 
@@ -559,16 +584,29 @@ type testTransport struct {
 	ccqueue []*testClientConn
 	ccs     map[*synctestNetConn]*testClientConn
 
+	controlledDials bool
+	dialsMu         sync.Mutex
+	dials           []*testPendingDial
+
 	ccpending []*testPendingClientConn
 
 	useTLS bool
 }
+
+type testPendingDial struct {
+	address string
+	errc    chan error
+}
+
+func (d *testPendingDial) finish(err error) { d.errc <- err }
 
 type testPendingClientConn struct {
 	nc *synctestNetConn
 	cc *ClientConn
 	tc *testClientConn
 }
+
+type testControlledDials bool
 
 func newTestTransport(t testing.TB, opts ...any) *testTransport {
 	tt := &testTransport{
@@ -593,6 +631,9 @@ func newTestTransport(t testing.TB, opts ...any) *testTransport {
 	case roundTripXNetHTTP2:
 		tr = &Transport{
 			DialTLSContext: func(ctx context.Context, network, address string, tlsConf *tls.Config) (net.Conn, error) {
+				if err := tt.startDial(address); err != nil {
+					return nil, err
+				}
 				if tt.useTLS {
 					return tls.Client(tt.li.newConn(), tlsConf), nil
 				}
@@ -607,6 +648,9 @@ func newTestTransport(t testing.TB, opts ...any) *testTransport {
 	}
 
 	tr1.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if err := tt.startDial(address); err != nil {
+			return nil, err
+		}
 		return tt.li.newConn(), nil
 	}
 	tr1.TLSClientConfig = testTLSClientConfig
@@ -633,6 +677,8 @@ func newTestTransport(t testing.TB, opts ...any) *testTransport {
 			tr = o
 		case roundTripTestMode:
 			tt.mode = o
+		case testControlledDials:
+			tt.controlledDials = bool(o)
 		case nil:
 		default:
 			t.Fatalf("unsupported option %T", o)
@@ -648,6 +694,11 @@ func newTestTransport(t testing.TB, opts ...any) *testTransport {
 	tt.maybeAddNewClientConnHook()
 
 	t.Cleanup(func() {
+		tt.dialsMu.Lock()
+		for _, dial := range tt.dials {
+			dial.finish(errors.New("test is done"))
+		}
+		tt.dialsMu.Unlock()
 		tt.li.Close()
 		synctest.Wait()
 		if len(tt.ccqueue) > 0 {
@@ -664,7 +715,7 @@ func (tt *testTransport) addPending(nc *synctestNetConn, cc *ClientConn, tc *tes
 
 	for i, p := range tt.ccpending {
 		if p.nc != nc {
-			break
+			continue
 		}
 		if p.tc != nil {
 			p.tc.cc = cc
@@ -696,11 +747,67 @@ func (tt *testTransport) accept() {
 	}
 }
 
+func (tt *testTransport) startDial(address string) error {
+	if !tt.controlledDials {
+		return nil
+	}
+	dial := &testPendingDial{
+		address: address,
+		errc:    make(chan error, 1),
+	}
+	tt.dialsMu.Lock()
+	tt.dials = append(tt.dials, dial)
+	tt.dialsMu.Unlock()
+	select {
+	case err := <-dial.errc:
+		return err
+	case <-tt.t.Context().Done():
+		return tt.t.Context().Err()
+	}
+}
+
+func (tt *testTransport) wantDial(address string) *testPendingDial {
+	tt.t.Helper()
+	synctest.Wait()
+	tt.dialsMu.Lock()
+	defer tt.dialsMu.Unlock()
+	idx := slices.IndexFunc(tt.dials, func(dial *testPendingDial) bool {
+		return dial.address == address
+	})
+	if idx < 0 {
+		var dials []string
+		for _, d := range tt.dials {
+			dials = append(dials, d.address)
+		}
+		tt.t.Fatalf("no dial to %q in progress (have %q); wanted one", address, dials)
+	}
+	dial := tt.dials[idx]
+	tt.dials = slices.Delete(tt.dials, idx, idx+1)
+	return dial
+}
+
+func (tt *testTransport) wantIdle() {
+	tt.t.Helper()
+	synctest.Wait()
+	tt.dialsMu.Lock()
+	defer tt.dialsMu.Unlock()
+	if len(tt.dials) > 0 {
+		tt.t.Fatalf("%v dials in progress, want idle", len(tt.dials))
+	}
+}
+
 func (tt *testTransport) hasConn() bool {
 	return len(tt.ccqueue) > 0
 }
 
 func (tt *testTransport) getConn() *testClientConn {
+	tt.t.Helper()
+	tc := tt.getConnNoPreface()
+	tc.readClientPreface()
+	return tc
+}
+
+func (tt *testTransport) getConnNoPreface() *testClientConn {
 	tt.t.Helper()
 	synctest.Wait()
 	tt.ccMu.Lock()
@@ -711,7 +818,6 @@ func (tt *testTransport) getConn() *testClientConn {
 	tc := tt.ccqueue[0]
 	tt.ccqueue = tt.ccqueue[1:]
 	tt.ccMu.Unlock()
-	tc.readClientPreface()
 	return tc
 }
 

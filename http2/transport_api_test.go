@@ -18,8 +18,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -352,6 +354,384 @@ func TestAPITransportStrictMaxConcurrentStreamsDisabled(t *testing.T) {
 				":path":      []string{"/2"},
 			},
 		})
+	})
+}
+
+// TestAPITransportCoalescedDial tests that http2.Transport.RoundTrip coalesces dials.
+func TestAPITransportCoalescedDial(t *testing.T) {
+	synctestSubtest(t, "success", func(t testing.TB) {
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		urls := []string{
+			"http://dummy.tld/a",
+			"http://dummy.tld/b",
+			"http://dummy.tld/c",
+		}
+		for _, u := range urls {
+			req, _ := http.NewRequest("GET", u, nil)
+			_ = tt.roundTrip(req)
+		}
+
+		// All requests coalesce behind one dial.
+		dial1 := tt.wantDial("dummy.tld:80")
+		tt.wantIdle()
+		dial1.finish(nil)
+
+		// All requests use the same connection.
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{streamID: 1, endStream: true})
+		tc1.wantHeaders(wantHeader{streamID: 3, endStream: true})
+		tc1.wantHeaders(wantHeader{streamID: 5, endStream: true})
+		tc1.wantIdle()
+
+		// New request reuses connection.
+		req, _ := http.NewRequest("GET", "http://dummy.tld/d", nil)
+		_ = tt.roundTrip(req)
+		tc1.wantHeaders(wantHeader{streamID: 7, endStream: true})
+		tt.wantIdle()
+	})
+
+	synctestSubtest(t, "multiple targets", func(t testing.TB) {
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		urls := []string{
+			"http://xxx.tld/1",
+			"http://yyy.tld/1",
+			"http://xxx.tld/3",
+			"http://yyy.tld/3",
+			"http://xxx.tld/5",
+			"http://yyy.tld/5",
+		}
+		for _, u := range urls {
+			req, _ := http.NewRequest("GET", u, nil)
+			_ = tt.roundTrip(req)
+		}
+
+		dial1 := tt.wantDial("xxx.tld:80")
+		dial2 := tt.wantDial("yyy.tld:80")
+		tt.wantIdle()
+
+		dial1.finish(nil)
+		tc1 := tt.getConn()
+		dial2.finish(nil)
+		tc2 := tt.getConn()
+
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		header1 := http.Header{":authority": []string{"xxx.tld"}}
+		tc1.wantHeaders(wantHeader{streamID: 1, endStream: true, header: header1})
+		tc1.wantHeaders(wantHeader{streamID: 3, endStream: true, header: header1})
+		tc1.wantHeaders(wantHeader{streamID: 5, endStream: true, header: header1})
+
+		tc2.wantFrameType(http2.FrameSettings)
+		tc2.wantFrameType(http2.FrameWindowUpdate)
+		header2 := http.Header{":authority": []string{"yyy.tld"}}
+		tc2.wantHeaders(wantHeader{streamID: 1, endStream: true, header: header2})
+		tc2.wantHeaders(wantHeader{streamID: 3, endStream: true, header: header2})
+		tc2.wantHeaders(wantHeader{streamID: 5, endStream: true, header: header2})
+
+		tc1.wantIdle()
+		tc2.wantIdle()
+	})
+
+	synctestSubtest(t, "failure", func(t testing.TB) {
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		urls := []string{
+			"http://dummy.tld/a",
+			"http://dummy.tld/b",
+			"http://dummy.tld/c",
+		}
+		var rts []*testRoundTrip
+		for _, u := range urls {
+			req, _ := http.NewRequest("GET", u, nil)
+			rts = append(rts, tt.roundTrip(req))
+		}
+
+		// All requests coalesce behind one dial.
+		// When this dial fails, all requests observe the failure.
+		dial1 := tt.wantDial("dummy.tld:80")
+		tt.wantIdle()
+		dial1.finish(errors.New("dial fails"))
+		for i, rt := range rts {
+			if !rt.done() {
+				t.Errorf("RoundTrip %v: not done after dial failure", i)
+			}
+			if rt.err() == nil {
+				t.Errorf("RoundTrip %v: no error after dial failure", i)
+			}
+		}
+		tt.wantIdle()
+
+		// New request makes a new connection.
+		req, _ := http.NewRequest("GET", "http://dummy.tld/d", nil)
+		_ = tt.roundTrip(req)
+		dial2 := tt.wantDial("dummy.tld:80")
+		dial2.finish(nil)
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{streamID: 1, endStream: true})
+		tc1.wantIdle()
+		tt.wantIdle()
+	})
+
+	synctestSubtest(t, "leader canceled", func(t testing.TB) {
+		if !wrappedAPI {
+			t.Skip("legacy API doesn't handle cancel during dial wait")
+		}
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		// First request starts a dial.
+		req1, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+		dial1 := tt.wantDial("dummy.tld:80")
+
+		// Second request coalesces with the first.
+		req2, _ := http.NewRequest("GET", "http://dummy.tld/2", nil)
+		_ = tt.roundTrip(req2)
+		tt.wantIdle()
+
+		// First request is canceled/times out.
+		rt1.cancel()
+		synctest.Wait()
+		rt1.wantErr(context.Canceled)
+
+		// Dial completes and is used by the remaining request.
+		dial1.finish(nil)
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+			header:    http.Header{":path": []string{"/2"}},
+		})
+		tt.wantIdle()
+	})
+
+	synctestSubtest(t, "leader got conn", func(t testing.TB) {
+		if !wrappedAPI {
+			t.Skip("legacy API behaves differently")
+		}
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		// First request gets a connection with a concurrency limit of 1.
+		req1, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+		dial1 := tt.wantDial("dummy.tld:80")
+		dial1.finish(nil)
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+			header:    http.Header{":path": []string{"/1"}},
+		})
+		tc1.writeSettings(http2.Setting{
+			ID:  http2.SettingMaxConcurrentStreams,
+			Val: 1,
+		})
+		tc1.wantFrameType(http2.FrameSettings) // ACK
+
+		// Second request can't use the first connection (at concurrency limit),
+		// so it gets a new dial.
+		req2, _ := http.NewRequest("GET", "http://dummy.tld/2", nil)
+		rt2 := tt.roundTrip(req2)
+		dial2 := tt.wantDial("dummy.tld:80")
+
+		// Third request coalesces behind the second.
+		req3, _ := http.NewRequest("GET", "http://dummy.tld/3", nil)
+		rt3 := tt.roundTrip(req3)
+		tt.wantIdle()
+
+		// First request finishes, freeing up a concurrency slot.
+		tc1.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc1.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt1.wantStatus(200)
+
+		// We would expect the second request to be sent on tc1 now, since it can
+		// take a new request. As of the time of this comment being written,
+		// this doesn't happen: net/http hasn't realized a connection has become
+		// available.
+		//
+		// What does happen:
+		//   - The second dial finishes.
+		//   - net/http provides the connection to net/http/internal/http2.
+		//   - The http2 layer says "no thanks, I have a connection" and closes it.
+		//   - net/http now tries to send requests 2 and 3 to http2.
+		//   - One of these requests uses tc1, and the other hits the concurrency limit.
+		//   - net/http dials again.
+		//
+		// The following test attempts to avoid overfitting on this precise behavior.
+		dial2.finish(nil)
+		tc2 := tt.getConnNoPreface()
+		synctest.Wait()
+		if tc2.netconn.IsClosedByPeer() {
+			// See above: This perfectly good connection was closed,
+			// and a new one is made to replace it.
+			dial3 := tt.wantDial("dummy.tld:80")
+			dial3.finish(nil)
+			tc2 = tt.getConn()
+		}
+
+		// One request on tc1...
+		tc1.wantHeaders(wantHeader{
+			streamID:  3,
+			endStream: true,
+		})
+
+		// ...and another on tc2.
+		tc2.wantFrameType(http2.FrameSettings)
+		tc2.wantFrameType(http2.FrameWindowUpdate)
+		tc2.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+		tc2.writeSettings()
+		tc2.wantFrameType(http2.FrameSettings) // ACK
+		tc2.wantIdle()
+
+		// Respond to both requests.
+		// It doesn't matter which request went to which connection.
+		tc1.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   3,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc1.makeHeaderBlockFragment(
+				":status", "404",
+			),
+		})
+		tc2.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc2.makeHeaderBlockFragment(
+				":status", "404",
+			),
+		})
+		rt2.wantStatus(404)
+		rt3.wantStatus(404)
+		tt.wantIdle()
+	})
+
+	synctestSubtest(t, "leader got bad conn", func(t testing.TB) {
+		var tlsVerifyError error
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true), func(tr *http2.Transport) {
+			tr.TLSClientConfig = tr.TLSClientConfig.Clone()
+			tr.TLSClientConfig.VerifyConnection = func(tls.ConnectionState) error {
+				return tlsVerifyError
+			}
+		})
+		tt.useTLS = true
+
+		// Two requests coalesce on a single dial.
+		req1, _ := http.NewRequest("GET", "https://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+		dial1 := tt.wantDial("dummy.tld:443")
+		req2, _ := http.NewRequest("GET", "https://dummy.tld/2", nil)
+		rt2 := tt.roundTrip(req2)
+		tt.wantIdle()
+
+		// The dial completes, but the connection is unusable.
+		tlsVerifyError = errors.New("TLS verification error")
+		dial1.finish(nil)
+		tt.getConnNoPreface()
+		rt1.wantErr(tlsVerifyError)
+
+		if rt2.done() {
+			// If the second request received the same TLS error,
+			// that's fine. (Legacy implementation does this, as of this
+			// comment being written the wrapped implementation does not.)
+			rt2.wantErr(tlsVerifyError)
+			return
+		}
+
+		// Wait for next connection attempt (see transport_wrap.go).
+		time.Sleep(http2.CoalescedDialRetryTimeout)
+
+		// Remaining request dials and gets a working connection.
+		tlsVerifyError = nil
+		dial2 := tt.wantDial("dummy.tld:443")
+		dial2.finish(nil)
+		tc2 := tt.getConn()
+		tc2.wantFrameType(http2.FrameSettings)
+		tc2.wantFrameType(http2.FrameWindowUpdate)
+		tc2.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+			header:    http.Header{":path": []string{"/2"}},
+		})
+		tc2.wantIdle()
+		tt.wantIdle()
+	})
+
+	synctestSubtest(t, "retry on same conn", func(t testing.TB) {
+		tt := newTestTransport(t, roundTripXNetHTTP2, testControlledDials(true))
+
+		// Request 1: Sent and remains open.
+		req1, _ := http.NewRequest("GET", "https://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+		dial1 := tt.wantDial("dummy.tld:443")
+		dial1.finish(nil)
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+			header:    http.Header{":path": []string{"/1"}},
+		})
+		tc1.writeSettings()
+		tc1.wantFrameType(http2.FrameSettings) // ACK
+
+		// Request 2: Refused by server.
+		req2, _ := http.NewRequest("GET", "https://dummy.tld/2", nil)
+		rt2 := tt.roundTrip(req2)
+		tc1.wantHeaders(wantHeader{
+			streamID:  3,
+			endStream: true,
+			header:    http.Header{":path": []string{"/2"}},
+		})
+		tc1.writeRSTStream(3, http2.ErrCodeRefusedStream)
+
+		// Request 2: Retried on the same connection.
+		// (Probably not the best behavior here, but what we do right now.)
+		tc1.wantHeaders(wantHeader{
+			streamID:  5,
+			endStream: true,
+			header:    http.Header{":path": []string{"/2"}},
+		})
+
+		// Both requests finish.
+		tc1.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc1.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		tc1.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   5,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc1.makeHeaderBlockFragment(
+				":status", "404",
+			),
+		})
+		rt1.wantStatus(200)
+		rt2.wantStatus(404)
+		tt.wantIdle()
 	})
 }
 
@@ -705,6 +1085,98 @@ func TestAPITransportNewClientConn(t *testing.T) {
 	})
 }
 
+// TestAPITransportClientConnDoNotReuse tests the ClientConn.DoNotReuse method.
+func TestAPITransportClientConnDoNotReuse(t *testing.T) {
+	run := func(t *testing.T, name string, f func(t testing.TB, tt *testTransport, tc *testClientConn)) {
+		synctestSubtest(t, name, func(t testing.TB) {
+			tt := newTestTransport(t, roundTripXNetHTTP2)
+			nc := tt.li.newConn()
+			cc, err := tt.tr.NewClientConn(nc)
+			if err != nil {
+				t.Fatalf("NewClientConn: %v", err)
+			}
+			tc := tt.getConn()
+			tc.wantFrameType(http2.FrameSettings)
+			tc.wantFrameType(http2.FrameWindowUpdate)
+			tc.writeSettings()
+			tc.wantFrameType(http2.FrameSettings) // ACK
+			synctest.Wait()
+			tc.cc = cc
+			f(t, tt, tc)
+		})
+	}
+
+	run(t, "before use", func(t testing.TB, tt *testTransport, tc *testClientConn) {
+		// SetDoNotReuse makes the ClientConn unusable, but does not close it.
+		tc.cc.SetDoNotReuse()
+		tc.wantIdle()
+
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt := newTestRoundTrip(t, req, tc.cc.RoundTrip)
+		if err := rt.err(); err == nil {
+			t.Fatalf("RoundTrip on DoNotReuse conn: success, want error")
+		}
+		tc.wantIdle()
+	})
+
+	run(t, "during use", func(t testing.TB, tt *testTransport, tc *testClientConn) {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt := newTestRoundTrip(t, req, tc.cc.RoundTrip)
+		tc.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+
+		// SetDoNotReuse makes the ClientConn unusable, but does not close it.
+		tc.cc.SetDoNotReuse()
+		req2, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt2 := newTestRoundTrip(t, req2, tc.cc.RoundTrip)
+		if err := rt2.err(); err == nil {
+			t.Fatalf("RoundTrip on DoNotReuse conn: success, want error")
+		}
+		tc.wantIdle()
+
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt.wantStatus(200)
+		tc.wantIdle()
+	})
+
+	run(t, "after use", func(t testing.TB, tt *testTransport, tc *testClientConn) {
+		req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt := newTestRoundTrip(t, req, tc.cc.RoundTrip)
+		tc.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt.wantStatus(200)
+		tc.wantIdle()
+
+		// SetDoNotReuse makes the ClientConn unusable, but does not close it.
+		tc.cc.SetDoNotReuse()
+		req2, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+		rt2 := newTestRoundTrip(t, req2, tc.cc.RoundTrip)
+		if err := rt2.err(); err == nil {
+			t.Fatalf("RoundTrip on DoNotReuse conn: success, want error")
+		}
+		tc.wantIdle()
+	})
+}
+
 // TestAPITransportClientConnPending tests the ClientConnState.Pending state.
 func TestAPITransportClientConnPending(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -1019,7 +1491,7 @@ func TestAPIClientConnShutdownFailure(t *testing.T) {
 	})
 }
 
-func wantClientConnState(t *testing.T, a, b http2.ClientConnState) {
+func wantClientConnState(t testing.TB, a, b http2.ClientConnState) {
 	t.Helper()
 	if got, want := a.Closed, b.Closed; got != want {
 		t.Errorf("ClientConnState.Closed = %v, want %v", got, want)
@@ -1042,4 +1514,254 @@ func wantClientConnState(t *testing.T, a, b http2.ClientConnState) {
 	if got, want := a.LastIdle, b.LastIdle; !got.Equal(want) {
 		t.Errorf("ClientConnState.LastIdle = %v, want %v", got, want)
 	}
+}
+
+// TestAPITransportDialSingleFlight tests that concurrent requests to the same
+// host coalesce dials into a single dial.
+func TestAPITransportDialSingleFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var dials atomic.Int32
+		tt := newTestTransport(t, roundTripXNetHTTP2, func(tr2 *http2.Transport) {
+			origDial := tr2.DialTLSContext
+			tr2.DialTLSContext = func(ctx context.Context, network, address string, tlsConf *tls.Config) (net.Conn, error) {
+				dials.Add(1)
+				return origDial(ctx, network, address, tlsConf)
+			}
+		})
+
+		// Send concurrent requests to the same host before any connection is established.
+		req1, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+
+		req2, _ := http.NewRequest("GET", "http://dummy.tld/2", nil)
+		rt2 := tt.roundTrip(req2)
+
+		req3, _ := http.NewRequest("GET", "http://dummy.tld/3", nil)
+		rt3 := tt.roundTrip(req3)
+
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.writeSettings()
+		tc1.writeSettingsAck()
+
+		if got, want := dials.Load(), int32(1); got != want {
+			t.Errorf("dial count = %v, want %v", got, want)
+		}
+
+		var count int
+		for count < 3 {
+			fr := tc1.readFrame()
+			switch fr := fr.(type) {
+			case *http2.HeadersFrame:
+				count++
+				tc1.writeHeaders(http2.HeadersFrameParam{
+					StreamID:   fr.StreamID,
+					EndHeaders: true,
+					EndStream:  true,
+					BlockFragment: tc1.makeHeaderBlockFragment(
+						":status", "200",
+					),
+				})
+			case *http2.SettingsFrame:
+				// Settings ACK
+			default:
+				t.Fatalf("unexpected frame: %v", fr)
+			}
+		}
+
+		rt1.wantStatus(200)
+		rt2.wantStatus(200)
+		rt3.wantStatus(200)
+	})
+}
+
+func TestAPITransportConnectionClose(t *testing.T) {
+	synctestTestRoundTrip(t, func(t *testing.T, mode roundTripTestMode) {
+		tt := newTestTransport(t, mode)
+
+		req, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		req.Close = true
+		rt := tt.roundTrip(req)
+		tc := tt.getConn()
+		tc.wantFrameType(http2.FrameSettings)
+		tc.wantFrameType(http2.FrameWindowUpdate)
+		tc.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+
+		tc.writeSettings()
+		tc.writeSettingsAck()
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		tc.wantFrameType(http2.FrameSettings) // ACK
+		rt.wantStatus(200)
+		tc.wantIdle()
+
+		// Send some response bytes, which can be read.
+		body := []byte("data")
+		tc.writeData(1, false, body)
+		rt.wantPartialBody(body)
+		tc.wantIdle()
+
+		// Send the rest of the response.
+		// The client closes the connection after receiving it.
+		body2 := []byte("more")
+		tc.writeData(1, true, body2)
+		tc.wantClosed()
+		rt.wantBody(body2)
+	})
+}
+
+func TestAPITransportCloseIdleConnections(t *testing.T) {
+	synctestTestRoundTrip(t, func(t *testing.T, mode roundTripTestMode) {
+		tt := newTestTransport(t, mode)
+
+		req, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt := tt.roundTrip(req)
+		tc := tt.getConn()
+		tc.wantFrameType(http2.FrameSettings)
+		tc.wantFrameType(http2.FrameWindowUpdate)
+		tc.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+
+		tc.writeSettings()
+		tc.writeSettingsAck()
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		tc.wantFrameType(http2.FrameSettings) // ACK
+		rt.wantStatus(200)
+		tc.wantIdle()
+
+		switch tt.mode {
+		case roundTripXNetHTTP2:
+			tt.tr.CloseIdleConnections()
+		case roundTripNetHTTP:
+			tt.tr1.CloseIdleConnections()
+		}
+		tc.wantClosed()
+	})
+}
+
+func TestAPITransportTrace(t *testing.T) {
+	synctestTestRoundTrip(t, func(t *testing.T, mode roundTripTestMode) {
+		tt := newTestTransport(t, mode)
+
+		var (
+			getConns []string
+			gotConns []httptrace.GotConnInfo
+		)
+		ctx := httptrace.WithClientTrace(t.Context(), &httptrace.ClientTrace{
+			GetConn: func(hostPort string) {
+				getConns = append(getConns, hostPort)
+			},
+			GotConn: func(info httptrace.GotConnInfo) {
+				gotConns = append(gotConns, info)
+			},
+		})
+		req, _ := http.NewRequestWithContext(ctx, "GET", "http://dummy.tld/1", nil)
+		rt := tt.roundTrip(req)
+		tc := tt.getConn()
+		tc.wantFrameType(http2.FrameSettings)
+		tc.wantFrameType(http2.FrameWindowUpdate)
+		tc.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+
+		tc.writeSettings()
+		tc.writeSettingsAck()
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		tc.wantFrameType(http2.FrameSettings) // ACK
+		rt.wantStatus(200)
+		tc.wantIdle()
+
+		if got, want := len(getConns), 1; got != want {
+			t.Errorf("GetConn calls: %v, want %v", got, want)
+		}
+		if got, want := len(gotConns), 1; got != want {
+			t.Errorf("GotConn calls: %v, want %v", got, want)
+		}
+	})
+}
+
+func TestAPITransportRetry(t *testing.T) {
+	synctestTestRoundTrip(t, func(t *testing.T, mode roundTripTestMode) {
+		tt := newTestTransport(t, mode)
+
+		// Warm up the connection with a request.
+		req1, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt1 := tt.roundTrip(req1)
+		tc1 := tt.getConn()
+		tc1.wantFrameType(http2.FrameSettings)
+		tc1.wantFrameType(http2.FrameWindowUpdate)
+		tc1.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+
+		tc1.writeSettings()
+		tc1.writeSettingsAck()
+		tc1.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc1.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		tc1.wantFrameType(http2.FrameSettings) // ACK
+		rt1.wantStatus(200)
+		tc1.wantIdle()
+
+		// Second request is told to go away.
+		req2, _ := http.NewRequest("GET", "http://dummy.tld/1", nil)
+		rt2 := tt.roundTrip(req2)
+		tc1.wantHeaders(wantHeader{
+			streamID:  3,
+			endStream: true,
+		})
+		tc1.writeGoAway(1, http2.ErrCodeNo, nil)
+
+		// Request is sent on a new conn.
+		tc2 := tt.getConn()
+		tc2.wantFrameType(http2.FrameSettings)
+		tc2.wantFrameType(http2.FrameWindowUpdate)
+		tc2.wantHeaders(wantHeader{
+			streamID:  1,
+			endStream: true,
+		})
+		tc2.writeSettings()
+		tc2.writeSettingsAck()
+		tc2.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc2.makeHeaderBlockFragment(
+				":status", "404",
+			),
+		})
+		rt2.wantStatus(404)
+	})
 }

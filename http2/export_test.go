@@ -27,6 +27,7 @@ const (
 	MaxFrameSize                = maxFrameSize
 	MaxQueuedControlFrames      = maxQueuedControlFrames
 	MinMaxFrameSize             = minMaxFrameSize
+	CoalescedDialRetryTimeout   = 0 // wrapping only
 )
 
 type (

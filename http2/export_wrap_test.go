@@ -8,6 +8,8 @@ package http2
 
 import "net/http"
 
+const CoalescedDialRetryTimeout = coalescedDialRetryTimeout
+
 func (t *Transport) TestTransport() *http.Transport {
 	return t.init()
 }

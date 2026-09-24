@@ -145,16 +145,26 @@ type wantHeader struct {
 // and asserts that they contain the expected headers.
 func (tf *testConnFramer) wantHeaders(want wantHeader) {
 	tf.t.Helper()
-
-	hf := readFrame[*HeadersFrame](tf.t, tf)
-	if got, want := hf.StreamID, want.streamID; got != want {
+	streamID, endStream, gotHeader := tf.readHeaders()
+	if got, want := streamID, want.streamID; got != want {
 		tf.t.Fatalf("got stream ID %v, want %v", got, want)
 	}
-	if got, want := hf.StreamEnded(), want.endStream; got != want {
+	if got, want := endStream, want.endStream; got != want {
 		tf.t.Fatalf("got stream ended %v, want %v", got, want)
 	}
+	for k, v := range want.header {
+		if !reflect.DeepEqual(v, gotHeader[k]) {
+			tf.t.Fatalf("got header %q = %q; want %q = %q", k, gotHeader[k], k, v)
+		}
+	}
+}
 
-	gotHeader := make(http.Header)
+func (tf *testConnFramer) readHeaders() (streamID uint32, endStream bool, gotHeader http.Header) {
+	tf.t.Helper()
+	hf := readFrame[*HeadersFrame](tf.t, tf)
+	streamID = hf.StreamID
+	endStream = hf.StreamEnded()
+	gotHeader = make(http.Header)
 	tf.dec.SetEmitFunc(func(hf hpack.HeaderField) {
 		gotHeader[hf.Name] = append(gotHeader[hf.Name], hf.Value)
 	})
@@ -176,12 +186,7 @@ func (tf *testConnFramer) wantHeaders(want wantHeader) {
 	if err := tf.dec.Close(); err != nil {
 		tf.t.Fatalf("hpack decoding error: %v", err)
 	}
-
-	for k, v := range want.header {
-		if !reflect.DeepEqual(v, gotHeader[k]) {
-			tf.t.Fatalf("got header %q = %q; want %q = %q", k, gotHeader[k], k, v)
-		}
-	}
+	return streamID, endStream, gotHeader
 }
 
 // decodeHeader supports some older server tests.
