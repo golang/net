@@ -63,3 +63,52 @@ func testConnReceiveAckForDroppedSpace(t *testing.T) {
 		packetType1RTT, debugFrameHandshakeDone{})
 	tc.wantIdle("connection is idle")
 }
+
+func TestConnReceiveInvalidFrameForPacket(t *testing.T) {
+	synctestSubtest(t, "Initial", func(t *testing.T) {
+		tc := newTestConn(t, clientSide, permissiveTransportParameters)
+		tc.ignoreFrame(frameTypeAck)
+		tc.ignoreFrame(frameTypeCrypto)
+		tc.writeFrames(packetTypeInitial,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+			},
+			debugFrameStream{
+				id:   0,
+				off:  0,
+				data: []byte{1},
+			})
+		tc.wantFrame("STREAM frame not allowed in Initial packet",
+			packetTypeInitial, debugFrameConnectionCloseTransport{
+				code: errProtocolViolation,
+			})
+	})
+	synctestSubtest(t, "Handshake", func(t *testing.T) {
+		tc := newTestConn(t, clientSide, permissiveTransportParameters)
+		tc.ignoreFrame(frameTypeAck)
+		tc.ignoreFrame(frameTypeCrypto)
+		tc.writeFrames(packetTypeInitial,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelInitial],
+			})
+		tc.writeFrames(packetTypeHandshake,
+			debugFrameCrypto{
+				data: tc.cryptoDataIn[tls.QUICEncryptionLevelHandshake],
+			},
+			debugFrameStream{
+				id:   0,
+				off:  0,
+				data: []byte{1},
+			})
+		// CONNECTION_CLOSE sent in both Initial and Handshake spaces.
+		tc.wantFrame("STREAM frame not allowed in Handshake packet",
+			packetTypeInitial, debugFrameConnectionCloseTransport{
+				code: errProtocolViolation,
+			})
+		tc.wantFrame("STREAM frame not allowed in Handshake packet",
+			packetTypeHandshake, debugFrameConnectionCloseTransport{
+				code: errProtocolViolation,
+			})
+	})
+	// There are currently no frames which may not be sent in a 1-RTT packet.
+}
