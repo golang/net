@@ -117,9 +117,15 @@ func (t transportConfig) ConnFromContext(ctx context.Context) net.Conn {
 // http2.Transport's dialer.
 type http2TransportContextKey struct{}
 
+// UsesDialFromContext lets net/http coalesce dials for HTTP/2 requests,
+// even when the underlying http.Transport also supports HTTP/1.
+func (t transportConfig) UsesDialFromContext(ctx context.Context) bool {
+	return ctx.Value(http2TransportContextKey{}) != nil
+}
+
 // DialFromContext dials a new connection using the http2.Transport's DialTLS/DialTLSContext.
 func (t transportConfig) DialFromContext(ctx context.Context, network, address string) (net.Conn, error) {
-	if ctx.Value(http2TransportContextKey{}) == nil {
+	if !t.UsesDialFromContext(ctx) {
 		// We're being called from a RoundTrip that did not start with an http2.Transport.
 		// Use the http.Transport's dialer.
 		return nil, errors.ErrUnsupported
