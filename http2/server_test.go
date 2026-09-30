@@ -1438,6 +1438,9 @@ func testServer_Send_RstStream_After_Bogus_WindowUpdate(t testing.TB) {
 		t.Fatal(err)
 	}
 	st.wantRSTStream(1, ErrCodeFlowControl)
+	// Connection is still alive, even if the stream has been reset.
+	st.writePing(false, [8]byte{})
+	st.wantFrameType(FramePing)
 }
 
 // testServerPostUnblock sends a hanging POST with unsent data to handler,
@@ -5191,4 +5194,79 @@ func testServerRFC7540PrioritySmallPayload(t testing.TB) {
 			t.Errorf("Expected stream %v to receive %v±%v writes, got %v", streamID, expectedWriteCount, errorMargin, writeCount)
 		}
 	}
+}
+
+// "An endpoint MUST treat a change to SETTINGS_INITIAL_WINDOW_SIZE
+// that causes any flow-control window to exceed the maximum size as
+// a connection error (Section 5.4.1) of type FLOW_CONTROL_ERROR."
+// -- https://www.rfc-editor.org/rfc/rfc9113.html#section-6.9.2-7
+func TestServerSettingsFlowControlUpdateBeyondLimit(t *testing.T) {
+	synctestTest(t, testServerSettingsFlowControlUpdateBeyondLimit)
+}
+func testServerSettingsFlowControlUpdateBeyondLimit(t testing.TB) {
+	st := newServerTester(t, nil)
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1, // clients send odd numbers
+		BlockFragment: st.encodeHeader(":method", "POST"),
+		EndStream:     false, // data coming
+		EndHeaders:    true,
+	})
+	call := st.nextHandlerCall()
+	http.NewResponseController(call.w).Flush()
+	st.wantFrameType(FrameHeaders)
+
+	// Give this stream some additional flow control.
+	const windowIncrease = 1000
+	st.writeWindowUpdate(1, windowIncrease)
+	st.wantIdle()
+
+	// Adjust the initial flow control window. The stream is now over the limit.
+	const maxWindowSize = (1 << 31) - 1 // RFC 9113, 6.9.1
+	const maxInitialWindowSize = maxWindowSize - windowIncrease
+	st.writeSettings(Setting{SettingInitialWindowSize, maxInitialWindowSize + 1})
+	st.wantSettingsAck()
+
+	// We detect this condition lazily. Write something to the stream so we notice.
+	call.w.Write([]byte("hello"))
+	http.NewResponseController(call.w).Flush()
+
+	st.wantGoAway(1, ErrCodeFlowControl)
+}
+
+// Counterpart to TestServerSettingsFlowControlUpdateBeyondLimit:
+// A SETTINGS update which doesn't quite put a stream over the flow control limit.
+func TestServerSettingsFlowControlUpdateWithinLimit(t *testing.T) {
+	synctestTest(t, testServerSettingsFlowControlUpdateWithinLimit)
+}
+func testServerSettingsFlowControlUpdateWithinLimit(t testing.TB) {
+	st := newServerTester(t, nil)
+	st.greet()
+
+	st.writeHeaders(HeadersFrameParam{
+		StreamID:      1, // clients send odd numbers
+		BlockFragment: st.encodeHeader(":method", "POST"),
+		EndStream:     false, // data coming
+		EndHeaders:    true,
+	})
+	call := st.nextHandlerCall()
+	http.NewResponseController(call.w).Flush()
+	st.wantFrameType(FrameHeaders)
+
+	// Give this stream some additional flow control.
+	const windowIncrease = 1000
+	st.writeWindowUpdate(1, windowIncrease)
+	st.wantIdle()
+
+	// Adjust the initial flow control window. The stream is just within the limit.
+	const maxWindowSize = (1 << 31) - 1 // RFC 9113, 6.9.1
+	const maxInitialWindowSize = maxWindowSize - windowIncrease
+	st.writeSettings(Setting{SettingInitialWindowSize, maxInitialWindowSize})
+	st.wantSettingsAck()
+
+	call.w.Write([]byte("hello"))
+	http.NewResponseController(call.w).Flush()
+	st.wantFrameType(FrameData)
+	st.wantIdle()
 }
