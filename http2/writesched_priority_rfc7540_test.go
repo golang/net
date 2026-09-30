@@ -438,8 +438,11 @@ func TestPriorityFlowControl(t *testing.T) {
 	ws.OpenStream(2, OpenStreamOptions{PusherID: 1})
 
 	sc := &serverConn{maxFrameSize: 16}
+	sc.flow.add(maxFlowWindow)
 	st1 := &stream{id: 1, sc: sc}
+	st1.flow.conn = &sc.flow
 	st2 := &stream{id: 2, sc: sc}
+	st2.flow.conn = &sc.flow
 
 	ws.Push(FrameWriteRequest{&writeData{1, make([]byte, 16), false}, st1, nil})
 	ws.Push(FrameWriteRequest{&writeData{2, make([]byte, 16), false}, st2, nil})

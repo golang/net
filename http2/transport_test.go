@@ -1832,6 +1832,76 @@ func testTransportResponseHeaderTimeout(t testing.TB, body bool) {
 	}
 }
 
+// "An endpoint MUST treat a change to SETTINGS_INITIAL_WINDOW_SIZE
+// that causes any flow-control window to exceed the maximum size as
+// a connection error (Section 5.4.1) of type FLOW_CONTROL_ERROR."
+// -- https://www.rfc-editor.org/rfc/rfc9113.html#section-6.9.2-7
+func TestTransportSettingsFlowControlUpdateBeyondLimit(t *testing.T) {
+	synctestTest(t, testTransportSettingsFlowControlUpdateBeyondLimit)
+}
+func testTransportSettingsFlowControlUpdateBeyondLimit(t testing.TB) {
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	body := tc.newRequestBody()
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", body)
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
+
+	// Give this stream some additional flow control.
+	const windowIncrease = 1000
+	tc.writeWindowUpdate(rt.streamID(), windowIncrease)
+	tc.wantIdle()
+
+	// Adjust the initial flow control window. The stream is now over the limit.
+	const maxWindowSize = (1 << 31) - 1 // RFC 9113, 6.9.1
+	const maxInitialWindowSize = maxWindowSize - windowIncrease
+	tc.writeSettings(Setting{SettingInitialWindowSize, maxInitialWindowSize + 1})
+	tc.wantSettingsAck()
+
+	// We detect this condition lazily. Write something to the stream so we notice.
+	body.writeBytes(1)
+	body.closeWithError(io.EOF)
+
+	tc.wantGoAway(0, ErrCodeFlowControl)
+}
+
+// Counterpart to TestTransportSettingsFlowControlUpdateBeyondLimit:
+// A SETTINGS update which doesn't quite put a stream over the flow control limit.
+func TestTransportSettingsFlowControlUpdateWithinLimit(t *testing.T) {
+	synctestTest(t, testTransportSettingsFlowControlUpdateWithinLimit)
+}
+func testTransportSettingsFlowControlUpdateWithinLimit(t testing.TB) {
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	body := tc.newRequestBody()
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", body)
+	rt := tc.roundTrip(req)
+	tc.wantFrameType(FrameHeaders)
+
+	// Give this stream some additional flow control.
+	const windowIncrease = 1000
+	tc.writeWindowUpdate(rt.streamID(), windowIncrease)
+	tc.wantIdle()
+
+	// Adjust the initial flow control window. The stream is just within the limit.
+	const maxWindowSize = (1 << 31) - 1 // RFC 9113, 6.9.1
+	const maxInitialWindowSize = maxWindowSize - windowIncrease
+	tc.writeSettings(Setting{SettingInitialWindowSize, maxInitialWindowSize})
+	tc.wantSettingsAck()
+
+	body.writeBytes(1)
+	body.closeWithError(io.EOF)
+	tc.wantData(wantData{
+		streamID:  1,
+		endStream: true,
+		size:      1,
+		multiple:  true,
+	})
+	tc.wantIdle()
+}
+
 // https://go.dev/issue/77331
 func TestTransportWindowUpdateBeyondLimit(t *testing.T) {
 	synctestTest(t, testTransportWindowUpdateBeyondLimit)
