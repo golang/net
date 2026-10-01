@@ -857,7 +857,6 @@ func (cc *ClientConn) sendGoAway() error {
 	cc.mu.Lock()
 	closing := cc.closing
 	cc.closing = true
-	maxStreamID := cc.nextStreamID
 	cc.mu.Unlock()
 	if closing {
 		// GOAWAY sent already
@@ -867,7 +866,7 @@ func (cc *ClientConn) sendGoAway() error {
 	cc.wmu.Lock()
 	defer cc.wmu.Unlock()
 	// Send a graceful shutdown frame to server
-	if err := cc.fr.WriteGoAway(maxStreamID, ErrCodeNo, nil); err != nil {
+	if err := cc.fr.WriteGoAway(0, ErrCodeNo, nil); err != nil {
 		return err
 	}
 	if err := cc.bw.Flush(); err != nil {

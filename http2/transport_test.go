@@ -3853,7 +3853,7 @@ func testClientConnShutdown(t testing.TB) {
 	go tc.cc.Shutdown(context.Background())
 	synctest.Wait()
 
-	tc.wantFrameType(FrameGoAway)
+	tc.wantGoAway(0, ErrCodeNo)
 	tc.wantIdle() // connection is not closed
 	body := []byte("body")
 	tc.writeHeaders(HeadersFrameParam{
@@ -3892,7 +3892,7 @@ func testClientConnShutdownCancel(t testing.TB) {
 	}()
 	synctest.Wait()
 
-	tc.wantFrameType(FrameGoAway)
+	tc.wantGoAway(0, ErrCodeNo)
 	tc.wantIdle() // connection is not closed
 
 	cancel()
