@@ -256,3 +256,57 @@ func TestParseHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestMarshalWireHeader(t *testing.T) {
+	if _, err := (*Header)(nil).MarshalWire(); err != errNilHeader {
+		t.Fatalf("got %v; want %v", err, errNilHeader)
+	}
+	for _, tt := range headerLittleEndianTests {
+		b, err := tt.Header.MarshalWire()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(b, tt.wireHeaderToKernel) {
+			t.Fatalf("got %#v; want %#v", b, tt.wireHeaderToKernel)
+		}
+	}
+}
+
+func TestParseWireHeader(t *testing.T) {
+	if err := new(Header).ParseWire(make([]byte, HeaderLen-1)); err != errHeaderTooShort {
+		t.Fatalf("got %v; want %v", err, errHeaderTooShort)
+	}
+	for _, tt := range headerLittleEndianTests {
+		var h Header
+		if err := h.ParseWire(tt.wireHeaderFromKernel); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(&h, tt.Header) {
+			t.Fatalf("got %#v; want %#v", &h, tt.Header)
+		}
+	}
+
+	// A TCP/IPv4 header captured on Linux must parse the same way on
+	// any system. See golang.org/issue/43386.
+	b := []byte{
+		0x45, 0x00, 0x00, 0x3c,
+		0x89, 0x3c, 0x40, 0x00,
+		0x37, 0x06, 0x91, 0xb0,
+		0x4d, 0x6f, 0xf7, 0x3c,
+		0xc3, 0xc9, 0x20, 0x5a,
+	}
+	var h Header
+	if err := h.ParseWire(b); err != nil {
+		t.Fatal(err)
+	}
+	if h.TotalLen != 60 || h.Flags != DontFragment || h.FragOff != 0 {
+		t.Fatalf("got totallen=%d flags=%#x fragoff=%d; want totallen=60 flags=%#x fragoff=0", h.TotalLen, h.Flags, h.FragOff, DontFragment)
+	}
+	wb, err := h.MarshalWire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(wb, b) {
+		t.Fatalf("round trip: got %#v; want %#v", wb, b)
+	}
+}
