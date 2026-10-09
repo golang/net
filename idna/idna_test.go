@@ -65,6 +65,7 @@ func TestIDNASeparators(t *testing.T) {
 				{"example\u3002jp", "example.jp", false},
 				{"東京\uFF0Ejp", "xn--1lqs71d.jp", false},
 				{"大阪\uFF61jp", "xn--pssu33l.jp", false},
+				{"大阪--府.jp", "", true},
 			},
 		},
 		{
