@@ -23,6 +23,16 @@ func (d *Dialer) connect(ctx context.Context, c net.Conn, address string) (_ net
 	if err != nil {
 		return nil, err
 	}
+
+	if d.Resolver != nil {
+		if ip := net.ParseIP(host); ip == nil {
+			addresses, err := d.Resolver.LookupHost(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			host = addresses[0]
+		}
+	}
 	if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
 		c.SetDeadline(deadline)
 		defer c.SetDeadline(noDeadline)
