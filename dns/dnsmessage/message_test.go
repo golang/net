@@ -1712,7 +1712,7 @@ func FuzzUnpackPack(f *testing.F) {
 
 		var m2 Message
 		if err := m2.Unpack(msgPacked); err != nil {
-			t.Fatalf("failed to unpack message that was succesfully packed: %v", err)
+			t.Fatalf("failed to unpack message that was successfully packed: %v", err)
 		}
 
 		if !reflect.DeepEqual(m, m2) {
