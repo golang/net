@@ -73,7 +73,7 @@ func TestDial(t *testing.T) {
 		if err = os.Setenv("ALL_PROXY", fmt.Sprintf("socks5://%s", s.Addr().String())); err != nil {
 			t.Fatal(err)
 		}
-		c, err := Dial(context.Background(), s.TargetAddr().Network(), s.TargetAddr().String())
+		c, err := Dial(context.Background(), "tcp", s.TargetAddrPort().String())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func TestDial(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		c, err := Dial(ctx, s.TargetAddr().Network(), s.TargetAddr().String())
+		c, err := Dial(ctx, "tcp", s.TargetAddrPort().String())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,10 +110,26 @@ func TestDial(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 		time.Sleep(time.Millisecond)
 		defer cancel()
-		c, err := Dial(ctx, s.TargetAddr().Network(), s.TargetAddr().String())
+		c, err := Dial(ctx, "tcp", s.TargetAddrPort().String())
 		if err == nil {
 			defer c.Close()
 			t.Fatal("failed to timeout")
 		}
+	})
+	t.Run("SOCKS5WithUDP", func(t *testing.T) {
+		defer ResetProxyEnv()
+		s, err := sockstest.NewServer(sockstest.NoAuthRequired, sockstest.NoProxyRequired)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		if err = os.Setenv("ALL_PROXY", fmt.Sprintf("socks5://%s", s.Addr().String())); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Dial(context.Background(), "udp", s.TargetAddrPort().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
 	})
 }

@@ -106,7 +106,7 @@ func TestSOCKS5(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := proxy.Dial("tcp", ss.TargetAddr().String())
+	c, err := proxy.Dial("tcp", ss.TargetAddrPort().String())
 	if err != nil {
 		t.Fatal(err)
 	}
