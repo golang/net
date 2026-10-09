@@ -129,6 +129,45 @@ func TestValidHeaderFieldName(t *testing.T) {
 	}
 }
 
+func TestValidHeaderFieldValue(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", true},
+		{" junk", false},
+		{"\tjunk", false},
+		{"junk\t", false},
+		{"junk ", false},
+		{" ", false},
+		{"\t", false},
+	}
+	for i := byte(0); true; i++ {
+		bad := i < ' '
+		if i == 0x7f {
+			bad = true
+		}
+		if i == '\t' {
+			bad = false
+		}
+		tests = append(tests,
+			struct {
+				in   string
+				want bool
+			}{string([]byte{'a', i, 'b'}), !bad})
+		if i == 255 {
+			break
+		}
+	}
+
+	for _, tt := range tests {
+		got := ValidHeaderFieldValue(tt.in)
+		if tt.want != got {
+			t.Errorf("ValidHeaderFieldValue(%q) = %t; want %t", tt.in, got, tt.want)
+		}
+	}
+}
+
 func BenchmarkValidHeaderFieldName(b *testing.B) {
 	names := []string{
 		"",
