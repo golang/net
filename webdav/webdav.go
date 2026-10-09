@@ -424,7 +424,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 
 	ctx := r.Context()
 	token, ld, now, created := "", LockDetails{}, time.Now(), false
-	if li == (lockInfo{}) {
+	if li.XMLName.Local == "" {
 		// An empty lockInfo means to refresh the lock.
 		ih, ok := parseIfHeader(r.Header.Get("If"))
 		if !ok {
@@ -463,7 +463,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) (retStatus 
 		ld = LockDetails{
 			Root:      reqPath,
 			Duration:  duration,
-			OwnerXML:  li.Owner.InnerXML,
+			OwnerXML:  string(li.Owner),
 			ZeroDepth: depth == 0,
 		}
 		token, err = h.LockSystem.Create(now, ld)
