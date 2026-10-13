@@ -562,6 +562,211 @@ func TestMemPS(t *testing.T) {
 	}
 }
 
+type testDeadPropsHolder struct {
+	props map[xml.Name]Property
+}
+
+func (h *testDeadPropsHolder) DeadProps() (map[xml.Name]Property, error) {
+	if len(h.props) == 0 {
+		return nil, nil
+	}
+	ret := make(map[xml.Name]Property, len(h.props))
+	for k, v := range h.props {
+		ret[k] = v
+	}
+	return ret, nil
+}
+
+func (h *testDeadPropsHolder) Patch(patches []Proppatch) ([]Propstat, error) {
+	pstat := Propstat{Status: http.StatusOK}
+	for _, patch := range patches {
+		for _, p := range patch.Props {
+			pstat.Props = append(pstat.Props, Property{XMLName: p.XMLName})
+			if patch.Remove {
+				delete(h.props, p.XMLName)
+				continue
+			}
+			if h.props == nil {
+				h.props = map[xml.Name]Property{}
+			}
+			h.props[p.XMLName] = p
+		}
+	}
+	return []Propstat{pstat}, nil
+}
+
+type testFileSystemProps struct {
+	FileSystem
+	err        error
+	cacheProps map[string]map[xml.Name]Property
+}
+
+func (fs *testFileSystemProps) Props(ctx context.Context, name string) (DeadPropsHolder, error) {
+	if fs.err != nil {
+		return nil, fs.err
+	}
+	props, ok := fs.cacheProps[name]
+	if !ok {
+		return nil, nil
+	}
+	if props == nil {
+		props = map[xml.Name]Property{}
+		fs.cacheProps[name] = props
+	}
+	return &testDeadPropsHolder{props: props}, nil
+}
+
+func patchTestDeadProps(t *testing.T, fs FileSystem, name string, patches []Proppatch) {
+	t.Helper()
+	f, err := fs.OpenFile(context.Background(), name, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(%q): %v", name, err)
+	}
+	defer f.Close()
+	dph, ok := f.(DeadPropsHolder)
+	if !ok {
+		t.Fatalf("OpenFile(%q) did not return a DeadPropsHolder", name)
+	}
+	if _, err := dph.Patch(patches); err != nil {
+		t.Fatalf("Patch(%q): %v", name, err)
+	}
+}
+
+func TestFileSystemProps(t *testing.T) {
+	fsPropName := xml.Name{Space: "fs", Local: "prop"}
+	fsPropName2 := xml.Name{Space: "fs", Local: "prop2"}
+	filePropName := xml.Name{Space: "file", Local: "prop"}
+	fileProp := Property{
+		XMLName:  filePropName,
+		InnerXML: []byte("from-file"),
+	}
+	fsProp := Property{
+		XMLName:  fsPropName,
+		InnerXML: []byte("from-fs"),
+	}
+	fsProp2 := Property{
+		XMLName:  fsPropName2,
+		InnerXML: []byte("from-fs-2"),
+	}
+
+	base, err := buildTestFS([]string{"touch /file"})
+	if err != nil {
+		t.Fatalf("cannot create test filesystem: %v", err)
+	}
+	patchTestDeadProps(t, base, "/file", []Proppatch{{Props: []Property{fileProp}}})
+	fs := &testFileSystemProps{
+		FileSystem: base,
+		cacheProps: map[string]map[xml.Name]Property{"/file": nil},
+	}
+
+	type propOp struct {
+		name    string
+		patches []Proppatch
+		want    map[xml.Name]Property
+	}
+
+	mls := NewMemLS()
+
+	checkAllProps := func(opName string, want map[xml.Name]Property) {
+		t.Helper()
+		propstats, err := allprop(context.Background(), fs, mls, "/file", nil)
+		if err != nil {
+			t.Fatalf("%s allprop: %v", opName, err)
+		}
+		got := map[xml.Name]Property{}
+		for _, pstat := range propstats {
+			for _, p := range pstat.Props {
+				got[p.XMLName] = p
+			}
+		}
+		for name, prop := range want {
+			gotProp, ok := got[name]
+			if !ok {
+				t.Fatalf("%s missing prop %v in allprop", opName, name)
+			}
+			if !reflect.DeepEqual(gotProp.InnerXML, prop.InnerXML) {
+				t.Fatalf("%s prop %v innerXML = %q, want %q", opName, name, gotProp.InnerXML, prop.InnerXML)
+			}
+		}
+		for _, name := range []xml.Name{fsPropName, fsPropName2} {
+			if _, ok := want[name]; ok {
+				continue
+			}
+			if _, ok := got[name]; ok {
+				t.Fatalf("%s unexpectedly exposed prop %v", opName, name)
+			}
+		}
+		if _, ok := got[filePropName]; ok {
+			t.Fatalf("%s unexpectedly exposed prop %v", opName, filePropName)
+		}
+	}
+
+	checkFileDeadProps := func(opName string) {
+		t.Helper()
+		f, err := base.OpenFile(context.Background(), "/file", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("%s OpenFile: %v", opName, err)
+		}
+		defer f.Close()
+		fileProps, err := f.(DeadPropsHolder).DeadProps()
+		if err != nil {
+			t.Fatalf("%s file DeadProps: %v", opName, err)
+		}
+		if _, ok := fileProps[fsPropName]; ok {
+			t.Fatalf("%s file dead props unexpectedly contain %v: %v", opName, fsPropName, fileProps)
+		}
+		if _, ok := fileProps[fsPropName2]; ok {
+			t.Fatalf("%s file dead props unexpectedly contain %v: %v", opName, fsPropName2, fileProps)
+		}
+		if _, ok := fileProps[filePropName]; !ok {
+			t.Fatalf("%s file dead props missing original file prop: %v", opName, fileProps)
+		}
+	}
+
+	ops := []propOp{{
+		name: "add 1",
+		patches: []Proppatch{{
+			Props: []Property{fsProp},
+		}},
+	}, {
+		name: "add 2",
+		patches: []Proppatch{{
+			Props: []Property{fsProp2},
+		}},
+	}, {
+		name: "get all",
+		want: map[xml.Name]Property{
+			fsPropName:  fsProp,
+			fsPropName2: fsProp2,
+		},
+	}, {
+		name: "del",
+		patches: []Proppatch{{
+			Remove: true,
+			Props: []Property{{
+				XMLName: fsPropName,
+			}},
+		}},
+	}, {
+		name: "get all after del",
+		want: map[xml.Name]Property{
+			fsPropName2: fsProp2,
+		},
+	}}
+
+	for _, op := range ops {
+		if op.patches != nil {
+			if _, err := patch(context.Background(), fs, NewMemLS(), "/file", op.patches); err != nil {
+				t.Fatalf("%s patch: %v", op.name, err)
+			}
+		}
+		if op.want != nil {
+			checkAllProps(op.name, op.want)
+			checkFileDeadProps(op.name)
+		}
+	}
+}
+
 func cmpXMLName(a, b xml.Name) bool {
 	if a.Space != b.Space {
 		return a.Space < b.Space
