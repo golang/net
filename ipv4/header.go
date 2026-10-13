@@ -47,12 +47,63 @@ func (h *Header) String() string {
 	return fmt.Sprintf("ver=%d hdrlen=%d tos=%#x totallen=%d id=%#x flags=%#x fragoff=%#x ttl=%d proto=%d cksum=%#x src=%v dst=%v", h.Version, h.Len, h.TOS, h.TotalLen, h.ID, h.Flags, h.FragOff, h.TTL, h.Protocol, h.Checksum, h.Src, h.Dst)
 }
 
+// rawFormat describes how a raw IP socket lays out the TotalLen and
+// FragOff fields of an IPv4 header. All other fields always use the
+// wire format.
+type rawFormat struct {
+	// nativeEndian reports whether TotalLen and FragOff are in host
+	// byte order instead of network byte order.
+	nativeEndian bool
+
+	// lenExcludesHeader reports whether the kernel hands out TotalLen
+	// without the header length. It only affects parsing.
+	lenExcludesHeader bool
+}
+
+// wireFormat is the format defined in RFC 791.
+var wireFormat = rawFormat{}
+
+// localRawFormat returns the format used by a raw IP socket on the
+// local system.
+func localRawFormat() rawFormat {
+	switch runtime.GOOS {
+	case "darwin", "ios", "dragonfly", "netbsd":
+		return rawFormat{nativeEndian: true, lenExcludesHeader: true}
+	case "freebsd":
+		if freebsdVersion < 1000000 {
+			return rawFormat{nativeEndian: true, lenExcludesHeader: true}
+		}
+		if freebsdVersion < 1100000 {
+			return rawFormat{nativeEndian: true}
+		}
+	}
+	return wireFormat
+}
+
+func (f rawFormat) byteOrder() binary.ByteOrder {
+	if f.nativeEndian {
+		return binary.NativeEndian
+	}
+	return binary.BigEndian
+}
+
 // Marshal returns the binary encoding of h.
 //
 // The returned slice is in the format used by a raw IP socket on the
 // local system.
 // This may differ from the wire format, depending on the system.
+// Use MarshalWire to get the wire format on any system.
 func (h *Header) Marshal() ([]byte, error) {
+	return h.marshal(localRawFormat())
+}
+
+// MarshalWire returns the binary encoding of h in the wire format
+// defined in RFC 791, regardless of the local system.
+func (h *Header) MarshalWire() ([]byte, error) {
+	return h.marshal(wireFormat)
+}
+
+func (h *Header) marshal(f rawFormat) ([]byte, error) {
 	if h == nil {
 		return nil, errNilHeader
 	}
@@ -64,22 +115,9 @@ func (h *Header) Marshal() ([]byte, error) {
 	b[0] = byte(Version<<4 | (hdrlen >> 2 & 0x0f))
 	b[1] = byte(h.TOS)
 	flagsAndFragOff := (h.FragOff & 0x1fff) | int(h.Flags<<13)
-	switch runtime.GOOS {
-	case "darwin", "ios", "dragonfly", "netbsd":
-		binary.NativeEndian.PutUint16(b[2:4], uint16(h.TotalLen))
-		binary.NativeEndian.PutUint16(b[6:8], uint16(flagsAndFragOff))
-	case "freebsd":
-		if freebsdVersion < 1100000 {
-			binary.NativeEndian.PutUint16(b[2:4], uint16(h.TotalLen))
-			binary.NativeEndian.PutUint16(b[6:8], uint16(flagsAndFragOff))
-		} else {
-			binary.BigEndian.PutUint16(b[2:4], uint16(h.TotalLen))
-			binary.BigEndian.PutUint16(b[6:8], uint16(flagsAndFragOff))
-		}
-	default:
-		binary.BigEndian.PutUint16(b[2:4], uint16(h.TotalLen))
-		binary.BigEndian.PutUint16(b[6:8], uint16(flagsAndFragOff))
-	}
+	bo := f.byteOrder()
+	bo.PutUint16(b[2:4], uint16(h.TotalLen))
+	bo.PutUint16(b[6:8], uint16(flagsAndFragOff))
 	binary.BigEndian.PutUint16(b[4:6], uint16(h.ID))
 	b[8] = byte(h.TTL)
 	b[9] = byte(h.Protocol)
@@ -103,7 +141,19 @@ func (h *Header) Marshal() ([]byte, error) {
 // The provided b must be in the format used by a raw IP socket on the
 // local system.
 // This may differ from the wire format, depending on the system.
+// Use ParseWire to parse a header in the wire format, for example one
+// captured on another system.
 func (h *Header) Parse(b []byte) error {
+	return h.parse(b, localRawFormat())
+}
+
+// ParseWire parses b as an IPv4 header in the wire format defined in
+// RFC 791 and stores the result in h, regardless of the local system.
+func (h *Header) ParseWire(b []byte) error {
+	return h.parse(b, wireFormat)
+}
+
+func (h *Header) parse(b []byte, f rawFormat) error {
 	if h == nil || b == nil {
 		return errNilHeader
 	}
@@ -123,25 +173,12 @@ func (h *Header) Parse(b []byte) error {
 	h.Checksum = int(binary.BigEndian.Uint16(b[10:12]))
 	h.Src = net.IPv4(b[12], b[13], b[14], b[15])
 	h.Dst = net.IPv4(b[16], b[17], b[18], b[19])
-	switch runtime.GOOS {
-	case "darwin", "ios", "dragonfly", "netbsd":
-		h.TotalLen = int(binary.NativeEndian.Uint16(b[2:4])) + hdrlen
-		h.FragOff = int(binary.NativeEndian.Uint16(b[6:8]))
-	case "freebsd":
-		if freebsdVersion < 1100000 {
-			h.TotalLen = int(binary.NativeEndian.Uint16(b[2:4]))
-			if freebsdVersion < 1000000 {
-				h.TotalLen += hdrlen
-			}
-			h.FragOff = int(binary.NativeEndian.Uint16(b[6:8]))
-		} else {
-			h.TotalLen = int(binary.BigEndian.Uint16(b[2:4]))
-			h.FragOff = int(binary.BigEndian.Uint16(b[6:8]))
-		}
-	default:
-		h.TotalLen = int(binary.BigEndian.Uint16(b[2:4]))
-		h.FragOff = int(binary.BigEndian.Uint16(b[6:8]))
+	bo := f.byteOrder()
+	h.TotalLen = int(bo.Uint16(b[2:4]))
+	if f.lenExcludesHeader {
+		h.TotalLen += hdrlen
 	}
+	h.FragOff = int(bo.Uint16(b[6:8]))
 	h.Flags = HeaderFlags(h.FragOff&0xe000) >> 13
 	h.FragOff = h.FragOff & 0x1fff
 	optlen := hdrlen - HeaderLen
@@ -161,6 +198,7 @@ func (h *Header) Parse(b []byte) error {
 // The provided b must be in the format used by a raw IP socket on the
 // local system.
 // This may differ from the wire format, depending on the system.
+// Use Header.ParseWire to parse a header in the wire format.
 func ParseHeader(b []byte) (*Header, error) {
 	h := new(Header)
 	if err := h.Parse(b); err != nil {
