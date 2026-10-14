@@ -207,18 +207,34 @@ func TestRenderTextNodes(t *testing.T) {
 }
 
 func TestRenderFosteredForeignContent(t *testing.T) {
-	a := `<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>`
-	d, err := Parse(strings.NewReader(a))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buf := bytes.NewBuffer(nil)
-	if err := Render(buf, d); err != nil {
-		t.Fatal(err)
-	}
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{
+			in:   `<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>`,
+			want: "<html><head></head><body><math><mtext><mglyph><style>&lt;img src=x onerror=alert(1)&gt;</style></mglyph><table></table></mtext></math></body></html>",
+		},
+		{
+			in:   `<math><mtext><table><mglyph><svg><desc><style><img src=x onerror=alert(1)>`,
+			want: "<html><head></head><body><math><mtext><mglyph><svg><desc><style>&lt;img src=x onerror=alert(1)&gt;</style></desc></svg></mglyph><table></table></mtext></math></body></html>",
+		},
+		{
+			in:   `<math><mtext><table><malignmark><svg><desc><style><img src=x onerror=alert(1)>`,
+			want: "<html><head></head><body><math><mtext><malignmark><svg><desc><style>&lt;img src=x onerror=alert(1)&gt;</style></desc></svg></malignmark><table></table></mtext></math></body></html>",
+		},
+	} {
+		d, err := Parse(strings.NewReader(tc.in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := bytes.NewBuffer(nil)
+		if err := Render(buf, d); err != nil {
+			t.Fatal(err)
+		}
 
-	expected := "<html><head></head><body><math><mtext><mglyph><style>&lt;img src=x onerror=alert(1)&gt;</style></mglyph><table></table></mtext></math></body></html>"
-	if buf.String() != expected {
-		t.Errorf("unexpected output: got %q, want %q", buf.String(), expected)
+		if buf.String() != tc.want {
+			t.Errorf("unexpected output for %q:\ngot:  %q\nwant: %q", tc.in, buf.String(), tc.want)
+		}
 	}
 }
