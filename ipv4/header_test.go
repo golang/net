@@ -207,6 +207,7 @@ func TestParseHeader(t *testing.T) {
 		{nil, nil, errNilHeader},
 		{&Header{}, nil, errNilHeader},
 		{&Header{}, make([]byte, HeaderLen-1), errHeaderTooShort},
+		{&Header{}, make([]byte, HeaderLen), errHeaderTooShort},
 		{&Header{}, []byte{
 			0x46, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00,
