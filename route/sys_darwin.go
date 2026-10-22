@@ -52,7 +52,7 @@ func (m *InterfaceMessage) Sys() []Sys {
 }
 
 func probeRoutingStack() (int, map[int]*wireFormat) {
-	rtm := &wireFormat{extOff: 36, bodyOff: sizeofRtMsghdrDarwin15}
+	rtm := &wireFormat{extOff: 36, bodyOff: sizeofRtMsghdrDarwin15, idOff: 16, seqOff: 20, errOff: 28}
 	rtm.parse = rtm.parseRouteMessage
 	rtm2 := &wireFormat{extOff: 36, bodyOff: sizeofRtMsghdr2Darwin15}
 	rtm2.parse = rtm2.parseRouteMessage
