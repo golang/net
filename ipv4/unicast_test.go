@@ -49,7 +49,8 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 			}
 			t.Fatal(err)
 		}
-		p.SetTTL(i + 1)
+		ttl := i + 1
+		p.SetTTL(ttl)
 
 		backoff := time.Millisecond
 		for {
@@ -69,10 +70,12 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 		}
 
 		rb := make([]byte, 128)
-		if n, _, _, err := p.ReadFrom(rb); err != nil {
+		if n, cm, _, err := p.ReadFrom(rb); err != nil {
 			t.Fatal(err)
 		} else if !bytes.Equal(rb[:n], wb) {
 			t.Fatalf("got %v; want %v", rb[:n], wb)
+		} else if toggle && runtime.GOOS != "zos" && (cm == nil || cm.TTL != ttl) {
+			t.Fatalf("got %v; want ttl=%d", cm, ttl)
 		}
 	}
 }
