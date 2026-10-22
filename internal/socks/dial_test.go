@@ -6,6 +6,7 @@ package socks_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/rand"
 	"net"
@@ -15,6 +16,7 @@ import (
 
 	"golang.org/x/net/internal/socks"
 	"golang.org/x/net/internal/sockstest"
+	"golang.org/x/net/nettest"
 )
 
 func TestDial(t *testing.T) {
@@ -33,7 +35,7 @@ func TestDial(t *testing.T) {
 			Username: "username",
 			Password: "password",
 		}).Authenticate
-		c, err := d.DialContext(context.Background(), ss.TargetAddr().Network(), ss.TargetAddr().String())
+		c, err := d.DialContext(context.Background(), "tcp", ss.TargetAddrPort().String())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +62,7 @@ func TestDial(t *testing.T) {
 			Username: "username",
 			Password: "password",
 		}).Authenticate
-		a, err := d.DialWithConn(context.Background(), c, ss.TargetAddr().Network(), ss.TargetAddr().String())
+		a, err := d.DialWithConn(context.Background(), c, "tcp", ss.TargetAddrPort().String())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +81,7 @@ func TestDial(t *testing.T) {
 		defer cancel()
 		dialErr := make(chan error)
 		go func() {
-			c, err := d.DialContext(ctx, ss.TargetAddr().Network(), ss.TargetAddr().String())
+			c, err := d.DialContext(ctx, "tcp", ss.TargetAddrPort().String())
 			if err == nil {
 				c.Close()
 			}
@@ -101,7 +103,7 @@ func TestDial(t *testing.T) {
 		d := socks.NewDialer(ss.Addr().Network(), ss.Addr().String())
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(100*time.Millisecond))
 		defer cancel()
-		c, err := d.DialContext(ctx, ss.TargetAddr().Network(), ss.TargetAddr().String())
+		c, err := d.DialContext(ctx, "tcp", ss.TargetAddrPort().String())
 		if err == nil {
 			c.Close()
 		}
@@ -119,12 +121,86 @@ func TestDial(t *testing.T) {
 		for i := 0; i < 2*len(rogueCmdList); i++ {
 			ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(100*time.Millisecond))
 			defer cancel()
-			c, err := d.DialContext(ctx, ss.TargetAddr().Network(), ss.TargetAddr().String())
+			c, err := d.DialContext(ctx, "tcp", ss.TargetAddrPort().String())
 			if err == nil {
 				t.Log(c.(*socks.Conn).BoundAddr())
 				c.Close()
 				t.Error("should fail")
 			}
+		}
+	})
+	t.Run("UDPAssociate", func(t *testing.T) {
+		ss, err := sockstest.NewServer(sockstest.NoAuthRequired, sockstest.NoProxyRequired)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		d := socks.NewDialer(ss.Addr().Network(), ss.Addr().String())
+		c, err := d.DialContext(context.Background(), "udp", ss.TargetAddrPort().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+		if network := c.RemoteAddr().Network(); network != "udp" {
+			t.Errorf("RemoteAddr().Network(): expected \"udp\" got %q", network)
+		}
+		expected := "127.0.0.1:5964"
+		if remoteAddr := c.RemoteAddr().String(); remoteAddr != expected {
+			t.Errorf("RemoteAddr(): expected %q got %q", expected, remoteAddr)
+		}
+		if boundAddr := c.(*socks.Conn).BoundAddr().String(); boundAddr != expected {
+			t.Errorf("BoundAddr(): expected %q got %q", expected, boundAddr)
+		}
+	})
+	t.Run("UDPAssociateWithReadAndWrite", func(t *testing.T) {
+		rc, cmdFunc, err := packetListenerCmdFunc()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rc.Close()
+		ss, err := sockstest.NewServer(sockstest.NoAuthRequired, cmdFunc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		d := socks.NewDialer(ss.Addr().Network(), ss.Addr().String())
+		c, err := d.DialContext(context.Background(), "udp", ss.TargetAddrPort().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		buf := make([]byte, 32)
+		expected := "HELLO OUTBOUND"
+		n, err := c.Write([]byte(expected))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(expected) != n {
+			t.Errorf("Write(): expected %v bytes got %v", len(expected), n)
+		}
+		n, addr, err := rc.ReadFrom(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := socks.SkipUDPHeader(buf[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual := string(data); expected != actual {
+			t.Errorf("ReadFrom(): expected %q got %q", expected, actual)
+		}
+		udpHeader := []byte{0x00, 0x00, 0x00, 0x01, 0x7f, 0x00, 0x00, 0x01, 0x17, 0x4b}
+		expected = "HELLO INBOUND"
+		_, err = rc.WriteTo(append(udpHeader, []byte(expected)...), addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, err = c.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual := string(buf[:n]); expected != actual {
+			t.Errorf("Read(): expected %q got %q", expected, actual)
 		}
 	})
 }
@@ -167,4 +243,34 @@ func parseDialError(err error) (perr, nerr error) {
 	}
 	perr = err
 	return
+}
+
+func packetListenerCmdFunc() (net.PacketConn, func(io.ReadWriter, []byte) error, error) {
+	conn, err := nettest.NewLocalPacketListener("udp")
+	if err != nil {
+		return nil, nil, err
+	}
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return conn, func(rw io.ReadWriter, b []byte) error {
+		req, err := sockstest.ParseCmdRequest(b)
+		if err != nil {
+			return err
+		}
+		if req.Cmd != socks.CmdUDPAssociate {
+			return errors.New("unexpected command")
+		}
+		b, err = sockstest.MarshalCmdReply(socks.Version5, socks.StatusSucceeded, &socks.Addr{IP: localAddr.IP, Port: localAddr.Port})
+		if err != nil {
+			return err
+		}
+		n, err := rw.Write(b)
+		if err != nil {
+			return err
+		}
+		if n != len(b) {
+			return errors.New("short write")
+		}
+		_, err = io.Copy(io.Discard, rw)
+		return err
+	}, nil
 }
