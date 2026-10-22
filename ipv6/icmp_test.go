@@ -57,6 +57,13 @@ func TestICMPFilter(t *testing.T) {
 				t.Errorf("ipv6.ICMPFilter.Set(%v, true) failed", typ)
 			}
 		}
+		for _, typ := range []ipv6.ICMPType{-1, 256} {
+			f.Accept(typ)
+			f.Block(typ)
+			if f.WillBlock(typ) {
+				t.Errorf("ipv6.ICMPFilter.WillBlock(%v) = true; want false", typ)
+			}
+		}
 	}
 }
 
