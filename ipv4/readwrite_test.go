@@ -351,6 +351,12 @@ func TestPacketConnConcurrentReadWriteUnicast(t *testing.T) {
 		}
 		defer c.Close()
 		p := ipv4.NewPacketConn(c)
+		if n, err := p.ReadBatch(nil, 0); n != 0 || err != nil {
+			t.Fatalf("got %d, %v; want 0, nil", n, err)
+		}
+		if n, err := p.WriteBatch(nil, 0); n != 0 || err != nil {
+			t.Fatalf("got %d, %v; want 0, nil", n, err)
+		}
 		t.Run("ToFrom", func(t *testing.T) {
 			testPacketConnConcurrentReadWriteUnicast(t, p, payload, c.LocalAddr(), false)
 		})

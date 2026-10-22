@@ -27,6 +27,10 @@ func TestBPF(t *testing.T) {
 
 	p := ipv4.NewPacketConn(l)
 
+	if err := p.SetBPF(nil); err == nil {
+		t.Fatal("got nil; want non-nil error")
+	}
+
 	// This filter accepts UDP packets whose first payload byte is
 	// even.
 	prog, err := bpf.Assemble([]bpf.Instruction{
