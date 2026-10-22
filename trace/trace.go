@@ -870,13 +870,21 @@ func (tr *trace) unref() {
 		tr.mu.RLock()
 		if tr.recycler != nil {
 			// freeTrace clears tr, so we hold tr.recycler and tr.events here.
+			var events []event
+			if len(tr.events) <= len(tr.eventsBuf) {
+				// Make a copy so we can clear tr.eventsBuf in freeTrace() and still
+				// call the recycler in the background.
+				events = append(events, tr.events...)
+			} else {
+				events = tr.events
+			}
 			go func(f func(interface{}), es []event) {
 				for _, e := range es {
 					if e.Recyclable {
 						f(e.What)
 					}
 				}
-			}(tr.recycler, tr.events)
+			}(tr.recycler, events)
 		}
 		tr.mu.RUnlock()
 
