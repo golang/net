@@ -1926,11 +1926,21 @@ type Name struct {
 	Length uint8
 }
 
-// NewName creates a new Name from a string.
+// NewName creates a new Name from a string. It fails for a name longer
+// than 255 bytes or with a label longer than 63 bytes, which no message
+// can carry.
 func NewName(name string) (Name, error) {
 	n := Name{Length: uint8(len(name))}
 	if len(name) > len(n.Data) {
 		return Name{}, errCalcLen
+	}
+	for begin, i := 0, 0; i <= len(name); i++ {
+		if i == len(name) || name[i] == '.' {
+			if i-begin >= 1<<6 {
+				return Name{}, errSegTooLong
+			}
+			begin = i + 1
+		}
 	}
 	copy(n.Data[:], name)
 	return n, nil
