@@ -1045,7 +1045,7 @@ func inBodyIM(p *parser) bool {
 			p.acknowledgeSelfClosingTag()
 			p.framesetOK = false
 		case a.Input:
-			if p.fragment && p.context.DataAtom == a.Select {
+			if p.fragment && p.context != nil && p.context.DataAtom == a.Select {
 				// Ignore the token.
 				return true
 			}
@@ -1110,7 +1110,7 @@ func inBodyIM(p *parser) bool {
 			// Don't let the tokenizer go into raw text mode when scripting is disabled.
 			p.tokenizer.NextIsNotRawText()
 		case a.Select:
-			if p.fragment && p.context.DataAtom == a.Select {
+			if p.fragment && p.context != nil && p.context.DataAtom == a.Select {
 				// Ignore the token.
 				return true
 			} else if p.popUntil(defaultScope, a.Select) {

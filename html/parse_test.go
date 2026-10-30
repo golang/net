@@ -468,8 +468,17 @@ func TestNodeConsistency(t *testing.T) {
 }
 
 func TestParseFragmentWithNilContext(t *testing.T) {
-	// This shouldn't panic.
-	ParseFragment(strings.NewReader("<p>hello</p>"), nil)
+	srcs := []string{
+		"<p>hello</p>",
+		"<input>",
+		"<select>",
+	}
+	for _, src := range srcs {
+		// This shouldn't panic.
+		if _, err := ParseFragment(strings.NewReader(src), nil); err != nil {
+			t.Errorf("ParseFragment(%q, nil): %v", src, err)
+		}
+	}
 }
 
 func TestParseFragmentForeignContentTemplates(t *testing.T) {
