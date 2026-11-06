@@ -582,6 +582,8 @@ func TestAPITransportCoalescedDial(t *testing.T) {
 			dial3 := tt.wantDial("dummy.tld:80")
 			dial3.finish(nil)
 			tc2 = tt.getConn()
+		} else {
+			tc2.readClientPreface()
 		}
 
 		// One request on tc1...
@@ -739,10 +741,30 @@ func TestAPITransportCoalescedDial(t *testing.T) {
 func TestAPITransportIdleConnTimeout(t *testing.T) {
 	synctestTestRoundTrip(t, func(t *testing.T, mode roundTripTestMode) {
 		const idleConnTimeout = 3 * time.Second
-		tc := newTestClientConn(t, mode, func(tr2 *http2.Transport) {
+		tt := newTestTransport(t, mode, func(tr2 *http2.Transport) {
 			tr2.IdleConnTimeout = idleConnTimeout
 		})
-		tc.greet()
+
+		req, _ := http.NewRequest("GET", "http://dummy.tld/", nil)
+		rt := tt.roundTrip(req)
+
+		tc := tt.getConn()
+		tc.wantFrameType(http2.FrameSettings)
+		tc.wantFrameType(http2.FrameWindowUpdate)
+		tc.wantFrameType(http2.FrameHeaders)
+
+		tc.writeSettings()
+		tc.wantFrameType(http2.FrameSettings) // ACK
+
+		tc.writeHeaders(http2.HeadersFrameParam{
+			StreamID:   1,
+			EndHeaders: true,
+			EndStream:  true,
+			BlockFragment: tc.makeHeaderBlockFragment(
+				":status", "200",
+			),
+		})
+		rt.wantStatus(200)
 		tc.wantIdle()
 
 		closeDelay := tc.connReader.waitForData(t)
