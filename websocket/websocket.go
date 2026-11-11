@@ -211,7 +211,6 @@ again:
 			io.Copy(io.Discard, trailer)
 		}
 		ws.frameReader = nil
-		goto again
 	}
 	return n, err
 }
