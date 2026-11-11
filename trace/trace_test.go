@@ -7,7 +7,9 @@ package trace
 import (
 	"net/http"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type s struct{}
@@ -81,6 +83,96 @@ func TestParseTemplate(t *testing.T) {
 	}
 	if tmpl := eventsTmpl(); tmpl == nil {
 		t.Error("invalid template returned from eventsTmpl()")
+	}
+}
+
+type recyclableEvent struct{}
+
+func (e *recyclableEvent) String() string { return "recyclable event" }
+
+// TestRecycler checks that all trace events have the recycler called on them.
+func TestRecycler(t *testing.T) {
+	testData := []struct {
+		name                   string
+		traces, eventsPerTrace int
+		wantRecycled           int
+	}{
+		{
+			name:           "no recycling",
+			traces:         tracesPerBucket,
+			eventsPerTrace: 3,
+			wantRecycled:   0,
+		},
+		{
+			name:           "one extra trace",
+			traces:         tracesPerBucket + 1,
+			eventsPerTrace: 1,
+			wantRecycled:   1,
+		},
+		{
+			name:           "three events per trace",
+			traces:         tracesPerBucket + 1,
+			eventsPerTrace: 3,
+			wantRecycled:   3,
+		},
+		{ // this is the boundary case
+			name:           "four events per trace",
+			traces:         tracesPerBucket + 1,
+			eventsPerTrace: 4,
+			wantRecycled:   4,
+		},
+		{
+			name:           "five events per trace",
+			traces:         tracesPerBucket + 1,
+			eventsPerTrace: 5,
+			wantRecycled:   5,
+		},
+		{
+			name:           "lots of events per trace",
+			traces:         1,
+			eventsPerTrace: 100,
+			wantRecycled:   100 - maxEventsPerTrace + 1, // +1 is the trace that gets recycled to make room for the "(x events discarded)" entry
+		},
+		{
+			name:           "lots of traces with one event",
+			traces:         tracesPerBucket + 1,
+			eventsPerTrace: 100,
+			wantRecycled:   100 + tracesPerBucket*(100-maxEventsPerTrace+1),
+		},
+		{
+			name:           "lots of events in lots of traces",
+			traces:         tracesPerBucket + 100,
+			eventsPerTrace: 100,
+			wantRecycled:   100*100 + tracesPerBucket*(100-maxEventsPerTrace+1),
+		},
+	}
+
+	for _, test := range testData {
+		t.Run(test.name, func(t *testing.T) {
+			var recycled int32
+			for i := 0; i < test.traces; i++ {
+				tr := New("family", "title")
+				tr.SetRecycler(func(x interface{}) {
+					if _, ok := x.(*recyclableEvent); ok {
+						atomic.AddInt32(&recycled, 1)
+					}
+				})
+				for j := 0; j < test.eventsPerTrace; j++ {
+					tr.LazyLog(&recyclableEvent{}, false)
+				}
+				tr.Finish()
+			}
+			for i := 0; i < 10; i++ {
+				if atomic.LoadInt32(&recycled) >= int32(test.wantRecycled) {
+					break
+				} else {
+					time.Sleep(time.Duration(i*10) * time.Millisecond)
+				}
+			}
+			if got, want := recycled, int32(test.wantRecycled); got != want {
+				t.Errorf("unexpected number of events recycled:\n  got: %v\n want: %v", got, want)
+			}
+		})
 	}
 }
 
