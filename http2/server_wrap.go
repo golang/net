@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"slices"
@@ -92,7 +93,7 @@ func (s *serverConfig) ServeConnFunc(f func(context.Context, net.Conn, http.Hand
 
 func (s *serverConfig) HTTP2Config() http.HTTP2Config {
 	return http.HTTP2Config{
-		MaxConcurrentStreams:          int(s.s.MaxConcurrentStreams),
+		MaxConcurrentStreams:          int(min(s.s.MaxConcurrentStreams, math.MaxInt32)),
 		MaxDecoderHeaderTableSize:     int(s.s.MaxDecoderHeaderTableSize),
 		MaxEncoderHeaderTableSize:     int(s.s.MaxEncoderHeaderTableSize),
 		MaxReadFrameSize:              int(s.s.MaxReadFrameSize),
