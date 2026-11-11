@@ -1984,3 +1984,28 @@ func TestInvalidMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestNewNameLabelLength(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{strings.Repeat("a", 63) + ".example.", nil},
+		{strings.Repeat("a", 64) + ".example.", errSegTooLong},
+		{"example." + strings.Repeat("a", 64), errSegTooLong},
+		{strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61) + ".", nil},
+		{strings.Repeat("a", 256), errCalcLen},
+	} {
+		if _, err := NewName(test.name); err != test.err {
+			t.Errorf("NewName(%d bytes, label lengths of %v) = %v, want %v", len(test.name), labelLengths(test.name), err, test.err)
+		}
+	}
+}
+
+func labelLengths(name string) []int {
+	var lengths []int
+	for _, label := range strings.Split(name, ".") {
+		lengths = append(lengths, len(label))
+	}
+	return lengths
+}
