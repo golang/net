@@ -742,3 +742,29 @@ func TestUnmarshalIntoInterface(t *testing.T) {
 		t.Errorf("failed to unmarshal into interface, have %q want %q", have, want)
 	}
 }
+
+// Deeply nested unknown elements must be skipped without exhausting the
+// goroutine stack. Mirrors the encoding/xml fix for golang.org/issue/53614.
+func TestSkipDeepNesting(t *testing.T) {
+	depth := 100000
+	var b strings.Builder
+	b.WriteString("<result><value>7</value><unknown>")
+	for i := 0; i < depth; i++ {
+		b.WriteString("<a>")
+	}
+	for i := 0; i < depth; i++ {
+		b.WriteString("</a>")
+	}
+	b.WriteString("</unknown></result>")
+
+	v := struct {
+		XMLName Name  `xml:"result"`
+		Value   int64 `xml:"value"`
+	}{}
+	if err := Unmarshal([]byte(b.String()), &v); err != nil {
+		t.Fatalf("unmarshal of deeply nested document failed: %v", err)
+	}
+	if v.Value != 7 {
+		t.Errorf("sibling field not parsed, have %d want 7", v.Value)
+	}
+}
