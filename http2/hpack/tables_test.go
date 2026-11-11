@@ -111,9 +111,6 @@ func TestHeaderFieldTable_LookupMapEviction(t *testing.T) {
 		t.Errorf("len(table.byName) = %d, want 0", l)
 	}
 
-	if l := len(table.byNameValue); l > 0 {
-		t.Errorf("len(table.byNameValue) = %d, want 0", l)
-	}
 }
 
 // TestHeaderFieldTable_MapsBuiltLazily verifies that a table used without
@@ -126,8 +123,8 @@ func TestHeaderFieldTable_MapsBuiltLazily(t *testing.T) {
 	table.addEntry(pair("key1", "value1-2"))
 	table.evictOldest(1)
 
-	if table.byName != nil || table.byNameValue != nil {
-		t.Fatalf("lookup maps allocated without search")
+	if table.byName != nil {
+		t.Fatalf("lookup map allocated without search")
 	}
 
 	// The first search builds the maps from the surviving entries.
@@ -142,9 +139,6 @@ func TestHeaderFieldTable_MapsBuiltLazily(t *testing.T) {
 	}
 	if got, want := len(table.byName), 2; got != want {
 		t.Errorf("len(byName) = %d, want %d", got, want)
-	}
-	if got, want := len(table.byNameValue), 2; got != want {
-		t.Errorf("len(byNameValue) = %d, want %d", got, want)
 	}
 
 	// Entries added after the maps exist keep them up to date.
@@ -249,7 +243,14 @@ func TestStaticTable(t *testing.T) {
 		if got, want := staticTable.ents[i-1].Sensitive, false; got != want {
 			t.Errorf("header index %d sensitive = %t; want %t", i, got, want)
 		}
-		if got, want := strconv.Itoa(int(staticTable.byNameValue[pairNameValue{name: m[2], value: m[3]}])), m[1]; got != want {
+		var id uint64
+		for _, e := range staticTable.byName[m[2]] {
+			if e.value == m[3] {
+				id = e.id
+				break
+			}
+		}
+		if got, want := strconv.Itoa(int(id)), m[1]; got != want {
 			t.Errorf("header by name %s value %s index = %s; want %s", m[2], m[3], got, want)
 		}
 	}
