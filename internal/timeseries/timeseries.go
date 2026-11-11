@@ -357,8 +357,8 @@ func (ts *timeSeries) ComputeRange(start, finish time.Time, num int) []Observabl
 		return nil
 	}
 
-	if num < 0 {
-		log.Printf("timeseries: num < 0, %v", num)
+	if num <= 0 {
+		log.Printf("timeseries: num <= 0, %v", num)
 		return nil
 	}
 
