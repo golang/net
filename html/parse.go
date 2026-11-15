@@ -340,6 +340,13 @@ func (p *parser) appendText(n *Node, text string) {
 	p.textNodes[n] = append(b, text...)
 }
 
+// sortedAttrs returns a sorted copy of attr; attr keeps its source order.
+func sortedAttrs(attr []Attribute) []Attribute {
+	c := slices.Clone(attr)
+	slices.SortFunc(c, attrCompare)
+	return c
+}
+
 func attrCompare(a, b Attribute) int {
 	return cmp.Or(
 		cmp.Compare(a.Namespace, b.Namespace),
@@ -363,9 +370,9 @@ func (p *parser) addFormattingElement() {
 	tagAtom, attr := p.tok.DataAtom, p.tok.Attr
 	p.addElement()
 
-	// In order to optimize the search, we need the attributes to be sorted, so we
-	// can just use slices.Equal.
-	slices.SortFunc(attr, attrCompare)
+	// The node keeps its attributes in source order (the element's attribute
+	// list is the source's); only the identical-element comparison sorts.
+	attr = sortedAttrs(attr)
 
 	// Implement the Noah's Ark clause, but with three per family instead of two.
 	identicalElements := 0
@@ -384,7 +391,7 @@ findIdenticalElements:
 		if n.DataAtom != tagAtom {
 			continue
 		}
-		if !slices.Equal(n.Attr, attr) {
+		if !slices.Equal(sortedAttrs(n.Attr), attr) {
 			continue findIdenticalElements
 		}
 
@@ -394,9 +401,7 @@ findIdenticalElements:
 		}
 	}
 
-	// Sort the attributes to optimize future identical-element searches.
 	top := p.top()
-	slices.SortFunc(top.Attr, attrCompare)
 
 	p.afe = append(p.afe, top)
 }

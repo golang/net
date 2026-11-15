@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -580,5 +581,51 @@ func TestTextNodeCoalescing(t *testing.T) {
 				t.Errorf("Parse allocated %d bytes, want <= %d", alloc, 5<<20)
 			}
 		})
+	}
+}
+
+// A formatting element keeps its attributes in source order: sorting them is
+// for the identical-element comparison only, and must not reach the node.
+func TestFormattingElementKeepsAttrOrder(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		want []string
+	}{
+		{`<a z=1 a=2>x</a>`, []string{"z", "a"}},
+		{`<a title=z href=y class=x>x</a>`, []string{"title", "href", "class"}},
+		{`<b y=1 x=2>x</b>`, []string{"y", "x"}},
+		{`<p><a z=1 a=2>1<div>2</div>3</a></p>`, []string{"z", "a"}},
+	} {
+		doc, err := ParseFragment(strings.NewReader(tc.src), &Node{Type: ElementNode, Data: "body", DataAtom: atom.Body})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var first *Node
+		var walk func(*Node)
+		walk = func(n *Node) {
+			if first != nil {
+				return
+			}
+			if n.Type == ElementNode && (n.Data == "a" || n.Data == "b") {
+				first = n
+				return
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+		}
+		for _, n := range doc {
+			walk(n)
+		}
+		if first == nil {
+			t.Fatalf("%q: no formatting element", tc.src)
+		}
+		var got []string
+		for _, a := range first.Attr {
+			got = append(got, a.Key)
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%q: attribute order %v, want %v", tc.src, got, tc.want)
+		}
 	}
 }
