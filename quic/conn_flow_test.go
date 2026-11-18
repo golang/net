@@ -131,6 +131,15 @@ func TestConnInflowReturnOnClose(t *testing.T) {
 				packetType1RTT, debugFrameMaxData{
 					max: 128,
 				})
+			tc.writeFrames(packetType1RTT, debugFrameStream{
+				id:   s.id,
+				off:  64,
+				data: make([]byte, 32),
+			})
+			tc.wantFrame("data received after CloseRead is discarded and extends connection-level flow control",
+				packetType1RTT, debugFrameMaxData{
+					max: 160,
+				})
 		})
 	}
 }

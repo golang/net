@@ -264,3 +264,34 @@ func testStreamLimitStopSendingDoesNotUpdateMaxStreams(t *testing.T) {
 			max:        2,
 		})
 }
+
+func TestStreamLimitCloseReadBeforeFin(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tc, s := newTestConnAndRemoteStream(t, serverSide, uniStream, func(c *Config) {
+			c.MaxUniRemoteStreams = 1
+		})
+		tc.ignoreFrame(frameTypeStopSending)
+
+		s.CloseRead()
+		tc.wantIdle("MAX_STREAMS is not extended before peer finishes sending")
+
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  6,
+			data: []byte("world"),
+			fin:  true,
+		})
+		tc.wantIdle("MAX_STREAMS is not extended while stream still has missing data")
+
+		tc.writeFrames(packetType1RTT, debugFrameStream{
+			id:   s.id,
+			off:  0,
+			data: []byte("hello "),
+		})
+		tc.wantFrame("receiving all bytes up to FIN retires read-closed stream and extends MAX_STREAMS",
+			packetType1RTT, debugFrameMaxStreams{
+				streamType: uniStream,
+				max:        2,
+			})
+	})
+}
