@@ -1742,7 +1742,7 @@ func inRowIM(p *parser) bool {
 			// Ignore the token.
 			return true
 		case a.Table:
-			if p.elementInScope(tableScope, a.Tr) {
+			if p.elementInScope(tableScope, a.Table) {
 				p.clearStackToContext(tableRowScope)
 				p.oe.pop()
 				p.im = inTableBodyIM
