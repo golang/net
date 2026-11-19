@@ -25,7 +25,7 @@ func NewVM(filter []Instruction) (*VM, error) {
 		switch ins := ins.(type) {
 		// Check for out-of-bounds jumps in instructions
 		case Jump:
-			if check <= int(ins.Skip) {
+			if uint64(check) <= uint64(ins.Skip) {
 				return nil, fmt.Errorf("cannot jump %d instructions; jumping past program bounds", ins.Skip)
 			}
 		case JumpIf:
@@ -132,9 +132,9 @@ func (v *VM) Run(in []byte) (int, error) {
 		case LoadScratch:
 			regA, regX = loadScratch(ins, regScratch, regA, regX)
 		case RetA:
-			return int(regA), nil
+			return returnValue(regA)
 		case RetConstant:
-			return int(ins.Val), nil
+			return returnValue(ins.Val)
 		case StoreScratch:
 			regScratch = storeScratch(ins, regScratch, regA, regX)
 		case TAX:
@@ -147,4 +147,12 @@ func (v *VM) Run(in []byte) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func returnValue(value uint32) (int, error) {
+	n := int(value)
+	if n < 0 {
+		return 0, fmt.Errorf("return value %d overflows int", value)
+	}
+	return n, nil
 }

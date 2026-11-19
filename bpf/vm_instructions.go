@@ -120,10 +120,13 @@ func loadExtension(ins LoadExtension, in []byte) uint32 {
 }
 
 func loadIndirect(ins LoadIndirect, in []byte, regX uint32) (uint32, bool) {
-	offset := int(ins.Off) + int(regX)
+	offset := uint64(ins.Off) + uint64(regX)
+	if offset > uint64(len(in)) {
+		return 0, false
+	}
 	size := ins.Size
 
-	return loadCommon(in, offset, size)
+	return loadCommon(in, int(offset), size)
 }
 
 func loadMemShift(ins LoadMemShift, in []byte) (uint32, bool) {
@@ -139,7 +142,7 @@ func loadMemShift(ins LoadMemShift, in []byte) (uint32, bool) {
 }
 
 func inBounds(inLen int, offset int, size int) bool {
-	return offset+size <= inLen
+	return offset >= 0 && offset <= inLen && size >= 0 && size <= inLen-offset
 }
 
 func loadCommon(in []byte, offset int, size int) (uint32, bool) {

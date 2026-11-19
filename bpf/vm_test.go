@@ -13,6 +13,53 @@ import (
 
 var _ bpf.Instruction = unknown{}
 
+func TestVMLargeJump(t *testing.T) {
+	if _, err := bpf.NewVM([]bpf.Instruction{bpf.Jump{Skip: 0xffffffff}, bpf.RetA{}}); err == nil {
+		t.Fatal("NewVM accepted a jump past the program bounds")
+	}
+}
+
+func TestVMLargeOffsets(t *testing.T) {
+	for _, load := range []bpf.Instruction{
+		bpf.LoadAbsolute{Off: 0x80000000, Size: 1},
+		bpf.LoadAbsolute{Off: 0x7fffffff, Size: 4},
+		bpf.LoadMemShift{Off: 0xffffffff},
+		bpf.LoadIndirect{Off: 0xffffffff, Size: 1},
+	} {
+		t.Run(fmt.Sprintf("%T/%v", load, load), func(t *testing.T) {
+			vm, err := bpf.NewVM([]bpf.Instruction{
+				bpf.LoadConstant{Dst: bpf.RegX, Val: 1}, load, bpf.RetConstant{Val: 1},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := vm.Run([]byte{1, 2, 3, 4}); got != 0 || err != nil {
+				t.Errorf("Run = (%d, %v), want (0, nil)", got, err)
+			}
+		})
+	}
+}
+
+func TestVMLargeReturn(t *testing.T) {
+	for _, filter := range [][]bpf.Instruction{
+		{bpf.RetConstant{Val: 0xffffffff}},
+		{bpf.LoadConstant{Dst: bpf.RegA, Val: 0xffffffff}, bpf.RetA{}},
+	} {
+		vm, err := bpf.NewVM(filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := vm.Run(nil)
+		if uint64(^uint(0)>>1) < 0xffffffff {
+			if err == nil {
+				t.Errorf("Run = (%d, nil), want an overflow error", got)
+			}
+		} else if err != nil || uint64(got) != 0xffffffff {
+			t.Errorf("Run = (%d, %v), want (4294967295, nil)", got, err)
+		}
+	}
+}
+
 type unknown struct{}
 
 func (unknown) Assemble() (bpf.RawInstruction, error) {
