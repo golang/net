@@ -951,6 +951,103 @@ func TestCopyMoveProps(t *testing.T) {
 	}
 }
 
+func TestCopyPropsWithFileSystemProps(t *testing.T) {
+	fsPropName := xml.Name{Space: "fs", Local: "prop"}
+	fsProp := Property{
+		XMLName:  fsPropName,
+		InnerXML: []byte("from-fs"),
+	}
+	ctx := context.Background()
+	base, err := buildTestFS([]string{"write /src contents"})
+	if err != nil {
+		t.Fatalf("cannot create test filesystem: %v", err)
+	}
+	fs := &testFileSystemProps{
+		FileSystem: base,
+		cacheProps: map[string]map[xml.Name]Property{
+			"/src": {
+				fsPropName: fsProp,
+			},
+			"/dst": nil,
+		},
+	}
+
+	if _, err := copyFiles(ctx, fs, "/src", "/dst", true, infiniteDepth, 0); err != nil {
+		t.Fatalf("copyFiles /src /dst: %v", err)
+	}
+
+	gotDst := fs.cacheProps["/dst"]
+	wantDst := map[xml.Name]Property{
+		fsPropName: fsProp,
+	}
+	if !reflect.DeepEqual(gotDst, wantDst) {
+		t.Fatalf("dst fs props:\ngot  %v\nwant %v", gotDst, wantDst)
+	}
+
+	dstFile, err := base.OpenFile(ctx, "/dst", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile /dst: %v", err)
+	}
+	defer dstFile.Close()
+	fileProps, err := dstFile.(DeadPropsHolder).DeadProps()
+	if err != nil {
+		t.Fatalf("dst file DeadProps: %v", err)
+	}
+	if len(fileProps) != 0 {
+		t.Fatalf("dst file props unexpectedly set: %v", fileProps)
+	}
+}
+
+func TestCopyPropsFallbackToFileDeadProps(t *testing.T) {
+	filePropName := xml.Name{Space: "file", Local: "prop"}
+	fileProp := Property{
+		XMLName:  filePropName,
+		InnerXML: []byte("from-file"),
+	}
+
+	ctx := context.Background()
+	base, err := buildTestFS([]string{"write /src contents"})
+	if err != nil {
+		t.Fatalf("cannot create test filesystem: %v", err)
+	}
+	fs := &testFileSystemProps{
+		FileSystem: base,
+		cacheProps:      map[string]map[xml.Name]Property{},
+	}
+
+	srcFile, err := base.OpenFile(ctx, "/src", os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("OpenFile /src: %v", err)
+	}
+	_, err = srcFile.(DeadPropsHolder).Patch([]Proppatch{{Props: []Property{fileProp}}})
+	if err != nil {
+		t.Fatalf("Patch /src: %v", err)
+	}
+	if err := srcFile.Close(); err != nil {
+		t.Fatalf("Close /src: %v", err)
+	}
+
+	if _, err := copyFiles(ctx, fs, "/src", "/dst", true, infiniteDepth, 0); err != nil {
+		t.Fatalf("copyFiles /src /dst: %v", err)
+	}
+
+	dstFile, err := base.OpenFile(ctx, "/dst", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile /dst: %v", err)
+	}
+	defer dstFile.Close()
+	gotProps, err := dstFile.(DeadPropsHolder).DeadProps()
+	if err != nil {
+		t.Fatalf("dst file DeadProps: %v", err)
+	}
+	wantProps := map[xml.Name]Property{
+		filePropName: fileProp,
+	}
+	if !reflect.DeepEqual(gotProps, wantProps) {
+		t.Fatalf("dst file props:\ngot  %v\nwant %v", gotProps, wantProps)
+	}
+}
+
 func TestWalkFS(t *testing.T) {
 	testCases := []struct {
 		desc    string
