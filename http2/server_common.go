@@ -64,6 +64,8 @@ type Server struct {
 	// which may be active globally, which is MaxHandlers.
 	// If zero, MaxConcurrentStreams defaults to at least 100, per
 	// the HTTP/2 spec's recommendations.
+	// When using the standard library HTTP/2 implementation (Go 1.27 or later),
+	// values above 2^31-1 are clamped to that limit.
 	//
 	// Deprecated: Use [http.Server.HTTP2] and
 	// [http.HTTP2Config.MaxConcurrentStreams] instead.

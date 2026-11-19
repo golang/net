@@ -13,6 +13,8 @@ package http2_test
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,18 +26,32 @@ import (
 
 // TestAPIServerMaxConcurrentStreams tests the Server.MaxConcurrentStreams field.
 func TestAPIServerMaxConcurrentStreams(t *testing.T) {
-	synctestTest(t, testAPIServerMaxConcurrentStreams)
-}
-func testAPIServerMaxConcurrentStreams(t testing.TB) {
-	const maxConcurrentStreams = 10
-	st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {},
-		func(s *http2.Server) {
-			s.MaxConcurrentStreams = maxConcurrentStreams
+	for _, test := range []struct {
+		limit, wantWrapped, wantLegacy uint32
+	}{
+		{0, 250, 250},
+		{1, 1, 1},
+		{10, 10, 10},
+		{math.MaxInt32, math.MaxInt32, math.MaxInt32},
+		{math.MaxInt32 + 1, math.MaxInt32, math.MaxInt32 + 1},
+		{math.MaxUint32, math.MaxInt32, math.MaxUint32},
+	} {
+		t.Run(fmt.Sprint(test.limit), func(t *testing.T) {
+			synctestTest(t, func(t testing.TB) {
+				st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {},
+					func(s *http2.Server) {
+						s.MaxConcurrentStreams = test.limit
+					})
+				want := test.wantLegacy
+				if wrappedAPI {
+					want = test.wantWrapped
+				}
+				st.wantSettings(map[http2.SettingID]uint32{
+					http2.SettingMaxConcurrentStreams: want,
+				})
+			})
 		})
-
-	st.wantSettings(map[http2.SettingID]uint32{
-		http2.SettingMaxConcurrentStreams: maxConcurrentStreams,
-	})
+	}
 }
 
 // TestAPIServerMaxDecoderHeaderTableSize tests the Server.MaxDecoderHeaderTableSize field.
