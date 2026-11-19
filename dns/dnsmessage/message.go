@@ -1927,6 +1927,10 @@ type Name struct {
 }
 
 // NewName creates a new Name from a string.
+//
+// It returns an error if name is longer than 255 bytes. It does not
+// perform any other validation, which means it may return a nil error
+// for a name that is rejected during packing.
 func NewName(name string) (Name, error) {
 	n := Name{Length: uint8(len(name))}
 	if len(name) > len(n.Data) {
