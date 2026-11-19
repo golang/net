@@ -396,6 +396,38 @@ func TestAllNoProxy(t *testing.T) {
 	}
 }
 
+func TestNoProxyRootDot(t *testing.T) {
+	for _, test := range []struct {
+		noProxy, host string
+		wantProxy     bool
+	}{
+		{"example.com", "example.com.", false},
+		{"example.com.", "example.com", false},
+		{"example.com.", "sub.example.com.", false},
+		{".example.com", "sub.example.com.", false},
+		{".example.com.", "sub.example.com", false},
+		{".example.com.", "example.com.", true},
+		{"*.example.com.", "sub.example.com.", false},
+		{"example.com.:8080", "example.com.:8080", false},
+		{"example.com.:8080", "example.com.:8081", true},
+		{"example.com", "otherexample.com.", true},
+		{"EXAMPLE.COM.", "Example.Com.", false},
+		{".", "example.com.", true},
+	} {
+		t.Run(test.noProxy+"/"+test.host, func(t *testing.T) {
+			cfg := httpproxy.Config{HTTPProxy: "http://proxy.invalid", NoProxy: test.noProxy}
+			u, err := url.Parse("http://" + test.host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxy, err := cfg.ProxyFunc()(u)
+			if err != nil || (proxy != nil) != test.wantProxy {
+				t.Errorf("ProxyFunc = (%v, %v), want proxy=%t", proxy, err, test.wantProxy)
+			}
+		})
+	}
+}
+
 func BenchmarkProxyForURL(b *testing.B) {
 	cfg := &httpproxy.Config{
 		HTTPProxy:  "http://proxy.example.org",

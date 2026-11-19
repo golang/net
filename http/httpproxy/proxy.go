@@ -188,7 +188,8 @@ func (cfg *config) useProxy(addr string) bool {
 		}
 	}
 
-	addr = strings.ToLower(strings.TrimSpace(host))
+	// A terminal DNS root dot does not change the domain being matched.
+	addr = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 
 	if ip != nil {
 		for _, m := range cfg.ipMatchers {
@@ -269,6 +270,10 @@ func (c *config) init() {
 		}
 		if v, err := idnaASCII(phost); err == nil {
 			phost = v
+		}
+		phost = strings.TrimSuffix(phost, ".")
+		if phost == "" || phost == "." {
+			continue
 		}
 		c.domainMatchers = append(c.domainMatchers, domainMatch{host: phost, port: pport, matchHost: matchHost})
 	}
