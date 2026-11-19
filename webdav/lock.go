@@ -100,10 +100,10 @@ type LockDetails struct {
 	Root string
 	// Duration is the lock timeout. A negative duration means infinite.
 	Duration time.Duration
-	// OwnerXML is the verbatim <owner> XML given in a LOCK HTTP request.
+	// OwnerXML is the <owner> XML given in a LOCK HTTP request, re-encoded
+	// so that it declares every XML namespace it uses.
 	//
-	// TODO: does the "verbatim" nature play well with XML namespaces?
-	// Does the OwnerXML field need to have more structure? See
+	// TODO: does the OwnerXML field need to have more structure? See
 	// https://codereview.appspot.com/175140043/#msg2
 	OwnerXML string
 	// ZeroDepth is whether the lock has zero depth. If it does not have zero

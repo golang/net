@@ -41,12 +41,7 @@ type lockInfo struct {
 	Exclusive *struct{} `xml:"lockscope>exclusive"`
 	Shared    *struct{} `xml:"lockscope>shared"`
 	Write     *struct{} `xml:"locktype>write"`
-	Owner     owner     `xml:"owner"`
-}
-
-// http://www.webdav.org/specs/rfc4918.html#ELEMENT_owner
-type owner struct {
-	InnerXML string `xml:",innerxml"`
+	Owner     xmlValue  `xml:"owner"`
 }
 
 func readLockInfo(r io.Reader) (li lockInfo, status int, err error) {

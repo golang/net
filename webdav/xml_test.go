@@ -90,9 +90,7 @@ func TestReadLockInfo(t *testing.T) {
 			XMLName:   ixml.Name{Space: "DAV:", Local: "lockinfo"},
 			Exclusive: new(struct{}),
 			Write:     new(struct{}),
-			Owner: owner{
-				InnerXML: "gopher",
-			},
+			Owner:     xmlValue("gopher"),
 		},
 		0,
 	}, {
@@ -109,9 +107,22 @@ func TestReadLockInfo(t *testing.T) {
 			XMLName:   ixml.Name{Space: "DAV:", Local: "lockinfo"},
 			Exclusive: new(struct{}),
 			Write:     new(struct{}),
-			Owner: owner{
-				InnerXML: "\n    <D:href>http://example.org/~ejw/contact.html</D:href>\n  ",
-			},
+			Owner:     xmlValue("\n    <_:href xmlns:_=\"DAV:\">http://example.org/~ejw/contact.html</_:href>\n  "),
+		},
+		0,
+	}, {
+		"good: owner uses namespace declared on ancestor",
+		"" +
+			"<D:lockinfo xmlns:D='DAV:' xmlns:E='http://example.com/ns'>\n" +
+			"  <D:lockscope><D:exclusive/></D:lockscope>\n" +
+			"  <D:locktype><D:write/></D:locktype>\n" +
+			"  <D:owner><E:name>gopher</E:name></D:owner>\n" +
+			"</D:lockinfo>",
+		lockInfo{
+			XMLName:   ixml.Name{Space: "DAV:", Local: "lockinfo"},
+			Exclusive: new(struct{}),
+			Write:     new(struct{}),
+			Owner:     xmlValue(`<ns:name xmlns:ns="http://example.com/ns">gopher</ns:name>`),
 		},
 		0,
 	}}
