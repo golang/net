@@ -124,6 +124,10 @@ func (c *Client) Define(dict, word string) ([]*Defn, error) {
 		a, _ := fields(line)
 		if len(a) < 3 {
 			// skip it, to keep protocol in sync
+			_, err = c.text.ReadDotBytes()
+			if err != nil {
+				return nil, err
+			}
 			i--
 			n--
 			def = def[0:n]
