@@ -114,7 +114,8 @@ loop:
 		u >>= childrenBitsLo
 		hi = u & (1<<childrenBitsHi - 1)
 		u >>= childrenBitsHi
-		switch u & (1<<childrenBitsNodeType - 1) {
+		nodeType := u & (1<<childrenBitsNodeType - 1)
+		switch nodeType {
 		case nodeTypeNormal:
 			suffix = 1 + dot
 		case nodeTypeException:
@@ -123,7 +124,7 @@ loop:
 		}
 		u >>= childrenBitsNodeType
 		wildcard = u&(1<<childrenBitsWildcard-1) != 0
-		if !wildcard {
+		if !wildcard && (nodeType == nodeTypeNormal || suffix == len(domain)) {
 			icann = icannNode
 		}
 

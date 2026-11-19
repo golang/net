@@ -234,6 +234,17 @@ var publicSuffixTestCases = []struct {
 	{"www.landing.myjino.ru", "www.landing.myjino.ru", false},
 	{"spectrum.vps.myjino.ru", "spectrum.vps.myjino.ru", false},
 
+	// The .vps-host.net rules (in the PRIVATE DOMAIN section) are:
+	// vps-host.net
+	// atl.jelastic.vps-host.net
+	// njs.jelastic.vps-host.net
+	// ric.jelastic.vps-host.net
+	{"vps-host.net", "vps-host.net", false},
+	{"jelastic.vps-host.net", "vps-host.net", false},
+	{"www.jelastic.vps-host.net", "vps-host.net", false},
+	{"atl.jelastic.vps-host.net", "atl.jelastic.vps-host.net", false},
+	{"www.atl.jelastic.vps-host.net", "atl.jelastic.vps-host.net", false},
+
 	// There are no .nosuchtld rules.
 	{"nosuchtld", "nosuchtld", false},
 	{"foo.nosuchtld", "nosuchtld", false},
