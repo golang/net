@@ -81,26 +81,22 @@ var staticTableEntries = [...]hpack.HeaderField{
 	{Name: "www-authenticate"},
 }
 
-type pairNameValue struct {
-	name, value string
+type tableEntry struct {
+	value string
+	id    uint64
 }
 
 type byNameItem struct {
-	name string
-	id   uint64
-}
-
-type byNameValueItem struct {
-	pairNameValue
-	id uint64
+	name    string
+	entries []tableEntry
 }
 
 func headerFieldToString(f hpack.HeaderField) string {
 	return fmt.Sprintf("{Name: \"%s\", Value:\"%s\", Sensitive: %t}", f.Name, f.Value, f.Sensitive)
 }
 
-func pairNameValueToString(v pairNameValue) string {
-	return fmt.Sprintf("{name: \"%s\", value:\"%s\"}", v.name, v.value)
+func tableEntryToString(e tableEntry) string {
+	return fmt.Sprintf("{value: \"%s\", id: %d}", e.value, e.id)
 }
 
 const header = `
@@ -111,31 +107,30 @@ package hpack
 
 var staticTable = &headerFieldTable{
 	evictCount: 0,
-	byName: map[string]uint64{
+	byName: map[string][]tableEntry{
 `
 
 //go:generate go run gen.go
 func main() {
 	var bb bytes.Buffer
 	fmt.Fprintf(&bb, header)
-	byName := make(map[string]uint64)
-	byNameValue := make(map[pairNameValue]uint64)
+	byName := make(map[string][]tableEntry)
 	for index, entry := range staticTableEntries {
 		id := uint64(index) + 1
-		byName[entry.Name] = id
-		byNameValue[pairNameValue{entry.Name, entry.Value}] = id
+		byName[entry.Name] = append(byName[entry.Name], tableEntry{entry.Value, id})
 	}
-	// Sort maps for deterministic generation.
+	// Sort for deterministic generation.
 	byNameItems := sortByName(byName)
-	byNameValueItems := sortByNameValue(byNameValue)
 
 	for _, item := range byNameItems {
-		fmt.Fprintf(&bb, "\"%s\":%d,\n", item.name, item.id)
-	}
-	fmt.Fprintf(&bb, "},\n")
-	fmt.Fprintf(&bb, "byNameValue: map[pairNameValue]uint64{\n")
-	for _, item := range byNameValueItems {
-		fmt.Fprintf(&bb, "%s:%d,\n", pairNameValueToString(item.pairNameValue), item.id)
+		fmt.Fprintf(&bb, "\"%s\": {", item.name)
+		for k, e := range item.entries {
+			if k > 0 {
+				fmt.Fprintf(&bb, ", ")
+			}
+			fmt.Fprintf(&bb, "%s", tableEntryToString(e))
+		}
+		fmt.Fprintf(&bb, "},\n")
 	}
 	fmt.Fprintf(&bb, "},\n")
 	fmt.Fprintf(&bb, "ents: []HeaderField{\n")
@@ -147,24 +142,13 @@ func main() {
 	genFile("static_table.go", &bb)
 }
 
-func sortByNameValue(byNameValue map[pairNameValue]uint64) []byNameValueItem {
-	var byNameValueItems []byNameValueItem
-	for k, v := range byNameValue {
-		byNameValueItems = append(byNameValueItems, byNameValueItem{k, v})
-	}
-	sort.Slice(byNameValueItems, func(i, j int) bool {
-		return byNameValueItems[i].id < byNameValueItems[j].id
-	})
-	return byNameValueItems
-}
-
-func sortByName(byName map[string]uint64) []byNameItem {
+func sortByName(byName map[string][]tableEntry) []byNameItem {
 	var byNameItems []byNameItem
 	for k, v := range byName {
 		byNameItems = append(byNameItems, byNameItem{k, v})
 	}
 	sort.Slice(byNameItems, func(i, j int) bool {
-		return byNameItems[i].id < byNameItems[j].id
+		return byNameItems[i].entries[0].id < byNameItems[j].entries[0].id
 	})
 	return byNameItems
 }
