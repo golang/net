@@ -49,7 +49,7 @@ func (m *InterfaceMessage) Sys() []Sys {
 
 func probeRoutingStack() (int, map[int]*wireFormat) {
 	var p uintptr
-	rtm := &wireFormat{extOff: 40, bodyOff: sizeofRtMsghdrDragonFlyBSD4}
+	rtm := &wireFormat{extOff: 40, bodyOff: sizeofRtMsghdrDragonFlyBSD4, idOff: 16, seqOff: 20, errOff: 28}
 	rtm.parse = rtm.parseRouteMessage
 	ifm := &wireFormat{extOff: 16, bodyOff: sizeofIfMsghdrDragonFlyBSD4}
 	ifm.parse = ifm.parseInterfaceMessage
